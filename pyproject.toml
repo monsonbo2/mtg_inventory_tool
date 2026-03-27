@@ -1,0 +1,29 @@
+[project]
+name = "inventory-tool2"
+version = "0.1.0"
+description = "CLI + SQLite inventory tracker with an initial focus on Magic the Gathering cards"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "pandas>=3.0.1",
+]
+
+[project.scripts]
+inventory-tool = "inventory_tool.cli:main"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+    "jupyterlab>=4.5.6",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
