@@ -5,6 +5,20 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
 
 # Virtual environments
 .venv
+
+# Local databases and notebook state
+*.db
+*.sqlite
+*.sqlite3
+.inventory_tool_state.json
+.jupyter/
+.codex
+
+# Generated MTG source stack artifacts
+MtG Source Stack/_bulk_cache/
+MtG Source Stack/_walkthrough_output/
+MtG Source Stack/mtg_inventory_tool.egg-info/

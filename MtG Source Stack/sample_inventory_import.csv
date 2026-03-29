@@ -1,0 +1,3 @@
+inventory,scryfall_id,name,set_code,collector_number,quantity,condition,finish,language_code,location,tags,acquisition_price,acquisition_currency,notes
+personal,77c6fa74-5543-42ac-9ead-0e890b188e99,Lightning Bolt,lea,161,4,NM,normal,en,Red Binder,burn deck,2.00,USD,Playset
+personal,,Sol Ring,clb,860,1,LP,foil,en,Commander Deck Box,commander staple,3.50,USD,One shiny copy

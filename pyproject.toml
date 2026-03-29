@@ -1,29 +1,25 @@
 [project]
-name = "inventory-tool2"
+name = "mtg-inventory-tool"
 version = "0.1.0"
-description = "CLI + SQLite inventory tracker with an initial focus on Magic the Gathering cards"
+description = "Local-first Magic: The Gathering source stack and personal inventory CLI"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "matplotlib>=3.10.8",
-    "pandas>=3.0.1",
-]
+dependencies = []
 
 [project.scripts]
-inventory-tool = "inventory_tool.cli:main"
-
-[dependency-groups]
-dev = [
-    "ipykernel>=7.2.0",
-    "jupyterlab>=4.5.6",
-]
+mtg-mvp-importer = "mtg_source_stack.mvp_importer:main"
+mtg-personal-inventory = "mtg_source_stack.personal_inventory_cli:main"
 
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "MtG Source Stack"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["MtG Source Stack"]
+
+[tool.setuptools.package-data]
+mtg_source_stack = ["*.sql"]
