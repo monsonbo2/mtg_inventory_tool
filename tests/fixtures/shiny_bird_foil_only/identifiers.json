@@ -1,0 +1,12 @@
+{
+  "data": {
+    "uuid-foil-only-1": {
+      "name": "Shiny Bird",
+      "setCode": "abc",
+      "identifiers": {
+        "scryfallId": "foil-only-1",
+        "tcgplayerProductId": "222"
+      }
+    }
+  }
+}

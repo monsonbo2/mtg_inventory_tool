@@ -1,0 +1,16 @@
+{
+  "data": {
+    "uuid-foil-only-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "foil": {
+              "2026-03-27": 5.0
+            }
+          }
+        }
+      }
+    }
+  }
+}

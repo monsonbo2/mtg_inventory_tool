@@ -1,0 +1,33 @@
+[
+  {
+    "id": "s1",
+    "oracle_id": "o1",
+    "name": "Lightning Bolt",
+    "set": "lea",
+    "set_name": "Limited Edition Alpha",
+    "collector_number": "161",
+    "lang": "en",
+    "rarity": "common",
+    "released_at": "1993-08-05",
+    "mana_cost": "{R}",
+    "type_line": "Instant",
+    "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+    "colors": [
+      "R"
+    ],
+    "color_identity": [
+      "R"
+    ],
+    "finishes": [
+      "nonfoil"
+    ],
+    "legalities": {
+      "commander": "legal"
+    },
+    "purchase_uris": {
+      "tcgplayer": "https://example.test/tcg"
+    },
+    "tcgplayer_id": 534658,
+    "cardmarket_id": 752712
+  }
+]

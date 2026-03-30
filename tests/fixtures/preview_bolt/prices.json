@@ -1,0 +1,16 @@
+{
+  "data": {
+    "uuid-dry-run-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "normal": {
+              "2026-03-27": 1.25
+            }
+          }
+        }
+      }
+    }
+  }
+}

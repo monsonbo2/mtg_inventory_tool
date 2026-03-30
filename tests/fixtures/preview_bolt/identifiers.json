@@ -1,0 +1,12 @@
+{
+  "data": {
+    "uuid-dry-run-1": {
+      "name": "Preview Bolt",
+      "setCode": "prv",
+      "identifiers": {
+        "scryfallId": "dry-run-card-1",
+        "tcgplayerProductId": "333"
+      }
+    }
+  }
+}
