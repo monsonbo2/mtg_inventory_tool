@@ -7,6 +7,8 @@ from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import initialize_database
+from .catalog import resolve_card_row
+from .mutations import add_card_with_connection
 from .normalize import (
     CSV_HEADER_ALIASES,
     finish_and_source_from_row,
@@ -20,7 +22,6 @@ from .normalize import (
     slugify_inventory_name,
     text_or_none,
 )
-from .service import add_card_with_connection, resolve_card_row
 
 
 def normalize_csv_header(header: str) -> str:
