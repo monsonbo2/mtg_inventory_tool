@@ -1,0 +1,29 @@
+[
+  {
+    "id": "foil-only-1",
+    "oracle_id": "oracle-foil-only-1",
+    "name": "Shiny Bird",
+    "set": "abc",
+    "set_name": "Example Set",
+    "collector_number": "7",
+    "lang": "en",
+    "rarity": "rare",
+    "released_at": "2026-01-01",
+    "colors": [
+      "G"
+    ],
+    "color_identity": [
+      "G"
+    ],
+    "finishes": [
+      "foil"
+    ],
+    "legalities": {
+      "commander": "legal"
+    },
+    "purchase_uris": {
+      "tcgplayer": "https://example.test/tcg"
+    },
+    "tcgplayer_id": 222
+  }
+]

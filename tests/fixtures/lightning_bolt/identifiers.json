@@ -1,0 +1,15 @@
+{
+  "data": {
+    "uuid-1": {
+      "name": "Lightning Bolt",
+      "setCode": "lea",
+      "identifiers": {
+        "scryfallId": "s1",
+        "tcgplayerProductId": "534658",
+        "cardKingdomId": "12345",
+        "mcmId": "752712",
+        "cardsphereId": "98765"
+      }
+    }
+  }
+}

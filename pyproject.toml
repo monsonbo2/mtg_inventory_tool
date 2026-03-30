@@ -15,11 +15,11 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "MtG Source Stack"}
+package-dir = {"" = "src"}
 include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["MtG Source Stack"]
+where = ["src"]
 
 [tool.setuptools.package-data]
 mtg_source_stack = ["*.sql"]

@@ -17,8 +17,10 @@ wheels/
 .inventory_tool_state.json
 .jupyter/
 .codex
+var/
 
 # Generated MTG source stack artifacts
 MtG Source Stack/_bulk_cache/
+MtG Source Stack/_snapshots/
 MtG Source Stack/_walkthrough_output/
 MtG Source Stack/mtg_inventory_tool.egg-info/

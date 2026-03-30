@@ -1,47 +1,70 @@
 # MTG Inventory Tool
 
-This repo is now centered on a local-first Magic: The Gathering inventory
-workflow built around the code in `MtG Source Stack/`.
+A local-first Magic: The Gathering inventory workflow built around SQLite,
+Scryfall, and MTGJSON.
 
-The previous generic inventory prototype has been removed so the repo reflects a
-single direction:
+Use it to:
 
 - import MTG catalog and pricing data from Scryfall and MTGJSON
 - create one or more personal inventories
 - add owned printings with condition, finish, language, and location
 - value the collection from imported daily price snapshots
 
-## Primary Code
+If you're new to the repo, the best starting points are this README, the
+walkthrough notebook in `notebooks/`, and the architecture notes in `docs/`.
 
-The main runtime code lives in:
+The Python package lives under `src/mtg_source_stack/`. The recommended way to
+use the repo is `pip install -e .` plus the
+`mtg-mvp-importer` and `mtg-personal-inventory` commands.
 
-- `MtG Source Stack/mtg_source_stack/mvp_importer.py`
-- `MtG Source Stack/mtg_source_stack/personal_inventory_cli.py`
+## Project Layout
 
-Supporting design and schema files live alongside them:
-
-- `MtG Source Stack/mtg_mvp_schema.sql`
-- `MtG Source Stack/schema.sql`
-- `MtG Source Stack/source_map.md`
-- `MtG Source Stack/ingestion_flow.md`
-- `MtG Source Stack/sample_queries.sql`
-
-For convenience, the original top-level scripts in `MtG Source Stack/` are kept
-as thin wrappers around the package entry points.
+- Runtime package:
+  - `src/mtg_source_stack/cli/`
+  - `src/mtg_source_stack/db/`
+  - `src/mtg_source_stack/importer/`
+  - `src/mtg_source_stack/inventory/`
+- Recommended generated local state:
+  - `var/db/`
+  - `var/bulk_cache/`
+  - `var/reports/`
+  - `var/walkthrough/`
+- Docs and design notes:
+  - `docs/source_map.md`
+  - `docs/ingestion_flow.md`
+  - `docs/schema_full.sql`
+  - `docs/schema_mvp.sql`
+- Examples:
+  - `examples/sample_queries.sql`
+  - `examples/sample_inventory_import.csv`
+- Notebook walkthrough:
+  - `notebooks/mtg_source_stack_walkthrough.ipynb`
+- Tests:
+  - `tests/test_cli_smoke.py`
+  - `tests/test_importer.py`
+  - `tests/test_csv_import.py`
+  - `tests/test_inventory_service.py`
+  - `tests/fixtures/`
 
 ## Quick Start
+
+Install the package in editable mode:
+
+```bash
+pip install -e .
+```
 
 Initialize a local database:
 
 ```bash
-python3 "MtG Source Stack/mvp_importer.py" init-db --db "MtG Source Stack/mtg_mvp.db"
+mtg-mvp-importer init-db --db "var/db/mtg_mvp.db"
 ```
 
 Import local Scryfall and MTGJSON bulk files:
 
 ```bash
-python3 "MtG Source Stack/mvp_importer.py" import-all \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-mvp-importer import-all \
+  --db "var/db/mtg_mvp.db" \
   --scryfall-json /path/to/default-cards.json \
   --identifiers-json /path/to/AllIdentifiers.json \
   --prices-json /path/to/AllPricesToday.json
@@ -50,31 +73,31 @@ python3 "MtG Source Stack/mvp_importer.py" import-all \
 Or refresh from the official bulk sources in one command:
 
 ```bash
-python3 "MtG Source Stack/mvp_importer.py" sync-bulk \
-  --db "MtG Source Stack/mtg_mvp.db" \
-  --cache-dir "MtG Source Stack/_bulk_cache/latest"
+mtg-mvp-importer sync-bulk \
+  --db "var/db/mtg_mvp.db" \
+  --cache-dir "var/bulk_cache/latest"
 ```
 
 Create a manual safety snapshot, list snapshots, or restore one later:
 
 ```bash
-python3 "MtG Source Stack/mvp_importer.py" snapshot-db \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-mvp-importer snapshot-db \
+  --db "var/db/mtg_mvp.db" \
   --label "before_cleanup"
 
-python3 "MtG Source Stack/mvp_importer.py" list-snapshots \
-  --db "MtG Source Stack/mtg_mvp.db"
+mtg-mvp-importer list-snapshots \
+  --db "var/db/mtg_mvp.db"
 
-python3 "MtG Source Stack/mvp_importer.py" restore-snapshot \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-mvp-importer restore-snapshot \
+  --db "var/db/mtg_mvp.db" \
   --snapshot SNAPSHOT_NAME_FROM_LIST
 ```
 
 Create a personal inventory:
 
 ```bash
-python3 "MtG Source Stack/personal_inventory_cli.py" create-inventory \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory create-inventory \
+  --db "var/db/mtg_mvp.db" \
   --slug personal \
   --display-name "Personal Collection"
 ```
@@ -82,8 +105,8 @@ python3 "MtG Source Stack/personal_inventory_cli.py" create-inventory \
 Search for a printing:
 
 ```bash
-python3 "MtG Source Stack/personal_inventory_cli.py" search-cards \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory search-cards \
+  --db "var/db/mtg_mvp.db" \
   --query "Lightning Bolt"
 ```
 
@@ -93,8 +116,8 @@ Catalog search can also be filtered by things like `--set-code`, `--rarity`,
 Add a card you own:
 
 ```bash
-python3 "MtG Source Stack/personal_inventory_cli.py" add-card \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory add-card \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --scryfall-id YOUR_PRINTING_ID \
   --quantity 4 \
@@ -107,23 +130,23 @@ python3 "MtG Source Stack/personal_inventory_cli.py" add-card \
 Or import a batch from a CSV file:
 
 ```bash
-python3 "MtG Source Stack/personal_inventory_cli.py" import-csv \
-  --db "MtG Source Stack/mtg_mvp.db" \
-  --csv "MtG Source Stack/sample_inventory_import.csv" \
+mtg-personal-inventory import-csv \
+  --db "var/db/mtg_mvp.db" \
+  --csv "examples/sample_inventory_import.csv" \
   --inventory personal
 ```
 
 To preview a CSV import and save a report without changing the DB:
 
 ```bash
-python3 "MtG Source Stack/personal_inventory_cli.py" import-csv \
-  --db "MtG Source Stack/mtg_mvp.db" \
-  --csv "MtG Source Stack/sample_inventory_import.csv" \
+mtg-personal-inventory import-csv \
+  --db "var/db/mtg_mvp.db" \
+  --csv "examples/sample_inventory_import.csv" \
   --inventory personal \
   --dry-run \
-  --report-out "MtG Source Stack/import_preview.txt" \
-  --report-out-json "MtG Source Stack/import_preview.json" \
-  --report-out-csv "MtG Source Stack/import_preview.csv"
+  --report-out "var/reports/import_preview.txt" \
+  --report-out-json "var/reports/import_preview.json" \
+  --report-out-csv "var/reports/import_preview.csv"
 ```
 
 If a CSV row omits finish information and the matched printing only exists in a
@@ -138,120 +161,120 @@ imported with an explicit `--inventory` slug.
 List your collection and get a valuation:
 
 ```bash
-python3 "MtG Source Stack/personal_inventory_cli.py" list-owned \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory list-owned \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --provider tcgplayer
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-quantity \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-quantity \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --quantity 2
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-finish \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-finish \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --finish foil
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-location \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-location \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --location "Deck Box"
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-location \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-location \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --location "Deck Box" \
   --merge
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-condition \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-condition \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --condition LP
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-condition \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-condition \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --condition LP \
   --merge
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-acquisition \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-acquisition \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --price 2.50 \
   --currency USD
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-notes \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-notes \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --notes "Needs fresh sleeve"
 
-python3 "MtG Source Stack/personal_inventory_cli.py" set-tags \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory set-tags \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --tags "binder,trade"
 
-python3 "MtG Source Stack/personal_inventory_cli.py" split-row \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory split-row \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1 \
   --quantity 1 \
   --location "Deck Box"
 
-python3 "MtG Source Stack/personal_inventory_cli.py" merge-rows \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory merge-rows \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --source-item-id 2 \
   --target-item-id 1
 
-python3 "MtG Source Stack/personal_inventory_cli.py" remove-card \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory remove-card \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --item-id 1
 
-python3 "MtG Source Stack/personal_inventory_cli.py" valuation \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory valuation \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --provider tcgplayer
 
-python3 "MtG Source Stack/personal_inventory_cli.py" price-gaps \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory price-gaps \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --provider tcgplayer
 
-python3 "MtG Source Stack/personal_inventory_cli.py" reconcile-prices \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory reconcile-prices \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --provider tcgplayer \
   --apply
 
-python3 "MtG Source Stack/personal_inventory_cli.py" inventory-health \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory inventory-health \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --provider tcgplayer
 
-python3 "MtG Source Stack/personal_inventory_cli.py" export-csv \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory export-csv \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --provider tcgplayer \
-  --output "MtG Source Stack/personal_export.csv"
+  --output "var/reports/personal_export.csv"
 
-python3 "MtG Source Stack/personal_inventory_cli.py" inventory-report \
-  --db "MtG Source Stack/mtg_mvp.db" \
+mtg-personal-inventory inventory-report \
+  --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --provider tcgplayer \
-  --report-out "MtG Source Stack/personal_report.txt" \
-  --report-out-json "MtG Source Stack/personal_report.json" \
-  --report-out-csv "MtG Source Stack/personal_report_rows.csv"
+  --report-out "var/reports/personal_report.txt" \
+  --report-out-json "var/reports/personal_report.json" \
+  --report-out-csv "var/reports/personal_report_rows.csv"
 ```
 
 `list-owned` and `valuation` also accept filters like `--set-code`, `--rarity`,
@@ -267,23 +290,13 @@ bulk imports, non-dry-run CSV imports, `remove-card`, `reconcile-prices --apply`
 Run the smoke test suite:
 
 ```bash
-python3 -m unittest tests/test_mtg_source_stack.py
-```
-
-## Installable Commands
-
-The repo now has installable console entry points:
-
-```bash
-pip install -e .
-mtg-mvp-importer init-db --db "MtG Source Stack/mtg_mvp.db"
-mtg-personal-inventory list-inventories --db "MtG Source Stack/mtg_mvp.db"
+python3 -m unittest discover -s tests -q
 ```
 
 ## Notes
 
-- The current implementation is intentionally local and script-driven.
-- The MVP schema is optimized for getting a real personal inventory working
+- The project is intentionally local and script-driven.
+- The bundled schema is designed to get a real personal inventory working
   quickly.
-- The fuller normalized schema is still available if you want to grow this into
-  a larger app later.
+- The docs also include a fuller normalized schema if you want to grow this
+  into a larger app later.
