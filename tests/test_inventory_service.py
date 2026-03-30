@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
+from mtg_source_stack.inventory.service import inventory_report
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
@@ -555,6 +556,258 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
             self.assertNotEqual(0, merge_failure.returncode)
             self.assertIn("same printing", merge_failure.stderr)
+
+    def test_add_card_normalizes_identity_fields_before_merging_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--condition",
+                "NM",
+                "--language-code",
+                "en",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--condition",
+                "nm",
+                "--language-code",
+                "EN",
+                "--finish",
+                "nonfoil",
+            )
+
+            connection = sqlite3.connect(db_path)
+            rows = connection.execute(
+                """
+                SELECT quantity, condition_code, language_code
+                FROM inventory_items
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual([(2, "NM", "en")], rows)
+
+    def test_inventory_report_filters_health_payload_to_matching_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            scryfall_path = tmp / "scryfall.json"
+            identifiers_path = tmp / "identifiers.json"
+            prices_path = tmp / "prices.json"
+
+            scryfall_payload = [
+                {
+                    "id": "report-filter-a",
+                    "oracle_id": "report-filter-oracle-a",
+                    "name": "Alpha",
+                    "set": "abc",
+                    "set_name": "Example Set",
+                    "collector_number": "1",
+                    "lang": "en",
+                    "rarity": "common",
+                    "released_at": "2026-01-01",
+                    "colors": ["R"],
+                    "color_identity": ["R"],
+                    "finishes": ["nonfoil"],
+                    "legalities": {"commander": "legal"},
+                    "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                    "tcgplayer_id": 1001,
+                },
+                {
+                    "id": "report-filter-b",
+                    "oracle_id": "report-filter-oracle-b",
+                    "name": "Beta",
+                    "set": "abc",
+                    "set_name": "Example Set",
+                    "collector_number": "2",
+                    "lang": "en",
+                    "rarity": "common",
+                    "released_at": "2026-01-01",
+                    "colors": ["U"],
+                    "color_identity": ["U"],
+                    "finishes": ["nonfoil"],
+                    "legalities": {"commander": "legal"},
+                    "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                    "tcgplayer_id": 1002,
+                },
+            ]
+            identifiers_payload = {
+                "data": {
+                    "uuid-report-filter-a": {
+                        "name": "Alpha",
+                        "setCode": "abc",
+                        "identifiers": {
+                            "scryfallId": "report-filter-a",
+                            "tcgplayerProductId": "1001",
+                        },
+                    },
+                    "uuid-report-filter-b": {
+                        "name": "Beta",
+                        "setCode": "abc",
+                        "identifiers": {
+                            "scryfallId": "report-filter-b",
+                            "tcgplayerProductId": "1002",
+                        },
+                    },
+                }
+            }
+            prices_payload = {
+                "data": {
+                    "uuid-report-filter-a": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 1.00}},
+                            }
+                        }
+                    },
+                    "uuid-report-filter-b": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 2.00}},
+                            }
+                        }
+                    },
+                }
+            }
+
+            scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
+            identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
+            prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(scryfall_path),
+                "--identifiers-json",
+                str(identifiers_path),
+                "--prices-json",
+                str(prices_path),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "report-filter-a",
+                "--quantity",
+                "1",
+                "--location",
+                "Box 1",
+                "--tags",
+                "dup",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "report-filter-a",
+                "--quantity",
+                "1",
+                "--location",
+                "Box 2",
+                "--tags",
+                "dup",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "report-filter-b",
+                "--quantity",
+                "1",
+                "--location",
+                "Box 3",
+                "--tags",
+                "solo",
+            )
+
+            report = inventory_report(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                query="Beta",
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+                limit=5,
+                stale_days=30,
+            )
+
+            self.assertEqual(1, report["summary"]["item_rows"])
+            self.assertEqual(0, report["health"]["summary"]["duplicate_groups"])
+            self.assertEqual([], report["health"]["duplicate_groups"])
 
     def test_export_csv_and_inventory_report_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

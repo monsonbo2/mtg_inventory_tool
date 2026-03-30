@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 
 from ..db.connection import DEFAULT_DB_PATH
-from ..db.schema import initialize_database
 from ..db.snapshots import create_database_snapshot
 from ..inventory.csv_import import import_csv
 from ..inventory.normalize import (
@@ -104,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--finish", default="normal", help="normal, nonfoil, foil, or etched.")
     add.add_argument("--language-code", default="en", help="Owned card language code.")
     add.add_argument("--location", default="", help="Storage location, such as Binder 1.")
-    add.add_argument("--acquisition-price", type=float, help="Optional acquisition price per row.")
+    add.add_argument("--acquisition-price", type=float, help="Optional acquisition price per copy.")
     add.add_argument("--acquisition-currency", help="Optional acquisition currency, such as USD.")
     add.add_argument("--notes", help="Optional notes.")
     add.add_argument("--tags", help="Optional comma-separated custom tags, such as commander,trade.")
@@ -335,7 +334,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    initialize_database(args.db)
 
     try:
         if args.command == "create-inventory":

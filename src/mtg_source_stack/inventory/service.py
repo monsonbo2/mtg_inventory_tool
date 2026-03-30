@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..db.connection import connect
+from ..db.connection import connect, require_database_file
 from ..db.schema import initialize_database
 from .normalize import (
     coerce_float,
@@ -53,18 +53,22 @@ from .reports import (
 def create_inventory(db_path: str | Path, slug: str, display_name: str, description: str | None) -> int:
     initialize_database(db_path)
     with connect(db_path) as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO inventories (slug, display_name, description)
-            VALUES (?, ?, ?)
-            """,
-            (slug, display_name, description),
-        )
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO inventories (slug, display_name, description)
+                VALUES (?, ?, ?)
+                """,
+                (slug, display_name, description),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"Inventory '{slug}' already exists.") from exc
         connection.commit()
         return int(cursor.lastrowid)
 
 
 def list_inventories(db_path: str | Path) -> list[dict[str, Any]]:
+    require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
         rows = connection.execute(
@@ -94,6 +98,7 @@ def search_cards(
     exact: bool = False,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
+    require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
         where_parts: list[str] = []
@@ -257,7 +262,12 @@ def add_card_with_connection(
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer.")
 
+    normalized_condition = normalize_condition_code(condition_code)
     normalized_finish = normalize_finish(finish)
+    normalized_language = normalize_language_code(language_code)
+    normalized_location = text_or_none(location) or ""
+    normalized_acquisition_currency = normalize_currency_code(acquisition_currency)
+    normalized_notes = text_or_none(notes)
     if inventory_cache is None:
         inventory_cache = {}
 
@@ -294,10 +304,10 @@ def add_card_with_connection(
         (
             inventory["id"],
             card["scryfall_id"],
-            condition_code,
+            normalized_condition,
             normalized_finish,
-            language_code,
-            location,
+            normalized_language,
+            normalized_location,
         ),
     ).fetchone()
     merged_tags = merge_tags(
@@ -341,13 +351,13 @@ def add_card_with_connection(
             inventory["id"],
             card["scryfall_id"],
             quantity,
-            condition_code,
+            normalized_condition,
             normalized_finish,
-            language_code,
-            location,
+            normalized_language,
+            normalized_location,
             acquisition_price,
-            acquisition_currency,
-            notes,
+            normalized_acquisition_currency,
+            normalized_notes,
             tags_to_json(merged_tags),
         ),
     )
@@ -363,9 +373,9 @@ def add_card_with_connection(
         "item_id": item_row["id"],
         "quantity": item_row["quantity"],
         "finish": normalized_finish,
-        "condition_code": condition_code,
-        "language_code": language_code,
-        "location": location,
+        "condition_code": normalized_condition,
+        "language_code": normalized_language,
+        "location": normalized_location,
         "tags": merged_tags,
     }
 
@@ -914,6 +924,7 @@ def list_price_gaps(
     provider: str,
     limit: int | None,
 ) -> list[dict[str, Any]]:
+    require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
         return query_price_gaps(
@@ -1000,6 +1011,7 @@ def inventory_health(
     if preview_limit <= 0:
         raise ValueError("--limit must be a positive integer.")
 
+    require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -1097,6 +1109,7 @@ def list_owned_filtered(
     location: str | None,
     tags: list[str] | None,
 ) -> list[dict[str, Any]]:
+    require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -1259,6 +1272,7 @@ def valuation_filtered(
     location: str | None,
     tags: list[str] | None,
 ) -> list[dict[str, Any]]:
+    require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -1460,23 +1474,41 @@ def inventory_report(
     if filters_text == "(none)":
         filtered_health_summary = health["summary"]
     else:
-        missing_price_ids = {row["item_id"] for row in health["missing_price_rows"]}
-        missing_location_ids = {row["item_id"] for row in health["missing_location_rows"]}
-        missing_tag_ids = {row["item_id"] for row in health["missing_tag_rows"]}
-        merge_note_ids = {row["item_id"] for row in health["merge_note_rows"]}
-        stale_price_ids = {row["item_id"] for row in health["stale_price_rows"]}
         filtered_ids = {row["item_id"] for row in rows}
+        filtered_duplicate_keys = {
+            (row["scryfall_id"], row["condition_code"], row["finish"], row["language_code"])
+            for row in rows
+        }
+        filtered_health = {
+            **health,
+            "missing_price_rows": [row for row in health["missing_price_rows"] if row["item_id"] in filtered_ids],
+            "missing_location_rows": [row for row in health["missing_location_rows"] if row["item_id"] in filtered_ids],
+            "missing_tag_rows": [row for row in health["missing_tag_rows"] if row["item_id"] in filtered_ids],
+            "merge_note_rows": [row for row in health["merge_note_rows"] if row["item_id"] in filtered_ids],
+            "stale_price_rows": [row for row in health["stale_price_rows"] if row["item_id"] in filtered_ids],
+            "duplicate_groups": [
+                row
+                for row in health["duplicate_groups"]
+                if (
+                    row["scryfall_id"],
+                    row["condition_code"],
+                    row["finish"],
+                    row["language_code"],
+                )
+                in filtered_duplicate_keys
+            ],
+        }
         filtered_health_summary.update(
             {
-                "missing_price_rows": len(filtered_ids & missing_price_ids),
-                "missing_location_rows": len(filtered_ids & missing_location_ids),
-                "missing_tag_rows": len(filtered_ids & missing_tag_ids),
-                "merge_note_rows": len(filtered_ids & merge_note_ids),
-                "stale_price_rows": len(filtered_ids & stale_price_ids),
-                "duplicate_groups": health["summary"]["duplicate_groups"],
+                "missing_price_rows": len(filtered_health["missing_price_rows"]),
+                "missing_location_rows": len(filtered_health["missing_location_rows"]),
+                "missing_tag_rows": len(filtered_health["missing_tag_rows"]),
+                "merge_note_rows": len(filtered_health["merge_note_rows"]),
+                "stale_price_rows": len(filtered_health["stale_price_rows"]),
+                "duplicate_groups": len(filtered_health["duplicate_groups"]),
             }
         )
-        health = {**health, "summary": filtered_health_summary}
+        health = {**filtered_health, "summary": filtered_health_summary}
 
     return {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),

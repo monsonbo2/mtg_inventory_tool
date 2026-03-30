@@ -9,6 +9,49 @@ from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class CliSmokeTest(RepoSmokeTestCase):
+    def test_missing_database_read_commands_fail_without_creating_a_new_db(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "missing.db"
+
+            result = self.run_failing_cli(
+                "list-inventories",
+                "--db",
+                str(db_path),
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("does not exist", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(db_path.exists())
+
+    def test_create_inventory_duplicate_slug_returns_a_clean_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+
+            result = self.run_failing_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("Inventory 'personal' already exists.", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
     def test_import_and_personal_inventory_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

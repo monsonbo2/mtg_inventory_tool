@@ -593,6 +593,7 @@ def query_duplicate_like_groups(connection: sqlite3.Connection, *, inventory_slu
     rows = connection.execute(
         """
         SELECT
+            ii.scryfall_id,
             c.name AS card_name,
             c.set_code,
             c.collector_number,
@@ -614,6 +615,9 @@ def query_duplicate_like_groups(connection: sqlite3.Connection, *, inventory_slu
     ).fetchall()
     return [
         {
+            "scryfall_id": row["scryfall_id"],
+            "condition_code": row["condition_code"],
+            "language_code": row["language_code"],
             "name": truncate(row["card_name"], 28),
             "set": row["set_code"],
             "number": row["collector_number"],
