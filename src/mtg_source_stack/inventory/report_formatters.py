@@ -10,7 +10,6 @@ from .normalize import (
     format_finishes,
     format_optional_text,
     format_tags,
-    load_tags_json,
     truncate,
 )
 from .report_helpers import append_preview_section, render_table
@@ -358,16 +357,16 @@ def format_owned_rows(rows: list[dict[str, Any]]) -> str:
                 "name": truncate(row["name"], 28),
                 "set": row["set_code"],
                 "number": row["collector_number"],
-                "rarity": row["rarity"],
+                "rarity": row["rarity"] or "",
                 "qty": row["quantity"],
                 "cond": row["condition_code"],
                 "finish": row["finish"],
-                "location": truncate(row["location"], 16),
-                "tags": truncate(format_tags(load_tags_json(row["tags_json"])), 24),
-                "notes": truncate(row["notes"], 24),
-                "unit_price": row["unit_price"],
-                "currency": row["currency"],
-                "est_value": row["est_value"],
+                "location": truncate(format_optional_text(row.get("location")), 16),
+                "tags": truncate(format_tags(row.get("tags", [])), 24),
+                "notes": truncate(format_optional_text(row.get("notes")), 24),
+                "unit_price": row["unit_price"] if row.get("unit_price") is not None else "",
+                "currency": row["currency"] or "",
+                "est_value": row["est_value"] if row.get("est_value") is not None else "",
             }
         )
 

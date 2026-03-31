@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .normalize import format_tags, load_tags_json, text_or_none
+from .normalize import format_tags, text_or_none
+from .response_models import serialize_response
 
 
 def write_report(path: str | Path, text: str) -> Path:
@@ -17,10 +18,10 @@ def write_report(path: str | Path, text: str) -> Path:
     return report_path
 
 
-def write_json_report(path: str | Path, payload: dict[str, Any]) -> Path:
+def write_json_report(path: str | Path, payload: Any) -> Path:
     report_path = Path(path)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+    report_path.write_text(json.dumps(serialize_response(payload), ensure_ascii=True, indent=2), encoding="utf-8")
     return report_path
 
 
@@ -111,14 +112,14 @@ def flatten_owned_export_rows(
                 "finish": row["finish"],
                 "language_code": row["language_code"],
                 "location": text_or_none(row["location"]) or "",
-                "tags": format_tags(load_tags_json(row["tags_json"])),
+                "tags": format_tags(row.get("tags", [])),
                 "notes": text_or_none(row["notes"]) or "",
                 "acquisition_price": row["acquisition_price"] if row["acquisition_price"] is not None else "",
                 "acquisition_currency": text_or_none(row["acquisition_currency"]) or "",
-                "unit_price": row["unit_price"],
-                "price_currency": row["currency"],
-                "est_value": row["est_value"],
-                "price_date": row["price_date"],
+                "unit_price": row["unit_price"] if row["unit_price"] is not None else "",
+                "price_currency": text_or_none(row["currency"]) or "",
+                "est_value": row["est_value"] if row["est_value"] is not None else "",
+                "price_date": text_or_none(row["price_date"]) or "",
             }
         )
     return flattened

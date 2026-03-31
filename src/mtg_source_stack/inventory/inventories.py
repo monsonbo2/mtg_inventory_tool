@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import initialize_database, require_current_schema
+from .normalize import text_or_none
+from .response_models import InventoryListRow
 
 
 def create_inventory(db_path: str | Path, slug: str, display_name: str, description: str | None) -> int:
@@ -27,7 +28,7 @@ def create_inventory(db_path: str | Path, slug: str, display_name: str, descript
         return int(cursor.lastrowid)
 
 
-def list_inventories(db_path: str | Path) -> list[dict[str, Any]]:
+def list_inventories(db_path: str | Path) -> list[InventoryListRow]:
     require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = connection.execute(
@@ -44,4 +45,13 @@ def list_inventories(db_path: str | Path) -> list[dict[str, Any]]:
             ORDER BY i.slug
             """
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [
+        InventoryListRow(
+            slug=row["slug"],
+            display_name=row["display_name"],
+            description=text_or_none(row["description"]),
+            item_rows=int(row["item_rows"]),
+            total_cards=int(row["total_cards"]),
+        )
+        for row in rows
+    ]

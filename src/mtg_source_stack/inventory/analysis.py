@@ -8,7 +8,7 @@ from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
-from .normalize import coerce_float, format_finishes, text_or_none, truncate
+from .normalize import coerce_float, format_finishes, load_tags_json, text_or_none, truncate
 from .query_inventory import add_owned_filters, get_inventory_row
 from .query_pricing import build_latest_retail_prices_cte, query_price_gaps, query_stale_price_rows
 from .query_reporting import (
@@ -21,10 +21,141 @@ from .query_reporting import (
 from .reports import (
     build_currency_totals,
     build_top_value_rows,
-    flatten_owned_export_rows,
     summarize_filters,
     write_inventory_export_csv,
 )
+from .response_models import (
+    CurrencyTotalRow,
+    DuplicateGroupRow,
+    ExportInventoryCsvResult,
+    HealthItemPreviewRow,
+    InventoryHealthResult,
+    InventoryHealthSummary,
+    InventoryReportResult,
+    InventoryReportSummary,
+    MissingPricePreviewRow,
+    OwnedInventoryRow,
+    PriceGapRow,
+    ReconcilePricesResult,
+    StalePricePreviewRow,
+    TopValueRow,
+    ValuationRow,
+    serialize_response,
+)
+
+
+def build_price_gap_row(row: dict[str, Any]) -> PriceGapRow:
+    return PriceGapRow(
+        inventory=row["inventory"],
+        card_name=row["card_name"],
+        set_code=row["set_code"],
+        set_name=row["set_name"],
+        collector_number=row["collector_number"],
+        scryfall_id=row["scryfall_id"],
+        item_id=int(row["item_id"]),
+        quantity=int(row["quantity"]),
+        finish=row["finish"],
+        condition_code=row["condition_code"],
+        language_code=row["language_code"],
+        location=text_or_none(row["location"]),
+        acquisition_price=coerce_float(row.get("acquisition_price")),
+        acquisition_currency=text_or_none(row.get("acquisition_currency")),
+        notes=text_or_none(row.get("notes")),
+        tags=list(row.get("tags", [])),
+        available_finishes=list(row.get("available_finishes", [])),
+        suggested_finish=text_or_none(row.get("suggested_finish")),
+        reconcile_status=row["reconcile_status"],
+    )
+
+
+def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
+    return OwnedInventoryRow(
+        item_id=int(row["item_id"]),
+        scryfall_id=row["scryfall_id"],
+        name=row["name"],
+        set_code=row["set_code"],
+        set_name=row["set_name"],
+        rarity=text_or_none(row.get("rarity")),
+        collector_number=row["collector_number"],
+        quantity=int(row["quantity"]),
+        condition_code=row["condition_code"],
+        finish=row["finish"],
+        language_code=row["language_code"],
+        location=text_or_none(row.get("location")),
+        tags=load_tags_json(row.get("tags_json")),
+        acquisition_price=coerce_float(row.get("acquisition_price")),
+        acquisition_currency=text_or_none(row.get("acquisition_currency")),
+        currency=text_or_none(row.get("currency")),
+        unit_price=coerce_float(row.get("unit_price")),
+        est_value=coerce_float(row.get("est_value")),
+        price_date=text_or_none(row.get("price_date")),
+        notes=text_or_none(row.get("notes")),
+    )
+
+
+def build_valuation_row(row: dict[str, Any]) -> ValuationRow:
+    return ValuationRow(
+        provider=text_or_none(row.get("provider")),
+        currency=text_or_none(row.get("currency")),
+        item_rows=int(row["item_rows"]),
+        total_cards=int(row["total_cards"]),
+        total_value=coerce_float(row.get("total_value")) or 0.0,
+    )
+
+
+def build_missing_price_preview_row(row: dict[str, Any]) -> MissingPricePreviewRow:
+    return MissingPricePreviewRow(
+        item_id=int(row["item_id"]),
+        name=row["name"],
+        set=row["set"],
+        number=row["number"],
+        finish=row["finish"],
+        priced_finishes=row["priced_finishes"],
+        status=row["status"],
+    )
+
+
+def build_health_item_preview_row(row: dict[str, Any]) -> HealthItemPreviewRow:
+    return HealthItemPreviewRow(
+        item_id=int(row["item_id"]),
+        name=row["name"],
+        set=row["set"],
+        number=row["number"],
+        qty=int(row["qty"]),
+        cond=row["cond"],
+        finish=row["finish"],
+        location=row["location"],
+        tags=row["tags"],
+        note=row["note"],
+    )
+
+
+def build_stale_price_preview_row(row: dict[str, Any]) -> StalePricePreviewRow:
+    return StalePricePreviewRow(
+        item_id=int(row["item_id"]),
+        name=row["name"],
+        set=row["set"],
+        number=row["number"],
+        finish=row["finish"],
+        price_date=row["price_date"],
+        age_days=int(row["age_days"]),
+    )
+
+
+def build_duplicate_group_row(row: dict[str, Any]) -> DuplicateGroupRow:
+    return DuplicateGroupRow(
+        scryfall_id=row["scryfall_id"],
+        condition_code=row["condition_code"],
+        language_code=row["language_code"],
+        name=row["name"],
+        set=row["set"],
+        number=row["number"],
+        cond=row["cond"],
+        finish=row["finish"],
+        rows=int(row["rows"]),
+        qty=int(row["qty"]),
+        locations=row["locations"],
+    )
 
 
 def list_price_gaps(
@@ -33,15 +164,16 @@ def list_price_gaps(
     inventory_slug: str,
     provider: str,
     limit: int | None,
-) -> list[dict[str, Any]]:
+) -> list[PriceGapRow]:
     require_current_schema(db_path)
     with connect(db_path) as connection:
-        return query_price_gaps(
+        rows = query_price_gaps(
             connection,
             inventory_slug=inventory_slug,
             provider=provider,
             limit=limit,
         )
+    return [build_price_gap_row(row) for row in rows]
 
 
 def reconcile_prices(
@@ -50,7 +182,7 @@ def reconcile_prices(
     inventory_slug: str,
     provider: str,
     apply_changes: bool,
-) -> dict[str, Any]:
+) -> ReconcilePricesResult:
     if apply_changes:
         raise ValueError(
             "reconcile-prices is suggestion-only and no longer changes inventory finish values. "
@@ -59,34 +191,36 @@ def reconcile_prices(
 
     require_current_schema(db_path)
     with connect(db_path) as connection:
-        rows = query_price_gaps(
-            connection,
-            inventory_slug=inventory_slug,
-            provider=provider,
-            limit=None,
-        )
+        rows = [
+            build_price_gap_row(row)
+            for row in query_price_gaps(
+                connection,
+                inventory_slug=inventory_slug,
+                provider=provider,
+                limit=None,
+            )
+        ]
 
-        suggested_rows: list[dict[str, Any]] = []
-        remaining_rows: list[dict[str, Any]] = []
+        suggested_rows: list[PriceGapRow] = []
+        remaining_rows: list[PriceGapRow] = []
         rows_fixable = 0
 
         for row in rows:
-            suggested_finish = row["suggested_finish"]
-            if suggested_finish is None:
+            if row.suggested_finish is None:
                 remaining_rows.append(row)
                 continue
 
             rows_fixable += 1
             suggested_rows.append(row)
 
-    return {
-        "inventory": inventory_slug,
-        "provider": provider,
-        "rows_seen": len(rows),
-        "rows_fixable": rows_fixable,
-        "suggested_rows": suggested_rows,
-        "remaining_rows": remaining_rows,
-    }
+    return ReconcilePricesResult(
+        inventory=inventory_slug,
+        provider=provider,
+        rows_seen=len(rows),
+        rows_fixable=rows_fixable,
+        suggested_rows=suggested_rows,
+        remaining_rows=remaining_rows,
+    )
 
 
 def inventory_health(
@@ -96,7 +230,7 @@ def inventory_health(
     provider: str,
     stale_days: int,
     preview_limit: int,
-) -> dict[str, Any]:
+) -> InventoryHealthResult:
     if stale_days < 0:
         raise ValueError("--stale-days must be zero or greater.")
     if preview_limit <= 0:
@@ -128,15 +262,15 @@ def inventory_health(
         duplicate_groups = query_duplicate_like_groups(connection, inventory_slug=inventory_slug)
 
     formatted_missing_prices = [
-        {
-            "item_id": row["item_id"],
-            "name": truncate(row["card_name"], 28),
-            "set": row["set_code"],
-            "number": row["collector_number"],
-            "finish": row["finish"],
-            "priced_finishes": truncate(format_finishes(row["available_finishes"]), 18),
-            "status": truncate(row["reconcile_status"], 24),
-        }
+        MissingPricePreviewRow(
+            item_id=int(row["item_id"]),
+            name=truncate(row["card_name"], 28),
+            set=row["set_code"],
+            number=row["collector_number"],
+            finish=row["finish"],
+            priced_finishes=truncate(format_finishes(row["available_finishes"]), 18),
+            status=truncate(row["reconcile_status"], 24),
+        )
         for row in missing_price_rows
     ]
 
@@ -151,23 +285,32 @@ def inventory_health(
         }
     )
 
-    return {
-        "inventory": inventory_slug,
-        "provider": provider,
-        "stale_days": stale_days,
-        "current_date": current_date.isoformat(),
-        "preview_limit": preview_limit,
-        "summary": summary,
-        "missing_price_rows": formatted_missing_prices,
-        "missing_location_rows": missing_location_rows,
-        "missing_tag_rows": missing_tag_rows,
-        "merge_note_rows": merge_note_rows,
-        "stale_price_rows": stale_price_rows,
-        "duplicate_groups": duplicate_groups,
-    }
+    return InventoryHealthResult(
+        inventory=inventory_slug,
+        provider=provider,
+        stale_days=stale_days,
+        current_date=current_date.isoformat(),
+        preview_limit=preview_limit,
+        summary=InventoryHealthSummary(
+            item_rows=int(summary["item_rows"]),
+            total_cards=int(summary["total_cards"]),
+            missing_price_rows=int(summary["missing_price_rows"]),
+            missing_location_rows=int(summary["missing_location_rows"]),
+            missing_tag_rows=int(summary["missing_tag_rows"]),
+            merge_note_rows=int(summary["merge_note_rows"]),
+            stale_price_rows=int(summary["stale_price_rows"]),
+            duplicate_groups=int(summary["duplicate_groups"]),
+        ),
+        missing_price_rows=formatted_missing_prices,
+        missing_location_rows=[build_health_item_preview_row(row) for row in missing_location_rows],
+        missing_tag_rows=[build_health_item_preview_row(row) for row in missing_tag_rows],
+        merge_note_rows=[build_health_item_preview_row(row) for row in merge_note_rows],
+        stale_price_rows=[build_stale_price_preview_row(row) for row in stale_price_rows],
+        duplicate_groups=[build_duplicate_group_row(row) for row in duplicate_groups],
+    )
 
 
-def list_owned(db_path: str | Path, inventory_slug: str, provider: str, limit: int | None) -> list[dict[str, Any]]:
+def list_owned(db_path: str | Path, inventory_slug: str, provider: str, limit: int | None) -> list[OwnedInventoryRow]:
     return list_owned_filtered(
         db_path,
         inventory_slug=inventory_slug,
@@ -198,7 +341,7 @@ def list_owned_filtered(
     language_code: str | None,
     location: str | None,
     tags: list[str] | None,
-) -> list[dict[str, Any]]:
+) -> list[OwnedInventoryRow]:
     require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -232,7 +375,7 @@ def list_owned_filtered(
                 c.name,
                 c.set_code,
                 c.set_name,
-                COALESCE(c.rarity, '') AS rarity,
+                c.rarity,
                 c.collector_number,
                 ii.quantity,
                 ii.condition_code,
@@ -241,12 +384,12 @@ def list_owned_filtered(
                 ii.location,
                 COALESCE(ii.tags_json, '[]') AS tags_json,
                 ii.acquisition_price,
-                COALESCE(ii.acquisition_currency, '') AS acquisition_currency,
-                COALESCE(lp.currency, '') AS currency,
-                COALESCE(lp.price_value, '') AS unit_price,
-                COALESCE(ROUND(ii.quantity * lp.price_value, 2), '') AS est_value,
-                COALESCE(lp.snapshot_date, '') AS price_date,
-                COALESCE(ii.notes, '') AS notes
+                ii.acquisition_currency,
+                lp.currency,
+                lp.price_value AS unit_price,
+                ROUND(ii.quantity * lp.price_value, 2) AS est_value,
+                lp.snapshot_date AS price_date,
+                ii.notes
             FROM inventory_items ii
             JOIN inventories i ON i.id = ii.inventory_id
             JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
@@ -260,7 +403,7 @@ def list_owned_filtered(
             """,
             params,
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [build_owned_inventory_row(dict(row)) for row in rows]
 
 
 def export_inventory_csv(
@@ -278,7 +421,7 @@ def export_inventory_csv(
     location: str | None,
     tags: list[str] | None,
     limit: int | None,
-) -> dict[str, Any]:
+) -> ExportInventoryCsvResult:
     rows = list_owned_filtered(
         db_path,
         inventory_slug=inventory_slug,
@@ -295,16 +438,16 @@ def export_inventory_csv(
     )
     output = write_inventory_export_csv(
         output_path,
-        rows,
+        serialize_response(rows),
         inventory_slug=inventory_slug,
         provider=provider,
     )
-    return {
-        "inventory": inventory_slug,
-        "provider": provider,
-        "output_path": str(output),
-        "rows_exported": len(rows),
-        "filters_text": summarize_filters(
+    return ExportInventoryCsvResult(
+        inventory=inventory_slug,
+        provider=provider,
+        output_path=str(output),
+        rows_exported=len(rows),
+        filters_text=summarize_filters(
             query=query,
             set_code=set_code,
             rarity=rarity,
@@ -314,11 +457,11 @@ def export_inventory_csv(
             location=location,
             tags=tags,
         ),
-        "rows": rows,
-    }
+        rows=rows,
+    )
 
 
-def valuation(db_path: str | Path, inventory_slug: str, provider: str | None) -> list[dict[str, Any]]:
+def valuation(db_path: str | Path, inventory_slug: str, provider: str | None) -> list[ValuationRow]:
     return valuation_filtered(
         db_path,
         inventory_slug=inventory_slug,
@@ -347,7 +490,7 @@ def valuation_filtered(
     language_code: str | None,
     location: str | None,
     tags: list[str] | None,
-) -> list[dict[str, Any]]:
+) -> list[ValuationRow]:
     require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -374,7 +517,7 @@ def valuation_filtered(
                 WITH {latest_prices_cte}
                 SELECT
                     ? AS provider,
-                    COALESCE(lp.currency, '') AS currency,
+                    lp.currency,
                     COUNT(ii.id) AS item_rows,
                     COALESCE(SUM(ii.quantity), 0) AS total_cards,
                     ROUND(COALESCE(SUM(ii.quantity * lp.price_value), 0), 2) AS total_value
@@ -391,7 +534,7 @@ def valuation_filtered(
                 """,
                 params,
             ).fetchall()
-            return [dict(row) for row in rows]
+            return [build_valuation_row(dict(row)) for row in rows]
 
         latest_prices_cte, latest_price_params = build_latest_retail_prices_cte(provider=None)
         where_params = [inventory_slug]
@@ -431,7 +574,7 @@ def valuation_filtered(
             """,
             params,
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [build_valuation_row(dict(row)) for row in rows]
 
 
 def build_duplicate_groups_from_owned_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -505,7 +648,7 @@ def inventory_report(
     tags: list[str] | None,
     limit: int,
     stale_days: int,
-) -> dict[str, Any]:
+) -> InventoryReportResult:
     rows = list_owned_filtered(
         db_path,
         inventory_slug=inventory_slug,
@@ -542,7 +685,7 @@ def inventory_report(
     )
     filtered_health_summary = {
         "item_rows": len(rows),
-        "total_cards": sum(int(row["quantity"]) for row in rows),
+        "total_cards": sum(row.quantity for row in rows),
         "missing_price_rows": 0,
         "missing_location_rows": 0,
         "missing_tag_rows": 0,
@@ -562,62 +705,115 @@ def inventory_report(
         tags=tags,
     )
 
-    summary = {
-        "item_rows": len(rows),
-        "total_cards": sum(int(row["quantity"]) for row in rows),
-        "unique_printings": len({row["scryfall_id"] for row in rows}),
-        "unique_card_names": len({row["name"] for row in rows}),
-        "valued_rows": sum(1 for row in rows if coerce_float(row.get("unit_price")) is not None),
-        "unpriced_rows": sum(1 for row in rows if coerce_float(row.get("unit_price")) is None),
-    }
-
-    acquisition_totals = build_currency_totals(
-        rows,
-        value_key="acquisition_price",
-        currency_key="acquisition_currency",
-        quantity_key="quantity",
+    summary = InventoryReportSummary(
+        item_rows=len(rows),
+        total_cards=sum(row.quantity for row in rows),
+        unique_printings=len({row.scryfall_id for row in rows}),
+        unique_card_names=len({row.name for row in rows}),
+        valued_rows=sum(1 for row in rows if row.unit_price is not None),
+        unpriced_rows=sum(1 for row in rows if row.unit_price is None),
     )
-    top_rows = build_top_value_rows(rows, limit=limit)
 
+    rows_payload = serialize_response(rows)
+    acquisition_totals = [
+        CurrencyTotalRow(
+            currency=row["currency"],
+            item_rows=int(row["item_rows"]),
+            total_cards=int(row["total_cards"]),
+            total_amount=coerce_float(row.get("total_amount")) or 0.0,
+        )
+        for row in build_currency_totals(
+            rows_payload,
+            value_key="acquisition_price",
+            currency_key="acquisition_currency",
+            quantity_key="quantity",
+        )
+    ]
+    top_rows = [
+        TopValueRow(
+            item_id=int(row["item_id"]),
+            name=row["name"],
+            set=row["set"],
+            number=row["number"],
+            qty=int(row["qty"]),
+            finish=row["finish"],
+            location=row["location"],
+            est_value=coerce_float(row.get("est_value")),
+            currency=text_or_none(row.get("currency")),
+        )
+        for row in build_top_value_rows(rows_payload, limit=limit)
+    ]
+
+    health_result = health
     if filters_text == "(none)":
-        filtered_health_summary = health["summary"]
+        filtered_health_summary = serialize_response(health.summary)
     else:
         # Row-level health buckets can be filtered by item id, but duplicate
         # groups need to be recomputed from the report rows themselves so a
         # slice containing only one side of a duplicate pair does not inherit
         # the full-inventory group.
-        filtered_ids = {row["item_id"] for row in rows}
-        filtered_duplicate_groups = build_duplicate_groups_from_owned_rows(rows)
-        filtered_health = {
-            **health,
-            "missing_price_rows": [row for row in health["missing_price_rows"] if row["item_id"] in filtered_ids],
-            "missing_location_rows": [row for row in health["missing_location_rows"] if row["item_id"] in filtered_ids],
-            "missing_tag_rows": [row for row in health["missing_tag_rows"] if row["item_id"] in filtered_ids],
-            "merge_note_rows": [row for row in health["merge_note_rows"] if row["item_id"] in filtered_ids],
-            "stale_price_rows": [row for row in health["stale_price_rows"] if row["item_id"] in filtered_ids],
-            "duplicate_groups": filtered_duplicate_groups,
-        }
+        filtered_ids = {row.item_id for row in rows}
+        filtered_duplicate_groups = [
+            build_duplicate_group_row(row)
+            for row in build_duplicate_groups_from_owned_rows(rows_payload)
+        ]
+        health_result = InventoryHealthResult(
+            inventory=health.inventory,
+            provider=health.provider,
+            stale_days=health.stale_days,
+            current_date=health.current_date,
+            preview_limit=health.preview_limit,
+            summary=health.summary,
+            missing_price_rows=[row for row in health.missing_price_rows if row.item_id in filtered_ids],
+            missing_location_rows=[row for row in health.missing_location_rows if row.item_id in filtered_ids],
+            missing_tag_rows=[row for row in health.missing_tag_rows if row.item_id in filtered_ids],
+            merge_note_rows=[row for row in health.merge_note_rows if row.item_id in filtered_ids],
+            stale_price_rows=[row for row in health.stale_price_rows if row.item_id in filtered_ids],
+            duplicate_groups=filtered_duplicate_groups,
+        )
         filtered_health_summary.update(
             {
-                "missing_price_rows": len(filtered_health["missing_price_rows"]),
-                "missing_location_rows": len(filtered_health["missing_location_rows"]),
-                "missing_tag_rows": len(filtered_health["missing_tag_rows"]),
-                "merge_note_rows": len(filtered_health["merge_note_rows"]),
-                "stale_price_rows": len(filtered_health["stale_price_rows"]),
-                "duplicate_groups": len(filtered_health["duplicate_groups"]),
+                "missing_price_rows": len(health_result.missing_price_rows),
+                "missing_location_rows": len(health_result.missing_location_rows),
+                "missing_tag_rows": len(health_result.missing_tag_rows),
+                "merge_note_rows": len(health_result.merge_note_rows),
+                "stale_price_rows": len(health_result.stale_price_rows),
+                "duplicate_groups": len(health_result.duplicate_groups),
             }
         )
-        health = {**filtered_health, "summary": filtered_health_summary}
+        health_result = InventoryHealthResult(
+            inventory=health_result.inventory,
+            provider=health_result.provider,
+            stale_days=health_result.stale_days,
+            current_date=health_result.current_date,
+            preview_limit=health_result.preview_limit,
+            summary=InventoryHealthSummary(
+                item_rows=int(filtered_health_summary["item_rows"]),
+                total_cards=int(filtered_health_summary["total_cards"]),
+                missing_price_rows=int(filtered_health_summary["missing_price_rows"]),
+                missing_location_rows=int(filtered_health_summary["missing_location_rows"]),
+                missing_tag_rows=int(filtered_health_summary["missing_tag_rows"]),
+                merge_note_rows=int(filtered_health_summary["merge_note_rows"]),
+                stale_price_rows=int(filtered_health_summary["stale_price_rows"]),
+                duplicate_groups=int(filtered_health_summary["duplicate_groups"]),
+            ),
+            missing_price_rows=health_result.missing_price_rows,
+            missing_location_rows=health_result.missing_location_rows,
+            missing_tag_rows=health_result.missing_tag_rows,
+            merge_note_rows=health_result.merge_note_rows,
+            stale_price_rows=health_result.stale_price_rows,
+            duplicate_groups=health_result.duplicate_groups,
+        )
 
-    return {
-        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-        "inventory": inventory_slug,
-        "provider": provider,
-        "filters_text": filters_text,
-        "summary": summary,
-        "valuation_rows": valuation_rows,
-        "acquisition_totals": acquisition_totals,
-        "top_rows": top_rows,
-        "health": health,
-        "rows": flatten_owned_export_rows(rows, inventory_slug=inventory_slug, provider=provider),
-    }
+    return InventoryReportResult(
+        generated_at=dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        inventory=inventory_slug,
+        provider=provider,
+        filters_text=filters_text,
+        summary=summary,
+        valuation_rows=valuation_rows,
+        acquisition_totals=acquisition_totals,
+        top_rows=top_rows,
+        health=health_result,
+        rows=rows,
+    )

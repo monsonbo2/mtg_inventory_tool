@@ -9,6 +9,7 @@ from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.inventory.response_models import serialize_response
 from mtg_source_stack.inventory.service import (
     inventory_report,
     list_owned_filtered,
@@ -97,14 +98,14 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
 
             self.assertEqual(1, len(gap_rows))
-            self.assertEqual("gap-card-1", gap_rows[0]["scryfall_id"])
-            self.assertEqual(["foil"], gap_rows[0]["available_finishes"])
-            self.assertEqual("foil", gap_rows[0]["suggested_finish"])
-            self.assertEqual("single priced finish", gap_rows[0]["reconcile_status"])
+            self.assertEqual("gap-card-1", gap_rows[0].scryfall_id)
+            self.assertEqual(["foil"], gap_rows[0].available_finishes)
+            self.assertEqual("foil", gap_rows[0].suggested_finish)
+            self.assertEqual("single priced finish", gap_rows[0].reconcile_status)
 
-            self.assertEqual(1, reconcile_preview["rows_seen"])
-            self.assertEqual(1, reconcile_preview["rows_fixable"])
-            self.assertEqual(["foil"], reconcile_preview["suggested_rows"][0]["available_finishes"])
+            self.assertEqual(1, reconcile_preview.rows_seen)
+            self.assertEqual(1, reconcile_preview.rows_fixable)
+            self.assertEqual(["foil"], reconcile_preview.suggested_rows[0].available_finishes)
 
             with self.assertRaisesRegex(ValueError, "suggestion-only"):
                 reconcile_prices(
@@ -206,9 +207,13 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
 
             self.assertEqual(1, len(owned_rows))
-            self.assertEqual("USD", owned_rows[0]["currency"])
-            self.assertEqual(2.5, owned_rows[0]["unit_price"])
-            self.assertEqual(5.0, owned_rows[0]["est_value"])
+            self.assertEqual("USD", owned_rows[0].currency)
+            self.assertEqual(2.5, owned_rows[0].unit_price)
+            self.assertEqual(5.0, owned_rows[0].est_value)
+            self.assertIsNone(owned_rows[0].acquisition_price)
+            self.assertIsNone(owned_rows[0].acquisition_currency)
+            self.assertIsNone(owned_rows[0].notes)
+            self.assertEqual([], owned_rows[0].tags)
 
             self.assertEqual(
                 [
@@ -220,7 +225,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         "total_value": 5.0,
                     }
                 ],
-                valuation_rows,
+                serialize_response(valuation_rows),
             )
 
     def test_reconcile_prices_only_suggests_finish_when_one_priced_finish_exists(self) -> None:
@@ -1036,9 +1041,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 stale_days=30,
             )
 
-            self.assertEqual(1, report["summary"]["item_rows"])
-            self.assertEqual(0, report["health"]["summary"]["duplicate_groups"])
-            self.assertEqual([], report["health"]["duplicate_groups"])
+            self.assertEqual(1, report.summary.item_rows)
+            self.assertEqual(0, report.health.summary.duplicate_groups)
+            self.assertEqual([], report.health.duplicate_groups)
 
             # Filtering down to one row from a duplicate-like group should also
             # clear the duplicate warning instead of inheriting the full-group
@@ -1059,9 +1064,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 stale_days=30,
             )
 
-            self.assertEqual(1, one_side_report["summary"]["item_rows"])
-            self.assertEqual(0, one_side_report["health"]["summary"]["duplicate_groups"])
-            self.assertEqual([], one_side_report["health"]["duplicate_groups"])
+            self.assertEqual(1, one_side_report.summary.item_rows)
+            self.assertEqual(0, one_side_report.health.summary.duplicate_groups)
+            self.assertEqual([], one_side_report.health.duplicate_groups)
 
     def test_export_csv_and_inventory_report_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

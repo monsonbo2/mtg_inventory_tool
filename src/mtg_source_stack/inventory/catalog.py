@@ -10,6 +10,7 @@ from ..db.connection import connect
 from ..db.schema import require_current_schema
 from .normalize import normalize_catalog_finishes
 from .query_catalog import add_catalog_filters
+from .response_models import CatalogSearchRow
 
 
 def search_cards(
@@ -21,7 +22,7 @@ def search_cards(
     lang: str | None = None,
     exact: bool = False,
     limit: int = 10,
-) -> list[dict[str, Any]]:
+) -> list[CatalogSearchRow]:
     require_current_schema(db_path)
     with connect(db_path) as connection:
         where_parts: list[str] = []
@@ -68,11 +69,22 @@ def search_cards(
             params,
         ).fetchall()
 
-    results = []
+    results: list[CatalogSearchRow] = []
     for row in rows:
         item = dict(row)
-        item["finishes"] = normalize_catalog_finishes(item.pop("finishes_json", None))
-        results.append(item)
+        results.append(
+            CatalogSearchRow(
+                scryfall_id=item["scryfall_id"],
+                name=item["name"],
+                set_code=item["set_code"],
+                set_name=item["set_name"],
+                collector_number=item["collector_number"],
+                lang=item["lang"],
+                rarity=item["rarity"],
+                finishes=normalize_catalog_finishes(item.pop("finishes_json", None)),
+                tcgplayer_product_id=item["tcgplayer_product_id"],
+            )
+        )
     return results
 
 

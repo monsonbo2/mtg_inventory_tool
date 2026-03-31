@@ -16,6 +16,7 @@ from ..inventory.normalize import (
 from ..inventory.reports import (
     EXPORT_CSV_FIELDNAMES,
     append_snapshot_notice,
+    flatten_owned_export_rows,
     format_add_card_result,
     format_export_csv_result,
     format_import_csv_result,
@@ -40,6 +41,7 @@ from ..inventory.reports import (
     write_report,
     write_rows_csv,
 )
+from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
     create_inventory,
@@ -382,7 +384,10 @@ def main() -> None:
             return
 
         if args.command == "list-inventories":
-            rows = list_inventories(args.db)
+            rows = [
+                {**row, "description": row.get("description") or ""}
+                for row in serialize_response(list_inventories(args.db))
+            ]
             print_table(
                 rows,
                 [
@@ -396,15 +401,17 @@ def main() -> None:
             return
 
         if args.command == "search-cards":
-            rows = search_cards(
-                args.db,
-                args.query,
-                args.set_code,
-                args.rarity,
-                args.finish,
-                args.lang,
-                args.exact,
-                args.limit,
+            rows = serialize_response(
+                search_cards(
+                    args.db,
+                    args.query,
+                    args.set_code,
+                    args.rarity,
+                    args.finish,
+                    args.lang,
+                    args.exact,
+                    args.limit,
+                )
             )
             simplified = []
             for row in rows:
@@ -646,32 +653,38 @@ def main() -> None:
             return
 
         if args.command in {"inventory-health", "doctor"}:
-            result = inventory_health(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                stale_days=args.stale_days,
-                preview_limit=args.limit,
+            result = serialize_response(
+                inventory_health(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    stale_days=args.stale_days,
+                    preview_limit=args.limit,
+                )
             )
             print(format_inventory_health_result(result))
             return
 
         if args.command == "price-gaps":
-            rows = list_price_gaps(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                limit=args.limit,
+            rows = serialize_response(
+                list_price_gaps(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    limit=args.limit,
+                )
             )
             print(format_price_gap_rows(rows))
             return
 
         if args.command == "reconcile-prices":
-            result = reconcile_prices(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                apply_changes=args.apply,
+            result = serialize_response(
+                reconcile_prices(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    apply_changes=args.apply,
+                )
             )
             print(format_reconcile_prices_result(result))
             return
@@ -692,7 +705,7 @@ def main() -> None:
                 tags=args.tag,
                 limit=args.limit,
             )
-            print(format_export_csv_result(result))
+            print(format_export_csv_result(serialize_response(result)))
             return
 
         if args.command in {"inventory-report", "report"}:
@@ -711,16 +724,22 @@ def main() -> None:
                 limit=args.limit,
                 stale_days=args.stale_days,
             )
-            report_text = format_inventory_report_result(result)
+            result_payload = serialize_response(result)
+            report_text = format_inventory_report_result(result_payload)
             report_paths: list[str] = []
             if args.report_out:
                 report_path = write_report(args.report_out, report_text)
                 report_paths.append(f"Text report saved to: {report_path}")
             if args.report_out_json:
-                report_path = write_json_report(args.report_out_json, result)
+                report_path = write_json_report(args.report_out_json, result_payload)
                 report_paths.append(f"JSON report saved to: {report_path}")
             if args.report_out_csv:
-                report_path = write_rows_csv(args.report_out_csv, result["rows"], EXPORT_CSV_FIELDNAMES)
+                report_rows = flatten_owned_export_rows(
+                    result_payload["rows"],
+                    inventory_slug=result_payload["inventory"],
+                    provider=result_payload["provider"],
+                )
+                report_path = write_rows_csv(args.report_out_csv, report_rows, EXPORT_CSV_FIELDNAMES)
                 report_paths.append(f"CSV report saved to: {report_path}")
             if report_paths:
                 report_text = f"{report_text}\n\n" + "\n".join(report_paths)
@@ -728,37 +747,48 @@ def main() -> None:
             return
 
         if args.command == "list-owned":
-            rows = list_owned_filtered(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                limit=args.limit,
-                query=args.query,
-                set_code=args.set_code,
-                rarity=args.rarity,
-                finish=args.finish,
-                condition_code=args.condition,
-                language_code=args.language_code,
-                location=args.location,
-                tags=args.tag,
+            rows = serialize_response(
+                list_owned_filtered(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    limit=args.limit,
+                    query=args.query,
+                    set_code=args.set_code,
+                    rarity=args.rarity,
+                    finish=args.finish,
+                    condition_code=args.condition,
+                    language_code=args.language_code,
+                    location=args.location,
+                    tags=args.tag,
+                )
             )
             print(format_owned_rows(rows))
             return
 
         if args.command == "valuation":
-            rows = valuation_filtered(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                query=args.query,
-                set_code=args.set_code,
-                rarity=args.rarity,
-                finish=args.finish,
-                condition_code=args.condition,
-                language_code=args.language_code,
-                location=args.location,
-                tags=args.tag,
-            )
+            rows = [
+                {
+                    **row,
+                    "provider": row.get("provider") or "",
+                    "currency": row.get("currency") or "",
+                }
+                for row in serialize_response(
+                    valuation_filtered(
+                        args.db,
+                        inventory_slug=args.inventory,
+                        provider=args.provider,
+                        query=args.query,
+                        set_code=args.set_code,
+                        rarity=args.rarity,
+                        finish=args.finish,
+                        condition_code=args.condition,
+                        language_code=args.language_code,
+                        location=args.location,
+                        tags=args.tag,
+                    )
+                )
+            ]
             print_table(
                 rows,
                 [
