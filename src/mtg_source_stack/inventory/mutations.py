@@ -7,8 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Callable
 
-from ..db.connection import connect, require_database_file
-from ..db.schema import initialize_database
+from ..db.connection import connect
+from ..db.schema import require_current_schema
 from .audit import load_inventory_item_snapshot, write_inventory_audit_event
 from .catalog import resolve_card_row
 from .money import coerce_decimal
@@ -50,6 +50,10 @@ from .response_models import (
 
 def _build_add_card_result(payload: dict[str, Any]) -> AddCardResult:
     return AddCardResult(**inventory_item_response_kwargs(payload))
+
+
+def _prepared_db_path(db_path: str | Path) -> Path:
+    return require_current_schema(db_path)
 
 
 def add_card_with_connection(
@@ -283,8 +287,8 @@ def add_card(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> AddCardResult:
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         result = add_card_with_connection(
             connection,
             inventory_slug=inventory_slug,
@@ -325,8 +329,8 @@ def set_quantity(
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer. Use remove-card to delete a row.")
 
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         connection.execute(
@@ -372,7 +376,6 @@ def set_acquisition(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetAcquisitionResult:
-    require_database_file(db_path)
     if clear and (acquisition_price is not None or acquisition_currency is not None):
         raise ValueError("Use either --clear or --price / --currency, not both.")
     if not clear and acquisition_price is None and acquisition_currency is None:
@@ -381,8 +384,8 @@ def set_acquisition(
     if normalized_acquisition_price is not None and normalized_acquisition_price < 0:
         raise ValueError("--price must be zero or greater.")
 
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         current_currency = text_or_none(item["acquisition_currency"])
@@ -495,8 +498,8 @@ def set_finish(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetFinishResult:
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         result = set_finish_with_connection(
             connection,
             inventory_slug=inventory_slug,
@@ -523,10 +526,9 @@ def set_location(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetLocationResult:
-    require_database_file(db_path)
-    initialize_database(db_path)
     normalized_location = text_or_none(location) or ""
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         if normalized_location == item["location"]:
@@ -656,10 +658,9 @@ def set_condition(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetConditionResult:
-    require_database_file(db_path)
-    initialize_database(db_path)
     normalized_condition = normalize_condition_code(condition_code)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         if normalized_condition == item["condition_code"]:
@@ -797,14 +798,13 @@ def split_row(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SplitRowResult:
-    require_database_file(db_path)
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer.")
     if clear_location and location is not None:
         raise ValueError("Use either --location or --clear-location, not both.")
 
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         source_item = get_inventory_item_row(connection, inventory_slug, item_id)
         source_before_snapshot = inventory_item_result_from_row(source_item)
         source_quantity = int(source_item["quantity"])
@@ -999,9 +999,9 @@ def set_notes(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetNotesResult:
-    initialize_database(db_path)
     normalized_notes = text_or_none(notes)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         connection.execute(
@@ -1043,8 +1043,8 @@ def set_tags(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetTagsResult:
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         normalized_tags = parse_tags(tags)
@@ -1089,12 +1089,11 @@ def merge_rows(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> MergeRowsResult:
-    require_database_file(db_path)
     if source_item_id == target_item_id:
         raise ValueError("Choose two different item ids when using merge-rows.")
 
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         source_item = get_inventory_item_row(connection, inventory_slug, source_item_id)
         target_item = get_inventory_item_row(connection, inventory_slug, target_item_id)
         source_before_snapshot = inventory_item_result_from_row(source_item)
@@ -1169,9 +1168,8 @@ def remove_card(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> RemoveCardResult:
-    require_database_file(db_path)
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         if before_write is not None:

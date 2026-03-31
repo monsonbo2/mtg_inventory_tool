@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..db.connection import DEFAULT_DB_PATH
+from ..db.schema import initialize_database
 from ..db.snapshots import create_database_snapshot
 from ..inventory.csv_import import import_csv
 from ..inventory.money import parse_decimal_argument
@@ -381,6 +382,8 @@ def main() -> None:
 
     try:
         if args.command == "create-inventory":
+            if not Path(args.db).exists():
+                initialize_database(args.db)
             result = serialize_response(create_inventory(args.db, args.slug, args.display_name, args.description))
             print(f"Created inventory '{result['slug']}' with id={result['inventory_id']}")
             return

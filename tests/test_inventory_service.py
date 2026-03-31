@@ -67,6 +67,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
 
             result = create_inventory(
                 db_path,
@@ -88,6 +89,18 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 },
                 serialize_response(result),
             )
+
+    def test_write_services_require_prepared_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            with self.assertRaisesRegex(ValueError, "does not exist"):
+                create_inventory(
+                    db_path,
+                    slug="personal",
+                    display_name="Personal Collection",
+                    description=None,
+                )
 
     def test_write_services_return_typed_models_and_capture_audit_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

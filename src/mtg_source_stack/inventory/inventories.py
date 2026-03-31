@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 from ..db.connection import connect
-from ..db.schema import initialize_database, require_current_schema
+from ..db.schema import require_current_schema
 from .normalize import text_or_none
 from .response_models import InventoryCreateResult, InventoryListRow
 
@@ -17,8 +17,8 @@ def create_inventory(
     display_name: str,
     description: str | None,
 ) -> InventoryCreateResult:
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
         try:
             cursor = connection.execute(
                 """
@@ -39,8 +39,8 @@ def create_inventory(
 
 
 def list_inventories(db_path: str | Path) -> list[InventoryListRow]:
-    require_current_schema(db_path)
-    with connect(db_path) as connection:
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
         rows = connection.execute(
             """
             SELECT

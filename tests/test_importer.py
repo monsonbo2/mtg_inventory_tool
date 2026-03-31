@@ -8,7 +8,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from mtg_source_stack.db.connection import connect
+from mtg_source_stack.db.connection import SQLITE_BUSY_TIMEOUT_MS, connect
 from tests.common import RepoSmokeTestCase
 from mtg_source_stack.mvp_importer import import_scryfall_cards, initialize_database
 
@@ -44,8 +44,12 @@ class ImporterTest(RepoSmokeTestCase):
 
             with connect(db_path) as connection:
                 pragma_value = connection.execute("PRAGMA foreign_keys").fetchone()[0]
+                journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+                busy_timeout = connection.execute("PRAGMA busy_timeout").fetchone()[0]
 
             self.assertEqual(1, pragma_value)
+            self.assertEqual("wal", str(journal_mode).lower())
+            self.assertEqual(SQLITE_BUSY_TIMEOUT_MS, busy_timeout)
 
     def test_foreign_keys_reject_orphan_inventory_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

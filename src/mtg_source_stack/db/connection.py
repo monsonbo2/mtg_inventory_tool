@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 DEFAULT_DB_PATH = Path("var") / "db" / "mtg_mvp.db"
+SQLITE_BUSY_TIMEOUT_MS = 5_000
 
 
 sqlite3.register_adapter(Decimal, lambda value: format(value, "f"))
@@ -25,9 +26,13 @@ def require_database_file(db_path: str | Path) -> Path:
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
     connection.row_factory = sqlite3.Row
-    # SQLite disables foreign-key enforcement by default on each connection, so
-    # enable it here instead of relying on schema bootstrap side effects.
+    # Keep the local SQLite DB friendly to short concurrent reads/writes once an
+    # HTTP layer sits on top of it, while still preserving the integrity rules
+    # the schema expects.
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+    connection.execute("PRAGMA synchronous = NORMAL")
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
