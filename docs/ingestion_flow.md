@@ -77,6 +77,8 @@ Not implemented yet in the live importer:
 
 - Scryfall defines the local printing rows imported into `mtg_cards`.
 - MTGJSON enriches those rows with vendor IDs and price snapshots.
+- Imported price snapshots keep USD-only market data for now and normalize
+  finish aliases like `nonfoil` into the inventory finish vocabulary.
 - Inventory rows always point at a local `mtg_cards` printing record.
 
 ## Failure Strategy
@@ -117,6 +119,7 @@ MTGJSON prices to local tables:
 Inventory app actions to local tables:
 
 - user-owned copies -> `inventory_items`
+- per-edit mutation history -> `inventory_audit_log`
 
 ## Example End-To-End Flow
 

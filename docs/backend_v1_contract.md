@@ -19,7 +19,7 @@ Future-target design only:
 
 ## Current Runtime Tables
 
-The live backend contract consists of four primary tables:
+The live backend contract consists of five primary tables:
 
 - `mtg_cards`
   Stores printing-level catalog rows imported from Scryfall, plus selected
@@ -31,14 +31,20 @@ The live backend contract consists of four primary tables:
 - `inventory_items`
   Stores owned printings keyed by inventory + printing + condition + finish +
   language + location.
+- `inventory_audit_log`
+  Stores per-edit audit events for inventory mutations, including before/after
+  snapshots plus optional actor and request metadata.
 
 ## Current Product Rules
 
 - Inventory ownership is modeled as current positions, not as a movement
   ledger.
 - Quantity edits mutate `inventory_items` in place.
-- Operator safety comes from explicit commands plus whole-database snapshots.
-- Pricing imports currently keep USD snapshots only.
+- Per-edit inventory mutations are recorded in `inventory_audit_log`.
+- Operator safety comes from explicit commands, per-edit audit history, and
+  whole-database snapshots as the coarse backup layer.
+- Pricing imports currently keep USD snapshots only and normalize finish aliases
+  into the same finish vocabulary used by inventory rows.
 - MTGJSON identifier matching currently relies on `scryfallId` first, then an
   existing `mtgjson_uuid` when present.
 - Catalog search and reporting operate entirely on the local SQLite database.
@@ -53,7 +59,6 @@ The following are not part of the web-v1 backend contract yet:
 - `printing_external_ids`
 - `inventory_positions`
 - `inventory_movements`
-- per-edit audit history
 - automatic live Scryfall fallback during ordinary search requests
 
 Those concepts remain valid future directions, but they are not the current

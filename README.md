@@ -9,6 +9,7 @@ Use it to:
 - create one or more personal inventories
 - add owned printings with condition, finish, language, and location
 - value the collection from imported daily USD price snapshots
+- keep a per-edit audit trail for inventory mutations
 
 If you're new to the repo, the best starting points are this README, the
 walkthrough notebook in `notebooks/`, and the architecture notes in `docs/`.
