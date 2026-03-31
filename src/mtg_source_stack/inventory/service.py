@@ -1,9 +1,11 @@
+"""Inventory mutations, queries, and report assembly for the local CLI."""
+
 from __future__ import annotations
 
 import datetime as dt
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..db.connection import connect, require_database_file
 from ..db.schema import initialize_database
@@ -27,6 +29,7 @@ from .normalize import (
 from .queries import (
     add_catalog_filters,
     add_owned_filters,
+    build_latest_retail_prices_cte,
     find_inventory_item_collision,
     get_inventory_item_row,
     get_inventory_row,
@@ -39,6 +42,7 @@ from .queries import (
     query_missing_location_rows,
     query_missing_tag_rows,
     query_price_gaps,
+    resolve_merge_acquisition,
     query_stale_price_rows,
 )
 from .reports import (
@@ -163,6 +167,8 @@ def resolve_card_row(
     collector_number: str | None,
     lang: str | None,
 ) -> sqlite3.Row:
+    # Resolve by the most specific identifiers first so CLI commands stay
+    # predictable even when names or external product ids are ambiguous.
     if scryfall_id:
         row = connection.execute(
             """
@@ -258,6 +264,7 @@ def add_card_with_connection(
     notes: str | None,
     tags: str | None = None,
     inventory_cache: dict[str, sqlite3.Row] | None = None,
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer.")
@@ -268,6 +275,11 @@ def add_card_with_connection(
     normalized_location = text_or_none(location) or ""
     normalized_acquisition_currency = normalize_currency_code(acquisition_currency)
     normalized_notes = text_or_none(notes)
+    if acquisition_price is None and normalized_acquisition_currency is not None:
+        raise ValueError(
+            "Cannot store an acquisition currency without an acquisition price. "
+            "Use --acquisition-price too, or omit --acquisition-currency."
+        )
     if inventory_cache is None:
         inventory_cache = {}
 
@@ -290,9 +302,17 @@ def add_card_with_connection(
     )
 
     new_tags = parse_tags(tags)
+    # Re-adding the same logical row should accumulate tags instead of replacing
+    # previously attached metadata from earlier imports or manual edits.
     existing_row = connection.execute(
         """
-        SELECT tags_json
+        SELECT
+            id,
+            quantity,
+            tags_json,
+            acquisition_price,
+            acquisition_currency,
+            notes
         FROM inventory_items
         WHERE inventory_id = ?
           AND scryfall_id = ?
@@ -315,53 +335,87 @@ def add_card_with_connection(
         new_tags,
     )
 
-    cursor = connection.execute(
-        """
-        INSERT INTO inventory_items (
-            inventory_id,
-            scryfall_id,
-            quantity,
-            condition_code,
-            finish,
-            language_code,
-            location,
-            acquisition_price,
-            acquisition_currency,
-            notes,
-            tags_json
+    # The unique identity for an inventory row is printing plus
+    # condition/finish/language/location. Matching rows roll quantity forward.
+    if existing_row is not None:
+        existing_notes = text_or_none(existing_row["notes"])
+        if normalized_notes is not None and normalized_notes != existing_notes:
+            raise ValueError(
+                f"Adding to existing row would overwrite notes on item {existing_row['id']}. "
+                "Use set-notes instead."
+            )
+
+        existing_acquisition = None
+        if existing_row["acquisition_price"] is not None:
+            existing_acquisition = (
+                existing_row["acquisition_price"],
+                text_or_none(existing_row["acquisition_currency"]),
+            )
+        incoming_acquisition = None
+        if acquisition_price is not None:
+            incoming_acquisition = (float(acquisition_price), normalized_acquisition_currency)
+
+        if incoming_acquisition is not None and incoming_acquisition != existing_acquisition:
+            raise ValueError(
+                f"Adding to existing row would overwrite acquisition metadata on item {existing_row['id']}. "
+                "Use set-acquisition instead."
+            )
+
+        updated_quantity = int(existing_row["quantity"]) + quantity
+        if before_write is not None:
+            before_write()
+        connection.execute(
+            """
+            UPDATE inventory_items
+            SET quantity = ?, tags_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                updated_quantity,
+                tags_to_json(merged_tags),
+                existing_row["id"],
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (
-            inventory_id,
-            scryfall_id,
-            condition_code,
-            finish,
-            language_code,
-            location
-        ) DO UPDATE SET
-            quantity = inventory_items.quantity + excluded.quantity,
-            acquisition_price = COALESCE(excluded.acquisition_price, inventory_items.acquisition_price),
-            acquisition_currency = COALESCE(excluded.acquisition_currency, inventory_items.acquisition_currency),
-            notes = COALESCE(excluded.notes, inventory_items.notes),
-            tags_json = excluded.tags_json,
-            updated_at = CURRENT_TIMESTAMP
-        RETURNING id, quantity
-        """,
-        (
-            inventory["id"],
-            card["scryfall_id"],
-            quantity,
-            normalized_condition,
-            normalized_finish,
-            normalized_language,
-            normalized_location,
-            acquisition_price,
-            normalized_acquisition_currency,
-            normalized_notes,
-            tags_to_json(merged_tags),
-        ),
-    )
-    item_row = cursor.fetchone()
+        item_id = int(existing_row["id"])
+        item_quantity = updated_quantity
+    else:
+        if before_write is not None:
+            before_write()
+        cursor = connection.execute(
+            """
+            INSERT INTO inventory_items (
+                inventory_id,
+                scryfall_id,
+                quantity,
+                condition_code,
+                finish,
+                language_code,
+                location,
+                acquisition_price,
+                acquisition_currency,
+                notes,
+                tags_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id, quantity
+            """,
+            (
+                inventory["id"],
+                card["scryfall_id"],
+                quantity,
+                normalized_condition,
+                normalized_finish,
+                normalized_language,
+                normalized_location,
+                acquisition_price,
+                normalized_acquisition_currency,
+                normalized_notes,
+                tags_to_json(merged_tags),
+            ),
+        )
+        item_row = cursor.fetchone()
+        item_id = int(item_row["id"])
+        item_quantity = int(item_row["quantity"])
 
     return {
         "inventory": inventory["slug"],
@@ -370,8 +424,8 @@ def add_card_with_connection(
         "set_name": card["set_name"],
         "collector_number": card["collector_number"],
         "scryfall_id": card["scryfall_id"],
-        "item_id": item_row["id"],
-        "quantity": item_row["quantity"],
+        "item_id": item_id,
+        "quantity": item_quantity,
         "finish": normalized_finish,
         "condition_code": normalized_condition,
         "language_code": normalized_language,
@@ -464,7 +518,9 @@ def set_acquisition(
     acquisition_price: float | None,
     acquisition_currency: str | None,
     clear: bool = False,
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    require_database_file(db_path)
     if clear and (acquisition_price is not None or acquisition_currency is not None):
         raise ValueError("Use either --clear or --price / --currency, not both.")
     if not clear and acquisition_price is None and acquisition_currency is None:
@@ -487,6 +543,8 @@ def set_acquisition(
         if new_price is None and new_currency is not None:
             raise ValueError("Cannot store an acquisition currency without an acquisition price. Use --price too, or --clear.")
 
+        if before_write is not None:
+            before_write()
         connection.execute(
             """
             UPDATE inventory_items
@@ -566,7 +624,10 @@ def set_location(
     item_id: int,
     location: str | None,
     merge: bool = False,
+    keep_acquisition: str | None = None,
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    require_database_file(db_path)
     initialize_database(db_path)
     normalized_location = text_or_none(location) or ""
     with connect(db_path) as connection:
@@ -588,16 +649,21 @@ def set_location(
             exclude_item_id=item_id,
         )
         if collision is not None:
+            # Changing an identity field can collapse two rows into one logical
+            # bucket, so require an explicit merge opt-in before combining them.
             if not merge:
                 raise ValueError(
                     "Changing location would collide with an existing inventory row. "
                     "Re-run with --merge to combine the rows, or resolve the duplicate row first."
                 )
+            if before_write is not None:
+                before_write()
             result = merge_inventory_item_rows(
                 connection,
                 inventory_slug=inventory_slug,
                 source_item=item,
                 target_item=collision,
+                acquisition_preference=keep_acquisition,
             )
             result["old_location"] = item["location"]
             result["location"] = normalized_location
@@ -628,7 +694,10 @@ def set_condition(
     item_id: int,
     condition_code: str,
     merge: bool = False,
+    keep_acquisition: str | None = None,
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    require_database_file(db_path)
     initialize_database(db_path)
     normalized_condition = normalize_condition_code(condition_code)
     with connect(db_path) as connection:
@@ -650,16 +719,21 @@ def set_condition(
             exclude_item_id=item_id,
         )
         if collision is not None:
+            # Condition changes can trigger the same row-collision behavior as
+            # location edits, so the merge path is shared here too.
             if not merge:
                 raise ValueError(
                     "Changing condition would collide with an existing inventory row. "
                     "Re-run with --merge to combine the rows, or resolve the duplicate row first."
                 )
+            if before_write is not None:
+                before_write()
             result = merge_inventory_item_rows(
                 connection,
                 inventory_slug=inventory_slug,
                 source_item=item,
                 target_item=collision,
+                acquisition_preference=keep_acquisition,
             )
             result["old_condition_code"] = item["condition_code"]
             result["condition_code"] = normalized_condition
@@ -694,7 +768,10 @@ def split_row(
     language_code: str | None,
     location: str | None,
     clear_location: bool = False,
+    keep_acquisition: str | None = None,
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    require_database_file(db_path)
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer.")
     if clear_location and location is not None:
@@ -738,6 +815,17 @@ def split_row(
             exclude_item_id=item_id,
         )
 
+        if target_item is not None:
+            # Validate any acquisition conflict before touching quantities so a
+            # failed merge request leaves both rows unchanged.
+            resolve_merge_acquisition(
+                source_item,
+                target_item,
+                acquisition_preference=keep_acquisition,
+            )
+
+        if before_write is not None:
+            before_write()
         remaining_quantity = source_quantity - quantity
         if remaining_quantity == 0:
             connection.execute("DELETE FROM inventory_items WHERE id = ?", (item_id,))
@@ -754,6 +842,8 @@ def split_row(
             source_deleted = False
 
         if target_item is not None:
+            # Splitting into an existing compatible row should merge into that
+            # destination instead of manufacturing a third duplicate row.
             result = merge_inventory_item_rows(
                 connection,
                 inventory_slug=inventory_slug,
@@ -761,6 +851,7 @@ def split_row(
                 target_item=target_item,
                 source_quantity=quantity,
                 delete_source=False,
+                acquisition_preference=keep_acquisition,
             )
             result["merged_into_existing"] = True
         else:
@@ -871,7 +962,10 @@ def merge_rows(
     inventory_slug: str,
     source_item_id: int,
     target_item_id: int,
+    keep_acquisition: str | None = None,
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    require_database_file(db_path)
     if source_item_id == target_item_id:
         raise ValueError("Choose two different item ids when using merge-rows.")
 
@@ -883,11 +977,14 @@ def merge_rows(
         if source_item["scryfall_id"] != target_item["scryfall_id"]:
             raise ValueError("merge-rows currently requires both rows to reference the same printing.")
 
+        if before_write is not None:
+            before_write()
         result = merge_inventory_item_rows(
             connection,
             inventory_slug=inventory_slug,
             source_item=source_item,
             target_item=target_item,
+            acquisition_preference=keep_acquisition,
         )
         connection.commit()
 
@@ -901,10 +998,14 @@ def remove_card(
     *,
     inventory_slug: str,
     item_id: int,
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
+    require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        if before_write is not None:
+            before_write()
         connection.execute(
             """
             DELETE FROM inventory_items
@@ -942,6 +1043,12 @@ def reconcile_prices(
     provider: str,
     apply_changes: bool,
 ) -> dict[str, Any]:
+    if apply_changes:
+        raise ValueError(
+            "reconcile-prices is suggestion-only and no longer changes inventory finish values. "
+            "Review the suggestions, then use set-finish manually if you want to update a row."
+        )
+
     initialize_database(db_path)
     with connect(db_path) as connection:
         rows = query_price_gaps(
@@ -951,7 +1058,7 @@ def reconcile_prices(
             limit=None,
         )
 
-        updated_rows: list[dict[str, Any]] = []
+        suggested_rows: list[dict[str, Any]] = []
         remaining_rows: list[dict[str, Any]] = []
         rows_fixable = 0
 
@@ -962,38 +1069,14 @@ def reconcile_prices(
                 continue
 
             rows_fixable += 1
-            if not apply_changes:
-                updated_rows.append(row)
-                continue
-
-            try:
-                updated = set_finish_with_connection(
-                    connection,
-                    inventory_slug=inventory_slug,
-                    item_id=row["item_id"],
-                    finish=suggested_finish,
-                )
-            except ValueError as exc:
-                row["reconcile_status"] = str(exc)
-                remaining_rows.append(row)
-                continue
-
-            updated["available_finishes"] = row["available_finishes"]
-            updated["suggested_finish"] = suggested_finish
-            updated["reconcile_status"] = "updated"
-            updated_rows.append(updated)
-
-        if apply_changes:
-            connection.commit()
+            suggested_rows.append(row)
 
     return {
         "inventory": inventory_slug,
         "provider": provider,
-        "applied": apply_changes,
         "rows_seen": len(rows),
         "rows_fixable": rows_fixable,
-        "rows_updated": len(updated_rows) if apply_changes else 0,
-        "updated_rows": updated_rows,
+        "suggested_rows": suggested_rows,
         "remaining_rows": remaining_rows,
     }
 
@@ -1113,11 +1196,12 @@ def list_owned_filtered(
     initialize_database(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
-        params: list[Any] = [provider, inventory_slug]
+        latest_prices_cte, latest_price_params = build_latest_retail_prices_cte(provider=provider)
+        where_params: list[Any] = [inventory_slug]
         where_parts = ["i.slug = ?"]
         add_owned_filters(
             where_parts,
-            params,
+            where_params,
             query=query,
             set_code=set_code,
             rarity=rarity,
@@ -1128,28 +1212,14 @@ def list_owned_filtered(
             tags=tags,
         )
         limit_sql = ""
+        params: list[Any] = [*latest_price_params, *where_params]
         if limit is not None:
             limit_sql = "LIMIT ?"
             params.append(limit)
 
         rows = connection.execute(
             f"""
-            WITH latest_prices AS (
-                SELECT
-                    scryfall_id,
-                    provider,
-                    finish,
-                    currency,
-                    price_value,
-                    snapshot_date,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY scryfall_id, provider, finish, currency
-                        ORDER BY snapshot_date DESC, id DESC
-                    ) AS rn
-                FROM price_snapshots
-                WHERE price_kind = 'retail'
-                  AND provider = ?
-            )
+            WITH {latest_prices_cte}
             SELECT
                 ii.id AS item_id,
                 ii.scryfall_id,
@@ -1278,11 +1348,12 @@ def valuation_filtered(
         get_inventory_row(connection, inventory_slug)
 
         if provider:
-            params: list[Any] = [provider, provider, inventory_slug]
+            latest_prices_cte, latest_price_params = build_latest_retail_prices_cte(provider=provider)
+            where_params: list[Any] = [inventory_slug]
             where_parts = ["i.slug = ?"]
             add_owned_filters(
                 where_parts,
-                params,
+                where_params,
                 query=query,
                 set_code=set_code,
                 rarity=rarity,
@@ -1292,23 +1363,10 @@ def valuation_filtered(
                 location=location,
                 tags=tags,
             )
+            params: list[Any] = [*latest_price_params, provider, *where_params]
             rows = connection.execute(
                 f"""
-                WITH latest_prices AS (
-                    SELECT
-                        scryfall_id,
-                        provider,
-                        finish,
-                        currency,
-                        price_value,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY scryfall_id, provider, finish, currency
-                            ORDER BY snapshot_date DESC, id DESC
-                        ) AS rn
-                    FROM price_snapshots
-                    WHERE price_kind = 'retail'
-                      AND provider = ?
-                )
+                WITH {latest_prices_cte}
                 SELECT
                     ? AS provider,
                     COALESCE(lp.currency, '') AS currency,
@@ -1330,11 +1388,12 @@ def valuation_filtered(
             ).fetchall()
             return [dict(row) for row in rows]
 
-        params = [inventory_slug]
+        latest_prices_cte, latest_price_params = build_latest_retail_prices_cte(provider=None)
+        where_params = [inventory_slug]
         where_parts = ["i.slug = ?"]
         add_owned_filters(
             where_parts,
-            params,
+            where_params,
             query=query,
             set_code=set_code,
             rarity=rarity,
@@ -1344,22 +1403,10 @@ def valuation_filtered(
             location=location,
             tags=tags,
         )
+        params = [*latest_price_params, *where_params]
         rows = connection.execute(
             f"""
-            WITH latest_prices AS (
-                SELECT
-                    scryfall_id,
-                    provider,
-                    finish,
-                    currency,
-                    price_value,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY scryfall_id, provider, finish, currency
-                        ORDER BY snapshot_date DESC, id DESC
-                    ) AS rn
-                FROM price_snapshots
-                WHERE price_kind = 'retail'
-            )
+            WITH {latest_prices_cte}
             SELECT
                 lp.provider,
                 lp.currency,
@@ -1380,6 +1427,62 @@ def valuation_filtered(
             params,
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+def build_duplicate_groups_from_owned_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            row["scryfall_id"],
+            row["condition_code"],
+            row["finish"],
+            row["language_code"],
+        )
+        group = grouped.setdefault(
+            key,
+            {
+                "scryfall_id": row["scryfall_id"],
+                "condition_code": row["condition_code"],
+                "language_code": row["language_code"],
+                "name": truncate(row["name"], 28),
+                "set": row["set_code"],
+                "number": row["collector_number"],
+                "cond": row["condition_code"],
+                "finish": row["finish"],
+                "rows": 0,
+                "qty": 0,
+                "_locations": set(),
+            },
+        )
+        group["rows"] += 1
+        group["qty"] += int(row["quantity"])
+        group["_locations"].add(text_or_none(row.get("location")) or "(none)")
+
+    duplicate_groups: list[dict[str, Any]] = []
+    for group in grouped.values():
+        if group["rows"] <= 1:
+            continue
+        locations = ", ".join(sorted(group["_locations"]))
+        duplicate_groups.append(
+            {
+                "scryfall_id": group["scryfall_id"],
+                "condition_code": group["condition_code"],
+                "language_code": group["language_code"],
+                "name": group["name"],
+                "set": group["set"],
+                "number": group["number"],
+                "cond": group["cond"],
+                "finish": group["finish"],
+                "rows": group["rows"],
+                "qty": group["qty"],
+                "locations": truncate(locations, 32),
+            }
+        )
+
+    duplicate_groups.sort(
+        key=lambda row: (-int(row["rows"]), -int(row["qty"]), row["name"], row["set"], row["number"])
+    )
+    return duplicate_groups
 
 
 def inventory_report(
@@ -1474,11 +1577,12 @@ def inventory_report(
     if filters_text == "(none)":
         filtered_health_summary = health["summary"]
     else:
+        # Row-level health buckets can be filtered by item id, but duplicate
+        # groups need to be recomputed from the report rows themselves so a
+        # slice containing only one side of a duplicate pair does not inherit
+        # the full-inventory group.
         filtered_ids = {row["item_id"] for row in rows}
-        filtered_duplicate_keys = {
-            (row["scryfall_id"], row["condition_code"], row["finish"], row["language_code"])
-            for row in rows
-        }
+        filtered_duplicate_groups = build_duplicate_groups_from_owned_rows(rows)
         filtered_health = {
             **health,
             "missing_price_rows": [row for row in health["missing_price_rows"] if row["item_id"] in filtered_ids],
@@ -1486,17 +1590,7 @@ def inventory_report(
             "missing_tag_rows": [row for row in health["missing_tag_rows"] if row["item_id"] in filtered_ids],
             "merge_note_rows": [row for row in health["merge_note_rows"] if row["item_id"] in filtered_ids],
             "stale_price_rows": [row for row in health["stale_price_rows"] if row["item_id"] in filtered_ids],
-            "duplicate_groups": [
-                row
-                for row in health["duplicate_groups"]
-                if (
-                    row["scryfall_id"],
-                    row["condition_code"],
-                    row["finish"],
-                    row["language_code"],
-                )
-                in filtered_duplicate_keys
-            ],
+            "duplicate_groups": filtered_duplicate_groups,
         }
         filtered_health_summary.update(
             {

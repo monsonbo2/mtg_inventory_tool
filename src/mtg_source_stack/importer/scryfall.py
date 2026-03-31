@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..db.connection import connect
+from ..db.schema import initialize_database
 from .service import ImportStats, compact_json, first_non_empty, load_json, text_or_none
 
 
@@ -43,10 +44,24 @@ def iter_scryfall_cards(payload: Any) -> list[dict[str, Any]]:
     raise ValueError("Expected Scryfall bulk data to be a JSON list or an object with a data list.")
 
 
-def import_scryfall_cards(db_path: str | Path, json_path: str | Path, limit: int | None = None) -> ImportStats:
+def import_scryfall_cards(
+    db_path: str | Path,
+    json_path: str | Path,
+    limit: int | None = None,
+    *,
+    before_write: Callable[[], Any] | None = None,
+) -> ImportStats:
     payload = load_json(json_path)
     cards = iter_scryfall_cards(payload)
     stats = ImportStats()
+    initialize_database(db_path)
+    snapshot_taken = False
+
+    def maybe_before_write() -> None:
+        nonlocal snapshot_taken
+        if before_write is not None and not snapshot_taken:
+            before_write()
+            snapshot_taken = True
 
     sql = """
     INSERT INTO mtg_cards (
@@ -118,6 +133,7 @@ def import_scryfall_cards(db_path: str | Path, json_path: str | Path, limit: int
                 stats.rows_skipped += 1
                 continue
 
+            maybe_before_write()
             connection.execute(
                 sql,
                 (
@@ -151,4 +167,3 @@ def import_scryfall_cards(db_path: str | Path, json_path: str | Path, limit: int
         connection.commit()
 
     return stats
-

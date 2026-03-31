@@ -1,14 +1,13 @@
+"""Helpers for bulk-download orchestration and importer CLI output."""
+
 from __future__ import annotations
 
 import gzip
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.request import Request, urlopen
-
-from ..db.schema import initialize_database
-
 
 DEFAULT_BULK_CACHE_DIR = Path("var") / "bulk_cache" / "latest"
 SCRYFALL_BULK_METADATA_URL = "https://api.scryfall.com/bulk-data"
@@ -38,14 +37,23 @@ class DownloadResult:
 
 def open_text(path: str | Path):
     file_path = Path(path)
+    # MTGJSON payloads are often shipped as gzip files; callers should not need
+    # to care whether a fixture or download is compressed.
     if file_path.suffix == ".gz":
         return gzip.open(file_path, mode="rt", encoding="utf-8")
     return file_path.open(mode="r", encoding="utf-8")
 
 
 def load_json(path: str | Path) -> Any:
-    with open_text(path) as handle:
-        return json.load(handle)
+    try:
+        with open_text(path) as handle:
+            return json.load(handle)
+    except OSError as exc:
+        raise ValueError(f"Could not read JSON file '{path}'.") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Could not parse JSON file '{path}': {exc.msg} at line {exc.lineno}, column {exc.colno}."
+        ) from exc
 
 
 def open_url(url: str, headers: dict[str, str] | None = None, timeout: int = 120):
@@ -54,8 +62,15 @@ def open_url(url: str, headers: dict[str, str] | None = None, timeout: int = 120
 
 
 def load_json_url(url: str, headers: dict[str, str] | None = None, timeout: int = 120) -> Any:
-    with open_url(url, headers=headers, timeout=timeout) as handle:
-        return json.load(handle)
+    try:
+        with open_url(url, headers=headers, timeout=timeout) as handle:
+            return json.load(handle)
+    except OSError as exc:
+        raise ValueError(f"Could not read JSON from URL '{url}': {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Could not parse JSON from URL '{url}': {exc.msg} at line {exc.lineno}, column {exc.colno}."
+        ) from exc
 
 
 def download_to_path(
@@ -187,11 +202,10 @@ def sync_bulk(
     mtgjson_prices_url: str = MTGJSON_PRICES_URL,
     limit: int | None = None,
     source_name: str = "mtgjson_all_prices_today",
+    before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     from .mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
     from .scryfall import import_scryfall_cards
-
-    initialize_database(db_path)
 
     cache_path = Path(cache_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
@@ -201,6 +215,8 @@ def sync_bulk(
         bulk_type=scryfall_bulk_type,
     )
 
+    # Download first and import from the cached artifacts so reruns can inspect
+    # the exact files that were used to populate the database.
     downloads = [
         download_to_path(
             scryfall_download_url,
@@ -222,9 +238,11 @@ def sync_bulk(
         ),
     ]
 
-    scryfall_stats = import_scryfall_cards(db_path, downloads[0].path, limit)
-    identifier_stats = import_mtgjson_identifiers(db_path, downloads[1].path, limit)
-    price_stats = import_mtgjson_prices(db_path, downloads[2].path, limit, source_name)
+    # The imports are ordered to establish catalog rows first, then enrich them
+    # with identifier crosswalks, and finally attach price snapshots.
+    scryfall_stats = import_scryfall_cards(db_path, downloads[0].path, limit, before_write=before_write)
+    identifier_stats = import_mtgjson_identifiers(db_path, downloads[1].path, limit, before_write=before_write)
+    price_stats = import_mtgjson_prices(db_path, downloads[2].path, limit, source_name, before_write=before_write)
 
     return {
         "db_path": str(Path(db_path)),

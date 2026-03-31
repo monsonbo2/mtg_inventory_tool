@@ -23,4 +23,7 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
+    # SQLite disables foreign-key enforcement by default on each connection, so
+    # enable it here instead of relying on schema bootstrap side effects.
+    connection.execute("PRAGMA foreign_keys = ON")
     return connection

@@ -1,3 +1,5 @@
+"""Focused tests for CSV import behavior and reporting."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +10,7 @@ from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryCsvImportTest(RepoSmokeTestCase):
-    def test_import_csv_auto_adjusts_single_catalog_finish_and_reports_it(self) -> None:
+    def test_import_csv_leaves_finish_unchanged_when_csv_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
             db_path = tmp / "collection.db"
@@ -25,6 +27,8 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             prices_path = bundle["prices.json"]
             csv_path = bundle["archidekt_like.csv"]
 
+            # Seed the catalog with a card that only has foil pricing so the CSV
+            # import can prove it no longer rewrites finish based on pricing data.
             import_output = self.run_importer(
                 "import-all",
                 "--db",
@@ -49,6 +53,8 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             )
             self.assertIn("Created inventory 'personal'", create_output)
 
+            # When the CSV omits finish, the import should keep the default
+            # inventory finish instead of inferring one from the catalog.
             csv_import_output = self.run_cli(
                 "import-csv",
                 "--db",
@@ -59,10 +65,8 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
                 "personal",
             )
             self.assertIn("Rows imported: 1", csv_import_output)
-            self.assertIn("Finish adjustments: 1", csv_import_output)
-            self.assertIn("Automatic finish adjustments", csv_import_output)
             self.assertIn("Shiny Bird", csv_import_output)
-            self.assertIn("single catalog finish", csv_import_output)
+            self.assertNotIn("Automatic finish adjustments", csv_import_output)
 
             owned_output = self.run_cli(
                 "list-owned",
@@ -74,8 +78,19 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
                 "tcgplayer",
             )
             self.assertIn("Shiny Bird", owned_output)
-            self.assertIn("foil", owned_output)
-            self.assertIn("5.0", owned_output)
+            self.assertIn("normal", owned_output)
+
+            gap_output = self.run_cli(
+                "price-gaps",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--provider",
+                "tcgplayer",
+            )
+            self.assertIn("Shiny Bird", gap_output)
+            self.assertIn("foil", gap_output)
 
     def test_import_csv_dry_run_writes_report_and_leaves_db_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -97,6 +112,9 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             prices_path = bundle["prices.json"]
             csv_path = bundle["inventory_import.csv"]
 
+            # Populate the database normally first; the behavior under test is
+            # that the later CSV preview reports what would happen without
+            # mutating inventory rows.
             import_output = self.run_importer(
                 "import-all",
                 "--db",
@@ -121,6 +139,8 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             )
             self.assertIn("Created inventory 'personal'", create_output)
 
+            # Dry-run mode should still emit the same user-facing reports, but
+            # all writes stay in the preview artifacts instead of the database.
             preview_output = self.run_cli(
                 "import-csv",
                 "--db",
@@ -161,6 +181,8 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertIn("Preview Bolt", report_csv_text)
             self.assertIn("True", report_csv_text)
 
+            # Listing inventory at the end verifies that the preview did not
+            # create any persistent inventory rows.
             owned_output = self.run_cli(
                 "list-owned",
                 "--db",

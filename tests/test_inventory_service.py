@@ -1,3 +1,5 @@
+"""Service-level workflow tests for inventory maintenance and reporting."""
+
 from __future__ import annotations
 
 import json
@@ -5,12 +7,223 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from mtg_source_stack.inventory.service import inventory_report
+from mtg_source_stack.db.connection import connect
+from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.inventory.service import (
+    inventory_report,
+    list_owned_filtered,
+    list_price_gaps,
+    reconcile_prices,
+    valuation_filtered,
+)
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryServiceTest(RepoSmokeTestCase):
-    def test_reconcile_prices_updates_finish_when_one_priced_finish_exists(self) -> None:
+    def test_price_gaps_and_reconcile_use_latest_snapshot_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES ('gap-card-1', 'oracle-1', 'Gap Test Card', 'tst', 'Test Set', '1', '["normal","foil"]')
+                    """
+                )
+                inventory_id = connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        tags_json
+                    )
+                    VALUES (?, 'gap-card-1', 1, 'NM', 'normal', 'en', 'Binder', '[]')
+                    """,
+                    (inventory_id,),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO price_snapshots (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        price_value,
+                        source_name
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        ("gap-card-1", "tcgplayer", "retail", "normal", "USD", "2026-03-01", 1.50, "test"),
+                        ("gap-card-1", "tcgplayer", "retail", "foil", "USD", "2026-03-29", 5.00, "test"),
+                    ],
+                )
+
+            gap_rows = list_price_gaps(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+            )
+            reconcile_preview = reconcile_prices(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                apply_changes=False,
+            )
+
+            self.assertEqual(1, len(gap_rows))
+            self.assertEqual("gap-card-1", gap_rows[0]["scryfall_id"])
+            self.assertEqual(["foil"], gap_rows[0]["available_finishes"])
+            self.assertEqual("foil", gap_rows[0]["suggested_finish"])
+            self.assertEqual("single priced finish", gap_rows[0]["reconcile_status"])
+
+            self.assertEqual(1, reconcile_preview["rows_seen"])
+            self.assertEqual(1, reconcile_preview["rows_fixable"])
+            self.assertEqual(["foil"], reconcile_preview["suggested_rows"][0]["available_finishes"])
+
+            with self.assertRaisesRegex(ValueError, "suggestion-only"):
+                reconcile_prices(
+                    db_path,
+                    inventory_slug="personal",
+                    provider="tcgplayer",
+                    apply_changes=True,
+                )
+
+    def test_latest_price_queries_ignore_non_usd_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('price-card-1', 'oracle-1', 'Price Test Card', 'tst', 'Test Set', '1')
+                    """
+                )
+                inventory_id = connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        tags_json
+                    )
+                    VALUES (?, 'price-card-1', 2, 'NM', 'normal', 'en', 'Binder', '[]')
+                    """,
+                    (inventory_id,),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO price_snapshots (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        price_value,
+                        source_name
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        ("price-card-1", "tcgplayer", "retail", "normal", "USD", "2026-03-27", 2.00, "test"),
+                        ("price-card-1", "tcgplayer", "retail", "normal", "EUR", "2026-03-28", 9.99, "legacy"),
+                        ("price-card-1", "tcgplayer", "retail", "normal", "USD", "2026-03-29", 2.50, "test"),
+                    ],
+                )
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            valuation_rows = valuation_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+
+            self.assertEqual(1, len(owned_rows))
+            self.assertEqual("USD", owned_rows[0]["currency"])
+            self.assertEqual(2.5, owned_rows[0]["unit_price"])
+            self.assertEqual(5.0, owned_rows[0]["est_value"])
+
+            self.assertEqual(
+                [
+                    {
+                        "provider": "tcgplayer",
+                        "currency": "USD",
+                        "item_rows": 1,
+                        "total_cards": 2,
+                        "total_value": 5.0,
+                    }
+                ],
+                valuation_rows,
+            )
+
+    def test_reconcile_prices_only_suggests_finish_when_one_priced_finish_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
             db_path = tmp / "collection.db"
@@ -25,6 +238,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             identifiers_path = bundle["identifiers.json"]
             prices_path = bundle["prices.json"]
 
+            # The fixture only has a foil-priced version, which forces the
+            # reconcile flow to detect and fix the mismatched inventory finish.
             import_output = self.run_importer(
                 "import-all",
                 "--db",
@@ -77,6 +292,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("foil", gap_output)
             self.assertIn("single priced finish", gap_output)
 
+            # Reconciliation should now stay suggestion-only even when it can
+            # see a single likely finish from current pricing data.
             preview_output = self.run_cli(
                 "reconcile-prices",
                 "--db",
@@ -86,10 +303,11 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "--provider",
                 "tcgplayer",
             )
-            self.assertIn("Rows updated: 0", preview_output)
-            self.assertIn("Mode: preview only", preview_output)
+            self.assertIn("Mode: suggestion only (no changes applied)", preview_output)
+            self.assertIn("Suggested rows", preview_output)
+            self.assertIn("Shiny Bird", preview_output)
 
-            reconcile_output = self.run_cli(
+            reconcile_output = self.run_failing_cli(
                 "reconcile-prices",
                 "--db",
                 str(db_path),
@@ -99,8 +317,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "tcgplayer",
                 "--apply",
             )
-            self.assertIn("Rows updated: 1", reconcile_output)
-            self.assertIn("Shiny Bird", reconcile_output)
+            self.assertEqual(2, reconcile_output.returncode)
+            self.assertIn("suggestion-only", reconcile_output.stderr)
 
             owned_output = self.run_cli(
                 "list-owned",
@@ -112,8 +330,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "tcgplayer",
             )
             self.assertIn("Shiny Bird", owned_output)
-            self.assertIn("foil", owned_output)
-            self.assertIn("5.0", owned_output)
+            self.assertIn("normal", owned_output)
 
     def test_inventory_health_reports_missing_data_and_stale_prices(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -200,6 +417,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Seed deliberately messy rows so the report has examples for every
+            # health bucket: missing prices, missing metadata, stale prices, and
+            # duplicate-like holdings.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -395,6 +615,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Set up one editable row plus a second printing so the test can
+            # cover both successful row surgery and a guarded merge failure.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -480,6 +702,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("Target quantity now: 1", split_output)
             self.assertIn("Merged into existing row: no", split_output)
 
+            # The split should leave two independently addressable rows before
+            # the explicit merge command recombines them.
             owned_after_split = self.run_cli(
                 "list-owned",
                 "--db",
@@ -523,6 +747,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             ).fetchall()
             connection.close()
 
+            # Inspecting the table directly keeps the test focused on stored
+            # state, not just formatted CLI output.
             self.assertEqual([(1, 4, "Binder A", 1.75, "USD")], rows)
 
             self.run_cli(
@@ -623,6 +849,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "nonfoil",
             )
 
+            # Case and alias normalization should collapse these into the same
+            # logical row instead of creating near-duplicate entries.
             connection = sqlite3.connect(db_path)
             rows = connection.execute(
                 """
@@ -719,6 +947,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Add one duplicate-like group and one unrelated row, then call the
+            # service function directly to verify health data is filtered to the
+            # report query instead of being computed globally and sliced later.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -809,6 +1040,29 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(0, report["health"]["summary"]["duplicate_groups"])
             self.assertEqual([], report["health"]["duplicate_groups"])
 
+            # Filtering down to one row from a duplicate-like group should also
+            # clear the duplicate warning instead of inheriting the full-group
+            # result from the inventory-wide health scan.
+            one_side_report = inventory_report(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location="Box 1",
+                tags=None,
+                limit=5,
+                stale_days=30,
+            )
+
+            self.assertEqual(1, one_side_report["summary"]["item_rows"])
+            self.assertEqual(0, one_side_report["health"]["summary"]["duplicate_groups"])
+            self.assertEqual([], one_side_report["health"]["duplicate_groups"])
+
     def test_export_csv_and_inventory_report_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -898,6 +1152,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Seed one fully annotated row and one intentionally incomplete row
+            # so the exported reports contain both valuation data and health
+            # warnings.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -984,6 +1241,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("Lightning Bolt", export_text)
             self.assertNotIn("Counterspell", export_text)
 
+            # The inventory report command emits the human-readable summary plus
+            # machine-readable JSON/CSV artifacts for downstream tooling.
             report_output = self.run_cli(
                 "inventory-report",
                 "--db",

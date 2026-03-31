@@ -1,3 +1,5 @@
+"""Formatting helpers for human-readable and exportable inventory reports."""
+
 from __future__ import annotations
 
 import csv
@@ -143,6 +145,7 @@ def format_set_location_result(result: dict[str, Any]) -> str:
             f"Condition: {result['condition_code']}",
             f"Finish: {result['finish']}",
             f"Language: {result['language_code']}",
+            f"Acquisition: {format_acquisition_text(result['acquisition_price'], result['acquisition_currency'])}",
             f"Notes: {format_optional_text(result['notes'])}",
             f"Tags: {format_tags(result['tags'])}",
             f"Inventory: {result['inventory']}",
@@ -176,6 +179,7 @@ def format_set_condition_result(result: dict[str, Any]) -> str:
             f"Finish: {result['finish']}",
             f"Language: {result['language_code']}",
             f"Location: {format_optional_text(result['location'])}",
+            f"Acquisition: {format_acquisition_text(result['acquisition_price'], result['acquisition_currency'])}",
             f"Notes: {format_optional_text(result['notes'])}",
             f"Tags: {format_tags(result['tags'])}",
             f"Inventory: {result['inventory']}",
@@ -317,8 +321,6 @@ def format_import_csv_result(result: dict[str, Any]) -> str:
     if default_inventory:
         lines.append(f"Default inventory: {default_inventory}")
 
-    lines.append(f"Finish adjustments: {result.get('finish_adjustment_count', 0)}")
-
     preview_rows = []
     for row in result["imported_rows"][:CSV_PREVIEW_LIMIT]:
         preview_rows.append(
@@ -362,47 +364,6 @@ def format_import_csv_result(result: dict[str, Any]) -> str:
         if remaining_rows > 0:
             lines.append(f"... {remaining_rows} more imported row(s) not shown.")
 
-    adjustment_rows = []
-    for row in result.get("finish_adjustments", [])[:CSV_PREVIEW_LIMIT]:
-        adjustment_rows.append(
-            {
-                "csv_row": row["csv_row"],
-                "inventory": row["inventory"],
-                "name": truncate(row["card_name"], 28),
-                "set": row["set_code"],
-                "number": row["collector_number"],
-                "from": row["old_finish"],
-                "to": row["new_finish"],
-                "reason": truncate(row["reason"], 24),
-            }
-        )
-
-    if adjustment_rows:
-        lines.extend(
-            [
-                "",
-                "Automatic finish adjustments",
-                "",
-                render_table(
-                    adjustment_rows,
-                    [
-                        ("csv_row", "csv_row"),
-                        ("inventory", "inventory"),
-                        ("name", "name"),
-                        ("set", "set"),
-                        ("number", "number"),
-                        ("from", "from"),
-                        ("to", "to"),
-                        ("reason", "reason"),
-                    ],
-                ),
-            ]
-        )
-
-        remaining_adjustments = result["finish_adjustment_count"] - len(adjustment_rows)
-        if remaining_adjustments > 0:
-            lines.append(f"... {remaining_adjustments} more finish adjustment(s) not shown.")
-
     return "\n".join(lines)
 
 
@@ -443,10 +404,8 @@ def write_rows_csv(path: str | Path, rows: list[dict[str, Any]], fieldnames: lis
 
 
 def flatten_import_csv_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
-    adjustment_by_row = {row["csv_row"]: row for row in result.get("finish_adjustments", [])}
     flattened: list[dict[str, Any]] = []
     for row in result.get("imported_rows", []):
-        adjustment = adjustment_by_row.get(row["csv_row"])
         flattened.append(
             {
                 "csv_path": result["csv_path"],
@@ -466,10 +425,6 @@ def flatten_import_csv_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "tags": format_tags(row["tags"]),
                 "item_id": row["item_id"],
                 "scryfall_id": row["scryfall_id"],
-                "finish_adjusted": adjustment is not None,
-                "old_finish": adjustment["old_finish"] if adjustment is not None else "",
-                "new_finish": adjustment["new_finish"] if adjustment is not None else "",
-                "adjustment_reason": adjustment["reason"] if adjustment is not None else "",
             }
         )
     return flattened
@@ -496,10 +451,6 @@ def write_csv_report(path: str | Path, result: dict[str, Any]) -> Path:
         "tags",
         "item_id",
         "scryfall_id",
-        "finish_adjusted",
-        "old_finish",
-        "new_finish",
-        "adjustment_reason",
     ]
     return write_rows_csv(report_path, rows, fieldnames)
 
@@ -685,6 +636,8 @@ def build_currency_totals(
         )
         bucket["item_rows"] += 1
         bucket["total_cards"] += int(row.get(quantity_key, 0) or 0)
+        # Acquisition price is stored per card, while estimated value rows are
+        # already extended totals from SQL.
         if value_key == "acquisition_price":
             bucket["total_amount"] += amount * int(row.get(quantity_key, 0) or 0)
         else:
@@ -854,24 +807,22 @@ def format_price_gap_rows(rows: list[dict[str, Any]]) -> str:
 
 def format_reconcile_prices_result(result: dict[str, Any]) -> str:
     lines = [
-        "Reconciled inventory pricing finishes",
+        "Reviewed inventory pricing finishes",
         "",
         f"Inventory: {result['inventory']}",
         f"Provider: {result['provider']}",
         f"Rows with missing current-price matches: {result['rows_seen']}",
         f"Rows with a single suggested finish: {result['rows_fixable']}",
-        f"Rows updated: {result['rows_updated']}",
+        "Mode: suggestion only (no changes applied)",
     ]
-    if not result["applied"]:
-        lines.append("Mode: preview only")
 
-    if result["updated_rows"]:
+    if result["suggested_rows"]:
         lines.extend(
             [
                 "",
-                "Updated rows",
+                "Suggested rows",
                 "",
-                format_price_gap_rows(result["updated_rows"]),
+                format_price_gap_rows(result["suggested_rows"]),
             ]
         )
 
@@ -900,6 +851,8 @@ def append_preview_section(
     if not rows:
         return
 
+    # Show a bounded preview for each health category so reports stay useful on
+    # large inventories without becoming overwhelmingly long.
     preview_rows = rows[:limit]
     lines.extend(["", title, "", render_table(preview_rows, columns)])
     remaining = len(rows) - len(preview_rows)

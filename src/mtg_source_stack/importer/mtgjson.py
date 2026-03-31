@@ -1,18 +1,47 @@
+"""MTGJSON importers for identifier crosswalks and historical price data."""
+
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Callable
 
 from ..db.connection import connect
+from ..db.schema import initialize_database
+from ..pricing import DEFAULT_PRICE_CURRENCY
 from .service import ImportStats, first_non_empty, load_json, text_or_none
 
 
-def import_mtgjson_identifiers(db_path: str | Path, json_path: str | Path, limit: int | None = None) -> ImportStats:
+def import_mtgjson_identifiers(
+    db_path: str | Path,
+    json_path: str | Path,
+    limit: int | None = None,
+    *,
+    before_write: Callable[[], Any] | None = None,
+) -> ImportStats:
     payload = load_json(json_path)
     data = payload.get("data", {}) if isinstance(payload, dict) else {}
     if not isinstance(data, dict):
         raise ValueError("Expected MTGJSON identifiers to contain an object at payload['data'].")
 
     stats = ImportStats()
+    initialize_database(db_path)
+    snapshot_taken = False
+
+    def maybe_before_write() -> None:
+        nonlocal snapshot_taken
+        if before_write is not None and not snapshot_taken:
+            before_write()
+            snapshot_taken = True
+
+    with connect(db_path) as connection:
+        known_rows = connection.execute(
+            """
+            SELECT scryfall_id, mtgjson_uuid
+            FROM mtg_cards
+            """
+        ).fetchall()
+    known_scryfall_ids = {row["scryfall_id"] for row in known_rows if row["scryfall_id"] is not None}
+    known_mtgjson_uuids = {row["mtgjson_uuid"] for row in known_rows if row["mtgjson_uuid"] is not None}
 
     with connect(db_path) as connection:
         for index, (uuid, identifier_record) in enumerate(data.items(), start=1):
@@ -32,6 +61,10 @@ def import_mtgjson_identifiers(db_path: str | Path, json_path: str | Path, limit
             mtgjson_uuid = text_or_none(uuid)
 
             if scryfall_id is not None:
+                # Prefer joining on Scryfall id when possible because it is the
+                # canonical key already stored on catalog rows.
+                if scryfall_id in known_scryfall_ids:
+                    maybe_before_write()
                 cursor = connection.execute(
                     """
                     UPDATE mtg_cards
@@ -74,6 +107,10 @@ def import_mtgjson_identifiers(db_path: str | Path, json_path: str | Path, limit
                 continue
 
             if mtgjson_uuid is not None:
+                # Some older rows may already have the MTGJSON UUID even when the
+                # identifier payload does not repeat a usable Scryfall id.
+                if mtgjson_uuid in known_mtgjson_uuids:
+                    maybe_before_write()
                 cursor = connection.execute(
                     """
                     UPDATE mtg_cards
@@ -125,12 +162,15 @@ def import_mtgjson_prices(
     json_path: str | Path,
     limit: int | None = None,
     source_name: str = "mtgjson_all_prices_today",
+    *,
+    before_write: Callable[[], Any] | None = None,
 ) -> ImportStats:
     payload = load_json(json_path)
     data = payload.get("data", {}) if isinstance(payload, dict) else {}
     if not isinstance(data, dict):
         raise ValueError("Expected MTGJSON prices to contain an object at payload['data'].")
 
+    initialize_database(db_path)
     with connect(db_path) as connection:
         rows = connection.execute(
             """
@@ -139,9 +179,18 @@ def import_mtgjson_prices(
             WHERE mtgjson_uuid IS NOT NULL
             """
         ).fetchall()
+        # MTGJSON price payloads are keyed by UUID, so build the lookup once
+        # instead of querying the catalog row-by-row during import.
         uuid_to_scryfall = {row["mtgjson_uuid"]: row["scryfall_id"] for row in rows}
 
     stats = ImportStats()
+    snapshot_taken = False
+
+    def maybe_before_write() -> None:
+        nonlocal snapshot_taken
+        if before_write is not None and not snapshot_taken:
+            before_write()
+            snapshot_taken = True
 
     sql = """
     INSERT INTO price_snapshots (
@@ -191,7 +240,12 @@ def import_mtgjson_prices(
                     if not isinstance(provider_payload, dict):
                         continue
 
-                    currency = first_non_empty(provider_payload.get("currency"), "USD")
+                    currency = str(first_non_empty(provider_payload.get("currency"), DEFAULT_PRICE_CURRENCY)).upper()
+                    # Step 2 intentionally constrains imported market data to a
+                    # single currency so downstream pricing reads stay
+                    # unambiguous. Non-USD snapshots are ignored for now.
+                    if currency != DEFAULT_PRICE_CURRENCY:
+                        continue
                     for price_kind in ("retail", "buylist"):
                         price_points = provider_payload.get(price_kind)
                         if not isinstance(price_points, dict):
@@ -207,6 +261,7 @@ def import_mtgjson_prices(
                                 if not isinstance(price_value, (int, float)):
                                     continue
 
+                                maybe_before_write()
                                 connection.execute(
                                     sql,
                                     (
@@ -229,4 +284,3 @@ def import_mtgjson_prices(
         connection.commit()
 
     return stats
-

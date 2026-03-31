@@ -3,9 +3,9 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from ..pricing import DEFAULT_PRICE_CURRENCY
 from .normalize import (
     MERGED_ACQUISITION_NOTE_MARKER,
-    format_acquisition_summary,
     format_finishes,
     format_tags,
     load_tags_json,
@@ -26,6 +26,73 @@ def build_catalog_finish_filter(normalized_finish: str) -> tuple[str, ...]:
     if normalized_finish == "normal":
         return ("normal", "nonfoil")
     return (normalized_finish,)
+
+
+def build_latest_retail_prices_cte(*, provider: str | None, cte_name: str = "latest_prices") -> tuple[str, list[Any]]:
+    where_parts = [
+        "price_kind = 'retail'",
+        "currency = ?",
+    ]
+    params: list[Any] = [DEFAULT_PRICE_CURRENCY]
+    if provider is not None:
+        where_parts.append("provider = ?")
+        params.append(provider)
+
+    return (
+        f"""
+        {cte_name} AS (
+            SELECT
+                scryfall_id,
+                provider,
+                finish,
+                currency,
+                price_value,
+                snapshot_date,
+                ROW_NUMBER() OVER (
+                    PARTITION BY scryfall_id, provider, finish
+                    ORDER BY snapshot_date DESC, id DESC
+                ) AS rn
+            FROM price_snapshots
+            WHERE {' AND '.join(where_parts)}
+        )
+        """,
+        params,
+    )
+
+
+def build_current_retail_prices_cte(*, provider: str, cte_name: str = "current_prices") -> tuple[str, list[Any]]:
+    return (
+        f"""
+        {cte_name} AS (
+            WITH provider_prices AS (
+                SELECT
+                    scryfall_id,
+                    provider,
+                    finish,
+                    currency,
+                    snapshot_date,
+                    price_value,
+                    MAX(snapshot_date) OVER (
+                        PARTITION BY scryfall_id, provider
+                    ) AS current_snapshot_date
+                FROM price_snapshots
+                WHERE price_kind = 'retail'
+                  AND currency = ?
+                  AND provider = ?
+            )
+            SELECT
+                scryfall_id,
+                provider,
+                finish,
+                currency,
+                snapshot_date,
+                price_value
+            FROM provider_prices
+            WHERE snapshot_date = current_snapshot_date
+        )
+        """,
+        [DEFAULT_PRICE_CURRENCY, provider],
+    )
 
 
 def add_catalog_filters(
@@ -266,6 +333,40 @@ def find_inventory_item_collision(
     ).fetchone()
 
 
+def resolve_merge_acquisition(
+    source_item: sqlite3.Row,
+    target_item: sqlite3.Row,
+    *,
+    acquisition_preference: str | None = None,
+) -> tuple[Any, str | None]:
+    if acquisition_preference not in (None, "source", "target"):
+        raise ValueError("keep_acquisition must be one of: source, target.")
+
+    def canonical_acquisition(item: sqlite3.Row) -> tuple[Any, str | None] | None:
+        price = item["acquisition_price"]
+        if price is None:
+            return None
+        return price, text_or_none(item["acquisition_currency"])
+
+    source_acquisition = canonical_acquisition(source_item)
+    target_acquisition = canonical_acquisition(target_item)
+
+    if target_acquisition is None:
+        return source_acquisition or (None, None)
+    if source_acquisition is None or source_acquisition == target_acquisition:
+        return target_acquisition
+
+    if acquisition_preference == "target":
+        return target_acquisition
+    if acquisition_preference == "source":
+        return source_acquisition
+
+    raise ValueError(
+        "Merging rows with different acquisition values requires choosing which acquisition to keep. "
+        "Re-run with --keep-acquisition target or --keep-acquisition source."
+    )
+
+
 def merge_inventory_item_rows(
     connection: sqlite3.Connection,
     *,
@@ -274,35 +375,20 @@ def merge_inventory_item_rows(
     target_item: sqlite3.Row,
     source_quantity: int | None = None,
     delete_source: bool = True,
+    acquisition_preference: str | None = None,
 ) -> dict[str, Any]:
     source_quantity = int(source_item["quantity"]) if source_quantity is None else int(source_quantity)
     merged_quantity = int(target_item["quantity"]) + source_quantity
     merged_tags = merge_tags(load_tags_json(target_item["tags_json"]), load_tags_json(source_item["tags_json"]))
-
-    target_acquisition_price = target_item["acquisition_price"]
-    source_acquisition_price = source_item["acquisition_price"]
-    target_acquisition_currency = text_or_none(target_item["acquisition_currency"])
-    source_acquisition_currency = text_or_none(source_item["acquisition_currency"])
-
-    if target_acquisition_price is not None:
-        merged_acquisition_price = target_acquisition_price
-        merged_acquisition_currency = target_acquisition_currency or source_acquisition_currency
-    else:
-        merged_acquisition_price = source_acquisition_price
-        merged_acquisition_currency = source_acquisition_currency or target_acquisition_currency
+    merged_acquisition_price, merged_acquisition_currency = resolve_merge_acquisition(
+        source_item,
+        target_item,
+        acquisition_preference=acquisition_preference,
+    )
 
     merged_notes = merge_note_text(
         target_notes=text_or_none(target_item["notes"]),
         source_notes=text_or_none(source_item["notes"]),
-        source_item_id=source_item["item_id"],
-        target_acquisition_summary=format_acquisition_summary(
-            target_acquisition_price,
-            target_acquisition_currency,
-        ),
-        source_acquisition_summary=format_acquisition_summary(
-            source_acquisition_price,
-            source_acquisition_currency,
-        ),
     )
 
     connection.execute(
@@ -361,7 +447,12 @@ def query_price_gaps(
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     get_inventory_row(connection, inventory_slug)
+    current_prices_cte, current_price_params = build_current_retail_prices_cte(provider=provider)
     sql = """
+    WITH
+    """
+    sql += current_prices_cte
+    sql += """
     SELECT
         ii.id AS item_id,
         ii.inventory_id,
@@ -380,14 +471,12 @@ def query_price_gaps(
         ii.acquisition_currency,
         ii.notes,
         COALESCE(ii.tags_json, '[]') AS tags_json,
-        GROUP_CONCAT(DISTINCT ps.finish) AS available_finishes
+        GROUP_CONCAT(DISTINCT cp.finish) AS available_finishes
     FROM inventory_items ii
     JOIN inventories i ON i.id = ii.inventory_id
     JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
-    LEFT JOIN price_snapshots ps
-      ON ps.scryfall_id = ii.scryfall_id
-     AND LOWER(ps.provider) = LOWER(?)
-     AND ps.price_kind = 'retail'
+    LEFT JOIN current_prices cp
+      ON cp.scryfall_id = ii.scryfall_id
     WHERE i.slug = ?
     GROUP BY
         ii.id,
@@ -407,10 +496,10 @@ def query_price_gaps(
         ii.acquisition_currency,
         ii.notes,
         ii.tags_json
-    HAVING SUM(CASE WHEN LOWER(COALESCE(ps.finish, '')) = LOWER(ii.finish) THEN 1 ELSE 0 END) = 0
+    HAVING SUM(CASE WHEN LOWER(COALESCE(cp.finish, '')) = LOWER(ii.finish) THEN 1 ELSE 0 END) = 0
     ORDER BY c.name, c.set_code, c.collector_number
     """
-    params: list[Any] = [provider, inventory_slug]
+    params: list[Any] = [*current_price_params, inventory_slug]
     if limit is not None:
         sql += "\nLIMIT ?"
         params.append(limit)
@@ -539,21 +628,13 @@ def query_stale_price_rows(
     current_date: str,
     cutoff_date: str,
 ) -> list[dict[str, Any]]:
+    latest_prices_cte, latest_price_params = build_latest_retail_prices_cte(provider=provider)
     rows = connection.execute(
         """
-        WITH latest_prices AS (
-            SELECT
-                scryfall_id,
-                finish,
-                snapshot_date,
-                ROW_NUMBER() OVER (
-                    PARTITION BY scryfall_id, finish
-                    ORDER BY snapshot_date DESC, id DESC
-                ) AS rn
-            FROM price_snapshots
-            WHERE price_kind = 'retail'
-              AND provider = ?
-        )
+        WITH
+        """
+        + latest_prices_cte
+        + """
         SELECT
             ii.id AS item_id,
             c.name AS card_name,
@@ -573,7 +654,7 @@ def query_stale_price_rows(
           AND lp.snapshot_date < ?
         ORDER BY age_days DESC, c.name, c.set_code, c.collector_number, ii.id
         """,
-        (provider, current_date, inventory_slug, cutoff_date),
+        [*latest_price_params, current_date, inventory_slug, cutoff_date],
     ).fetchall()
     return [
         {

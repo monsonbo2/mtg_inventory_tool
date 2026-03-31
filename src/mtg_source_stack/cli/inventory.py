@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any, Callable
 
 from ..db.connection import DEFAULT_DB_PATH
 from ..db.snapshots import create_database_snapshot
@@ -62,6 +63,25 @@ from ..inventory.service import (
     split_row,
     valuation_filtered,
 )
+
+
+def build_snapshot_callback(
+    db_path: str | Path,
+    *,
+    label: str,
+) -> tuple[Callable[[], dict[str, Any]], Callable[[], dict[str, Any] | None]]:
+    snapshot: dict[str, Any] | None = None
+
+    def ensure_snapshot() -> dict[str, Any]:
+        nonlocal snapshot
+        if snapshot is None:
+            snapshot = create_database_snapshot(db_path, label=label)
+        return snapshot
+
+    def current_snapshot() -> dict[str, Any] | None:
+        return snapshot
+
+    return ensure_snapshot, current_snapshot
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -141,6 +161,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="If the new location collides with another row, merge into that row instead of failing.",
     )
+    set_location_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When a merge hits different acquisition values, choose which row's acquisition to keep.",
+    )
 
     set_condition_parser = subparsers.add_parser(
         "set-condition",
@@ -154,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--merge",
         action="store_true",
         help="If the new condition collides with another row, merge into that row instead of failing.",
+    )
+    set_condition_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When a merge hits different acquisition values, choose which row's acquisition to keep.",
     )
 
     set_notes_parser = subparsers.add_parser("set-notes", help="Replace the notes for an existing inventory row.")
@@ -196,6 +226,11 @@ def build_parser() -> argparse.ArgumentParser:
     split_row_parser.add_argument("--language-code", help="Optional target language code.")
     split_row_parser.add_argument("--location", help="Optional target location.")
     split_row_parser.add_argument("--clear-location", action="store_true", help="Clear the target row location.")
+    split_row_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When splitting into an existing row with different acquisition values, choose which acquisition to keep.",
+    )
 
     merge_rows_parser = subparsers.add_parser(
         "merge-rows",
@@ -205,6 +240,11 @@ def build_parser() -> argparse.ArgumentParser:
     merge_rows_parser.add_argument("--inventory", required=True, help="Inventory slug.")
     merge_rows_parser.add_argument("--source-item-id", required=True, type=int, help="Source row id to remove.")
     merge_rows_parser.add_argument("--target-item-id", required=True, type=int, help="Target row id to keep.")
+    merge_rows_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When rows have different acquisition values, choose which row's acquisition to keep.",
+    )
 
     remove = subparsers.add_parser("remove-card", help="Delete an inventory row by item id.")
     remove.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
@@ -240,7 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reconcile = subparsers.add_parser(
         "reconcile-prices",
-        help="Suggest or apply finish updates when exactly one priced finish is available.",
+        help="Review finish mismatches and suggest manual updates when exactly one priced finish is available.",
     )
     reconcile.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
     reconcile.add_argument("--inventory", required=True, help="Inventory slug.")
@@ -248,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile.add_argument(
         "--apply",
         action="store_true",
-        help="Apply suggested finish updates. Without this flag, the command is preview-only.",
+        help="Deprecated. reconcile-prices is suggestion-only and no longer updates finish values.",
     )
 
     export_csv_parser = subparsers.add_parser(
@@ -418,8 +458,9 @@ def main() -> None:
 
         if args.command == "import-csv":
             snapshot = None
+            before_write = None
             if not args.dry_run:
-                snapshot = create_database_snapshot(
+                before_write, get_snapshot = build_snapshot_callback(
                     args.db,
                     label=f"before_import_csv_{Path(args.csv).stem}",
                 )
@@ -428,7 +469,10 @@ def main() -> None:
                 csv_path=args.csv,
                 default_inventory=args.inventory,
                 dry_run=args.dry_run,
+                before_write=before_write,
             )
+            if not args.dry_run:
+                snapshot = get_snapshot()
             report_text = append_snapshot_notice(format_import_csv_result(result), snapshot)
             report_paths: list[str] = []
             if args.report_out:
@@ -457,8 +501,9 @@ def main() -> None:
 
         if args.command == "set-location":
             snapshot = None
+            before_write = None
             if args.merge:
-                snapshot = create_database_snapshot(
+                before_write, get_snapshot = build_snapshot_callback(
                     args.db,
                     label=f"before_set_location_merge_item_{args.item_id}",
                 )
@@ -468,14 +513,19 @@ def main() -> None:
                 item_id=args.item_id,
                 location=None if args.clear else args.location,
                 merge=args.merge,
+                keep_acquisition=args.keep_acquisition,
+                before_write=before_write,
             )
+            if args.merge:
+                snapshot = get_snapshot()
             print(append_snapshot_notice(format_set_location_result(result), snapshot))
             return
 
         if args.command == "set-condition":
             snapshot = None
+            before_write = None
             if args.merge:
-                snapshot = create_database_snapshot(
+                before_write, get_snapshot = build_snapshot_callback(
                     args.db,
                     label=f"before_set_condition_merge_item_{args.item_id}",
                 )
@@ -485,12 +535,16 @@ def main() -> None:
                 item_id=args.item_id,
                 condition_code=args.condition,
                 merge=args.merge,
+                keep_acquisition=args.keep_acquisition,
+                before_write=before_write,
             )
+            if args.merge:
+                snapshot = get_snapshot()
             print(append_snapshot_notice(format_set_condition_result(result), snapshot))
             return
 
         if args.command == "set-acquisition":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_set_acquisition_item_{args.item_id}",
             )
@@ -501,7 +555,9 @@ def main() -> None:
                 acquisition_price=args.price,
                 acquisition_currency=args.currency,
                 clear=args.clear,
+                before_write=before_write,
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_set_acquisition_result(result), snapshot))
             return
 
@@ -536,7 +592,7 @@ def main() -> None:
             return
 
         if args.command == "split-row":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_split_row_item_{args.item_id}",
             )
@@ -550,12 +606,15 @@ def main() -> None:
                 language_code=args.language_code,
                 location=args.location,
                 clear_location=args.clear_location,
+                keep_acquisition=args.keep_acquisition,
+                before_write=before_write,
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_split_row_result(result), snapshot))
             return
 
         if args.command == "merge-rows":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_merge_rows_{args.source_item_id}_into_{args.target_item_id}",
             )
@@ -564,12 +623,15 @@ def main() -> None:
                 inventory_slug=args.inventory,
                 source_item_id=args.source_item_id,
                 target_item_id=args.target_item_id,
+                keep_acquisition=args.keep_acquisition,
+                before_write=before_write,
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_merge_rows_result(result), snapshot))
             return
 
         if args.command == "remove-card":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_remove_card_item_{args.item_id}",
             )
@@ -577,7 +639,9 @@ def main() -> None:
                 args.db,
                 inventory_slug=args.inventory,
                 item_id=args.item_id,
+                before_write=before_write,
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_remove_card_result(result), snapshot))
             return
 
@@ -603,19 +667,13 @@ def main() -> None:
             return
 
         if args.command == "reconcile-prices":
-            snapshot = None
-            if args.apply:
-                snapshot = create_database_snapshot(
-                    args.db,
-                    label=f"before_reconcile_prices_{args.inventory}_{args.provider}",
-                )
             result = reconcile_prices(
                 args.db,
                 inventory_slug=args.inventory,
                 provider=args.provider,
                 apply_changes=args.apply,
             )
-            print(append_snapshot_notice(format_reconcile_prices_result(result), snapshot))
+            print(format_reconcile_prices_result(result))
             return
 
         if args.command == "export-csv":
