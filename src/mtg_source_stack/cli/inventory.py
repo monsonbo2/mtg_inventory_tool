@@ -5,16 +5,6 @@ from pathlib import Path
 
 from ..db.connection import DEFAULT_DB_PATH
 from ..db.snapshots import create_database_snapshot
-from ..inventory.analysis import (
-    export_inventory_csv,
-    inventory_health,
-    inventory_report,
-    list_owned_filtered,
-    list_price_gaps,
-    reconcile_prices,
-    valuation_filtered,
-)
-from ..inventory.catalog import create_inventory, list_inventories, search_cards
 from ..inventory.csv_import import import_csv
 from ..inventory.normalize import (
     DEFAULT_HEALTH_STALE_DAYS,
@@ -22,20 +12,8 @@ from ..inventory.normalize import (
     HEALTH_PREVIEW_LIMIT,
     truncate,
 )
-from ..inventory.mutations import (
-    add_card,
-    merge_rows,
-    remove_card,
-    set_acquisition,
-    set_condition,
-    set_finish,
-    set_location,
-    set_notes,
-    set_quantity,
-    set_tags,
-    split_row,
-)
-from ..inventory.report_formatters import (
+from ..inventory.reports import (
+    EXPORT_CSV_FIELDNAMES,
     append_snapshot_notice,
     format_add_card_result,
     format_export_csv_result,
@@ -55,14 +33,34 @@ from ..inventory.report_formatters import (
     format_set_quantity_result,
     format_set_tags_result,
     format_split_row_result,
-)
-from ..inventory.report_helpers import print_table
-from ..inventory.report_io import (
-    EXPORT_CSV_FIELDNAMES,
+    print_table,
     write_csv_report,
     write_json_report,
     write_report,
     write_rows_csv,
+)
+from ..inventory.service import (
+    add_card,
+    create_inventory,
+    export_inventory_csv,
+    inventory_health,
+    inventory_report,
+    list_inventories,
+    list_owned_filtered,
+    list_price_gaps,
+    merge_rows,
+    reconcile_prices,
+    remove_card,
+    search_cards,
+    set_acquisition,
+    set_condition,
+    set_finish,
+    set_location,
+    set_notes,
+    set_quantity,
+    set_tags,
+    split_row,
+    valuation_filtered,
 )
 
 
