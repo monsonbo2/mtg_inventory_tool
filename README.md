@@ -13,6 +13,11 @@ Use it to:
 If you're new to the repo, the best starting points are this README, the
 walkthrough notebook in `notebooks/`, and the architecture notes in `docs/`.
 
+For backend work, the canonical web-v1 contract is the current MVP runtime
+schema in `src/mtg_source_stack/mtg_mvp_schema.sql` and `docs/schema_mvp.sql`.
+`docs/schema_full.sql` is a future normalized target, not the live runtime
+model.
+
 The Python package lives under `src/mtg_source_stack/`. The recommended way to
 use the repo is `pip install -e .` plus the
 `mtg-mvp-importer` and `mtg-personal-inventory` commands.
@@ -30,6 +35,7 @@ use the repo is `pip install -e .` plus the
   - `var/reports/`
   - `var/walkthrough/`
 - Docs and design notes:
+  - `docs/backend_v1_contract.md`
   - `docs/source_map.md`
   - `docs/ingestion_flow.md`
   - `docs/schema_full.sql`

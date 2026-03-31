@@ -1,140 +1,133 @@
 # Ingestion Flow
 
+This document describes the current runtime ingestion flow used by the web-v1
+backend contract. For the canonical backend decision, see
+`docs/backend_v1_contract.md`.
+
 ## Core Principle
 
 Build the app around a local SQLite catalog.
-Use external APIs to refresh the local catalog, not to power every screen in
-real time.
+Use bulk source files to refresh the local catalog, not live APIs on every
+screen request.
+
+## Current Runtime Tables
+
+The current importer writes into:
+
+- `mtg_cards`
+- `price_snapshots`
+- `inventories`
+- `inventory_items`
+
+The normalized tables described in `docs/schema_full.sql` are future-target
+design notes, not the live ingestion model.
 
 ## Daily Bulk Sync
 
-Recommended order:
+Current recommended order:
 
-1. Start a `source_sync_runs` row for `scryfall_bulk_default_cards`.
-2. Download Scryfall bulk data and parse card objects.
-3. Upsert `mtg_sets`.
-4. Upsert `oracle_cards` keyed by `oracle_id`.
-5. Upsert `card_printings` keyed by `scryfall_id`.
-6. Replace `card_faces` rows for each touched printing.
-7. Mark the sync run complete.
-8. Start a `source_sync_runs` row for `mtgjson_all_identifiers`.
-9. Download MTGJSON `AllIdentifiers`.
-10. Upsert `printing_external_ids` by matching `scryfallId` or
-    `scryfallOracleId` plus set and collector number when needed.
-11. Mark the sync run complete.
-12. Start a `source_sync_runs` row for `mtgjson_all_prices_today`.
-13. Download MTGJSON `AllPricesToday`.
-14. Resolve MTGJSON UUIDs to local printings.
-15. Insert `price_snapshots` for each provider, finish, price kind, currency,
-    and date.
-16. Mark the sync run complete.
+1. Ensure the local database exists and is initialized.
+2. Download or locate Scryfall bulk `default-cards`.
+3. Upsert printing-level card rows into `mtg_cards`.
+4. Download or locate MTGJSON `AllIdentifiers`.
+5. Update `mtg_cards` vendor-id fields and `mtgjson_uuid` when a row matches by
+   `scryfallId`, or by existing `mtgjson_uuid` for older linked rows.
+6. Download or locate MTGJSON `AllPricesToday`.
+7. Resolve MTGJSON UUIDs through the local `mtg_cards.mtgjson_uuid` mapping.
+8. Insert or update `price_snapshots` rows by provider, finish, price kind,
+   currency, and snapshot date.
 
-## Live Lookup Fallback
+There is currently no `source_sync_runs` bookkeeping table in the live schema.
 
-Use live Scryfall requests only when:
+## Current Lookup Behavior
 
-- a search result is not in the local cache yet
-- a user opens a printing missing images or details
-- you need a targeted refresh for a single card
-
-Live flow:
-
-1. Search local `card_printings` and `oracle_cards`.
-2. If enough results exist locally, return them.
-3. If not, query Scryfall live.
-4. Upsert the returned printing and oracle card immediately.
-5. Return the fresh local row to the caller.
+- Catalog search is local-only.
+- The CLI and notebook workflows do not perform automatic live Scryfall fallback
+  during ordinary search commands.
+- `sync-bulk` can fetch fresh bulk files, but read paths query SQLite only.
 
 ## Price Refresh Strategy
 
-Recommended default:
-
-- `Scryfall` for light user-facing price display
-- `MTGJSON AllPricesToday` for daily valuation
-- `MTGJSON AllPrices` later for historical charting
-
-Do not:
-
-- overwrite yesterday's prices in place
-- collapse all providers into one number
-- treat buylist and retail as the same metric
-
-Do:
+Current runtime rules:
 
 - store snapshots by provider and date
-- compute the current displayed number in application queries
+- compute current prices in application queries
+- keep retail and buylist as separate price kinds
 - keep one row per provider + finish + price kind + currency + day
+
+Current constraint:
+
+- imported market data is restricted to USD so downstream valuation and health
+  queries stay unambiguous
 
 ## Matching Strategy
 
-Preferred key order when joining inbound data:
+Current identifier matching order:
 
 1. `scryfall_id`
-2. `mtgjson_uuid`
-3. `oracle_id + set_code + collector_number + lang`
-4. vendor-specific identifier
+2. existing `mtgjson_uuid`
 
-## Suggested Authority Rules
+Not implemented yet in the live importer:
 
-- Scryfall controls card identity and printing identity.
-- MTGJSON enriches printings with vendor IDs and prices.
-- Inventory rows point to a local printing record, never directly to a remote
-  source payload.
+- fallback matching by `oracle_id + set_code + collector_number + lang`
+- vendor-specific fallback matching
+- unresolved-import tracking tables
+
+## Authority Rules
+
+- Scryfall defines the local printing rows imported into `mtg_cards`.
+- MTGJSON enriches those rows with vendor IDs and price snapshots.
+- Inventory rows always point at a local `mtg_cards` printing record.
 
 ## Failure Strategy
 
-If one sync source fails:
+If a bulk import fails:
 
-- keep the last successful local catalog
-- record the failed `source_sync_runs` row
-- do not delete existing rows because a source was temporarily unavailable
+- keep the last successful local catalog rows already in SQLite
+- do not delete existing rows because one source payload failed
+- surface the import error to the operator
 
 If identifier matching fails:
 
-- leave the existing printing in place
-- record the unresolved source payload in a dead-letter log or a manual review
-  table later
-- never guess across multiple candidate printings
+- skip the unmatched identifier or price rows
+- leave existing linked rows unchanged
+- do not guess across multiple candidate printings
 
 ## Suggested Job Cadence
 
 - Scryfall bulk catalog sync: daily
 - MTGJSON identifiers sync: daily or weekly
 - MTGJSON prices today sync: daily
-- Scryfall live lookups: on demand only
-- seller adapters: event-driven or scheduled later
+- targeted live fetches: not part of the ordinary current runtime flow
 
 ## Mapping Summary
 
 Scryfall object to local tables:
 
-- set data -> `mtg_sets`
-- oracle-level fields -> `oracle_cards`
-- printing-level fields -> `card_printings`
-- multi-face payloads -> `card_faces`
+- printing-level fields -> `mtg_cards`
 
 MTGJSON identifiers to local tables:
 
-- vendor IDs -> `printing_external_ids`
+- `mtgjson_uuid` and vendor ID columns -> `mtg_cards`
 
 MTGJSON prices to local tables:
 
-- daily and historical prices -> `price_snapshots`
+- daily price snapshots -> `price_snapshots`
 
 Inventory app actions to local tables:
 
-- user-owned copies -> `inventory_positions`
-- quantity changes -> `inventory_movements`
+- user-owned copies -> `inventory_items`
 
 ## Example End-To-End Flow
 
-1. User searches for `Lightning Bolt`.
-2. App checks local search tables.
-3. If local rows exist, return them immediately.
-4. If not, query Scryfall and upsert the matching printings.
-5. User selects the exact printing.
-6. App creates or increments an `inventory_positions` row for that printing,
-   condition, finish, and location.
-7. App records the quantity change in `inventory_movements`.
-8. Daily price sync updates `price_snapshots`.
-9. Valuation screens join inventory positions to the latest price snapshot.
+1. Operator runs Scryfall bulk import.
+2. The importer upserts printings into `mtg_cards`.
+3. Operator runs MTGJSON identifier import.
+4. Matching rows in `mtg_cards` gain `mtgjson_uuid` and vendor identifiers.
+5. Operator runs MTGJSON price import.
+6. The importer resolves local `mtg_cards` rows by `mtgjson_uuid`.
+7. Imported prices are written into `price_snapshots`.
+8. User searches cards from the local catalog.
+9. User creates or increments an `inventory_items` row for the owned printing.
+10. Valuation and health queries join `inventory_items` to the latest matching
+    `price_snapshots` rows.

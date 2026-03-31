@@ -1,5 +1,7 @@
 PRAGMA foreign_keys = ON;
 
+-- This is the current web-v1 backend contract and the schema the runtime uses
+-- today.
 -- This is a deliberately smaller MTG-specific schema for an MVP.
 -- It is meant for a first working build where you want:
 -- - exact printing-level inventory
