@@ -3,6 +3,8 @@
 This document describes the current runtime structure of the repo as it exists
 today.
 
+For the docs index and recommended reading order, start with `docs/README.md`.
+
 It is the best high-level orientation doc for contributors who want to
 understand where code lives before diving into implementation details.
 

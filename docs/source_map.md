@@ -1,18 +1,32 @@
 # Source Map
 
+This document records upstream source strategy for the project.
+
+It is broader than the current runtime implementation. Today the ordinary
+catalog search, valuation, and inventory reporting paths query local SQLite
+only. `sync-bulk` can fetch fresh bulk files, but normal read commands do not
+call live upstream APIs.
+
+## Current Runtime Defaults
+
+- Scryfall bulk data seeds the local printing catalog.
+- MTGJSON `AllIdentifiers` enriches local card rows with external IDs.
+- MTGJSON `AllPricesToday` supplies daily price snapshots.
+- Targeted live Scryfall lookups are future or optional workflow extensions, not
+  part of the ordinary current runtime read path.
+
 ## Recommended Sources
 
 ### Scryfall
 
 Use Scryfall for:
 
-- autocomplete and search
-- exact card lookups
+- bulk catalog data
 - oracle text
 - legality
 - image URIs
 - set and printing metadata
-- quick card-level price display
+- optional future live lookup behavior
 
 Why it belongs in the stack:
 
@@ -25,7 +39,7 @@ Operational notes:
 
 - cache aggressively
 - prefer bulk downloads for full refreshes
-- use live API for targeted refreshes and cache misses
+- use the live API only for targeted refreshes or future cache-miss workflows
 - do not hammer it for repeated full-catalog rebuilds
 
 ### MTGJSON
@@ -147,9 +161,13 @@ Use your own app as the source of truth for:
 
 ## Minimal MVP Source Stack
 
-- `Scryfall bulk + live API`
+- `Scryfall bulk`
 - `MTGJSON AllIdentifiers`
 - `MTGJSON AllPricesToday`
+
+Optional future extension:
+
+- targeted Scryfall live lookups
 
 This is enough to support:
 
