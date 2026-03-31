@@ -10,7 +10,7 @@ from pathlib import Path
 from tests.common import RepoSmokeTestCase
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
 from mtg_source_stack.db.schema import initialize_database, require_current_schema
-from mtg_source_stack.errors import ConflictError, SchemaNotReadyError, ValidationError
+from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReadyError, ValidationError
 from mtg_source_stack.inventory.response_models import serialize_response
 from mtg_source_stack.inventory.service import create_inventory, reconcile_prices
 
@@ -44,6 +44,32 @@ class ApiContractTest(RepoSmokeTestCase):
                 }
             },
             api_error_payload(exc),
+        )
+
+    def test_api_error_helpers_map_not_found_and_validation_errors(self) -> None:
+        missing = NotFoundError("Inventory row was not found.")
+        invalid = ValidationError("Finish must be one of: normal, foil, etched.")
+
+        self.assertEqual(404, api_error_status(missing))
+        self.assertEqual(
+            {
+                "error": {
+                    "code": "not_found",
+                    "message": "Inventory row was not found.",
+                }
+            },
+            api_error_payload(missing),
+        )
+
+        self.assertEqual(400, api_error_status(invalid))
+        self.assertEqual(
+            {
+                "error": {
+                    "code": "validation_error",
+                    "message": "Finish must be one of: normal, foil, etched.",
+                }
+            },
+            api_error_payload(invalid),
         )
 
     def test_api_error_helpers_hide_internal_exception_messages(self) -> None:

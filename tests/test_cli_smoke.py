@@ -918,6 +918,8 @@ class CliSmokeTest(RepoSmokeTestCase):
                 "USD",
             )
 
+            # Re-adding the same identity should behave like a quantity bump,
+            # not like a stealth metadata edit path.
             add_again_output = self.run_cli(
                 "add-card",
                 "--db",
@@ -1507,6 +1509,9 @@ class CliSmokeTest(RepoSmokeTestCase):
                 "USD",
             )
 
+            # Splitting into an existing identity is really a merge operation,
+            # so conflicting acquisition data should be resolved before any
+            # quantity changes are allowed to happen.
             split_failure = self.run_failing_cli(
                 "split-row",
                 "--db",

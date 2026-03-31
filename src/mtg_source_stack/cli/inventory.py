@@ -16,10 +16,8 @@ from ..inventory.normalize import (
     format_finishes,
     truncate,
 )
-from ..inventory.reports import (
-    EXPORT_CSV_FIELDNAMES,
+from ..inventory.report_formatters import (
     append_snapshot_notice,
-    flatten_owned_export_rows,
     format_add_card_result,
     format_export_csv_result,
     format_import_csv_result,
@@ -38,7 +36,13 @@ from ..inventory.reports import (
     format_set_quantity_result,
     format_set_tags_result,
     format_split_row_result,
+)
+from ..inventory.report_helpers import (
     print_table,
+)
+from ..inventory.report_io import (
+    EXPORT_CSV_FIELDNAMES,
+    flatten_owned_export_rows,
     write_csv_report,
     write_json_report,
     write_report,

@@ -37,9 +37,11 @@ use the repo is `pip install -e .` plus the
   - `var/walkthrough/`
 - Docs and design notes:
   - `docs/api_v1_contract.md`
+  - `docs/architecture.md`
   - `docs/backend_v1_contract.md`
-  - `docs/source_map.md`
   - `docs/ingestion_flow.md`
+  - `docs/source_map.md`
+  - `docs/restructure_checklist.md` (historical refactor plan)
   - `docs/schema_full.sql`
   - `docs/schema_mvp.sql`
 - Examples:

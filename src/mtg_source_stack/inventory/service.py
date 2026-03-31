@@ -1,4 +1,4 @@
-"""Compatibility facade for inventory domain modules."""
+"""Public inventory domain facade used by the CLI and future app layer."""
 
 from .analysis import (
     build_duplicate_groups_from_owned_rows,

@@ -10,16 +10,37 @@ from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.inventory.response_models import AddCardResult, SetNotesResult, serialize_response
+from mtg_source_stack.errors import ConflictError, NotFoundError, ValidationError
+from mtg_source_stack.inventory.response_models import (
+    AddCardResult,
+    MergeRowsResult,
+    RemoveCardResult,
+    SetConditionResult,
+    SetFinishResult,
+    SetLocationResult,
+    SetNotesResult,
+    SetQuantityResult,
+    SetTagsResult,
+    SplitRowResult,
+    serialize_response,
+)
 from mtg_source_stack.inventory.service import (
     add_card,
     create_inventory,
     inventory_report,
     list_owned_filtered,
     list_price_gaps,
+    merge_rows,
     reconcile_prices,
+    remove_card,
     search_cards,
+    set_condition,
+    set_finish,
+    set_location,
     set_notes,
+    set_quantity,
+    set_tags,
+    split_row,
     valuation_filtered,
 )
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
@@ -60,6 +81,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             rows = search_cards(db_path, query="Search Test", exact=False, limit=10)
 
+            # The service layer should keep catalog finishes machine-friendly so
+            # the API can return a real list and let formatters decide how to
+            # display it later.
             self.assertEqual(1, len(rows))
             self.assertEqual(["normal", "foil"], rows[0].finishes)
             self.assertEqual(["normal", "foil"], serialize_response(rows)[0]["finishes"])
@@ -94,12 +118,261 @@ class InventoryServiceTest(RepoSmokeTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
 
-            with self.assertRaisesRegex(ValueError, "does not exist"):
+            with self.assertRaisesRegex(NotFoundError, "does not exist"):
                 create_inventory(
                     db_path,
                     slug="personal",
                     display_name="Personal Collection",
                     description=None,
+                )
+
+    def test_mutation_services_return_typed_results_for_direct_api_use(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES ('typed-edit-1', 'typed-edit-oracle-1', 'Typed Edit Card', 'tst', 'Test Set', '17', '["normal","foil"]')
+                    """
+                )
+                connection.commit()
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            # Walk one row through the main mutation surface so the typed write
+            # contract is checked as a cohesive API-facing workflow, not just
+            # one method at a time in isolation.
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="typed-edit-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=4,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags="deck",
+            )
+
+            quantity_result = set_quantity(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                quantity=3,
+            )
+            self.assertIsInstance(quantity_result, SetQuantityResult)
+            self.assertEqual(4, quantity_result.old_quantity)
+            self.assertEqual(3, quantity_result.quantity)
+            self.assertEqual(4, serialize_response(quantity_result)["old_quantity"])
+
+            finish_result = set_finish(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                finish="foil",
+            )
+            self.assertIsInstance(finish_result, SetFinishResult)
+            self.assertEqual("normal", finish_result.old_finish)
+            self.assertEqual("foil", finish_result.finish)
+
+            location_result = set_location(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                location="Deck Box",
+            )
+            self.assertIsInstance(location_result, SetLocationResult)
+            self.assertEqual("Binder A", location_result.old_location)
+            self.assertEqual("Deck Box", location_result.location)
+            self.assertFalse(location_result.merged)
+
+            condition_result = set_condition(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                condition_code="LP",
+            )
+            self.assertIsInstance(condition_result, SetConditionResult)
+            self.assertEqual("NM", condition_result.old_condition_code)
+            self.assertEqual("LP", condition_result.condition_code)
+            self.assertFalse(condition_result.merged)
+
+            tags_result = set_tags(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                tags="trade, staple",
+            )
+            self.assertIsInstance(tags_result, SetTagsResult)
+            self.assertEqual(["deck"], tags_result.old_tags)
+            self.assertEqual(["trade", "staple"], tags_result.tags)
+            self.assertEqual(["trade", "staple"], serialize_response(tags_result)["tags"])
+
+            split_result = split_row(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                quantity=1,
+                condition_code=None,
+                finish=None,
+                language_code=None,
+                location="Binder B",
+            )
+            self.assertIsInstance(split_result, SplitRowResult)
+            self.assertFalse(split_result.merged_into_existing)
+            self.assertEqual(1, split_result.moved_quantity)
+            self.assertEqual(3, split_result.source_old_quantity)
+            self.assertEqual(2, split_result.source_quantity)
+            self.assertFalse(split_result.source_deleted)
+
+            merge_result = merge_rows(
+                db_path,
+                inventory_slug="personal",
+                source_item_id=split_result.item_id,
+                target_item_id=added.item_id,
+            )
+            self.assertIsInstance(merge_result, MergeRowsResult)
+            self.assertEqual(split_result.item_id, merge_result.merged_source_item_id)
+            self.assertEqual(1, merge_result.source_quantity)
+            self.assertEqual(2, merge_result.target_old_quantity)
+            self.assertEqual(3, merge_result.quantity)
+
+            remove_result = remove_card(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+            )
+            self.assertIsInstance(remove_result, RemoveCardResult)
+            self.assertEqual(added.item_id, remove_result.item_id)
+            self.assertEqual(3, remove_result.quantity)
+            self.assertEqual("foil", remove_result.finish)
+            self.assertEqual("LP", remove_result.condition_code)
+            self.assertEqual("Deck Box", remove_result.location)
+
+            with connect(db_path) as connection:
+                remaining = connection.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0]
+            self.assertEqual(0, remaining)
+
+    def test_service_facade_raises_domain_errors_for_not_found_validation_and_conflict_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES (?, ?, 'Conflict Test Card', 'tst', 'Test Set', ?, '["normal","foil"]')
+                    """,
+                    [
+                        ("conflict-card-1", "conflict-oracle-1", "21"),
+                    ],
+                )
+                connection.commit()
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            first_row = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="conflict-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+            add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="conflict-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder B",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            # These are the main failure categories the future HTTP layer will
+            # map onto 404 / 400 / 409 style responses.
+            with self.assertRaises(NotFoundError):
+                set_notes(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=99,
+                    notes="Missing row",
+                )
+
+            with self.assertRaises(ValidationError):
+                set_finish(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=first_row.item_id,
+                    finish="sparkly",
+                )
+
+            with self.assertRaises(ConflictError):
+                set_location(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=first_row.item_id,
+                    location="Binder B",
                 )
 
     def test_write_services_return_typed_models_and_capture_audit_context(self) -> None:
@@ -151,6 +424,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIsInstance(add_result, AddCardResult)
             self.assertEqual(["commander", "trade"], add_result.tags)
 
+            # The direct service API should accept actor/request metadata once
+            # and preserve it all the way into the audit table.
             set_notes_result = set_notes(
                 db_path,
                 inventory_slug="personal",
