@@ -20,7 +20,7 @@ from .normalize import (
     slugify_inventory_name,
     text_or_none,
 )
-from .service import add_card_with_connection
+from .mutations import add_card_with_connection
 
 
 def normalize_csv_header(header: str) -> str:
