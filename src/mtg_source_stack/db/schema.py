@@ -5,6 +5,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from .connection import connect
+from .migrator import migrate_database
 
 
 def load_schema_sql() -> str:
@@ -34,7 +35,4 @@ def ensure_schema_upgrades(connection: sqlite3.Connection) -> None:
 
 
 def initialize_database(db_path: str | Path) -> None:
-    with connect(db_path) as connection:
-        connection.executescript(load_schema_sql())
-        ensure_schema_upgrades(connection)
-
+    migrate_database(db_path)
