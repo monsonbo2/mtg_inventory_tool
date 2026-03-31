@@ -21,7 +21,7 @@ from .normalize import (
     tags_to_json,
     text_or_none,
 )
-from .queries import (
+from .query_inventory import (
     find_inventory_item_collision,
     get_inventory_item_row,
     get_or_create_inventory_row,

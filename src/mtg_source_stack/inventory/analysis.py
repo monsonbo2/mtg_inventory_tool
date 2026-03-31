@@ -9,17 +9,14 @@ from typing import Any
 from ..db.connection import connect, require_database_file
 from ..db.schema import initialize_database
 from .normalize import coerce_float, format_finishes, text_or_none, truncate
-from .queries import (
-    add_owned_filters,
-    build_latest_retail_prices_cte,
-    get_inventory_row,
+from .query_inventory import add_owned_filters, get_inventory_row
+from .query_pricing import build_latest_retail_prices_cte, query_price_gaps, query_stale_price_rows
+from .query_reporting import (
     query_duplicate_like_groups,
     query_inventory_summary,
     query_merge_note_rows,
     query_missing_location_rows,
     query_missing_tag_rows,
-    query_price_gaps,
-    query_stale_price_rows,
 )
 from .reports import (
     build_currency_totals,

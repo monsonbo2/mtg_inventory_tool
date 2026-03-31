@@ -9,7 +9,7 @@ from typing import Any
 from ..db.connection import connect, require_database_file
 from ..db.schema import initialize_database
 from .normalize import normalize_catalog_finishes
-from .queries import add_catalog_filters
+from .query_catalog import add_catalog_filters
 
 
 def search_cards(
