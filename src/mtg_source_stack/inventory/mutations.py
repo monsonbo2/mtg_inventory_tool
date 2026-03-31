@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from ..db.connection import connect, require_database_file
 from ..db.schema import initialize_database
+from .audit import load_inventory_item_snapshot, write_inventory_audit_event
 from .catalog import resolve_card_row
 from .money import coerce_decimal
 from .normalize import (
@@ -131,6 +132,11 @@ def add_card_with_connection(
     # The unique identity for an inventory row is printing plus
     # condition/finish/language/location. Matching rows roll quantity forward.
     if existing_row is not None:
+        before_snapshot = load_inventory_item_snapshot(
+            connection,
+            inventory_slug=inventory_slug,
+            item_id=int(existing_row["id"]),
+        )
         ensure_add_card_metadata_compatible(
             existing_row,
             incoming_notes=normalized_notes,
@@ -155,6 +161,20 @@ def add_card_with_connection(
         )
         item_id = int(existing_row["id"])
         item_quantity = updated_quantity
+        after_snapshot = load_inventory_item_snapshot(
+            connection,
+            inventory_slug=inventory_slug,
+            item_id=item_id,
+        )
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="add_card",
+            item_id=item_id,
+            before=before_snapshot,
+            after=after_snapshot,
+            metadata={"mode": "increment"},
+        )
     else:
         if before_write is not None:
             before_write()
@@ -193,6 +213,20 @@ def add_card_with_connection(
         item_row = cursor.fetchone()
         item_id = int(item_row["id"])
         item_quantity = int(item_row["quantity"])
+        after_snapshot = load_inventory_item_snapshot(
+            connection,
+            inventory_slug=inventory_slug,
+            item_id=item_id,
+        )
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="add_card",
+            item_id=item_id,
+            before=None,
+            after=after_snapshot,
+            metadata={"mode": "create"},
+        )
 
     return {
         "inventory": inventory["slug"],
@@ -271,6 +305,7 @@ def set_quantity(
     initialize_database(db_path)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
         connection.execute(
             """
             UPDATE inventory_items
@@ -278,6 +313,16 @@ def set_quantity(
             WHERE id = ?
             """,
             (quantity, item_id),
+        )
+        after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="set_quantity",
+            item_id=item_id,
+            before=before_snapshot,
+            after=after_snapshot,
+            metadata={"old_quantity": int(item["quantity"]), "new_quantity": quantity},
         )
         connection.commit()
 
@@ -309,6 +354,7 @@ def set_acquisition(
     initialize_database(db_path)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
         current_currency = text_or_none(item["acquisition_currency"])
         new_price = None if clear else coerce_decimal(item["acquisition_price"])
         new_currency = None if clear else current_currency
@@ -331,6 +377,16 @@ def set_acquisition(
             """,
             (new_price, new_currency, item_id),
         )
+        after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="set_acquisition",
+            item_id=item_id,
+            before=before_snapshot,
+            after=after_snapshot,
+            metadata={"clear": clear},
+        )
         connection.commit()
 
     result = inventory_item_result_from_row(item)
@@ -349,6 +405,7 @@ def set_finish_with_connection(
     finish: str,
 ) -> dict[str, Any]:
     item = get_inventory_item_row(connection, inventory_slug, item_id)
+    before_snapshot = inventory_item_result_from_row(item)
     normalized_finish = normalize_finish(finish)
     if normalized_finish == item["finish"]:
         result = inventory_item_result_from_row(item)
@@ -369,6 +426,17 @@ def set_finish_with_connection(
             "Changing finish would collide with an existing inventory row. "
             "Resolve the duplicate row first."
         ) from exc
+
+    after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_finish",
+        item_id=item_id,
+        before=before_snapshot,
+        after=after_snapshot,
+        metadata={"old_finish": item["finish"], "new_finish": normalized_finish},
+    )
 
     result = inventory_item_result_from_row(item)
     result["old_finish"] = item["finish"]
@@ -410,6 +478,7 @@ def set_location(
     normalized_location = text_or_none(location) or ""
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
         if normalized_location == item["location"]:
             result = inventory_item_result_from_row(item)
             result["old_location"] = item["location"]
@@ -445,6 +514,39 @@ def set_location(
             )
             result["old_location"] = item["location"]
             result["location"] = normalized_location
+            after_snapshot = load_inventory_item_snapshot(
+                connection,
+                inventory_slug=inventory_slug,
+                item_id=int(result["item_id"]),
+            )
+            write_inventory_audit_event(
+                connection,
+                inventory_slug=inventory_slug,
+                action="set_location",
+                item_id=int(item["item_id"]),
+                before=before_snapshot,
+                after=None,
+                metadata={
+                    "merged": True,
+                    "target_item_id": int(result["item_id"]),
+                    "new_location": normalized_location,
+                    "keep_acquisition": keep_acquisition,
+                },
+            )
+            write_inventory_audit_event(
+                connection,
+                inventory_slug=inventory_slug,
+                action="set_location",
+                item_id=int(result["item_id"]),
+                before=inventory_item_result_from_row(collision),
+                after=after_snapshot,
+                metadata={
+                    "merged": True,
+                    "source_item_id": int(item["item_id"]),
+                    "new_location": normalized_location,
+                    "keep_acquisition": keep_acquisition,
+                },
+            )
             connection.commit()
             return result
 
@@ -455,6 +557,16 @@ def set_location(
             WHERE id = ?
             """,
             (normalized_location, item_id),
+        )
+        after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="set_location",
+            item_id=item_id,
+            before=before_snapshot,
+            after=after_snapshot,
+            metadata={"merged": False, "old_location": item["location"], "new_location": normalized_location},
         )
         connection.commit()
 
@@ -480,6 +592,7 @@ def set_condition(
     normalized_condition = normalize_condition_code(condition_code)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
         if normalized_condition == item["condition_code"]:
             result = inventory_item_result_from_row(item)
             result["old_condition_code"] = item["condition_code"]
@@ -515,6 +628,39 @@ def set_condition(
             )
             result["old_condition_code"] = item["condition_code"]
             result["condition_code"] = normalized_condition
+            after_snapshot = load_inventory_item_snapshot(
+                connection,
+                inventory_slug=inventory_slug,
+                item_id=int(result["item_id"]),
+            )
+            write_inventory_audit_event(
+                connection,
+                inventory_slug=inventory_slug,
+                action="set_condition",
+                item_id=int(item["item_id"]),
+                before=before_snapshot,
+                after=None,
+                metadata={
+                    "merged": True,
+                    "target_item_id": int(result["item_id"]),
+                    "new_condition_code": normalized_condition,
+                    "keep_acquisition": keep_acquisition,
+                },
+            )
+            write_inventory_audit_event(
+                connection,
+                inventory_slug=inventory_slug,
+                action="set_condition",
+                item_id=int(result["item_id"]),
+                before=inventory_item_result_from_row(collision),
+                after=after_snapshot,
+                metadata={
+                    "merged": True,
+                    "source_item_id": int(item["item_id"]),
+                    "new_condition_code": normalized_condition,
+                    "keep_acquisition": keep_acquisition,
+                },
+            )
             connection.commit()
             return result
 
@@ -525,6 +671,20 @@ def set_condition(
             WHERE id = ?
             """,
             (normalized_condition, item_id),
+        )
+        after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="set_condition",
+            item_id=item_id,
+            before=before_snapshot,
+            after=after_snapshot,
+            metadata={
+                "merged": False,
+                "old_condition_code": item["condition_code"],
+                "new_condition_code": normalized_condition,
+            },
         )
         connection.commit()
 
@@ -558,6 +718,7 @@ def split_row(
     initialize_database(db_path)
     with connect(db_path) as connection:
         source_item = get_inventory_item_row(connection, inventory_slug, item_id)
+        source_before_snapshot = inventory_item_result_from_row(source_item)
         source_quantity = int(source_item["quantity"])
         if quantity > source_quantity:
             raise ValueError("--quantity cannot exceed the current row quantity.")
@@ -602,6 +763,9 @@ def split_row(
                 target_item,
                 acquisition_preference=keep_acquisition,
             )
+            target_before_snapshot = inventory_item_result_from_row(target_item)
+        else:
+            target_before_snapshot = None
 
         if before_write is not None:
             before_write()
@@ -633,6 +797,11 @@ def split_row(
                 acquisition_preference=keep_acquisition,
             )
             result["merged_into_existing"] = True
+            target_after_snapshot = load_inventory_item_snapshot(
+                connection,
+                inventory_slug=inventory_slug,
+                item_id=int(result["item_id"]),
+            )
         else:
             cursor = connection.execute(
                 """
@@ -670,6 +839,48 @@ def split_row(
             new_item_row = get_inventory_item_row(connection, inventory_slug, new_item_id)
             result = inventory_item_result_from_row(new_item_row)
             result["merged_into_existing"] = False
+            target_after_snapshot = inventory_item_result_from_row(new_item_row)
+
+        if source_deleted:
+            source_after_snapshot = None
+        else:
+            source_after_snapshot = load_inventory_item_snapshot(
+                connection,
+                inventory_slug=inventory_slug,
+                item_id=item_id,
+            )
+
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="split_row",
+            item_id=item_id,
+            before=source_before_snapshot,
+            after=source_after_snapshot,
+            metadata={
+                "role": "source",
+                "moved_quantity": quantity,
+                "source_deleted": source_deleted,
+                "target_item_id": int(result["item_id"]),
+                "merged_into_existing": bool(result["merged_into_existing"]),
+                "keep_acquisition": keep_acquisition,
+            },
+        )
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="split_row",
+            item_id=int(result["item_id"]),
+            before=target_before_snapshot,
+            after=target_after_snapshot,
+            metadata={
+                "role": "target",
+                "source_item_id": item_id,
+                "moved_quantity": quantity,
+                "merged_into_existing": bool(result["merged_into_existing"]),
+                "keep_acquisition": keep_acquisition,
+            },
+        )
 
         connection.commit()
 
@@ -692,6 +903,7 @@ def set_notes(
     normalized_notes = text_or_none(notes)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
         connection.execute(
             """
             UPDATE inventory_items
@@ -699,6 +911,15 @@ def set_notes(
             WHERE id = ?
             """,
             (normalized_notes, item_id),
+        )
+        after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="set_notes",
+            item_id=item_id,
+            before=before_snapshot,
+            after=after_snapshot,
         )
         connection.commit()
 
@@ -718,6 +939,7 @@ def set_tags(
     initialize_database(db_path)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
         normalized_tags = parse_tags(tags)
         connection.execute(
             """
@@ -726,6 +948,15 @@ def set_tags(
             WHERE id = ?
             """,
             (tags_to_json(normalized_tags), item_id),
+        )
+        after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="set_tags",
+            item_id=item_id,
+            before=before_snapshot,
+            after=after_snapshot,
         )
         connection.commit()
 
@@ -752,6 +983,8 @@ def merge_rows(
     with connect(db_path) as connection:
         source_item = get_inventory_item_row(connection, inventory_slug, source_item_id)
         target_item = get_inventory_item_row(connection, inventory_slug, target_item_id)
+        source_before_snapshot = inventory_item_result_from_row(source_item)
+        target_before_snapshot = inventory_item_result_from_row(target_item)
 
         if source_item["scryfall_id"] != target_item["scryfall_id"]:
             raise ValueError("merge-rows currently requires both rows to reference the same printing.")
@@ -764,6 +997,37 @@ def merge_rows(
             source_item=source_item,
             target_item=target_item,
             acquisition_preference=keep_acquisition,
+        )
+        target_after_snapshot = load_inventory_item_snapshot(
+            connection,
+            inventory_slug=inventory_slug,
+            item_id=target_item_id,
+        )
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="merge_rows",
+            item_id=source_item_id,
+            before=source_before_snapshot,
+            after=None,
+            metadata={
+                "role": "source",
+                "target_item_id": target_item_id,
+                "keep_acquisition": keep_acquisition,
+            },
+        )
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="merge_rows",
+            item_id=target_item_id,
+            before=target_before_snapshot,
+            after=target_after_snapshot,
+            metadata={
+                "role": "target",
+                "source_item_id": source_item_id,
+                "keep_acquisition": keep_acquisition,
+            },
         )
         connection.commit()
 
@@ -783,6 +1047,7 @@ def remove_card(
     initialize_database(db_path)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
         if before_write is not None:
             before_write()
         connection.execute(
@@ -791,6 +1056,14 @@ def remove_card(
             WHERE id = ?
             """,
             (item_id,),
+        )
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action="remove_card",
+            item_id=item_id,
+            before=before_snapshot,
+            after=None,
         )
         connection.commit()
 

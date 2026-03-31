@@ -98,6 +98,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("Migrated database", migrate_output)
             self.assertIn("0001 mvp base", migrate_output)
             self.assertIn("0002 add tags json", migrate_output)
+            self.assertIn("0003 add inventory audit log", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",
@@ -159,6 +160,243 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("No inventory row found", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
             self.assertFalse((tmp / "_snapshots").exists())
+
+    def test_inventory_audit_log_tracks_simple_item_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "3",
+                "--location",
+                "Binder A",
+                "--tags",
+                "burn",
+                "--acquisition-price",
+                "1.25",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.run_cli(
+                "set-quantity",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--quantity",
+                "2",
+            )
+            self.run_cli(
+                "set-notes",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--notes",
+                "Checked after deck night",
+            )
+            self.run_cli(
+                "remove-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+            )
+
+            connection = sqlite3.connect(db_path)
+            rows = connection.execute(
+                """
+                SELECT action, item_id, before_json, after_json, metadata_json
+                FROM inventory_audit_log
+                ORDER BY id
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual(["add_card", "set_quantity", "set_notes", "remove_card"], [row[0] for row in rows])
+
+            add_before, add_after, add_metadata = rows[0][2], json.loads(rows[0][3]), json.loads(rows[0][4])
+            self.assertIsNone(add_before)
+            self.assertEqual("Lightning Bolt", add_after["card_name"])
+            self.assertEqual(3, add_after["quantity"])
+            self.assertEqual("1.25", add_after["acquisition_price"])
+            self.assertEqual({"mode": "create"}, add_metadata)
+
+            set_qty_before = json.loads(rows[1][2])
+            set_qty_after = json.loads(rows[1][3])
+            self.assertEqual(3, set_qty_before["quantity"])
+            self.assertEqual(2, set_qty_after["quantity"])
+
+            set_notes_before = json.loads(rows[2][2])
+            set_notes_after = json.loads(rows[2][3])
+            self.assertIsNone(set_notes_before["notes"])
+            self.assertEqual("Checked after deck night", set_notes_after["notes"])
+
+            remove_before, remove_after = json.loads(rows[3][2]), rows[3][3]
+            self.assertEqual(2, remove_before["quantity"])
+            self.assertIsNone(remove_after)
+
+    def test_inventory_audit_log_tracks_location_merge_as_delete_plus_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "2",
+                "--location",
+                "Binder A",
+                "--notes",
+                "Source row",
+                "--tags",
+                "source-tag",
+                "--acquisition-price",
+                "1.50",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--location",
+                "Deck Box",
+                "--notes",
+                "Target row",
+                "--tags",
+                "target-tag",
+                "--acquisition-price",
+                "2.00",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.run_cli(
+                "set-location",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--location",
+                "Deck Box",
+                "--merge",
+                "--keep-acquisition",
+                "target",
+            )
+
+            connection = sqlite3.connect(db_path)
+            rows = connection.execute(
+                """
+                SELECT item_id, before_json, after_json, metadata_json
+                FROM inventory_audit_log
+                WHERE action = 'set_location'
+                ORDER BY id
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual(2, len(rows))
+            source_row = next(row for row in rows if row[0] == 1)
+            target_row = next(row for row in rows if row[0] == 2)
+
+            source_before = json.loads(source_row[1])
+            source_after = source_row[2]
+            source_metadata = json.loads(source_row[3])
+            self.assertEqual("Binder A", source_before["location"])
+            self.assertIsNone(source_after)
+            self.assertTrue(source_metadata["merged"])
+            self.assertEqual(2, source_metadata["target_item_id"])
+
+            target_before = json.loads(target_row[1])
+            target_after = json.loads(target_row[2])
+            target_metadata = json.loads(target_row[3])
+            self.assertEqual(1, target_before["quantity"])
+            self.assertEqual(3, target_after["quantity"])
+            self.assertEqual("Deck Box", target_after["location"])
+            self.assertTrue(target_metadata["merged"])
+            self.assertEqual(1, target_metadata["source_item_id"])
 
     def test_import_and_personal_inventory_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
