@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
-from .normalize import coerce_float, parse_tag_filters, text_or_none, truncate
+from .money import coerce_decimal
+from .normalize import parse_tag_filters, text_or_none, truncate
 
 
 def render_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> str:
@@ -72,13 +74,13 @@ def build_currency_totals(
 ) -> list[dict[str, Any]]:
     totals: dict[str, dict[str, Any]] = {}
     for row in rows:
-        amount = coerce_float(row.get(value_key))
+        amount = coerce_decimal(row.get(value_key))
         currency = text_or_none(row.get(currency_key))
         if amount is None or currency is None:
             continue
         bucket = totals.setdefault(
             currency,
-            {"currency": currency, "item_rows": 0, "total_cards": 0, "total_amount": 0.0},
+            {"currency": currency, "item_rows": 0, "total_cards": 0, "total_amount": Decimal("0")},
         )
         bucket["item_rows"] += 1
         bucket["total_cards"] += int(row.get(quantity_key, 0) or 0)
@@ -95,7 +97,7 @@ def build_currency_totals(
                 "currency": currency,
                 "item_rows": bucket["item_rows"],
                 "total_cards": bucket["total_cards"],
-                "total_amount": round(bucket["total_amount"], 2),
+                "total_amount": bucket["total_amount"],
             }
         )
     return formatted
@@ -104,7 +106,7 @@ def build_currency_totals(
 def build_top_value_rows(rows: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
     ranked = sorted(
         rows,
-        key=lambda row: (coerce_float(row.get("est_value")) or 0.0, int(row.get("quantity", 0) or 0)),
+        key=lambda row: (coerce_decimal(row.get("est_value")) or Decimal("0"), int(row.get("quantity", 0) or 0)),
         reverse=True,
     )
     top_rows: list[dict[str, Any]] = []

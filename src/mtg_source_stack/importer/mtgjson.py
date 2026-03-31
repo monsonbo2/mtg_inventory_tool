@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from ..db.connection import connect
 from ..db.schema import initialize_database
+from ..inventory.money import coerce_decimal
 from ..pricing import DEFAULT_PRICE_CURRENCY
 from .service import ImportStats, first_non_empty, load_json, text_or_none
 
@@ -258,7 +259,8 @@ def import_mtgjson_prices(
                                 items = []
 
                             for snapshot_date, price_value in items:
-                                if not isinstance(price_value, (int, float)):
+                                decimal_price = coerce_decimal(price_value)
+                                if decimal_price is None:
                                     continue
 
                                 maybe_before_write()
@@ -271,7 +273,7 @@ def import_mtgjson_prices(
                                         str(finish),
                                         currency,
                                         str(snapshot_date),
-                                        float(price_value),
+                                        decimal_price,
                                         source_name,
                                     ),
                                 )

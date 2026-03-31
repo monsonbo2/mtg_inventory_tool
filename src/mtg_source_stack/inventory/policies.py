@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import sqlite3
 from typing import Any
 
+from .money import coerce_decimal
 from .normalize import load_tags_json, merge_note_text, merge_tags, tags_to_json, text_or_none
 
 
-def canonical_acquisition(price: Any, currency: Any) -> tuple[Any, str | None] | None:
-    if price is None:
+def canonical_acquisition(price: Any, currency: Any) -> tuple[Decimal, str | None] | None:
+    decimal_price = coerce_decimal(price)
+    if decimal_price is None:
         return None
-    return price, text_or_none(currency)
+    return decimal_price, text_or_none(currency)
 
 
 def resolve_merge_acquisition(
@@ -79,7 +82,7 @@ def ensure_add_card_metadata_compatible(
     existing_row: sqlite3.Row,
     *,
     incoming_notes: str | None,
-    incoming_acquisition_price: float | None,
+    incoming_acquisition_price: Decimal | None,
     incoming_acquisition_currency: str | None,
 ) -> None:
     existing_notes = text_or_none(existing_row["notes"])
@@ -90,7 +93,7 @@ def ensure_add_card_metadata_compatible(
         )
 
     incoming_acquisition = canonical_acquisition(
-        float(incoming_acquisition_price) if incoming_acquisition_price is not None else None,
+        incoming_acquisition_price,
         incoming_acquisition_currency,
     )
     existing_acquisition = canonical_acquisition(

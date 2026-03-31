@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import sqlite3
 from pathlib import Path
 from typing import Any, Callable
@@ -9,6 +10,7 @@ from typing import Any, Callable
 from ..db.connection import connect, require_database_file
 from ..db.schema import initialize_database
 from .catalog import resolve_card_row
+from .money import coerce_decimal
 from .normalize import (
     load_tags_json,
     merge_tags,
@@ -47,7 +49,7 @@ def add_card_with_connection(
     finish: str,
     language_code: str,
     location: str,
-    acquisition_price: float | None,
+    acquisition_price: Decimal | None,
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
@@ -61,13 +63,16 @@ def add_card_with_connection(
     normalized_finish = normalize_finish(finish)
     normalized_language = normalize_language_code(language_code)
     normalized_location = text_or_none(location) or ""
+    normalized_acquisition_price = coerce_decimal(acquisition_price)
     normalized_acquisition_currency = normalize_currency_code(acquisition_currency)
     normalized_notes = text_or_none(notes)
-    if acquisition_price is None and normalized_acquisition_currency is not None:
+    if normalized_acquisition_price is None and normalized_acquisition_currency is not None:
         raise ValueError(
             "Cannot store an acquisition currency without an acquisition price. "
             "Use --acquisition-price too, or omit --acquisition-currency."
         )
+    if normalized_acquisition_price is not None and normalized_acquisition_price < 0:
+        raise ValueError("--acquisition-price must be zero or greater.")
     if inventory_cache is None:
         inventory_cache = {}
 
@@ -129,7 +134,7 @@ def add_card_with_connection(
         ensure_add_card_metadata_compatible(
             existing_row,
             incoming_notes=normalized_notes,
-            incoming_acquisition_price=acquisition_price,
+            incoming_acquisition_price=normalized_acquisition_price,
             incoming_acquisition_currency=normalized_acquisition_currency,
         )
 
@@ -179,7 +184,7 @@ def add_card_with_connection(
                 normalized_finish,
                 normalized_language,
                 normalized_location,
-                acquisition_price,
+                normalized_acquisition_price,
                 normalized_acquisition_currency,
                 normalized_notes,
                 tags_to_json(merged_tags),
@@ -222,7 +227,7 @@ def add_card(
     finish: str,
     language_code: str,
     location: str,
-    acquisition_price: float | None,
+    acquisition_price: Decimal | None,
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
@@ -287,7 +292,7 @@ def set_acquisition(
     *,
     inventory_slug: str,
     item_id: int,
-    acquisition_price: float | None,
+    acquisition_price: Decimal | None,
     acquisition_currency: str | None,
     clear: bool = False,
     before_write: Callable[[], Any] | None = None,
@@ -297,18 +302,19 @@ def set_acquisition(
         raise ValueError("Use either --clear or --price / --currency, not both.")
     if not clear and acquisition_price is None and acquisition_currency is None:
         raise ValueError("Provide at least one of --price or --currency, or use --clear.")
-    if acquisition_price is not None and acquisition_price < 0:
+    normalized_acquisition_price = coerce_decimal(acquisition_price)
+    if normalized_acquisition_price is not None and normalized_acquisition_price < 0:
         raise ValueError("--price must be zero or greater.")
 
     initialize_database(db_path)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         current_currency = text_or_none(item["acquisition_currency"])
-        new_price = None if clear else item["acquisition_price"]
+        new_price = None if clear else coerce_decimal(item["acquisition_price"])
         new_currency = None if clear else current_currency
 
-        if acquisition_price is not None:
-            new_price = float(acquisition_price)
+        if normalized_acquisition_price is not None:
+            new_price = normalized_acquisition_price
         if acquisition_currency is not None:
             new_currency = normalize_currency_code(acquisition_currency)
 
@@ -328,7 +334,7 @@ def set_acquisition(
         connection.commit()
 
     result = inventory_item_result_from_row(item)
-    result["old_acquisition_price"] = item["acquisition_price"]
+    result["old_acquisition_price"] = coerce_decimal(item["acquisition_price"])
     result["old_acquisition_currency"] = current_currency
     result["acquisition_price"] = new_price
     result["acquisition_currency"] = new_currency
@@ -654,7 +660,7 @@ def split_row(
                     target_finish,
                     target_language,
                     target_location,
-                    source_item["acquisition_price"],
+                    coerce_decimal(source_item["acquisition_price"]),
                     text_or_none(source_item["acquisition_currency"]),
                     text_or_none(source_item["notes"]),
                     source_item["tags_json"],

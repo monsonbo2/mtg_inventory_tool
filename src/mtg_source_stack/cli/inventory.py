@@ -7,6 +7,7 @@ from typing import Any, Callable
 from ..db.connection import DEFAULT_DB_PATH
 from ..db.snapshots import create_database_snapshot
 from ..inventory.csv_import import import_csv
+from ..inventory.money import parse_decimal_argument
 from ..inventory.normalize import (
     DEFAULT_HEALTH_STALE_DAYS,
     DEFAULT_PROVIDER,
@@ -125,7 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--finish", default="normal", help="normal, nonfoil, foil, or etched.")
     add.add_argument("--language-code", default="en", help="Owned card language code.")
     add.add_argument("--location", default="", help="Storage location, such as Binder 1.")
-    add.add_argument("--acquisition-price", type=float, help="Optional acquisition price per copy.")
+    add.add_argument("--acquisition-price", type=parse_decimal_argument, help="Optional acquisition price per copy.")
     add.add_argument("--acquisition-currency", help="Optional acquisition currency, such as USD.")
     add.add_argument("--notes", help="Optional notes.")
     add.add_argument("--tags", help="Optional comma-separated custom tags, such as commander,trade.")
@@ -203,7 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_acquisition_parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
     set_acquisition_parser.add_argument("--inventory", required=True, help="Inventory slug.")
     set_acquisition_parser.add_argument("--item-id", required=True, type=int, help="Inventory row id from list-owned.")
-    set_acquisition_parser.add_argument("--price", type=float, help="Acquisition price to store on the row.")
+    set_acquisition_parser.add_argument("--price", type=parse_decimal_argument, help="Acquisition price to store on the row.")
     set_acquisition_parser.add_argument("--currency", help="Acquisition currency, such as USD.")
     set_acquisition_parser.add_argument("--clear", action="store_true", help="Clear acquisition price and currency.")
 

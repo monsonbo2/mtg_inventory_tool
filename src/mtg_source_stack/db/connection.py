@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import sqlite3
 from pathlib import Path
 
 
 DEFAULT_DB_PATH = Path("var") / "db" / "mtg_mvp.db"
+
+
+sqlite3.register_adapter(Decimal, lambda value: format(value, "f"))
 
 
 def require_database_file(db_path: str | Path) -> Path:

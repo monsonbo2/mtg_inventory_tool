@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from .money import coerce_decimal
 from .normalize import load_tags_json, normalize_finish, parse_tag_filters, text_or_none
 from .policies import build_merged_inventory_item_update
 
@@ -156,7 +157,7 @@ def inventory_item_result_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "condition_code": row["condition_code"],
         "language_code": row["language_code"],
         "location": row["location"],
-        "acquisition_price": row["acquisition_price"],
+        "acquisition_price": coerce_decimal(row["acquisition_price"]),
         "acquisition_currency": text_or_none(row["acquisition_currency"]),
         "notes": text_or_none(row["notes"]),
         "tags": load_tags_json(row["tags_json"]),

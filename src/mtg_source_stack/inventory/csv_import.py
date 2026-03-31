@@ -20,6 +20,7 @@ from .normalize import (
     slugify_inventory_name,
     text_or_none,
 )
+from .money import parse_decimal_text
 from .mutations import add_card_with_connection
 
 
@@ -43,16 +44,6 @@ def normalize_csv_row(raw_row: dict[str, Any]) -> dict[str, str | None]:
 
 def is_blank_csv_row(row: dict[str, str | None]) -> bool:
     return not any(value is not None for value in row.values())
-
-
-def parse_csv_float(value: str | None, field_name: str, row_number: int) -> float | None:
-    text = text_or_none(value)
-    if text is None:
-        return None
-    try:
-        return float(text)
-    except ValueError as exc:
-        raise ValueError(f"CSV row {row_number}: {field_name} must be a number.") from exc
 
 
 def build_add_card_kwargs_from_csv_row(
@@ -98,7 +89,11 @@ def build_add_card_kwargs_from_csv_row(
         "finish": finish_from_row(row),
         "language_code": normalize_language_code(row.get("language_code")),
         "location": text_or_none(row.get("location")) or "",
-        "acquisition_price": parse_csv_float(row.get("acquisition_price"), "acquisition_price", row_number),
+        "acquisition_price": parse_decimal_text(
+            row.get("acquisition_price"),
+            field_name="acquisition_price",
+            row_number=row_number,
+        ),
         "acquisition_currency": text_or_none(row.get("acquisition_currency")),
         "notes": text_or_none(row.get("notes")),
         "tags": text_or_none(row.get("tags")),

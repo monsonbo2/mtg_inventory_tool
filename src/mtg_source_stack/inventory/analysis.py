@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
-from .normalize import coerce_float, format_finishes, load_tags_json, text_or_none, truncate
+from .money import coerce_decimal
+from .normalize import format_finishes, load_tags_json, text_or_none, truncate
 from .query_inventory import add_owned_filters, get_inventory_row
 from .query_pricing import build_latest_retail_prices_cte, query_price_gaps, query_stale_price_rows
 from .query_reporting import (
@@ -58,7 +60,7 @@ def build_price_gap_row(row: dict[str, Any]) -> PriceGapRow:
         condition_code=row["condition_code"],
         language_code=row["language_code"],
         location=text_or_none(row["location"]),
-        acquisition_price=coerce_float(row.get("acquisition_price")),
+        acquisition_price=coerce_decimal(row.get("acquisition_price")),
         acquisition_currency=text_or_none(row.get("acquisition_currency")),
         notes=text_or_none(row.get("notes")),
         tags=list(row.get("tags", [])),
@@ -69,6 +71,8 @@ def build_price_gap_row(row: dict[str, Any]) -> PriceGapRow:
 
 
 def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
+    unit_price = coerce_decimal(row.get("unit_price"))
+    quantity = int(row["quantity"])
     return OwnedInventoryRow(
         item_id=int(row["item_id"]),
         scryfall_id=row["scryfall_id"],
@@ -77,17 +81,17 @@ def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
         set_name=row["set_name"],
         rarity=text_or_none(row.get("rarity")),
         collector_number=row["collector_number"],
-        quantity=int(row["quantity"]),
+        quantity=quantity,
         condition_code=row["condition_code"],
         finish=row["finish"],
         language_code=row["language_code"],
         location=text_or_none(row.get("location")),
         tags=load_tags_json(row.get("tags_json")),
-        acquisition_price=coerce_float(row.get("acquisition_price")),
+        acquisition_price=coerce_decimal(row.get("acquisition_price")),
         acquisition_currency=text_or_none(row.get("acquisition_currency")),
         currency=text_or_none(row.get("currency")),
-        unit_price=coerce_float(row.get("unit_price")),
-        est_value=coerce_float(row.get("est_value")),
+        unit_price=unit_price,
+        est_value=(unit_price * Decimal(quantity) if unit_price is not None else None),
         price_date=text_or_none(row.get("price_date")),
         notes=text_or_none(row.get("notes")),
     )
@@ -99,7 +103,7 @@ def build_valuation_row(row: dict[str, Any]) -> ValuationRow:
         currency=text_or_none(row.get("currency")),
         item_rows=int(row["item_rows"]),
         total_cards=int(row["total_cards"]),
-        total_value=coerce_float(row.get("total_value")) or 0.0,
+        total_value=coerce_decimal(row.get("total_value")) or Decimal("0"),
     )
 
 
@@ -720,7 +724,7 @@ def inventory_report(
             currency=row["currency"],
             item_rows=int(row["item_rows"]),
             total_cards=int(row["total_cards"]),
-            total_amount=coerce_float(row.get("total_amount")) or 0.0,
+            total_amount=coerce_decimal(row.get("total_amount")) or Decimal("0"),
         )
         for row in build_currency_totals(
             rows_payload,
@@ -738,7 +742,7 @@ def inventory_report(
             qty=int(row["qty"]),
             finish=row["finish"],
             location=row["location"],
-            est_value=coerce_float(row.get("est_value")),
+            est_value=coerce_decimal(row.get("est_value")),
             currency=text_or_none(row.get("currency")),
         )
         for row in build_top_value_rows(rows_payload, limit=limit)

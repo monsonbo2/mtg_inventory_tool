@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import json
 import sqlite3
 import tempfile
@@ -208,8 +209,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual(1, len(owned_rows))
             self.assertEqual("USD", owned_rows[0].currency)
-            self.assertEqual(2.5, owned_rows[0].unit_price)
-            self.assertEqual(5.0, owned_rows[0].est_value)
+            self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
+            self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)
             self.assertIsNone(owned_rows[0].acquisition_price)
             self.assertIsNone(owned_rows[0].acquisition_currency)
             self.assertIsNone(owned_rows[0].notes)
@@ -222,7 +223,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         "currency": "USD",
                         "item_rows": 1,
                         "total_cards": 2,
-                        "total_value": 5.0,
+                        "total_value": "5.0",
                     }
                 ],
                 serialize_response(valuation_rows),

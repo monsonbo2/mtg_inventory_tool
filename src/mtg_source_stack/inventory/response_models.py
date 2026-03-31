@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
+
+from .money import format_decimal
 
 
 class ResponseModel:
@@ -20,6 +23,8 @@ class ResponseModel:
 def serialize_response(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, Decimal):
+        return format_decimal(value)
     if is_dataclass(value):
         return {field.name: serialize_response(getattr(value, field.name)) for field in fields(value)}
     if isinstance(value, list):
@@ -68,11 +73,11 @@ class OwnedInventoryRow(ResponseModel):
     language_code: str
     location: str | None
     tags: list[str]
-    acquisition_price: float | None
+    acquisition_price: Decimal | None
     acquisition_currency: str | None
     currency: str | None
-    unit_price: float | None
-    est_value: float | None
+    unit_price: Decimal | None
+    est_value: Decimal | None
     price_date: str | None
     notes: str | None
 
@@ -91,7 +96,7 @@ class PriceGapRow(ResponseModel):
     condition_code: str
     language_code: str
     location: str | None
-    acquisition_price: float | None
+    acquisition_price: Decimal | None
     acquisition_currency: str | None
     notes: str | None
     tags: list[str]
@@ -205,7 +210,7 @@ class ValuationRow(ResponseModel):
     currency: str | None
     item_rows: int
     total_cards: int
-    total_value: float
+    total_value: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +218,7 @@ class CurrencyTotalRow(ResponseModel):
     currency: str
     item_rows: int
     total_cards: int
-    total_amount: float
+    total_amount: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +230,7 @@ class TopValueRow(ResponseModel):
     qty: int
     finish: str
     location: str
-    est_value: float | None
+    est_value: Decimal | None
     currency: str | None
 
 

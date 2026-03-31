@@ -4,6 +4,8 @@ import json
 import re
 from typing import Any
 
+from .money import format_decimal
+
 
 DEFAULT_PROVIDER = "tcgplayer"
 CSV_PREVIEW_LIMIT = 25
@@ -311,14 +313,6 @@ def format_acquisition_text(price: Any, currency: Any) -> str:
     return format_optional_text(format_acquisition_summary(price, currency))
 
 
-def format_decimal(value: Any) -> str:
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return f"{value:g}"
-    return str(value)
-
-
 def format_acquisition_summary(price: Any, currency: Any) -> str | None:
     if price is None:
         return None
@@ -369,17 +363,6 @@ def truncate(value: Any, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
-
-
-def coerce_float(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def parse_finish_list(value: str | None) -> list[str]:
     finishes: list[str] = []
     text = text_or_none(value)
