@@ -52,8 +52,16 @@ def add_owned_filters(
         params.append(f"%{location}%")
 
     for tag in parse_tag_filters(tags):
-        where_parts.append("LOWER(COALESCE(ii.tags_json, '[]')) LIKE ?")
-        params.append(f'%"{tag}"%')
+        where_parts.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM json_each(COALESCE(ii.tags_json, '[]')) tag_value
+                WHERE LOWER(tag_value.value) = LOWER(?)
+            )
+            """.strip()
+        )
+        params.append(tag)
 
 
 def get_inventory_row(connection: sqlite3.Connection, slug: str) -> sqlite3.Row:

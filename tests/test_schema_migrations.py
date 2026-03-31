@@ -28,10 +28,14 @@ class SchemaMigrationTest(unittest.TestCase):
                 audit_log_exists = connection.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'inventory_audit_log'"
                 ).fetchone()[0]
+                card_search_fts_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtg_cards_fts'"
+                ).fetchone()[0]
 
-            self.assertEqual([1, 2, 3], versions)
-            self.assertEqual(3, latest_version)
+            self.assertEqual([1, 2, 3, 4], versions)
+            self.assertEqual(4, latest_version)
             self.assertEqual(1, audit_log_exists)
+            self.assertEqual(1, card_search_fts_exists)
 
     def test_initialize_database_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -45,9 +49,14 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(3, len(rows))
+            self.assertEqual(4, len(rows))
             self.assertEqual(
-                [(1, "mvp base"), (2, "add tags json"), (3, "add inventory audit log")],
+                [
+                    (1, "mvp base"),
+                    (2, "add tags json"),
+                    (3, "add inventory audit log"),
+                    (4, "add card search fts"),
+                ],
                 [(row["version"], row["name"]) for row in rows],
             )
 
@@ -98,10 +107,14 @@ class SchemaMigrationTest(unittest.TestCase):
                     for row in migrated.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
                 ]
                 audit_columns = {row["name"] for row in migrated.execute("PRAGMA table_info(inventory_audit_log)")}
+                fts_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtg_cards_fts'"
+                ).fetchone()[0]
 
             self.assertIn("tags_json", columns)
             self.assertEqual("[]", tags_value)
-            self.assertEqual([1, 2, 3], versions)
+            self.assertEqual([1, 2, 3, 4], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
+            self.assertEqual(1, fts_exists)

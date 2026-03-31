@@ -9,7 +9,7 @@ from typing import Any
 from ..db.connection import connect
 from ..db.schema import require_current_schema
 from .normalize import normalize_catalog_finishes
-from .query_catalog import add_catalog_filters
+from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
 from .response_models import CatalogSearchRow
 
 
@@ -27,12 +27,33 @@ def search_cards(
     with connect(db_path) as connection:
         where_parts: list[str] = []
         params: list[Any] = []
+        search_cte = """
+        WITH search_match AS (
+            SELECT
+                NULL AS scryfall_id,
+                NULL AS search_rank
+            WHERE 0
+        )
+        """
+        search_join = "LEFT JOIN search_match ON 1 = 0"
+        fts_query = build_catalog_search_fts_query(query) if not exact else None
         if exact:
             where_parts.append("LOWER(name) = LOWER(?)")
             params.append(query)
         else:
-            where_parts.append("LOWER(name) LIKE LOWER(?)")
+            where_parts.append("(search_match.scryfall_id IS NOT NULL OR LOWER(name) LIKE LOWER(?))")
             params.append(f"%{query}%")
+            if fts_query is not None:
+                search_cte = """
+                WITH search_match AS (
+                    SELECT
+                        scryfall_id,
+                        bm25(mtg_cards_fts) AS search_rank
+                    FROM mtg_cards_fts
+                    WHERE mtg_cards_fts MATCH ?
+                )
+                """
+                search_join = "LEFT JOIN search_match ON search_match.scryfall_id = mtg_cards.scryfall_id"
 
         add_catalog_filters(
             where_parts,
@@ -43,27 +64,37 @@ def search_cards(
             lang=lang,
         )
 
-        params.extend([query, limit])
+        if not exact and fts_query is not None:
+            params = [fts_query, *params]
+        params.extend([query, f"{query}%", limit])
         rows = connection.execute(
             f"""
+            {search_cte}
             SELECT
-                scryfall_id,
-                name,
-                set_code,
-                set_name,
-                collector_number,
-                lang,
-                rarity,
-                finishes_json,
-                tcgplayer_product_id
+                mtg_cards.scryfall_id,
+                mtg_cards.name,
+                mtg_cards.set_code,
+                mtg_cards.set_name,
+                mtg_cards.collector_number,
+                mtg_cards.lang,
+                mtg_cards.rarity,
+                mtg_cards.finishes_json,
+                mtg_cards.tcgplayer_product_id
             FROM mtg_cards
+            {search_join}
             WHERE {' AND '.join(where_parts)}
             ORDER BY
-                CASE WHEN LOWER(name) = LOWER(?) THEN 0 ELSE 1 END,
-                name,
-                released_at DESC,
-                set_code,
-                collector_number
+                CASE
+                    WHEN LOWER(mtg_cards.name) = LOWER(?) THEN 0
+                    WHEN LOWER(mtg_cards.name) LIKE LOWER(?) THEN 1
+                    WHEN search_match.scryfall_id IS NOT NULL THEN 2
+                    ELSE 3
+                END,
+                COALESCE(search_match.search_rank, 0),
+                mtg_cards.name,
+                mtg_cards.released_at DESC,
+                mtg_cards.set_code,
+                mtg_cards.collector_number
             LIMIT ?
             """,
             params,

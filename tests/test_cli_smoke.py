@@ -99,6 +99,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("0001 mvp base", migrate_output)
             self.assertIn("0002 add tags json", migrate_output)
             self.assertIn("0003 add inventory audit log", migrate_output)
+            self.assertIn("0004 add card search fts", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",
@@ -458,6 +459,24 @@ class CliSmokeTest(RepoSmokeTestCase):
             )
             self.assertIn("Lightning Bolt", search_output)
             self.assertIn("s1", search_output)
+
+            reordered_search_output = self.run_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Bolt Lightning",
+            )
+            self.assertIn("Lightning Bolt", reordered_search_output)
+
+            prefix_search_output = self.run_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Light Bol",
+            )
+            self.assertIn("Lightning Bolt", prefix_search_output)
 
             filtered_search_output = self.run_cli(
                 "search-cards",
