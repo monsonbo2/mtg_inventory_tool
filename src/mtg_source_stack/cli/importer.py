@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any, Callable
 
-from ..db.connection import DEFAULT_DB_PATH
+from ..db.connection import DEFAULT_DB_PATH, require_database_file
+from ..db.migrator import migrate_database
 from ..db.schema import initialize_database
 from ..db.snapshots import create_database_snapshot, list_database_snapshots, restore_database_snapshot
 from ..importer.mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
@@ -23,6 +25,30 @@ from ..importer.service import (
 )
 
 
+def build_snapshot_callback(
+    db_path: str | Path,
+    *,
+    label: str,
+    snapshot_dir: str | Path | None = None,
+) -> tuple[Callable[[], dict[str, Any]], Callable[[], dict[str, Any] | None]]:
+    snapshot: dict[str, Any] | None = None
+
+    def ensure_snapshot() -> dict[str, Any]:
+        nonlocal snapshot
+        if snapshot is None:
+            snapshot = create_database_snapshot(
+                db_path,
+                label=label,
+                snapshot_dir=snapshot_dir,
+            )
+        return snapshot
+
+    def current_snapshot() -> dict[str, Any] | None:
+        return snapshot
+
+    return ensure_snapshot, current_snapshot
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Initialize and import the MTG MVP schema from local Scryfall and MTGJSON bulk files.",
@@ -31,6 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_db = subparsers.add_parser("init-db", help="Create the MVP SQLite schema.")
     init_db.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+
+    migrate_db = subparsers.add_parser("migrate-db", help="Apply pending schema migrations to an existing database.")
+    migrate_db.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
 
     snapshot_db = subparsers.add_parser("snapshot-db", help="Create a named safety snapshot of the database.")
     snapshot_db.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
@@ -134,89 +163,130 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    try:
+        if args.command == "init-db":
+            initialize_database(args.db)
+            print(f"Initialized database at {Path(args.db)}")
+            return
 
-    if args.command == "init-db":
-        initialize_database(args.db)
-        print(f"Initialized database at {Path(args.db)}")
-        return
+        if args.command == "migrate-db":
+            require_database_file(args.db)
+            applied = migrate_database(args.db)
+            if applied:
+                details = ", ".join(f"{migration.version:04d} {migration.name}" for migration in applied)
+                print(f"Migrated database at {Path(args.db)}")
+                print(f"Applied migrations: {details}")
+            else:
+                print(f"Database at {Path(args.db)} is already at the current schema version.")
+            return
 
-    if args.command == "snapshot-db":
-        snapshot = create_database_snapshot(
-            args.db,
-            label=args.label,
-            snapshot_dir=args.snapshot_dir,
-        )
-        print_snapshot_created(snapshot)
-        return
+        if args.command == "snapshot-db":
+            snapshot = create_database_snapshot(
+                args.db,
+                label=args.label,
+                snapshot_dir=args.snapshot_dir,
+            )
+            print_snapshot_created(snapshot)
+            return
 
-    if args.command == "list-snapshots":
-        snapshots = list_database_snapshots(
-            args.db,
-            snapshot_dir=args.snapshot_dir,
-            limit=args.limit,
-        )
-        print_snapshot_list(snapshots)
-        return
+        if args.command == "list-snapshots":
+            snapshots = list_database_snapshots(
+                args.db,
+                snapshot_dir=args.snapshot_dir,
+                limit=args.limit,
+            )
+            print_snapshot_list(snapshots)
+            return
 
-    if args.command == "restore-snapshot":
-        result = restore_database_snapshot(
-            args.db,
-            snapshot=args.snapshot,
-            snapshot_dir=args.snapshot_dir,
-            create_pre_restore_snapshot=not args.no_pre_restore_snapshot,
-        )
-        print_restore_snapshot_result(result)
-        return
+        if args.command == "restore-snapshot":
+            result = restore_database_snapshot(
+                args.db,
+                snapshot=args.snapshot,
+                snapshot_dir=args.snapshot_dir,
+                create_pre_restore_snapshot=not args.no_pre_restore_snapshot,
+            )
+            print_restore_snapshot_result(result)
+            return
 
-    initialize_database(args.db)
+        if args.command == "import-scryfall":
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_scryfall")
+            stats = import_scryfall_cards(args.db, args.json, args.limit, before_write=ensure_snapshot)
+            snapshot = get_snapshot()
+            if snapshot is not None:
+                print(f"snapshot: {snapshot['snapshot_path']}")
+            print_stats("import-scryfall", stats)
+            return
 
-    if args.command == "import-scryfall":
-        snapshot = create_database_snapshot(args.db, label="before_import_scryfall")
-        stats = import_scryfall_cards(args.db, args.json, args.limit)
-        print(f"snapshot: {snapshot['snapshot_path']}")
-        print_stats("import-scryfall", stats)
-        return
+        if args.command == "import-identifiers":
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_identifiers")
+            stats = import_mtgjson_identifiers(args.db, args.json, args.limit, before_write=ensure_snapshot)
+            snapshot = get_snapshot()
+            if snapshot is not None:
+                print(f"snapshot: {snapshot['snapshot_path']}")
+            print_stats("import-identifiers", stats)
+            return
 
-    if args.command == "import-identifiers":
-        snapshot = create_database_snapshot(args.db, label="before_import_identifiers")
-        stats = import_mtgjson_identifiers(args.db, args.json, args.limit)
-        print(f"snapshot: {snapshot['snapshot_path']}")
-        print_stats("import-identifiers", stats)
-        return
+        if args.command == "import-prices":
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_prices")
+            stats = import_mtgjson_prices(
+                args.db,
+                args.json,
+                args.limit,
+                args.source_name,
+                before_write=ensure_snapshot,
+            )
+            snapshot = get_snapshot()
+            if snapshot is not None:
+                print(f"snapshot: {snapshot['snapshot_path']}")
+            print_stats("import-prices", stats)
+            return
 
-    if args.command == "import-prices":
-        snapshot = create_database_snapshot(args.db, label="before_import_prices")
-        stats = import_mtgjson_prices(args.db, args.json, args.limit, args.source_name)
-        print(f"snapshot: {snapshot['snapshot_path']}")
-        print_stats("import-prices", stats)
-        return
+        if args.command == "import-all":
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_all")
+            scryfall_stats = import_scryfall_cards(
+                args.db,
+                args.scryfall_json,
+                args.limit,
+                before_write=ensure_snapshot,
+            )
+            identifier_stats = import_mtgjson_identifiers(
+                args.db,
+                args.identifiers_json,
+                args.limit,
+                before_write=ensure_snapshot,
+            )
+            price_stats = import_mtgjson_prices(
+                args.db,
+                args.prices_json,
+                args.limit,
+                args.source_name,
+                before_write=ensure_snapshot,
+            )
+            snapshot = get_snapshot()
+            if snapshot is not None:
+                print(f"snapshot: {snapshot['snapshot_path']}")
+            print_stats("import-scryfall", scryfall_stats)
+            print_stats("import-identifiers", identifier_stats)
+            print_stats("import-prices", price_stats)
+            return
 
-    if args.command == "import-all":
-        snapshot = create_database_snapshot(args.db, label="before_import_all")
-        scryfall_stats = import_scryfall_cards(args.db, args.scryfall_json, args.limit)
-        identifier_stats = import_mtgjson_identifiers(args.db, args.identifiers_json, args.limit)
-        price_stats = import_mtgjson_prices(args.db, args.prices_json, args.limit, args.source_name)
-        print(f"snapshot: {snapshot['snapshot_path']}")
-        print_stats("import-scryfall", scryfall_stats)
-        print_stats("import-identifiers", identifier_stats)
-        print_stats("import-prices", price_stats)
-        return
+        if args.command == "sync-bulk":
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_sync_bulk")
+            result = sync_bulk(
+                args.db,
+                cache_dir=args.cache_dir,
+                scryfall_metadata_url=args.scryfall_metadata_url,
+                scryfall_bulk_type=args.scryfall_bulk_type,
+                mtgjson_identifiers_url=args.mtgjson_identifiers_url,
+                mtgjson_prices_url=args.mtgjson_prices_url,
+                limit=args.limit,
+                source_name=args.source_name,
+                before_write=ensure_snapshot,
+            )
+            result["snapshot"] = get_snapshot()
+            print_sync_bulk_result(result)
+            return
 
-    if args.command == "sync-bulk":
-        snapshot = create_database_snapshot(args.db, label="before_sync_bulk")
-        result = sync_bulk(
-            args.db,
-            cache_dir=args.cache_dir,
-            scryfall_metadata_url=args.scryfall_metadata_url,
-            scryfall_bulk_type=args.scryfall_bulk_type,
-            mtgjson_identifiers_url=args.mtgjson_identifiers_url,
-            mtgjson_prices_url=args.mtgjson_prices_url,
-            limit=args.limit,
-            source_name=args.source_name,
-        )
-        result["snapshot"] = snapshot
-        print_sync_bulk_result(result)
-        return
-
-    parser.error(f"Unknown command {args.command}")
-
+        parser.error(f"Unknown command {args.command}")
+    except (OSError, ValueError) as exc:
+        parser.exit(status=2, message=f"Error: {exc}\n")

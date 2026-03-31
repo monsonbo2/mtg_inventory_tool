@@ -1,16 +1,758 @@
+"""Service-level workflow tests for inventory maintenance and reporting."""
+
 from __future__ import annotations
 
+from decimal import Decimal
 import json
 import sqlite3
 import tempfile
 from pathlib import Path
 
-from mtg_source_stack.inventory.service import inventory_report
+from mtg_source_stack.db.connection import connect
+from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.errors import ConflictError, NotFoundError, ValidationError
+from mtg_source_stack.inventory.response_models import (
+    AddCardResult,
+    MergeRowsResult,
+    RemoveCardResult,
+    SetConditionResult,
+    SetFinishResult,
+    SetLocationResult,
+    SetNotesResult,
+    SetQuantityResult,
+    SetTagsResult,
+    SplitRowResult,
+    serialize_response,
+)
+from mtg_source_stack.inventory.service import (
+    add_card,
+    create_inventory,
+    inventory_report,
+    list_owned_filtered,
+    list_price_gaps,
+    merge_rows,
+    reconcile_prices,
+    remove_card,
+    search_cards,
+    set_condition,
+    set_finish,
+    set_location,
+    set_notes,
+    set_quantity,
+    set_tags,
+    split_row,
+    valuation_filtered,
+)
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryServiceTest(RepoSmokeTestCase):
-    def test_reconcile_prices_updates_finish_when_one_priced_finish_exists(self) -> None:
+    def test_search_cards_returns_list_typed_catalog_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'search-card-1',
+                        'oracle-search-1',
+                        'Search Test Card',
+                        'tst',
+                        'Test Set',
+                        '9',
+                        'en',
+                        '["nonfoil","foil"]'
+                    )
+                    """
+                )
+                connection.commit()
+
+            rows = search_cards(db_path, query="Search Test", exact=False, limit=10)
+
+            # The service layer should keep catalog finishes machine-friendly so
+            # the API can return a real list and let formatters decide how to
+            # display it later.
+            self.assertEqual(1, len(rows))
+            self.assertEqual(["normal", "foil"], rows[0].finishes)
+            self.assertEqual(["normal", "foil"], serialize_response(rows)[0]["finishes"])
+
+    def test_create_inventory_returns_typed_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            result = create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description="Main binder inventory",
+            )
+
+            self.assertEqual(1, result.inventory_id)
+            self.assertEqual("personal", result.slug)
+            self.assertEqual("Personal Collection", result.display_name)
+            self.assertEqual("Main binder inventory", result.description)
+            self.assertEqual(
+                {
+                    "inventory_id": 1,
+                    "slug": "personal",
+                    "display_name": "Personal Collection",
+                    "description": "Main binder inventory",
+                },
+                serialize_response(result),
+            )
+
+    def test_write_services_require_prepared_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            with self.assertRaisesRegex(NotFoundError, "does not exist"):
+                create_inventory(
+                    db_path,
+                    slug="personal",
+                    display_name="Personal Collection",
+                    description=None,
+                )
+
+    def test_mutation_services_return_typed_results_for_direct_api_use(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES ('typed-edit-1', 'typed-edit-oracle-1', 'Typed Edit Card', 'tst', 'Test Set', '17', '["normal","foil"]')
+                    """
+                )
+                connection.commit()
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            # Walk one row through the main mutation surface so the typed write
+            # contract is checked as a cohesive API-facing workflow, not just
+            # one method at a time in isolation.
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="typed-edit-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=4,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags="deck",
+            )
+
+            quantity_result = set_quantity(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                quantity=3,
+            )
+            self.assertIsInstance(quantity_result, SetQuantityResult)
+            self.assertEqual(4, quantity_result.old_quantity)
+            self.assertEqual(3, quantity_result.quantity)
+            self.assertEqual(4, serialize_response(quantity_result)["old_quantity"])
+
+            finish_result = set_finish(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                finish="foil",
+            )
+            self.assertIsInstance(finish_result, SetFinishResult)
+            self.assertEqual("normal", finish_result.old_finish)
+            self.assertEqual("foil", finish_result.finish)
+
+            location_result = set_location(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                location="Deck Box",
+            )
+            self.assertIsInstance(location_result, SetLocationResult)
+            self.assertEqual("Binder A", location_result.old_location)
+            self.assertEqual("Deck Box", location_result.location)
+            self.assertFalse(location_result.merged)
+
+            condition_result = set_condition(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                condition_code="LP",
+            )
+            self.assertIsInstance(condition_result, SetConditionResult)
+            self.assertEqual("NM", condition_result.old_condition_code)
+            self.assertEqual("LP", condition_result.condition_code)
+            self.assertFalse(condition_result.merged)
+
+            tags_result = set_tags(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                tags="trade, staple",
+            )
+            self.assertIsInstance(tags_result, SetTagsResult)
+            self.assertEqual(["deck"], tags_result.old_tags)
+            self.assertEqual(["trade", "staple"], tags_result.tags)
+            self.assertEqual(["trade", "staple"], serialize_response(tags_result)["tags"])
+
+            split_result = split_row(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                quantity=1,
+                condition_code=None,
+                finish=None,
+                language_code=None,
+                location="Binder B",
+            )
+            self.assertIsInstance(split_result, SplitRowResult)
+            self.assertFalse(split_result.merged_into_existing)
+            self.assertEqual(1, split_result.moved_quantity)
+            self.assertEqual(3, split_result.source_old_quantity)
+            self.assertEqual(2, split_result.source_quantity)
+            self.assertFalse(split_result.source_deleted)
+
+            merge_result = merge_rows(
+                db_path,
+                inventory_slug="personal",
+                source_item_id=split_result.item_id,
+                target_item_id=added.item_id,
+            )
+            self.assertIsInstance(merge_result, MergeRowsResult)
+            self.assertEqual(split_result.item_id, merge_result.merged_source_item_id)
+            self.assertEqual(1, merge_result.source_quantity)
+            self.assertEqual(2, merge_result.target_old_quantity)
+            self.assertEqual(3, merge_result.quantity)
+
+            remove_result = remove_card(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+            )
+            self.assertIsInstance(remove_result, RemoveCardResult)
+            self.assertEqual(added.item_id, remove_result.item_id)
+            self.assertEqual(3, remove_result.quantity)
+            self.assertEqual("foil", remove_result.finish)
+            self.assertEqual("LP", remove_result.condition_code)
+            self.assertEqual("Deck Box", remove_result.location)
+
+            with connect(db_path) as connection:
+                remaining = connection.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0]
+            self.assertEqual(0, remaining)
+
+    def test_service_facade_raises_domain_errors_for_not_found_validation_and_conflict_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES (?, ?, 'Conflict Test Card', 'tst', 'Test Set', ?, '["normal","foil"]')
+                    """,
+                    [
+                        ("conflict-card-1", "conflict-oracle-1", "21"),
+                    ],
+                )
+                connection.commit()
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            first_row = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="conflict-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+            add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="conflict-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder B",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            # These are the main failure categories the future HTTP layer will
+            # map onto 404 / 400 / 409 style responses.
+            with self.assertRaises(NotFoundError):
+                set_notes(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=99,
+                    notes="Missing row",
+                )
+
+            with self.assertRaises(ValidationError):
+                set_finish(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=first_row.item_id,
+                    finish="sparkly",
+                )
+
+            with self.assertRaises(ConflictError):
+                set_location(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=first_row.item_id,
+                    location="Binder B",
+                )
+
+    def test_write_services_return_typed_models_and_capture_audit_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES ('typed-card-1', 'oracle-typed-1', 'Typed Test Card', 'tst', 'Test Set', '7', '["normal"]')
+                    """
+                )
+                connection.commit()
+
+            add_result = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name="Personal Collection",
+                scryfall_id="typed-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=2,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder 1",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags="commander,trade",
+                actor_type="user",
+                actor_id="demo-user",
+                request_id="req-add",
+            )
+
+            self.assertIsInstance(add_result, AddCardResult)
+            self.assertEqual(["commander", "trade"], add_result.tags)
+
+            # The direct service API should accept actor/request metadata once
+            # and preserve it all the way into the audit table.
+            set_notes_result = set_notes(
+                db_path,
+                inventory_slug="personal",
+                item_id=add_result.item_id,
+                notes="Front binder copy",
+                actor_type="user",
+                actor_id="demo-user",
+                request_id="req-notes",
+            )
+
+            self.assertIsInstance(set_notes_result, SetNotesResult)
+            self.assertIsNone(set_notes_result.old_notes)
+            self.assertEqual("Front binder copy", set_notes_result.notes)
+            self.assertEqual("Front binder copy", serialize_response(set_notes_result)["notes"])
+
+            with connect(db_path) as connection:
+                audit_rows = connection.execute(
+                    """
+                    SELECT action, actor_type, actor_id, request_id
+                    FROM inventory_audit_log
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+            self.assertEqual(
+                [
+                    ("add_card", "user", "demo-user", "req-add"),
+                    ("set_notes", "user", "demo-user", "req-notes"),
+                ],
+                [
+                    (row["action"], row["actor_type"], row["actor_id"], row["request_id"])
+                    for row in audit_rows
+                ],
+            )
+
+    def test_price_gaps_and_reconcile_use_latest_snapshot_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES ('gap-card-1', 'oracle-1', 'Gap Test Card', 'tst', 'Test Set', '1', '["normal","foil"]')
+                    """
+                )
+                inventory_id = connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        tags_json
+                    )
+                    VALUES (?, 'gap-card-1', 1, 'NM', 'normal', 'en', 'Binder', '[]')
+                    """,
+                    (inventory_id,),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO price_snapshots (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        price_value,
+                        source_name
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        ("gap-card-1", "tcgplayer", "retail", "normal", "USD", "2026-03-01", 1.50, "test"),
+                        ("gap-card-1", "tcgplayer", "retail", "foil", "USD", "2026-03-29", 5.00, "test"),
+                    ],
+                )
+
+            gap_rows = list_price_gaps(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+            )
+            reconcile_preview = reconcile_prices(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                apply_changes=False,
+            )
+
+            self.assertEqual(1, len(gap_rows))
+            self.assertEqual("gap-card-1", gap_rows[0].scryfall_id)
+            self.assertEqual(["foil"], gap_rows[0].available_finishes)
+            self.assertEqual("foil", gap_rows[0].suggested_finish)
+            self.assertEqual("single priced finish", gap_rows[0].reconcile_status)
+
+            self.assertEqual(1, reconcile_preview.rows_seen)
+            self.assertEqual(1, reconcile_preview.rows_fixable)
+            self.assertEqual(["foil"], reconcile_preview.suggested_rows[0].available_finishes)
+
+            with self.assertRaisesRegex(ValueError, "suggestion-only"):
+                reconcile_prices(
+                    db_path,
+                    inventory_slug="personal",
+                    provider="tcgplayer",
+                    apply_changes=True,
+                )
+
+    def test_latest_price_queries_ignore_non_usd_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('price-card-1', 'oracle-1', 'Price Test Card', 'tst', 'Test Set', '1')
+                    """
+                )
+                inventory_id = connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        tags_json
+                    )
+                    VALUES (?, 'price-card-1', 2, 'NM', 'normal', 'en', 'Binder', '[]')
+                    """,
+                    (inventory_id,),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO price_snapshots (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        price_value,
+                        source_name
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        ("price-card-1", "tcgplayer", "retail", "normal", "USD", "2026-03-27", 2.00, "test"),
+                        ("price-card-1", "tcgplayer", "retail", "normal", "EUR", "2026-03-28", 9.99, "legacy"),
+                        ("price-card-1", "tcgplayer", "retail", "normal", "USD", "2026-03-29", 2.50, "test"),
+                    ],
+                )
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            valuation_rows = valuation_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+
+            self.assertEqual(1, len(owned_rows))
+            self.assertEqual("USD", owned_rows[0].currency)
+            self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
+            self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)
+            self.assertIsNone(owned_rows[0].acquisition_price)
+            self.assertIsNone(owned_rows[0].acquisition_currency)
+            self.assertIsNone(owned_rows[0].notes)
+            self.assertEqual([], owned_rows[0].tags)
+
+            self.assertEqual(
+                [
+                    {
+                        "provider": "tcgplayer",
+                        "currency": "USD",
+                        "item_rows": 1,
+                        "total_cards": 2,
+                        "total_value": "5.0",
+                    }
+                ],
+                serialize_response(valuation_rows),
+            )
+
+    def test_latest_price_queries_treat_nonfoil_snapshots_as_normal_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('price-card-2', 'oracle-2', 'Finish Alias Test', 'tst', 'Test Set', '2')
+                    """
+                )
+                inventory_id = connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        tags_json
+                    )
+                    VALUES (?, 'price-card-2', 1, 'NM', 'normal', 'en', 'Binder', '[]')
+                    """,
+                    (inventory_id,),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO price_snapshots (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        price_value,
+                        source_name
+                    )
+                    VALUES ('price-card-2', 'tcgplayer', 'retail', 'nonfoil', 'USD', '2026-03-30', 4.25, 'legacy')
+                    """
+                )
+                connection.commit()
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            gap_rows = list_price_gaps(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+            )
+
+            self.assertEqual(1, len(owned_rows))
+            self.assertEqual(Decimal("4.25"), owned_rows[0].unit_price)
+            self.assertEqual([], gap_rows)
+
+    def test_reconcile_prices_only_suggests_finish_when_one_priced_finish_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
             db_path = tmp / "collection.db"
@@ -25,6 +767,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             identifiers_path = bundle["identifiers.json"]
             prices_path = bundle["prices.json"]
 
+            # The fixture only has a foil-priced version, which forces the
+            # reconcile flow to detect and fix the mismatched inventory finish.
             import_output = self.run_importer(
                 "import-all",
                 "--db",
@@ -77,6 +821,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("foil", gap_output)
             self.assertIn("single priced finish", gap_output)
 
+            # Reconciliation should now stay suggestion-only even when it can
+            # see a single likely finish from current pricing data.
             preview_output = self.run_cli(
                 "reconcile-prices",
                 "--db",
@@ -86,10 +832,11 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "--provider",
                 "tcgplayer",
             )
-            self.assertIn("Rows updated: 0", preview_output)
-            self.assertIn("Mode: preview only", preview_output)
+            self.assertIn("Mode: suggestion only (no changes applied)", preview_output)
+            self.assertIn("Suggested rows", preview_output)
+            self.assertIn("Shiny Bird", preview_output)
 
-            reconcile_output = self.run_cli(
+            reconcile_output = self.run_failing_cli(
                 "reconcile-prices",
                 "--db",
                 str(db_path),
@@ -99,8 +846,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "tcgplayer",
                 "--apply",
             )
-            self.assertIn("Rows updated: 1", reconcile_output)
-            self.assertIn("Shiny Bird", reconcile_output)
+            self.assertEqual(2, reconcile_output.returncode)
+            self.assertIn("suggestion-only", reconcile_output.stderr)
 
             owned_output = self.run_cli(
                 "list-owned",
@@ -112,8 +859,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "tcgplayer",
             )
             self.assertIn("Shiny Bird", owned_output)
-            self.assertIn("foil", owned_output)
-            self.assertIn("5.0", owned_output)
+            self.assertIn("normal", owned_output)
 
     def test_inventory_health_reports_missing_data_and_stale_prices(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -200,6 +946,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Seed deliberately messy rows so the report has examples for every
+            # health bucket: missing prices, missing metadata, stale prices, and
+            # duplicate-like holdings.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -395,6 +1144,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Set up one editable row plus a second printing so the test can
+            # cover both successful row surgery and a guarded merge failure.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -480,6 +1231,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("Target quantity now: 1", split_output)
             self.assertIn("Merged into existing row: no", split_output)
 
+            # The split should leave two independently addressable rows before
+            # the explicit merge command recombines them.
             owned_after_split = self.run_cli(
                 "list-owned",
                 "--db",
@@ -523,6 +1276,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             ).fetchall()
             connection.close()
 
+            # Inspecting the table directly keeps the test focused on stored
+            # state, not just formatted CLI output.
             self.assertEqual([(1, 4, "Binder A", 1.75, "USD")], rows)
 
             self.run_cli(
@@ -623,6 +1378,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "nonfoil",
             )
 
+            # Case and alias normalization should collapse these into the same
+            # logical row instead of creating near-duplicate entries.
             connection = sqlite3.connect(db_path)
             rows = connection.execute(
                 """
@@ -719,6 +1476,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Add one duplicate-like group and one unrelated row, then call the
+            # service function directly to verify health data is filtered to the
+            # report query instead of being computed globally and sliced later.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -805,9 +1565,32 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 stale_days=30,
             )
 
-            self.assertEqual(1, report["summary"]["item_rows"])
-            self.assertEqual(0, report["health"]["summary"]["duplicate_groups"])
-            self.assertEqual([], report["health"]["duplicate_groups"])
+            self.assertEqual(1, report.summary.item_rows)
+            self.assertEqual(0, report.health.summary.duplicate_groups)
+            self.assertEqual([], report.health.duplicate_groups)
+
+            # Filtering down to one row from a duplicate-like group should also
+            # clear the duplicate warning instead of inheriting the full-group
+            # result from the inventory-wide health scan.
+            one_side_report = inventory_report(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location="Box 1",
+                tags=None,
+                limit=5,
+                stale_days=30,
+            )
+
+            self.assertEqual(1, one_side_report.summary.item_rows)
+            self.assertEqual(0, one_side_report.health.summary.duplicate_groups)
+            self.assertEqual([], one_side_report.health.duplicate_groups)
 
     def test_export_csv_and_inventory_report_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -898,6 +1681,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 }
             }
 
+            # Seed one fully annotated row and one intentionally incomplete row
+            # so the exported reports contain both valuation data and health
+            # warnings.
             scryfall_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
@@ -984,6 +1770,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("Lightning Bolt", export_text)
             self.assertNotIn("Counterspell", export_text)
 
+            # The inventory report command emits the human-readable summary plus
+            # machine-readable JSON/CSV artifacts for downstream tooling.
             report_output = self.run_cli(
                 "inventory-report",
                 "--db",

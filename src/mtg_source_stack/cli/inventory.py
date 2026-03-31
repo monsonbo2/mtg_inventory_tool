@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any, Callable
 
 from ..db.connection import DEFAULT_DB_PATH
+from ..db.schema import initialize_database
 from ..db.snapshots import create_database_snapshot
 from ..inventory.csv_import import import_csv
+from ..inventory.money import parse_decimal_argument
 from ..inventory.normalize import (
     DEFAULT_HEALTH_STALE_DAYS,
     DEFAULT_PROVIDER,
     HEALTH_PREVIEW_LIMIT,
+    format_finishes,
     truncate,
 )
-from ..inventory.reports import (
-    EXPORT_CSV_FIELDNAMES,
+from ..inventory.report_formatters import (
     append_snapshot_notice,
     format_add_card_result,
     format_export_csv_result,
@@ -33,12 +36,19 @@ from ..inventory.reports import (
     format_set_quantity_result,
     format_set_tags_result,
     format_split_row_result,
+)
+from ..inventory.report_helpers import (
     print_table,
+)
+from ..inventory.report_io import (
+    EXPORT_CSV_FIELDNAMES,
+    flatten_owned_export_rows,
     write_csv_report,
     write_json_report,
     write_report,
     write_rows_csv,
 )
+from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
     create_inventory,
@@ -62,6 +72,25 @@ from ..inventory.service import (
     split_row,
     valuation_filtered,
 )
+
+
+def build_snapshot_callback(
+    db_path: str | Path,
+    *,
+    label: str,
+) -> tuple[Callable[[], dict[str, Any]], Callable[[], dict[str, Any] | None]]:
+    snapshot: dict[str, Any] | None = None
+
+    def ensure_snapshot() -> dict[str, Any]:
+        nonlocal snapshot
+        if snapshot is None:
+            snapshot = create_database_snapshot(db_path, label=label)
+        return snapshot
+
+    def current_snapshot() -> dict[str, Any] | None:
+        return snapshot
+
+    return ensure_snapshot, current_snapshot
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--finish", default="normal", help="normal, nonfoil, foil, or etched.")
     add.add_argument("--language-code", default="en", help="Owned card language code.")
     add.add_argument("--location", default="", help="Storage location, such as Binder 1.")
-    add.add_argument("--acquisition-price", type=float, help="Optional acquisition price per copy.")
+    add.add_argument("--acquisition-price", type=parse_decimal_argument, help="Optional acquisition price per copy.")
     add.add_argument("--acquisition-currency", help="Optional acquisition currency, such as USD.")
     add.add_argument("--notes", help="Optional notes.")
     add.add_argument("--tags", help="Optional comma-separated custom tags, such as commander,trade.")
@@ -141,6 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="If the new location collides with another row, merge into that row instead of failing.",
     )
+    set_location_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When a merge hits different acquisition values, choose which row's acquisition to keep.",
+    )
 
     set_condition_parser = subparsers.add_parser(
         "set-condition",
@@ -154,6 +188,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--merge",
         action="store_true",
         help="If the new condition collides with another row, merge into that row instead of failing.",
+    )
+    set_condition_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When a merge hits different acquisition values, choose which row's acquisition to keep.",
     )
 
     set_notes_parser = subparsers.add_parser("set-notes", help="Replace the notes for an existing inventory row.")
@@ -171,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_acquisition_parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
     set_acquisition_parser.add_argument("--inventory", required=True, help="Inventory slug.")
     set_acquisition_parser.add_argument("--item-id", required=True, type=int, help="Inventory row id from list-owned.")
-    set_acquisition_parser.add_argument("--price", type=float, help="Acquisition price to store on the row.")
+    set_acquisition_parser.add_argument("--price", type=parse_decimal_argument, help="Acquisition price to store on the row.")
     set_acquisition_parser.add_argument("--currency", help="Acquisition currency, such as USD.")
     set_acquisition_parser.add_argument("--clear", action="store_true", help="Clear acquisition price and currency.")
 
@@ -196,6 +235,11 @@ def build_parser() -> argparse.ArgumentParser:
     split_row_parser.add_argument("--language-code", help="Optional target language code.")
     split_row_parser.add_argument("--location", help="Optional target location.")
     split_row_parser.add_argument("--clear-location", action="store_true", help="Clear the target row location.")
+    split_row_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When splitting into an existing row with different acquisition values, choose which acquisition to keep.",
+    )
 
     merge_rows_parser = subparsers.add_parser(
         "merge-rows",
@@ -205,6 +249,11 @@ def build_parser() -> argparse.ArgumentParser:
     merge_rows_parser.add_argument("--inventory", required=True, help="Inventory slug.")
     merge_rows_parser.add_argument("--source-item-id", required=True, type=int, help="Source row id to remove.")
     merge_rows_parser.add_argument("--target-item-id", required=True, type=int, help="Target row id to keep.")
+    merge_rows_parser.add_argument(
+        "--keep-acquisition",
+        choices=("target", "source"),
+        help="When rows have different acquisition values, choose which row's acquisition to keep.",
+    )
 
     remove = subparsers.add_parser("remove-card", help="Delete an inventory row by item id.")
     remove.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
@@ -240,7 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reconcile = subparsers.add_parser(
         "reconcile-prices",
-        help="Suggest or apply finish updates when exactly one priced finish is available.",
+        help="Review finish mismatches and suggest manual updates when exactly one priced finish is available.",
     )
     reconcile.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
     reconcile.add_argument("--inventory", required=True, help="Inventory slug.")
@@ -248,7 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile.add_argument(
         "--apply",
         action="store_true",
-        help="Apply suggested finish updates. Without this flag, the command is preview-only.",
+        help="Deprecated. reconcile-prices is suggestion-only and no longer updates finish values.",
     )
 
     export_csv_parser = subparsers.add_parser(
@@ -337,12 +386,17 @@ def main() -> None:
 
     try:
         if args.command == "create-inventory":
-            inventory_id = create_inventory(args.db, args.slug, args.display_name, args.description)
-            print(f"Created inventory '{args.slug}' with id={inventory_id}")
+            if not Path(args.db).exists():
+                initialize_database(args.db)
+            result = serialize_response(create_inventory(args.db, args.slug, args.display_name, args.description))
+            print(f"Created inventory '{result['slug']}' with id={result['inventory_id']}")
             return
 
         if args.command == "list-inventories":
-            rows = list_inventories(args.db)
+            rows = [
+                {**row, "description": row.get("description") or ""}
+                for row in serialize_response(list_inventories(args.db))
+            ]
             print_table(
                 rows,
                 [
@@ -356,15 +410,17 @@ def main() -> None:
             return
 
         if args.command == "search-cards":
-            rows = search_cards(
-                args.db,
-                args.query,
-                args.set_code,
-                args.rarity,
-                args.finish,
-                args.lang,
-                args.exact,
-                args.limit,
+            rows = serialize_response(
+                search_cards(
+                    args.db,
+                    args.query,
+                    args.set_code,
+                    args.rarity,
+                    args.finish,
+                    args.lang,
+                    args.exact,
+                    args.limit,
+                )
             )
             simplified = []
             for row in rows:
@@ -375,7 +431,7 @@ def main() -> None:
                         "number": row["collector_number"],
                         "lang": row["lang"],
                         "rarity": row["rarity"] or "",
-                        "finishes": row["finishes"],
+                        "finishes": format_finishes(row["finishes"]),
                         "scryfall_id": row["scryfall_id"],
                     }
                 )
@@ -394,32 +450,35 @@ def main() -> None:
             return
 
         if args.command == "add-card":
-            result = add_card(
-                args.db,
-                inventory_slug=args.inventory,
-                scryfall_id=args.scryfall_id,
-                tcgplayer_product_id=args.tcgplayer_product_id,
-                name=args.name,
-                set_code=args.set_code,
-                collector_number=args.collector_number,
-                lang=args.lang,
-                quantity=args.quantity,
-                condition_code=args.condition,
-                finish=args.finish,
-                language_code=args.language_code,
-                location=args.location,
-                acquisition_price=args.acquisition_price,
-                acquisition_currency=args.acquisition_currency,
-                notes=args.notes,
-                tags=args.tags,
+            result = serialize_response(
+                add_card(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    scryfall_id=args.scryfall_id,
+                    tcgplayer_product_id=args.tcgplayer_product_id,
+                    name=args.name,
+                    set_code=args.set_code,
+                    collector_number=args.collector_number,
+                    lang=args.lang,
+                    quantity=args.quantity,
+                    condition_code=args.condition,
+                    finish=args.finish,
+                    language_code=args.language_code,
+                    location=args.location,
+                    acquisition_price=args.acquisition_price,
+                    acquisition_currency=args.acquisition_currency,
+                    notes=args.notes,
+                    tags=args.tags,
+                )
             )
             print(format_add_card_result(result))
             return
 
         if args.command == "import-csv":
             snapshot = None
+            before_write = None
             if not args.dry_run:
-                snapshot = create_database_snapshot(
+                before_write, get_snapshot = build_snapshot_callback(
                     args.db,
                     label=f"before_import_csv_{Path(args.csv).stem}",
                 )
@@ -428,7 +487,10 @@ def main() -> None:
                 csv_path=args.csv,
                 default_inventory=args.inventory,
                 dry_run=args.dry_run,
+                before_write=before_write,
             )
+            if not args.dry_run:
+                snapshot = get_snapshot()
             report_text = append_snapshot_notice(format_import_csv_result(result), snapshot)
             report_paths: list[str] = []
             if args.report_out:
@@ -446,176 +508,216 @@ def main() -> None:
             return
 
         if args.command == "set-tags":
-            result = set_tags(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                tags="" if args.clear else args.tags,
+            result = serialize_response(
+                set_tags(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    tags="" if args.clear else args.tags,
+                )
             )
             print(format_set_tags_result(result))
             return
 
         if args.command == "set-location":
             snapshot = None
+            before_write = None
             if args.merge:
-                snapshot = create_database_snapshot(
+                before_write, get_snapshot = build_snapshot_callback(
                     args.db,
                     label=f"before_set_location_merge_item_{args.item_id}",
                 )
-            result = set_location(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                location=None if args.clear else args.location,
-                merge=args.merge,
+            result = serialize_response(
+                set_location(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    location=None if args.clear else args.location,
+                    merge=args.merge,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
+            if args.merge:
+                snapshot = get_snapshot()
             print(append_snapshot_notice(format_set_location_result(result), snapshot))
             return
 
         if args.command == "set-condition":
             snapshot = None
+            before_write = None
             if args.merge:
-                snapshot = create_database_snapshot(
+                before_write, get_snapshot = build_snapshot_callback(
                     args.db,
                     label=f"before_set_condition_merge_item_{args.item_id}",
                 )
-            result = set_condition(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                condition_code=args.condition,
-                merge=args.merge,
+            result = serialize_response(
+                set_condition(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    condition_code=args.condition,
+                    merge=args.merge,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
+            if args.merge:
+                snapshot = get_snapshot()
             print(append_snapshot_notice(format_set_condition_result(result), snapshot))
             return
 
         if args.command == "set-acquisition":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_set_acquisition_item_{args.item_id}",
             )
-            result = set_acquisition(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                acquisition_price=args.price,
-                acquisition_currency=args.currency,
-                clear=args.clear,
+            result = serialize_response(
+                set_acquisition(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    acquisition_price=args.price,
+                    acquisition_currency=args.currency,
+                    clear=args.clear,
+                    before_write=before_write,
+                )
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_set_acquisition_result(result), snapshot))
             return
 
         if args.command == "set-notes":
-            result = set_notes(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                notes=None if args.clear else args.notes,
+            result = serialize_response(
+                set_notes(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    notes=None if args.clear else args.notes,
+                )
             )
             print(format_set_notes_result(result))
             return
 
         if args.command == "set-finish":
-            result = set_finish(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                finish=args.finish,
+            result = serialize_response(
+                set_finish(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    finish=args.finish,
+                )
             )
             print(format_set_finish_result(result))
             return
 
         if args.command == "set-quantity":
-            result = set_quantity(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                quantity=args.quantity,
+            result = serialize_response(
+                set_quantity(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    quantity=args.quantity,
+                )
             )
             print(format_set_quantity_result(result))
             return
 
         if args.command == "split-row":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_split_row_item_{args.item_id}",
             )
-            result = split_row(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                quantity=args.quantity,
-                condition_code=args.condition,
-                finish=args.finish,
-                language_code=args.language_code,
-                location=args.location,
-                clear_location=args.clear_location,
+            result = serialize_response(
+                split_row(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    quantity=args.quantity,
+                    condition_code=args.condition,
+                    finish=args.finish,
+                    language_code=args.language_code,
+                    location=args.location,
+                    clear_location=args.clear_location,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_split_row_result(result), snapshot))
             return
 
         if args.command == "merge-rows":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_merge_rows_{args.source_item_id}_into_{args.target_item_id}",
             )
-            result = merge_rows(
-                args.db,
-                inventory_slug=args.inventory,
-                source_item_id=args.source_item_id,
-                target_item_id=args.target_item_id,
+            result = serialize_response(
+                merge_rows(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    source_item_id=args.source_item_id,
+                    target_item_id=args.target_item_id,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_merge_rows_result(result), snapshot))
             return
 
         if args.command == "remove-card":
-            snapshot = create_database_snapshot(
+            before_write, get_snapshot = build_snapshot_callback(
                 args.db,
                 label=f"before_remove_card_item_{args.item_id}",
             )
-            result = remove_card(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
+            result = serialize_response(
+                remove_card(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    before_write=before_write,
+                )
             )
+            snapshot = get_snapshot()
             print(append_snapshot_notice(format_remove_card_result(result), snapshot))
             return
 
         if args.command in {"inventory-health", "doctor"}:
-            result = inventory_health(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                stale_days=args.stale_days,
-                preview_limit=args.limit,
+            result = serialize_response(
+                inventory_health(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    stale_days=args.stale_days,
+                    preview_limit=args.limit,
+                )
             )
             print(format_inventory_health_result(result))
             return
 
         if args.command == "price-gaps":
-            rows = list_price_gaps(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                limit=args.limit,
+            rows = serialize_response(
+                list_price_gaps(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    limit=args.limit,
+                )
             )
             print(format_price_gap_rows(rows))
             return
 
         if args.command == "reconcile-prices":
-            snapshot = None
-            if args.apply:
-                snapshot = create_database_snapshot(
+            result = serialize_response(
+                reconcile_prices(
                     args.db,
-                    label=f"before_reconcile_prices_{args.inventory}_{args.provider}",
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    apply_changes=args.apply,
                 )
-            result = reconcile_prices(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                apply_changes=args.apply,
             )
-            print(append_snapshot_notice(format_reconcile_prices_result(result), snapshot))
+            print(format_reconcile_prices_result(result))
             return
 
         if args.command == "export-csv":
@@ -634,7 +736,7 @@ def main() -> None:
                 tags=args.tag,
                 limit=args.limit,
             )
-            print(format_export_csv_result(result))
+            print(format_export_csv_result(serialize_response(result)))
             return
 
         if args.command in {"inventory-report", "report"}:
@@ -653,16 +755,22 @@ def main() -> None:
                 limit=args.limit,
                 stale_days=args.stale_days,
             )
-            report_text = format_inventory_report_result(result)
+            result_payload = serialize_response(result)
+            report_text = format_inventory_report_result(result_payload)
             report_paths: list[str] = []
             if args.report_out:
                 report_path = write_report(args.report_out, report_text)
                 report_paths.append(f"Text report saved to: {report_path}")
             if args.report_out_json:
-                report_path = write_json_report(args.report_out_json, result)
+                report_path = write_json_report(args.report_out_json, result_payload)
                 report_paths.append(f"JSON report saved to: {report_path}")
             if args.report_out_csv:
-                report_path = write_rows_csv(args.report_out_csv, result["rows"], EXPORT_CSV_FIELDNAMES)
+                report_rows = flatten_owned_export_rows(
+                    result_payload["rows"],
+                    inventory_slug=result_payload["inventory"],
+                    provider=result_payload["provider"],
+                )
+                report_path = write_rows_csv(args.report_out_csv, report_rows, EXPORT_CSV_FIELDNAMES)
                 report_paths.append(f"CSV report saved to: {report_path}")
             if report_paths:
                 report_text = f"{report_text}\n\n" + "\n".join(report_paths)
@@ -670,37 +778,48 @@ def main() -> None:
             return
 
         if args.command == "list-owned":
-            rows = list_owned_filtered(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                limit=args.limit,
-                query=args.query,
-                set_code=args.set_code,
-                rarity=args.rarity,
-                finish=args.finish,
-                condition_code=args.condition,
-                language_code=args.language_code,
-                location=args.location,
-                tags=args.tag,
+            rows = serialize_response(
+                list_owned_filtered(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    provider=args.provider,
+                    limit=args.limit,
+                    query=args.query,
+                    set_code=args.set_code,
+                    rarity=args.rarity,
+                    finish=args.finish,
+                    condition_code=args.condition,
+                    language_code=args.language_code,
+                    location=args.location,
+                    tags=args.tag,
+                )
             )
             print(format_owned_rows(rows))
             return
 
         if args.command == "valuation":
-            rows = valuation_filtered(
-                args.db,
-                inventory_slug=args.inventory,
-                provider=args.provider,
-                query=args.query,
-                set_code=args.set_code,
-                rarity=args.rarity,
-                finish=args.finish,
-                condition_code=args.condition,
-                language_code=args.language_code,
-                location=args.location,
-                tags=args.tag,
-            )
+            rows = [
+                {
+                    **row,
+                    "provider": row.get("provider") or "",
+                    "currency": row.get("currency") or "",
+                }
+                for row in serialize_response(
+                    valuation_filtered(
+                        args.db,
+                        inventory_slug=args.inventory,
+                        provider=args.provider,
+                        query=args.query,
+                        set_code=args.set_code,
+                        rarity=args.rarity,
+                        finish=args.finish,
+                        condition_code=args.condition,
+                        language_code=args.language_code,
+                        location=args.location,
+                        tags=args.tag,
+                    )
+                )
+            ]
             print_table(
                 rows,
                 [

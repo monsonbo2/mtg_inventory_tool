@@ -1,5 +1,11 @@
 # Repo Restructure Checklist
 
+This is now a historical planning document.
+
+Most of the refactor work described here has already landed, and a few details
+of the final shape changed during implementation. For the current runtime
+structure, use `docs/architecture.md` as the source of truth.
+
 This document turns the proposed cleanup into a low-risk sequence of PRs.
 
 The goal is to make the repo easier to understand and maintain without changing
@@ -21,7 +27,7 @@ behavior until the structure is stable.
 - Tests exist and pass, but most coverage lives in one large smoke-test file.
 - Generated snapshot artifacts are easy to pick up in the working tree.
 
-## Target End State
+## Planned Target End State At The Time
 
 ```text
 repo/
@@ -43,9 +49,7 @@ repo/
         mtgjson.py
       inventory/
         normalize.py
-        queries.py
         csv_import.py
-        reports.py
         service.py
       data/
         mtg_mvp_schema.sql
@@ -57,7 +61,6 @@ repo/
     test_csv_import.py
     fixtures/
   docs/
-    architecture.md
     source_map.md
     ingestion_flow.md
     schema_notes.md
@@ -256,6 +259,19 @@ settled.
 - [x] All docs point to the new canonical locations
 - [x] No one needs the old wrapper paths for normal use
 - [x] The repo reads like a standard Python project
+
+## Current Status Notes
+
+- The installable package now lives under `src/mtg_source_stack/`.
+- The stable top-level runtime areas are `cli/`, `db/`, `importer/`, and
+  `inventory/`.
+- `inventory/service.py` remains as the intentional public inventory-domain
+  facade.
+- The older `inventory/reports.py` and `inventory/queries.py` facades were
+  retired after the split settled.
+- The legacy wrapper modules `mvp_importer.py` and `personal_inventory_cli.py`
+  still exist, but they should be treated as compatibility entrypoints rather
+  than the clearest representation of the internal architecture.
 
 ## Suggested Execution Order
 

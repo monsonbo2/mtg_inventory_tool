@@ -8,10 +8,16 @@ Use it to:
 - import MTG catalog and pricing data from Scryfall and MTGJSON
 - create one or more personal inventories
 - add owned printings with condition, finish, language, and location
-- value the collection from imported daily price snapshots
+- value the collection from imported daily USD price snapshots
+- keep a per-edit audit trail for inventory mutations
 
 If you're new to the repo, the best starting points are this README, the
 walkthrough notebook in `notebooks/`, and the architecture notes in `docs/`.
+
+For backend work, the canonical web-v1 contract is the current MVP runtime
+schema in `src/mtg_source_stack/mtg_mvp_schema.sql` and `docs/schema_mvp.sql`.
+`docs/schema_full.sql` is a future normalized target, not the live runtime
+model.
 
 The Python package lives under `src/mtg_source_stack/`. The recommended way to
 use the repo is `pip install -e .` plus the
@@ -30,8 +36,12 @@ use the repo is `pip install -e .` plus the
   - `var/reports/`
   - `var/walkthrough/`
 - Docs and design notes:
-  - `docs/source_map.md`
+  - `docs/api_v1_contract.md`
+  - `docs/architecture.md`
+  - `docs/backend_v1_contract.md`
   - `docs/ingestion_flow.md`
+  - `docs/source_map.md`
+  - `docs/restructure_checklist.md` (historical refactor plan)
   - `docs/schema_full.sql`
   - `docs/schema_mvp.sql`
 - Examples:
@@ -127,6 +137,9 @@ mtg-personal-inventory add-card \
   --tags "burn deck,trade"
 ```
 
+If `add-card` hits an existing matching row, it increases quantity and unions
+tags, but it will not silently overwrite notes or acquisition metadata.
+
 Or import a batch from a CSV file:
 
 ```bash
@@ -150,8 +163,12 @@ mtg-personal-inventory import-csv \
 ```
 
 If a CSV row omits finish information and the matched printing only exists in a
-single catalog finish, the importer will auto-correct that row and include the
-change in the import summary report.
+single catalog finish, the importer will no longer infer that finish for you.
+Provide `finish` explicitly in the CSV when it matters, and use `--dry-run` to
+preview validation results before importing.
+
+Current pricing imports keep USD market snapshots only. Non-USD price rows are
+ignored for now so valuation and health checks stay unambiguous.
 
 TCGplayer collection-style exports are also supported, including `Collection Name`
 and `Product ID` rows, with inventories auto-created from collection names when needed.
@@ -190,6 +207,16 @@ mtg-personal-inventory set-location \
   --item-id 1 \
   --location "Deck Box" \
   --merge
+
+# If the merge would combine rows with different acquisition values, choose
+# which row's acquisition survives.
+mtg-personal-inventory set-location \
+  --db "var/db/mtg_mvp.db" \
+  --inventory personal \
+  --item-id 1 \
+  --location "Deck Box" \
+  --merge \
+  --keep-acquisition target
 
 mtg-personal-inventory set-condition \
   --db "var/db/mtg_mvp.db" \
@@ -234,7 +261,8 @@ mtg-personal-inventory merge-rows \
   --db "var/db/mtg_mvp.db" \
   --inventory personal \
   --source-item-id 2 \
-  --target-item-id 1
+  --target-item-id 1 \
+  --keep-acquisition source
 
 mtg-personal-inventory remove-card \
   --db "var/db/mtg_mvp.db" \
@@ -254,8 +282,7 @@ mtg-personal-inventory price-gaps \
 mtg-personal-inventory reconcile-prices \
   --db "var/db/mtg_mvp.db" \
   --inventory personal \
-  --provider tcgplayer \
-  --apply
+  --provider tcgplayer
 
 mtg-personal-inventory inventory-health \
   --db "var/db/mtg_mvp.db" \
@@ -280,8 +307,13 @@ mtg-personal-inventory inventory-report \
 `list-owned` and `valuation` also accept filters like `--set-code`, `--rarity`,
 `--finish`, `--location`, and repeated `--tag` values for custom tags.
 
-High-impact commands now create automatic safety snapshots before they write, including
-bulk imports, non-dry-run CSV imports, `remove-card`, `reconcile-prices --apply`,
+`reconcile-prices` is suggestion-only. It no longer updates inventory finish
+values; review the suggestions and use `set-finish` manually if you want to
+change a row.
+
+High-impact commands now create automatic safety snapshots only after validation
+passes and immediately before they write, including bulk imports, non-dry-run
+CSV imports, `remove-card`,
 `set-acquisition`, `split-row`, `merge-rows`, and collision merges from
 `set-location --merge` / `set-condition --merge`.
 

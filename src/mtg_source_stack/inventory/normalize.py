@@ -4,6 +4,9 @@ import json
 import re
 from typing import Any
 
+from ..errors import ValidationError
+from .money import format_decimal
+
 
 DEFAULT_PROVIDER = "tcgplayer"
 CSV_PREVIEW_LIMIT = 25
@@ -242,8 +245,23 @@ def normalize_finish(value: str | None) -> str:
         "etched": "etched",
     }
     if normalized not in mapping:
-        raise ValueError("Finish must be one of: normal, nonfoil, foil, etched.")
+        raise ValidationError("Finish must be one of: normal, nonfoil, foil, etched.")
     return mapping[normalized]
+
+
+def normalize_price_snapshot_finish(value: str | None) -> str | None:
+    text = text_or_none(value)
+    if text is None:
+        return None
+
+    normalized = text.strip().lower()
+    if normalized == "etched foil":
+        normalized = "etched"
+
+    try:
+        return normalize_finish(normalized)
+    except ValueError:
+        return None
 
 
 def parse_json_list(value: str | None) -> list[str]:
@@ -311,14 +329,6 @@ def format_acquisition_text(price: Any, currency: Any) -> str:
     return format_optional_text(format_acquisition_summary(price, currency))
 
 
-def format_decimal(value: Any) -> str:
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return f"{value:g}"
-    return str(value)
-
-
 def format_acquisition_summary(price: Any, currency: Any) -> str | None:
     if price is None:
         return None
@@ -331,23 +341,11 @@ def merge_note_text(
     *,
     target_notes: str | None,
     source_notes: str | None,
-    source_item_id: int,
-    target_acquisition_summary: str | None,
-    source_acquisition_summary: str | None,
 ) -> str | None:
     merged_parts: list[str] = []
     for note in (text_or_none(target_notes), text_or_none(source_notes)):
         if note is not None and note not in merged_parts:
             merged_parts.append(note)
-
-    if (
-        source_acquisition_summary is not None
-        and target_acquisition_summary is not None
-        and source_acquisition_summary != target_acquisition_summary
-    ):
-        merged_parts.append(
-            f"Merged source acquisition from item {source_item_id}: {source_acquisition_summary}"
-        )
 
     if not merged_parts:
         return None
@@ -381,17 +379,6 @@ def truncate(value: Any, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
-
-
-def coerce_float(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def parse_finish_list(value: str | None) -> list[str]:
     finishes: list[str] = []
     text = text_or_none(value)
@@ -405,4 +392,3 @@ def parse_finish_list(value: str | None) -> list[str]:
         if normalized not in finishes:
             finishes.append(normalized)
     return finishes
-

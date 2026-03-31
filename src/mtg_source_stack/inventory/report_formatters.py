@@ -1,22 +1,18 @@
+"""Human-readable inventory report formatting helpers."""
+
 from __future__ import annotations
 
-import csv
-import json
-from pathlib import Path
 from typing import Any
 
 from .normalize import (
     CSV_PREVIEW_LIMIT,
-    coerce_float,
     format_acquisition_text,
     format_finishes,
     format_optional_text,
     format_tags,
-    load_tags_json,
-    parse_tag_filters,
-    text_or_none,
     truncate,
 )
+from .report_helpers import append_preview_section, render_table
 
 
 def format_add_card_result(result: dict[str, Any]) -> str:
@@ -143,6 +139,7 @@ def format_set_location_result(result: dict[str, Any]) -> str:
             f"Condition: {result['condition_code']}",
             f"Finish: {result['finish']}",
             f"Language: {result['language_code']}",
+            f"Acquisition: {format_acquisition_text(result['acquisition_price'], result['acquisition_currency'])}",
             f"Notes: {format_optional_text(result['notes'])}",
             f"Tags: {format_tags(result['tags'])}",
             f"Inventory: {result['inventory']}",
@@ -176,6 +173,7 @@ def format_set_condition_result(result: dict[str, Any]) -> str:
             f"Finish: {result['finish']}",
             f"Language: {result['language_code']}",
             f"Location: {format_optional_text(result['location'])}",
+            f"Acquisition: {format_acquisition_text(result['acquisition_price'], result['acquisition_currency'])}",
             f"Notes: {format_optional_text(result['notes'])}",
             f"Tags: {format_tags(result['tags'])}",
             f"Inventory: {result['inventory']}",
@@ -277,30 +275,6 @@ def format_merge_rows_result(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> str:
-    if not rows:
-        return "No rows found."
-
-    widths: list[int] = []
-    for key, label in columns:
-        width = len(label)
-        for row in rows:
-            width = max(width, len(str(row.get(key, ""))))
-        widths.append(width)
-
-    header = "  ".join(label.ljust(width) for (_, label), width in zip(columns, widths))
-    separator = "  ".join("-" * width for width in widths)
-    lines = [header, separator]
-    for row in rows:
-        line = "  ".join(str(row.get(key, "")).ljust(width) for (key, _), width in zip(columns, widths))
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def print_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> None:
-    print(render_table(rows, columns))
-
-
 def format_import_csv_result(result: dict[str, Any]) -> str:
     lines = [
         "Imported inventory rows from CSV",
@@ -316,8 +290,6 @@ def format_import_csv_result(result: dict[str, Any]) -> str:
     default_inventory = result.get("default_inventory")
     if default_inventory:
         lines.append(f"Default inventory: {default_inventory}")
-
-    lines.append(f"Finish adjustments: {result.get('finish_adjustment_count', 0)}")
 
     preview_rows = []
     for row in result["imported_rows"][:CSV_PREVIEW_LIMIT]:
@@ -362,47 +334,6 @@ def format_import_csv_result(result: dict[str, Any]) -> str:
         if remaining_rows > 0:
             lines.append(f"... {remaining_rows} more imported row(s) not shown.")
 
-    adjustment_rows = []
-    for row in result.get("finish_adjustments", [])[:CSV_PREVIEW_LIMIT]:
-        adjustment_rows.append(
-            {
-                "csv_row": row["csv_row"],
-                "inventory": row["inventory"],
-                "name": truncate(row["card_name"], 28),
-                "set": row["set_code"],
-                "number": row["collector_number"],
-                "from": row["old_finish"],
-                "to": row["new_finish"],
-                "reason": truncate(row["reason"], 24),
-            }
-        )
-
-    if adjustment_rows:
-        lines.extend(
-            [
-                "",
-                "Automatic finish adjustments",
-                "",
-                render_table(
-                    adjustment_rows,
-                    [
-                        ("csv_row", "csv_row"),
-                        ("inventory", "inventory"),
-                        ("name", "name"),
-                        ("set", "set"),
-                        ("number", "number"),
-                        ("from", "from"),
-                        ("to", "to"),
-                        ("reason", "reason"),
-                    ],
-                ),
-            ]
-        )
-
-        remaining_adjustments = result["finish_adjustment_count"] - len(adjustment_rows)
-        if remaining_adjustments > 0:
-            lines.append(f"... {remaining_adjustments} more finish adjustment(s) not shown.")
-
     return "\n".join(lines)
 
 
@@ -417,167 +348,6 @@ def append_snapshot_notice(text: str, snapshot: dict[str, Any] | None) -> str:
     )
 
 
-def write_report(path: str | Path, text: str) -> Path:
-    report_path = Path(path)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(text, encoding="utf-8")
-    return report_path
-
-
-def write_json_report(path: str | Path, payload: dict[str, Any]) -> Path:
-    report_path = Path(path)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
-    return report_path
-
-
-def write_rows_csv(path: str | Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> Path:
-    report_path = Path(path)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    with report_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-    return report_path
-
-
-def flatten_import_csv_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
-    adjustment_by_row = {row["csv_row"]: row for row in result.get("finish_adjustments", [])}
-    flattened: list[dict[str, Any]] = []
-    for row in result.get("imported_rows", []):
-        adjustment = adjustment_by_row.get(row["csv_row"])
-        flattened.append(
-            {
-                "csv_path": result["csv_path"],
-                "dry_run": result.get("dry_run", False),
-                "default_inventory": result.get("default_inventory") or "",
-                "csv_row": row["csv_row"],
-                "inventory": row["inventory"],
-                "card_name": row["card_name"],
-                "set_code": row["set_code"],
-                "set_name": row["set_name"],
-                "collector_number": row["collector_number"],
-                "quantity": row["quantity"],
-                "finish": row["finish"],
-                "condition_code": row["condition_code"],
-                "language_code": row["language_code"],
-                "location": row["location"],
-                "tags": format_tags(row["tags"]),
-                "item_id": row["item_id"],
-                "scryfall_id": row["scryfall_id"],
-                "finish_adjusted": adjustment is not None,
-                "old_finish": adjustment["old_finish"] if adjustment is not None else "",
-                "new_finish": adjustment["new_finish"] if adjustment is not None else "",
-                "adjustment_reason": adjustment["reason"] if adjustment is not None else "",
-            }
-        )
-    return flattened
-
-
-def write_csv_report(path: str | Path, result: dict[str, Any]) -> Path:
-    report_path = Path(path)
-    rows = flatten_import_csv_rows(result)
-    fieldnames = [
-        "csv_path",
-        "dry_run",
-        "default_inventory",
-        "csv_row",
-        "inventory",
-        "card_name",
-        "set_code",
-        "set_name",
-        "collector_number",
-        "quantity",
-        "finish",
-        "condition_code",
-        "language_code",
-        "location",
-        "tags",
-        "item_id",
-        "scryfall_id",
-        "finish_adjusted",
-        "old_finish",
-        "new_finish",
-        "adjustment_reason",
-    ]
-    return write_rows_csv(report_path, rows, fieldnames)
-
-
-def flatten_owned_export_rows(
-    rows: list[dict[str, Any]],
-    *,
-    inventory_slug: str,
-    provider: str,
-) -> list[dict[str, Any]]:
-    flattened: list[dict[str, Any]] = []
-    for row in rows:
-        flattened.append(
-            {
-                "inventory": inventory_slug,
-                "provider": provider,
-                "item_id": row["item_id"],
-                "scryfall_id": row["scryfall_id"],
-                "card_name": row["name"],
-                "set_code": row["set_code"],
-                "set_name": row["set_name"],
-                "collector_number": row["collector_number"],
-                "rarity": row["rarity"],
-                "quantity": row["quantity"],
-                "condition_code": row["condition_code"],
-                "finish": row["finish"],
-                "language_code": row["language_code"],
-                "location": text_or_none(row["location"]) or "",
-                "tags": format_tags(load_tags_json(row["tags_json"])),
-                "notes": text_or_none(row["notes"]) or "",
-                "acquisition_price": row["acquisition_price"] if row["acquisition_price"] is not None else "",
-                "acquisition_currency": text_or_none(row["acquisition_currency"]) or "",
-                "unit_price": row["unit_price"],
-                "price_currency": row["currency"],
-                "est_value": row["est_value"],
-                "price_date": row["price_date"],
-            }
-        )
-    return flattened
-
-
-EXPORT_CSV_FIELDNAMES = [
-    "inventory",
-    "provider",
-    "item_id",
-    "scryfall_id",
-    "card_name",
-    "set_code",
-    "set_name",
-    "collector_number",
-    "rarity",
-    "quantity",
-    "condition_code",
-    "finish",
-    "language_code",
-    "location",
-    "tags",
-    "notes",
-    "acquisition_price",
-    "acquisition_currency",
-    "unit_price",
-    "price_currency",
-    "est_value",
-    "price_date",
-]
-
-
-def write_inventory_export_csv(
-    path: str | Path,
-    rows: list[dict[str, Any]],
-    *,
-    inventory_slug: str,
-    provider: str,
-) -> Path:
-    flattened_rows = flatten_owned_export_rows(rows, inventory_slug=inventory_slug, provider=provider)
-    return write_rows_csv(path, flattened_rows, EXPORT_CSV_FIELDNAMES)
-
-
 def format_owned_rows(rows: list[dict[str, Any]]) -> str:
     formatted = []
     for row in rows:
@@ -587,16 +357,16 @@ def format_owned_rows(rows: list[dict[str, Any]]) -> str:
                 "name": truncate(row["name"], 28),
                 "set": row["set_code"],
                 "number": row["collector_number"],
-                "rarity": row["rarity"],
+                "rarity": row["rarity"] or "",
                 "qty": row["quantity"],
                 "cond": row["condition_code"],
                 "finish": row["finish"],
-                "location": truncate(row["location"], 16),
-                "tags": truncate(format_tags(load_tags_json(row["tags_json"])), 24),
-                "notes": truncate(row["notes"], 24),
-                "unit_price": row["unit_price"],
-                "currency": row["currency"],
-                "est_value": row["est_value"],
+                "location": truncate(format_optional_text(row.get("location")), 16),
+                "tags": truncate(format_tags(row.get("tags", [])), 24),
+                "notes": truncate(format_optional_text(row.get("notes")), 24),
+                "unit_price": row["unit_price"] if row.get("unit_price") is not None else "",
+                "currency": row["currency"] or "",
+                "est_value": row["est_value"] if row.get("est_value") is not None else "",
             }
         )
 
@@ -621,38 +391,6 @@ def format_owned_rows(rows: list[dict[str, Any]]) -> str:
     )
 
 
-def summarize_filters(
-    *,
-    query: str | None,
-    set_code: str | None,
-    rarity: str | None,
-    finish: str | None,
-    condition_code: str | None,
-    language_code: str | None,
-    location: str | None,
-    tags: list[str] | None,
-) -> str:
-    filters: list[str] = []
-    if query:
-        filters.append(f"query={query}")
-    if set_code:
-        filters.append(f"set={set_code}")
-    if rarity:
-        filters.append(f"rarity={rarity}")
-    if finish:
-        filters.append(f"finish={finish}")
-    if condition_code:
-        filters.append(f"condition={condition_code}")
-    if language_code:
-        filters.append(f"language={language_code}")
-    if location:
-        filters.append(f"location~={location}")
-    normalized_tags = parse_tag_filters(tags)
-    if normalized_tags:
-        filters.append(f"tags={', '.join(normalized_tags)}")
-    return ", ".join(filters) if filters else "(none)"
-
-
 def format_export_csv_result(result: dict[str, Any]) -> str:
     lines = [
         "Exported inventory rows to CSV",
@@ -664,66 +402,6 @@ def format_export_csv_result(result: dict[str, Any]) -> str:
         f"Output: {result['output_path']}",
     ]
     return "\n".join(lines)
-
-
-def build_currency_totals(
-    rows: list[dict[str, Any]],
-    *,
-    value_key: str,
-    currency_key: str,
-    quantity_key: str,
-) -> list[dict[str, Any]]:
-    totals: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        amount = coerce_float(row.get(value_key))
-        currency = text_or_none(row.get(currency_key))
-        if amount is None or currency is None:
-            continue
-        bucket = totals.setdefault(
-            currency,
-            {"currency": currency, "item_rows": 0, "total_cards": 0, "total_amount": 0.0},
-        )
-        bucket["item_rows"] += 1
-        bucket["total_cards"] += int(row.get(quantity_key, 0) or 0)
-        if value_key == "acquisition_price":
-            bucket["total_amount"] += amount * int(row.get(quantity_key, 0) or 0)
-        else:
-            bucket["total_amount"] += amount
-    formatted: list[dict[str, Any]] = []
-    for currency, bucket in sorted(totals.items()):
-        formatted.append(
-            {
-                "currency": currency,
-                "item_rows": bucket["item_rows"],
-                "total_cards": bucket["total_cards"],
-                "total_amount": round(bucket["total_amount"], 2),
-            }
-        )
-    return formatted
-
-
-def build_top_value_rows(rows: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
-    ranked = sorted(
-        rows,
-        key=lambda row: (coerce_float(row.get("est_value")) or 0.0, int(row.get("quantity", 0) or 0)),
-        reverse=True,
-    )
-    top_rows: list[dict[str, Any]] = []
-    for row in ranked[:limit]:
-        top_rows.append(
-            {
-                "item_id": row["item_id"],
-                "name": truncate(row["name"], 28),
-                "set": row["set_code"],
-                "number": row["collector_number"],
-                "qty": row["quantity"],
-                "finish": row["finish"],
-                "location": truncate(text_or_none(row["location"]) or "(none)", 18),
-                "est_value": row["est_value"],
-                "currency": row["currency"],
-            }
-        )
-    return top_rows
 
 
 def format_inventory_report_result(result: dict[str, Any]) -> str:
@@ -854,24 +532,22 @@ def format_price_gap_rows(rows: list[dict[str, Any]]) -> str:
 
 def format_reconcile_prices_result(result: dict[str, Any]) -> str:
     lines = [
-        "Reconciled inventory pricing finishes",
+        "Reviewed inventory pricing finishes",
         "",
         f"Inventory: {result['inventory']}",
         f"Provider: {result['provider']}",
         f"Rows with missing current-price matches: {result['rows_seen']}",
         f"Rows with a single suggested finish: {result['rows_fixable']}",
-        f"Rows updated: {result['rows_updated']}",
+        "Mode: suggestion only (no changes applied)",
     ]
-    if not result["applied"]:
-        lines.append("Mode: preview only")
 
-    if result["updated_rows"]:
+    if result["suggested_rows"]:
         lines.extend(
             [
                 "",
-                "Updated rows",
+                "Suggested rows",
                 "",
-                format_price_gap_rows(result["updated_rows"]),
+                format_price_gap_rows(result["suggested_rows"]),
             ]
         )
 
@@ -886,25 +562,6 @@ def format_reconcile_prices_result(result: dict[str, Any]) -> str:
         )
 
     return "\n".join(lines)
-
-
-def append_preview_section(
-    lines: list[str],
-    *,
-    title: str,
-    rows: list[dict[str, Any]],
-    columns: list[tuple[str, str]],
-    overflow_label: str,
-    limit: int,
-) -> None:
-    if not rows:
-        return
-
-    preview_rows = rows[:limit]
-    lines.extend(["", title, "", render_table(preview_rows, columns)])
-    remaining = len(rows) - len(preview_rows)
-    if remaining > 0:
-        lines.append(f"... {remaining} more {overflow_label} not shown.")
 
 
 def format_inventory_health_result(result: dict[str, Any]) -> str:

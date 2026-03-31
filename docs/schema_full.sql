@@ -1,3 +1,8 @@
+-- Future-target normalized schema for a later backend migration.
+-- This file is a design reference only.
+-- The current web-v1 runtime contract uses docs/schema_mvp.sql and
+-- src/mtg_source_stack/mtg_mvp_schema.sql instead.
+
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS source_sync_runs (

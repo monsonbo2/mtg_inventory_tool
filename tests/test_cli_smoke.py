@@ -1,3 +1,5 @@
+"""End-to-end CLI smoke tests for the main inventory workflows."""
+
 from __future__ import annotations
 
 import json
@@ -6,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
+from mtg_source_stack.db.schema import load_schema_sql
 
 
 class CliSmokeTest(RepoSmokeTestCase):
@@ -13,6 +16,8 @@ class CliSmokeTest(RepoSmokeTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "missing.db"
 
+            # Read-only commands should fail cleanly on a missing path instead of
+            # helpfully creating an empty database behind the user's back.
             result = self.run_failing_cli(
                 "list-inventories",
                 "--db",
@@ -28,6 +33,8 @@ class CliSmokeTest(RepoSmokeTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
 
+            # The first create establishes the happy path; the second call checks
+            # that uniqueness failures stay user-friendly.
             self.run_cli(
                 "create-inventory",
                 "--db",
@@ -52,6 +59,347 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("Inventory 'personal' already exists.", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
 
+    def test_read_commands_require_explicit_migration_for_legacy_db(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "legacy.db"
+
+            # Simulate a pre-migration database that has the old runtime schema
+            # but no schema_migrations tracking yet.
+            connection = sqlite3.connect(db_path)
+            connection.executescript(load_schema_sql())
+            connection.commit()
+            connection.close()
+
+            result = self.run_failing_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Lightning Bolt",
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("migrate-db", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
+            # Read-only commands should not stamp schema state on their own.
+            raw = sqlite3.connect(db_path)
+            schema_migrations_exists = raw.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+            ).fetchone()[0]
+            raw.close()
+            self.assertEqual(0, schema_migrations_exists)
+
+            migrate_output = self.run_importer(
+                "migrate-db",
+                "--db",
+                str(db_path),
+            )
+            self.assertIn("Migrated database", migrate_output)
+            self.assertIn("0001 mvp base", migrate_output)
+            self.assertIn("0002 add tags json", migrate_output)
+            self.assertIn("0003 add inventory audit log", migrate_output)
+            self.assertIn("0004 add card search fts", migrate_output)
+            self.assertIn("0005 normalize price snapshot finishes", migrate_output)
+
+            search_output = self.run_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Lightning Bolt",
+            )
+            self.assertEqual("No rows found.", search_output)
+
+    def test_import_csv_missing_file_fails_without_creating_db_or_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "missing.csv"
+
+            result = self.run_failing_cli(
+                "import-csv",
+                "--db",
+                str(db_path),
+                "--csv",
+                str(csv_path),
+                "--inventory",
+                "personal",
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn(f"Could not read CSV file '{csv_path}'", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(db_path.exists())
+            self.assertFalse((tmp / "_snapshots").exists())
+
+    def test_remove_card_validation_failure_does_not_create_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+
+            result = self.run_failing_cli(
+                "remove-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "99",
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("No inventory row found", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse((tmp / "_snapshots").exists())
+
+    def test_inventory_audit_log_tracks_simple_item_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "3",
+                "--location",
+                "Binder A",
+                "--tags",
+                "burn",
+                "--acquisition-price",
+                "1.25",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.run_cli(
+                "set-quantity",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--quantity",
+                "2",
+            )
+            self.run_cli(
+                "set-notes",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--notes",
+                "Checked after deck night",
+            )
+            self.run_cli(
+                "remove-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+            )
+
+            connection = sqlite3.connect(db_path)
+            rows = connection.execute(
+                """
+                SELECT action, item_id, before_json, after_json, metadata_json
+                FROM inventory_audit_log
+                ORDER BY id
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual(["add_card", "set_quantity", "set_notes", "remove_card"], [row[0] for row in rows])
+
+            add_before, add_after, add_metadata = rows[0][2], json.loads(rows[0][3]), json.loads(rows[0][4])
+            self.assertIsNone(add_before)
+            self.assertEqual("Lightning Bolt", add_after["card_name"])
+            self.assertEqual(3, add_after["quantity"])
+            self.assertEqual("1.25", add_after["acquisition_price"])
+            self.assertEqual({"mode": "create"}, add_metadata)
+
+            set_qty_before = json.loads(rows[1][2])
+            set_qty_after = json.loads(rows[1][3])
+            self.assertEqual(3, set_qty_before["quantity"])
+            self.assertEqual(2, set_qty_after["quantity"])
+
+            set_notes_before = json.loads(rows[2][2])
+            set_notes_after = json.loads(rows[2][3])
+            self.assertIsNone(set_notes_before["notes"])
+            self.assertEqual("Checked after deck night", set_notes_after["notes"])
+
+            remove_before, remove_after = json.loads(rows[3][2]), rows[3][3]
+            self.assertEqual(2, remove_before["quantity"])
+            self.assertIsNone(remove_after)
+
+    def test_inventory_audit_log_tracks_location_merge_as_delete_plus_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "2",
+                "--location",
+                "Binder A",
+                "--notes",
+                "Source row",
+                "--tags",
+                "source-tag",
+                "--acquisition-price",
+                "1.50",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--location",
+                "Deck Box",
+                "--notes",
+                "Target row",
+                "--tags",
+                "target-tag",
+                "--acquisition-price",
+                "2.00",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.run_cli(
+                "set-location",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--location",
+                "Deck Box",
+                "--merge",
+                "--keep-acquisition",
+                "target",
+            )
+
+            connection = sqlite3.connect(db_path)
+            rows = connection.execute(
+                """
+                SELECT item_id, before_json, after_json, metadata_json
+                FROM inventory_audit_log
+                WHERE action = 'set_location'
+                ORDER BY id
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual(2, len(rows))
+            source_row = next(row for row in rows if row[0] == 1)
+            target_row = next(row for row in rows if row[0] == 2)
+
+            source_before = json.loads(source_row[1])
+            source_after = source_row[2]
+            source_metadata = json.loads(source_row[3])
+            self.assertEqual("Binder A", source_before["location"])
+            self.assertIsNone(source_after)
+            self.assertTrue(source_metadata["merged"])
+            self.assertEqual(2, source_metadata["target_item_id"])
+
+            target_before = json.loads(target_row[1])
+            target_after = json.loads(target_row[2])
+            target_metadata = json.loads(target_row[3])
+            self.assertEqual(1, target_before["quantity"])
+            self.assertEqual(3, target_after["quantity"])
+            self.assertEqual("Deck Box", target_after["location"])
+            self.assertTrue(target_metadata["merged"])
+            self.assertEqual(1, target_metadata["source_item_id"])
+
     def test_import_and_personal_inventory_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -73,6 +421,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             tcgplayer_csv_path = bundle["tcgplayer_collection_export.csv"]
             seller_csv_path = bundle["tcgplayer_seller_export.csv"]
 
+            # Build the smallest realistic card catalog so the rest of the test
+            # can walk through the CLI the way an operator would.
             import_output = self.run_importer(
                 "import-all",
                 "--db",
@@ -99,6 +449,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             )
             self.assertIn("Created inventory 'personal'", create_output)
 
+            # Basic and filtered searches confirm that the imported card metadata
+            # is queryable before any inventory rows exist.
             search_output = self.run_cli(
                 "search-cards",
                 "--db",
@@ -108,6 +460,24 @@ class CliSmokeTest(RepoSmokeTestCase):
             )
             self.assertIn("Lightning Bolt", search_output)
             self.assertIn("s1", search_output)
+
+            reordered_search_output = self.run_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Bolt Lightning",
+            )
+            self.assertIn("Lightning Bolt", reordered_search_output)
+
+            prefix_search_output = self.run_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Light Bol",
+            )
+            self.assertIn("Lightning Bolt", prefix_search_output)
 
             filtered_search_output = self.run_cli(
                 "search-cards",
@@ -137,6 +507,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             )
             self.assertEqual("No rows found.", empty_search_output)
 
+            # Mutate the same inventory row a few different ways to verify the
+            # edit commands preserve surrounding fields and report diffs back.
             add_output = self.run_cli(
                 "add-card",
                 "--db",
@@ -254,6 +626,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("Needs fresh inner sleeve", owned_output)
             self.assertIn("5.84", owned_output)
 
+            # Clearing notes exercises the explicit "remove metadata" path rather
+            # than only the "set metadata" path above.
             clear_notes_output = self.run_cli(
                 "set-notes",
                 "--db",
@@ -294,6 +668,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("Card: Lightning Bolt", remove_output)
             self.assertIn("Tags: deck, staples", remove_output)
 
+            # After the manual row is removed, the rest of the flow switches to
+            # CSV imports to cover bulk ingestion and valuation/report filters.
             empty_owned_output = self.run_cli(
                 "list-owned",
                 "--db",
@@ -395,6 +771,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("tcgplayer", csv_valuation_output)
             self.assertIn("8.76", csv_valuation_output)
 
+            # Collection-export imports can create inventories implicitly, while
+            # seller exports can also target an already-created inventory.
             tcgplayer_import_output = self.run_cli(
                 "import-csv",
                 "--db",
@@ -482,6 +860,209 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("tcgplayer", filtered_valuation_output)
             self.assertIn("8.76", filtered_valuation_output)
 
+    def test_add_card_same_row_accumulates_quantity_and_tags_without_rewriting_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--condition",
+                "NM",
+                "--finish",
+                "normal",
+                "--location",
+                "Binder A",
+                "--notes",
+                "Main copy",
+                "--tags",
+                "alpha",
+                "--acquisition-price",
+                "1.25",
+                "--acquisition-currency",
+                "USD",
+            )
+
+            # Re-adding the same identity should behave like a quantity bump,
+            # not like a stealth metadata edit path.
+            add_again_output = self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "2",
+                "--condition",
+                "NM",
+                "--finish",
+                "normal",
+                "--location",
+                "Binder A",
+                "--tags",
+                "beta",
+            )
+            self.assertIn("Quantity now: 3", add_again_output)
+            self.assertIn("Tags: alpha, beta", add_again_output)
+
+            note_failure = self.run_failing_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--condition",
+                "NM",
+                "--finish",
+                "normal",
+                "--location",
+                "Binder A",
+                "--notes",
+                "Replacement note",
+            )
+            self.assertNotEqual(0, note_failure.returncode)
+            self.assertIn("Use set-notes instead", note_failure.stderr)
+            self.assertNotIn("Traceback", note_failure.stderr)
+
+            acquisition_failure = self.run_failing_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--condition",
+                "NM",
+                "--finish",
+                "normal",
+                "--location",
+                "Binder A",
+                "--acquisition-price",
+                "2.50",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.assertNotEqual(0, acquisition_failure.returncode)
+            self.assertIn("Use set-acquisition instead", acquisition_failure.stderr)
+            self.assertNotIn("Traceback", acquisition_failure.stderr)
+
+            connection = sqlite3.connect(db_path)
+            row = connection.execute(
+                """
+                SELECT quantity, notes, tags_json, acquisition_price, acquisition_currency
+                FROM inventory_items
+                WHERE id = 1
+                """
+            ).fetchone()
+            connection.close()
+
+            self.assertEqual(3, row[0])
+            self.assertEqual("Main copy", row[1])
+            self.assertCountEqual(["alpha", "beta"], json.loads(row[2]))
+            self.assertEqual(1.25, float(row[3]))
+            self.assertEqual("USD", row[4])
+
+    def test_add_card_rejects_acquisition_currency_without_price(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+
+            result = self.run_failing_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "1",
+                "--acquisition-currency",
+                "USD",
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("Cannot store an acquisition currency without an acquisition price", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
+            connection = sqlite3.connect(db_path)
+            row_count = connection.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0]
+            connection.close()
+
+            self.assertEqual(0, row_count)
+
     def test_set_location_and_condition_support_explicit_merge_on_collision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -538,6 +1119,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
             prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
 
+            # Start with two otherwise-identical rows that only differ by
+            # location, so changing the location creates a merge collision.
             import_output = self.run_importer(
                 "import-all",
                 "--db",
@@ -622,6 +1205,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             ).fetchone()[0]
             connection.close()
 
+            # Without `--merge`, the command should stop and explain why it would
+            # collapse two rows into one.
             location_failure = self.run_failing_cli(
                 "set-location",
                 "--db",
@@ -636,7 +1221,9 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertNotEqual(0, location_failure.returncode)
             self.assertIn("--merge", location_failure.stderr)
 
-            location_merge_output = self.run_cli(
+            # Once the user opts into merging, conflicting acquisition metadata
+            # must still be resolved explicitly instead of silently picking one.
+            location_acquisition_failure = self.run_failing_cli(
                 "set-location",
                 "--db",
                 str(db_path),
@@ -648,11 +1235,48 @@ class CliSmokeTest(RepoSmokeTestCase):
                 "Deck Box",
                 "--merge",
             )
+            self.assertNotEqual(0, location_acquisition_failure.returncode)
+            self.assertIn("--keep-acquisition", location_acquisition_failure.stderr)
+
+            connection = sqlite3.connect(db_path)
+            location_rows_after_failure = connection.execute(
+                """
+                SELECT id, quantity, location
+                FROM inventory_items
+                ORDER BY id
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual(
+                [
+                    (location_source_item_id, 2, "Binder A"),
+                    (location_target_item_id, 3, "Deck Box"),
+                ],
+                location_rows_after_failure,
+            )
+
+            location_merge_output = self.run_cli(
+                "set-location",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                str(location_source_item_id),
+                "--location",
+                "Deck Box",
+                "--merge",
+                "--keep-acquisition",
+                "target",
+            )
             self.assertIn("Merge applied: yes", location_merge_output)
             self.assertIn(f"Merged source item ID: {location_source_item_id}", location_merge_output)
             self.assertIn(f"Active item ID: {location_target_item_id}", location_merge_output)
             self.assertIn("Quantity now: 5", location_merge_output)
 
+            # Inspect the stored row directly to prove that notes, tags, and
+            # acquisition data were merged instead of silently discarded.
             connection = sqlite3.connect(db_path)
             location_row = connection.execute(
                 """
@@ -671,10 +1295,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertEqual("Deck Box", location_row[2])
             self.assertIn("Target location row", location_row[3])
             self.assertIn("Source location row", location_row[3])
-            self.assertIn(
-                f"Merged source acquisition from item {location_source_item_id}: 1.5 USD",
-                location_row[3],
-            )
+            self.assertNotIn("Merged source acquisition", location_row[3])
             self.assertCountEqual(["target-tag", "source-tag"], json.loads(location_row[4]))
             self.assertEqual(2.0, float(location_row[5]))
             self.assertEqual("USD", location_row[6])
@@ -739,6 +1360,8 @@ class CliSmokeTest(RepoSmokeTestCase):
             ).fetchone()[0]
             connection.close()
 
+            # Repeat the same collision story for condition changes because the
+            # merge semantics should be identical across mutating commands.
             condition_failure = self.run_failing_cli(
                 "set-condition",
                 "--db",
@@ -753,6 +1376,21 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertNotEqual(0, condition_failure.returncode)
             self.assertIn("--merge", condition_failure.stderr)
 
+            condition_acquisition_failure = self.run_failing_cli(
+                "set-condition",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                str(condition_source_item_id),
+                "--condition",
+                "NM",
+                "--merge",
+            )
+            self.assertNotEqual(0, condition_acquisition_failure.returncode)
+            self.assertIn("--keep-acquisition", condition_acquisition_failure.stderr)
+
             condition_merge_output = self.run_cli(
                 "set-condition",
                 "--db",
@@ -764,6 +1402,8 @@ class CliSmokeTest(RepoSmokeTestCase):
                 "--condition",
                 "NM",
                 "--merge",
+                "--keep-acquisition",
+                "source",
             )
             self.assertIn("Merge applied: yes", condition_merge_output)
             self.assertIn(f"Merged source item ID: {condition_source_item_id}", condition_merge_output)
@@ -789,10 +1429,155 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertEqual("Sideboard", condition_row[3])
             self.assertIn("Target condition row", condition_row[4])
             self.assertIn("Source condition row", condition_row[4])
-            self.assertIn(
-                f"Merged source acquisition from item {condition_source_item_id}: 4 USD",
-                condition_row[4],
-            )
+            self.assertNotIn("Merged source acquisition", condition_row[4])
             self.assertCountEqual(["condition-target", "condition-source"], json.loads(condition_row[5]))
-            self.assertEqual(5.0, float(condition_row[6]))
+            self.assertEqual(4.0, float(condition_row[6]))
             self.assertEqual("USD", condition_row[7])
+
+    def test_split_row_requires_explicit_acquisition_choice_when_merging_into_existing_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            bundle = materialize_fixture_bundle(
+                tmp,
+                "lightning_bolt",
+                "scryfall.json",
+                "identifiers.json",
+                "prices.json",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(bundle["scryfall.json"]),
+                "--identifiers-json",
+                str(bundle["identifiers.json"]),
+                "--prices-json",
+                str(bundle["prices.json"]),
+            )
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "3",
+                "--condition",
+                "NM",
+                "--finish",
+                "normal",
+                "--location",
+                "Binder A",
+                "--acquisition-price",
+                "1.75",
+                "--acquisition-currency",
+                "USD",
+            )
+            self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--scryfall-id",
+                "s1",
+                "--quantity",
+                "2",
+                "--condition",
+                "NM",
+                "--finish",
+                "normal",
+                "--location",
+                "Deck Box",
+                "--acquisition-price",
+                "2.25",
+                "--acquisition-currency",
+                "USD",
+            )
+
+            # Splitting into an existing identity is really a merge operation,
+            # so conflicting acquisition data should be resolved before any
+            # quantity changes are allowed to happen.
+            split_failure = self.run_failing_cli(
+                "split-row",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--quantity",
+                "1",
+                "--location",
+                "Deck Box",
+            )
+            self.assertNotEqual(0, split_failure.returncode)
+            self.assertIn("--keep-acquisition", split_failure.stderr)
+
+            connection = sqlite3.connect(db_path)
+            rows_after_failure = connection.execute(
+                """
+                SELECT id, quantity, location, acquisition_price, acquisition_currency
+                FROM inventory_items
+                ORDER BY id
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual(
+                [
+                    (1, 3, "Binder A", 1.75, "USD"),
+                    (2, 2, "Deck Box", 2.25, "USD"),
+                ],
+                rows_after_failure,
+            )
+
+            split_output = self.run_cli(
+                "split-row",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--item-id",
+                "1",
+                "--quantity",
+                "1",
+                "--location",
+                "Deck Box",
+                "--keep-acquisition",
+                "source",
+            )
+            self.assertIn("Split inventory row", split_output)
+            self.assertIn("Merged into existing row: yes", split_output)
+
+            connection = sqlite3.connect(db_path)
+            rows_after_success = connection.execute(
+                """
+                SELECT id, quantity, location, acquisition_price, acquisition_currency
+                FROM inventory_items
+                ORDER BY id
+                """
+            ).fetchall()
+            connection.close()
+
+            self.assertEqual(
+                [
+                    (1, 2, "Binder A", 1.75, "USD"),
+                    (2, 3, "Deck Box", 1.75, "USD"),
+                ],
+                rows_after_success,
+            )

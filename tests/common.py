@@ -1,3 +1,5 @@
+"""Shared helpers for the CLI-oriented integration tests."""
+
 from __future__ import annotations
 
 import json
@@ -16,10 +18,13 @@ IMPORTER_MODULE = "mtg_source_stack.mvp_importer"
 CLI_MODULE = "mtg_source_stack.personal_inventory_cli"
 
 if str(SRC_DIR) not in sys.path:
+    # Allow the tests and subprocess-launched modules to import the local
+    # checkout without requiring an editable install first.
     sys.path.insert(0, str(SRC_DIR))
 
 MODULE_ENV = os.environ.copy()
 existing_pythonpath = MODULE_ENV.get("PYTHONPATH")
+# Mirror that import path setup for `python -m ...` subprocess calls.
 MODULE_ENV["PYTHONPATH"] = (
     f"{SRC_DIR}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(SRC_DIR)
 )
@@ -55,12 +60,16 @@ def materialize_fixture_bundle(
 
 
 class RepoSmokeTestCase(unittest.TestCase):
+    """Base case for tests that exercise the real command-line entry points."""
+
     def run_module_process(
         self,
         module: str,
         *args: str,
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
+        # Running through `python -m` keeps the tests close to how a user would
+        # invoke the tools while still using the current source tree.
         return subprocess.run(
             [sys.executable, "-m", module, *args],
             cwd=REPO_ROOT,
@@ -79,6 +88,9 @@ class RepoSmokeTestCase(unittest.TestCase):
 
     def run_cli(self, *args: str) -> str:
         return self.run_module(CLI_MODULE, *args)
+
+    def run_failing_importer(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return self.run_module_process(IMPORTER_MODULE, *args, check=False)
 
     def run_failing_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return self.run_module_process(CLI_MODULE, *args, check=False)
