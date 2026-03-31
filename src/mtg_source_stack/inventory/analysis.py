@@ -9,6 +9,7 @@ from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
+from ..errors import ValidationError
 from .money import coerce_decimal
 from .normalize import format_finishes, load_tags_json, text_or_none, truncate
 from .query_inventory import add_owned_filters, get_inventory_row
@@ -188,7 +189,7 @@ def reconcile_prices(
     apply_changes: bool,
 ) -> ReconcilePricesResult:
     if apply_changes:
-        raise ValueError(
+        raise ValidationError(
             "reconcile-prices is suggestion-only and no longer changes inventory finish values. "
             "Review the suggestions, then use set-finish manually if you want to update a row."
         )
@@ -236,9 +237,9 @@ def inventory_health(
     preview_limit: int,
 ) -> InventoryHealthResult:
     if stale_days < 0:
-        raise ValueError("--stale-days must be zero or greater.")
+        raise ValidationError("--stale-days must be zero or greater.")
     if preview_limit <= 0:
-        raise ValueError("--limit must be a positive integer.")
+        raise ValidationError("--limit must be a positive integer.")
 
     require_current_schema(db_path)
     with connect(db_path) as connection:

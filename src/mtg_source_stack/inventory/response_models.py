@@ -21,6 +21,8 @@ class ResponseModel:
 
 
 def serialize_response(value: Any) -> Any:
+    # JSON-facing responses keep money values as decimal strings so callers do
+    # not inherit binary-float surprises from Python or JavaScript runtimes.
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, Decimal):

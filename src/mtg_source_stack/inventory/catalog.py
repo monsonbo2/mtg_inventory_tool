@@ -8,6 +8,7 @@ from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
+from ..errors import NotFoundError, ValidationError
 from .normalize import normalized_catalog_finish_list
 from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
 from .response_models import CatalogSearchRow
@@ -141,7 +142,7 @@ def resolve_card_row(
             (scryfall_id,),
         ).fetchone()
         if row is None:
-            raise ValueError(f"No card found for scryfall_id '{scryfall_id}'.")
+            raise NotFoundError(f"No card found for scryfall_id '{scryfall_id}'.")
         return row
 
     if tcgplayer_product_id:
@@ -156,16 +157,16 @@ def resolve_card_row(
             (tcgplayer_product_id,),
         ).fetchall()
         if not row:
-            raise ValueError(f"No card found for tcgplayer_product_id '{tcgplayer_product_id}'.")
+            raise NotFoundError(f"No card found for tcgplayer_product_id '{tcgplayer_product_id}'.")
         if len(row) > 1:
-            raise ValueError(
+            raise ValidationError(
                 "Multiple printings matched that TCGplayer product id. "
                 "Narrow it with --scryfall-id or provide name/set details."
             )
         return row[0]
 
     if not name:
-        raise ValueError("Provide either --scryfall-id, --tcgplayer-product-id, or --name.")
+        raise ValidationError("Provide either --scryfall-id, --tcgplayer-product-id, or --name.")
 
     params: list[Any] = [name]
     filters = ["LOWER(name) = LOWER(?)"]
@@ -192,13 +193,13 @@ def resolve_card_row(
     ).fetchall()
 
     if not rows:
-        raise ValueError("No matching printing found. Try search-cards first to find the exact printing.")
+        raise NotFoundError("No matching printing found. Try search-cards first to find the exact printing.")
     if len(rows) > 1:
         candidates = "; ".join(
             f"{row['set_code']} #{row['collector_number']} ({row['lang']}) [{row['scryfall_id']}]"
             for row in rows
         )
-        raise ValueError(
+        raise ValidationError(
             "Multiple printings matched that name. Narrow it with --set-code, --collector-number, or --scryfall-id. "
             f"Candidates: {candidates}"
         )

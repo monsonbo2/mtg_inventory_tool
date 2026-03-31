@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+from ..errors import ValidationError
 from .money import format_decimal
 
 
@@ -244,7 +245,7 @@ def normalize_finish(value: str | None) -> str:
         "etched": "etched",
     }
     if normalized not in mapping:
-        raise ValueError("Finish must be one of: normal, nonfoil, foil, etched.")
+        raise ValidationError("Finish must be one of: normal, nonfoil, foil, etched.")
     return mapping[normalized]
 
 

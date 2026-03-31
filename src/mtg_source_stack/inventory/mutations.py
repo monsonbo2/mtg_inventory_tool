@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
+from ..errors import ConflictError, ValidationError
 from .audit import load_inventory_item_snapshot, write_inventory_audit_event
 from .catalog import resolve_card_row
 from .money import coerce_decimal
@@ -83,7 +84,7 @@ def add_card_with_connection(
     request_id: str | None = None,
 ) -> AddCardResult:
     if quantity <= 0:
-        raise ValueError("--quantity must be a positive integer.")
+        raise ValidationError("--quantity must be a positive integer.")
 
     normalized_condition = normalize_condition_code(condition_code)
     normalized_finish = normalize_finish(finish)
@@ -93,12 +94,12 @@ def add_card_with_connection(
     normalized_acquisition_currency = normalize_currency_code(acquisition_currency)
     normalized_notes = text_or_none(notes)
     if normalized_acquisition_price is None and normalized_acquisition_currency is not None:
-        raise ValueError(
+        raise ValidationError(
             "Cannot store an acquisition currency without an acquisition price. "
             "Use --acquisition-price too, or omit --acquisition-currency."
         )
     if normalized_acquisition_price is not None and normalized_acquisition_price < 0:
-        raise ValueError("--acquisition-price must be zero or greater.")
+        raise ValidationError("--acquisition-price must be zero or greater.")
     if inventory_cache is None:
         inventory_cache = {}
 
@@ -327,7 +328,7 @@ def set_quantity(
     request_id: str | None = None,
 ) -> SetQuantityResult:
     if quantity <= 0:
-        raise ValueError("--quantity must be a positive integer. Use remove-card to delete a row.")
+        raise ValidationError("--quantity must be a positive integer. Use remove-card to delete a row.")
 
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
@@ -377,12 +378,12 @@ def set_acquisition(
     request_id: str | None = None,
 ) -> SetAcquisitionResult:
     if clear and (acquisition_price is not None or acquisition_currency is not None):
-        raise ValueError("Use either --clear or --price / --currency, not both.")
+        raise ValidationError("Use either --clear or --price / --currency, not both.")
     if not clear and acquisition_price is None and acquisition_currency is None:
-        raise ValueError("Provide at least one of --price or --currency, or use --clear.")
+        raise ValidationError("Provide at least one of --price or --currency, or use --clear.")
     normalized_acquisition_price = coerce_decimal(acquisition_price)
     if normalized_acquisition_price is not None and normalized_acquisition_price < 0:
-        raise ValueError("--price must be zero or greater.")
+        raise ValidationError("--price must be zero or greater.")
 
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
@@ -398,7 +399,9 @@ def set_acquisition(
             new_currency = normalize_currency_code(acquisition_currency)
 
         if new_price is None and new_currency is not None:
-            raise ValueError("Cannot store an acquisition currency without an acquisition price. Use --price too, or --clear.")
+            raise ValidationError(
+                "Cannot store an acquisition currency without an acquisition price. Use --price too, or --clear."
+            )
 
         if before_write is not None:
             before_write()
@@ -462,7 +465,7 @@ def set_finish_with_connection(
             (normalized_finish, item_id),
         )
     except sqlite3.IntegrityError as exc:
-        raise ValueError(
+        raise ConflictError(
             "Changing finish would collide with an existing inventory row. "
             "Resolve the duplicate row first."
         ) from exc
@@ -552,7 +555,7 @@ def set_location(
             # Changing an identity field can collapse two rows into one logical
             # bucket, so require an explicit merge opt-in before combining them.
             if not merge:
-                raise ValueError(
+                raise ConflictError(
                     "Changing location would collide with an existing inventory row. "
                     "Re-run with --merge to combine the rows, or resolve the duplicate row first."
                 )
@@ -684,7 +687,7 @@ def set_condition(
             # Condition changes can trigger the same row-collision behavior as
             # location edits, so the merge path is shared here too.
             if not merge:
-                raise ValueError(
+                raise ConflictError(
                     "Changing condition would collide with an existing inventory row. "
                     "Re-run with --merge to combine the rows, or resolve the duplicate row first."
                 )
@@ -799,9 +802,9 @@ def split_row(
     request_id: str | None = None,
 ) -> SplitRowResult:
     if quantity <= 0:
-        raise ValueError("--quantity must be a positive integer.")
+        raise ValidationError("--quantity must be a positive integer.")
     if clear_location and location is not None:
-        raise ValueError("Use either --location or --clear-location, not both.")
+        raise ValidationError("Use either --location or --clear-location, not both.")
 
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
@@ -809,7 +812,7 @@ def split_row(
         source_before_snapshot = inventory_item_result_from_row(source_item)
         source_quantity = int(source_item["quantity"])
         if quantity > source_quantity:
-            raise ValueError("--quantity cannot exceed the current row quantity.")
+            raise ValidationError("--quantity cannot exceed the current row quantity.")
 
         target_condition = normalize_condition_code(condition_code) if condition_code is not None else source_item["condition_code"]
         target_finish = normalize_finish(finish) if finish is not None else source_item["finish"]
@@ -828,7 +831,7 @@ def split_row(
             language_code=target_language,
             location=target_location,
         ):
-            raise ValueError(
+            raise ValidationError(
                 "split-row needs a different condition, finish, language, or location for the target row."
             )
 
@@ -1090,7 +1093,7 @@ def merge_rows(
     request_id: str | None = None,
 ) -> MergeRowsResult:
     if source_item_id == target_item_id:
-        raise ValueError("Choose two different item ids when using merge-rows.")
+        raise ValidationError("Choose two different item ids when using merge-rows.")
 
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
@@ -1100,7 +1103,7 @@ def merge_rows(
         target_before_snapshot = inventory_item_result_from_row(target_item)
 
         if source_item["scryfall_id"] != target_item["scryfall_id"]:
-            raise ValueError("merge-rows currently requires both rows to reference the same printing.")
+            raise ValidationError("merge-rows currently requires both rows to reference the same printing.")
 
         if before_write is not None:
             before_write()

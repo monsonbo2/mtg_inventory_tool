@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from ..errors import NotFoundError
 from .money import coerce_decimal
 from .normalize import load_tags_json, normalize_finish, parse_tag_filters, text_or_none
 from .policies import build_merged_inventory_item_update
@@ -74,7 +75,7 @@ def get_inventory_row(connection: sqlite3.Connection, slug: str) -> sqlite3.Row:
         (slug,),
     ).fetchone()
     if row is None:
-        raise ValueError(f"Unknown inventory '{slug}'. Create it first with create-inventory.")
+        raise NotFoundError(f"Unknown inventory '{slug}'. Create it first with create-inventory.")
     return row
 
 
@@ -110,7 +111,7 @@ def get_or_create_inventory_row(
         row = cursor.fetchone()
 
     if row is None:
-        raise ValueError(f"Unknown inventory '{slug}'. Create it first with create-inventory.")
+        raise NotFoundError(f"Unknown inventory '{slug}'. Create it first with create-inventory.")
 
     if inventory_cache is not None:
         inventory_cache[slug] = row
@@ -147,7 +148,7 @@ def get_inventory_item_row(connection: sqlite3.Connection, inventory_slug: str, 
         (inventory_slug, item_id),
     ).fetchone()
     if row is None:
-        raise ValueError(f"No inventory row found for item_id '{item_id}' in inventory '{inventory_slug}'.")
+        raise NotFoundError(f"No inventory row found for item_id '{item_id}' in inventory '{inventory_slug}'.")
     return row
 
 

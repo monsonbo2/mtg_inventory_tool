@@ -36,6 +36,7 @@ use the repo is `pip install -e .` plus the
   - `var/reports/`
   - `var/walkthrough/`
 - Docs and design notes:
+  - `docs/api_v1_contract.md`
   - `docs/backend_v1_contract.md`
   - `docs/source_map.md`
   - `docs/ingestion_flow.md`

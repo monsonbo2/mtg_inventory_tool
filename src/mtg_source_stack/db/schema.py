@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .connection import connect, require_database_file
 from .migrator import migrate_database, pending_migrations
+from ..errors import SchemaNotReadyError
 
 
 def load_schema_sql() -> str:
@@ -44,7 +45,7 @@ def require_current_schema(db_path: str | Path) -> Path:
         pending = pending_migrations(connection)
 
     if pending:
-        raise ValueError(
+        raise SchemaNotReadyError(
             f"Database file '{path}' is not at the current schema version. "
             f"Run mtg-mvp-importer migrate-db --db '{path}' before using read-only commands."
         )

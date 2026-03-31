@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
+from ..errors import ConflictError
 from .normalize import text_or_none
 from .response_models import InventoryCreateResult, InventoryListRow
 
@@ -28,7 +29,7 @@ def create_inventory(
                 (slug, display_name, description),
             )
         except sqlite3.IntegrityError as exc:
-            raise ValueError(f"Inventory '{slug}' already exists.") from exc
+            raise ConflictError(f"Inventory '{slug}' already exists.") from exc
         connection.commit()
         return InventoryCreateResult(
             inventory_id=int(cursor.lastrowid),

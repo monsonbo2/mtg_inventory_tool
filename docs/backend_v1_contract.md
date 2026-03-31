@@ -3,6 +3,9 @@
 This document defines the canonical backend model for the first web-backed
 version of this project.
 
+For the HTTP-facing JSON and error contract that sits on top of this backend
+model, see `docs/api_v1_contract.md`.
+
 ## Decision
 
 Web-v1 is built on the current MVP runtime schema, not the fully normalized

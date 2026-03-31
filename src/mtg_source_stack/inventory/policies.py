@@ -6,6 +6,7 @@ from decimal import Decimal
 import sqlite3
 from typing import Any
 
+from ..errors import ConflictError, ValidationError
 from .money import coerce_decimal
 from .normalize import load_tags_json, merge_note_text, merge_tags, tags_to_json, text_or_none
 
@@ -24,7 +25,7 @@ def resolve_merge_acquisition(
     acquisition_preference: str | None = None,
 ) -> tuple[Any, str | None]:
     if acquisition_preference not in (None, "source", "target"):
-        raise ValueError("keep_acquisition must be one of: source, target.")
+        raise ValidationError("keep_acquisition must be one of: source, target.")
 
     source_acquisition = canonical_acquisition(
         source_item["acquisition_price"],
@@ -45,7 +46,7 @@ def resolve_merge_acquisition(
     if acquisition_preference == "source":
         return source_acquisition
 
-    raise ValueError(
+    raise ConflictError(
         "Merging rows with different acquisition values requires choosing which acquisition to keep. "
         "Re-run with --keep-acquisition target or --keep-acquisition source."
     )
@@ -87,7 +88,7 @@ def ensure_add_card_metadata_compatible(
 ) -> None:
     existing_notes = text_or_none(existing_row["notes"])
     if incoming_notes is not None and incoming_notes != existing_notes:
-        raise ValueError(
+        raise ConflictError(
             f"Adding to existing row would overwrite notes on item {existing_row['id']}. "
             "Use set-notes instead."
         )
@@ -101,7 +102,7 @@ def ensure_add_card_metadata_compatible(
         existing_row["acquisition_currency"],
     )
     if incoming_acquisition is not None and incoming_acquisition != existing_acquisition:
-        raise ValueError(
+        raise ConflictError(
             f"Adding to existing row would overwrite acquisition metadata on item {existing_row['id']}. "
             "Use set-acquisition instead."
         )
