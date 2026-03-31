@@ -25,6 +25,18 @@ def column_exists(connection: sqlite3.Connection, table_name: str, column_name: 
     return any(row["name"] == column_name for row in rows)
 
 
+def table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
+    row = connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table' AND name = ?
+        """,
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
 def list_migration_files() -> list[MigrationFile]:
     migrations: list[MigrationFile] = []
     seen_versions: set[int] = set()
@@ -69,6 +81,18 @@ def applied_migration_versions(connection: sqlite3.Connection) -> set[int]:
     ensure_schema_migrations_table(connection)
     rows = connection.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
     return {int(row["version"]) for row in rows}
+
+
+def recorded_migration_versions(connection: sqlite3.Connection) -> set[int]:
+    if not table_exists(connection, "schema_migrations"):
+        return set()
+    rows = connection.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
+    return {int(row["version"]) for row in rows}
+
+
+def pending_migrations(connection: sqlite3.Connection) -> list[MigrationFile]:
+    recorded = recorded_migration_versions(connection)
+    return [migration for migration in list_migration_files() if migration.version not in recorded]
 
 
 def current_schema_version(connection: sqlite3.Connection) -> int:

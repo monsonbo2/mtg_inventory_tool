@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
+from mtg_source_stack.db.schema import load_schema_sql
 
 
 class CliSmokeTest(RepoSmokeTestCase):
@@ -57,6 +58,55 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertEqual(2, result.returncode)
             self.assertIn("Inventory 'personal' already exists.", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
+
+    def test_read_commands_require_explicit_migration_for_legacy_db(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "legacy.db"
+
+            # Simulate a pre-migration database that has the old runtime schema
+            # but no schema_migrations tracking yet.
+            connection = sqlite3.connect(db_path)
+            connection.executescript(load_schema_sql())
+            connection.commit()
+            connection.close()
+
+            result = self.run_failing_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Lightning Bolt",
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("migrate-db", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
+            # Read-only commands should not stamp schema state on their own.
+            raw = sqlite3.connect(db_path)
+            schema_migrations_exists = raw.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+            ).fetchone()[0]
+            raw.close()
+            self.assertEqual(0, schema_migrations_exists)
+
+            migrate_output = self.run_importer(
+                "migrate-db",
+                "--db",
+                str(db_path),
+            )
+            self.assertIn("Migrated database", migrate_output)
+            self.assertIn("0001 mvp base", migrate_output)
+            self.assertIn("0002 add tags json", migrate_output)
+
+            search_output = self.run_cli(
+                "search-cards",
+                "--db",
+                str(db_path),
+                "--query",
+                "Lightning Bolt",
+            )
+            self.assertEqual("No rows found.", search_output)
 
     def test_import_csv_missing_file_fails_without_creating_db_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

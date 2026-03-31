@@ -4,7 +4,8 @@ import argparse
 from pathlib import Path
 from typing import Any, Callable
 
-from ..db.connection import DEFAULT_DB_PATH
+from ..db.connection import DEFAULT_DB_PATH, require_database_file
+from ..db.migrator import migrate_database
 from ..db.schema import initialize_database
 from ..db.snapshots import create_database_snapshot, list_database_snapshots, restore_database_snapshot
 from ..importer.mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
@@ -56,6 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_db = subparsers.add_parser("init-db", help="Create the MVP SQLite schema.")
     init_db.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+
+    migrate_db = subparsers.add_parser("migrate-db", help="Apply pending schema migrations to an existing database.")
+    migrate_db.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
 
     snapshot_db = subparsers.add_parser("snapshot-db", help="Create a named safety snapshot of the database.")
     snapshot_db.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
@@ -163,6 +167,17 @@ def main() -> None:
         if args.command == "init-db":
             initialize_database(args.db)
             print(f"Initialized database at {Path(args.db)}")
+            return
+
+        if args.command == "migrate-db":
+            require_database_file(args.db)
+            applied = migrate_database(args.db)
+            if applied:
+                details = ", ".join(f"{migration.version:04d} {migration.name}" for migration in applied)
+                print(f"Migrated database at {Path(args.db)}")
+                print(f"Applied migrations: {details}")
+            else:
+                print(f"Database at {Path(args.db)} is already at the current schema version.")
             return
 
         if args.command == "snapshot-db":

@@ -6,8 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..db.connection import connect, require_database_file
-from ..db.schema import initialize_database
+from ..db.connection import connect
+from ..db.schema import initialize_database, require_current_schema
 
 
 def create_inventory(db_path: str | Path, slug: str, display_name: str, description: str | None) -> int:
@@ -28,8 +28,7 @@ def create_inventory(db_path: str | Path, slug: str, display_name: str, descript
 
 
 def list_inventories(db_path: str | Path) -> list[dict[str, Any]]:
-    require_database_file(db_path)
-    initialize_database(db_path)
+    require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = connection.execute(
             """

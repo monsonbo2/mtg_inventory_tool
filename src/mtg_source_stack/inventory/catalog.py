@@ -6,8 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..db.connection import connect, require_database_file
-from ..db.schema import initialize_database
+from ..db.connection import connect
+from ..db.schema import require_current_schema
 from .normalize import normalize_catalog_finishes
 from .query_catalog import add_catalog_filters
 
@@ -22,8 +22,7 @@ def search_cards(
     exact: bool = False,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    require_database_file(db_path)
-    initialize_database(db_path)
+    require_current_schema(db_path)
     with connect(db_path) as connection:
         where_parts: list[str] = []
         params: list[Any] = []

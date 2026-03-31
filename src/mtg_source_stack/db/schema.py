@@ -4,8 +4,8 @@ import sqlite3
 from importlib.resources import files
 from pathlib import Path
 
-from .connection import connect
-from .migrator import migrate_database
+from .connection import connect, require_database_file
+from .migrator import migrate_database, pending_migrations
 
 
 def load_schema_sql() -> str:
@@ -36,3 +36,17 @@ def ensure_schema_upgrades(connection: sqlite3.Connection) -> None:
 
 def initialize_database(db_path: str | Path) -> None:
     migrate_database(db_path)
+
+
+def require_current_schema(db_path: str | Path) -> Path:
+    path = require_database_file(db_path)
+    with connect(path) as connection:
+        pending = pending_migrations(connection)
+
+    if pending:
+        raise ValueError(
+            f"Database file '{path}' is not at the current schema version. "
+            f"Run mtg-mvp-importer migrate-db --db '{path}' before using read-only commands."
+        )
+
+    return path

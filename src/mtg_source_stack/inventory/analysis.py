@@ -6,8 +6,8 @@ import datetime as dt
 from pathlib import Path
 from typing import Any
 
-from ..db.connection import connect, require_database_file
-from ..db.schema import initialize_database
+from ..db.connection import connect
+from ..db.schema import require_current_schema
 from .normalize import coerce_float, format_finishes, text_or_none, truncate
 from .query_inventory import add_owned_filters, get_inventory_row
 from .query_pricing import build_latest_retail_prices_cte, query_price_gaps, query_stale_price_rows
@@ -34,8 +34,7 @@ def list_price_gaps(
     provider: str,
     limit: int | None,
 ) -> list[dict[str, Any]]:
-    require_database_file(db_path)
-    initialize_database(db_path)
+    require_current_schema(db_path)
     with connect(db_path) as connection:
         return query_price_gaps(
             connection,
@@ -58,7 +57,7 @@ def reconcile_prices(
             "Review the suggestions, then use set-finish manually if you want to update a row."
         )
 
-    initialize_database(db_path)
+    require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = query_price_gaps(
             connection,
@@ -103,8 +102,7 @@ def inventory_health(
     if preview_limit <= 0:
         raise ValueError("--limit must be a positive integer.")
 
-    require_database_file(db_path)
-    initialize_database(db_path)
+    require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
         current_date = dt.date.today()
@@ -201,8 +199,7 @@ def list_owned_filtered(
     location: str | None,
     tags: list[str] | None,
 ) -> list[dict[str, Any]]:
-    require_database_file(db_path)
-    initialize_database(db_path)
+    require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
         latest_prices_cte, latest_price_params = build_latest_retail_prices_cte(provider=provider)
@@ -351,8 +348,7 @@ def valuation_filtered(
     location: str | None,
     tags: list[str] | None,
 ) -> list[dict[str, Any]]:
-    require_database_file(db_path)
-    initialize_database(db_path)
+    require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
 
