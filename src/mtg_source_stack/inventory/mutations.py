@@ -21,13 +21,13 @@ from .normalize import (
     tags_to_json,
     text_or_none,
 )
+from .policies import ensure_add_card_metadata_compatible, resolve_merge_acquisition, row_matches_identity
 from .query_inventory import (
     find_inventory_item_collision,
     get_inventory_item_row,
     get_or_create_inventory_row,
     inventory_item_result_from_row,
     merge_inventory_item_rows,
-    resolve_merge_acquisition,
 )
 
 
@@ -126,28 +126,12 @@ def add_card_with_connection(
     # The unique identity for an inventory row is printing plus
     # condition/finish/language/location. Matching rows roll quantity forward.
     if existing_row is not None:
-        existing_notes = text_or_none(existing_row["notes"])
-        if normalized_notes is not None and normalized_notes != existing_notes:
-            raise ValueError(
-                f"Adding to existing row would overwrite notes on item {existing_row['id']}. "
-                "Use set-notes instead."
-            )
-
-        existing_acquisition = None
-        if existing_row["acquisition_price"] is not None:
-            existing_acquisition = (
-                existing_row["acquisition_price"],
-                text_or_none(existing_row["acquisition_currency"]),
-            )
-        incoming_acquisition = None
-        if acquisition_price is not None:
-            incoming_acquisition = (float(acquisition_price), normalized_acquisition_currency)
-
-        if incoming_acquisition is not None and incoming_acquisition != existing_acquisition:
-            raise ValueError(
-                f"Adding to existing row would overwrite acquisition metadata on item {existing_row['id']}. "
-                "Use set-acquisition instead."
-            )
+        ensure_add_card_metadata_compatible(
+            existing_row,
+            incoming_notes=normalized_notes,
+            incoming_acquisition_price=acquisition_price,
+            incoming_acquisition_currency=normalized_acquisition_currency,
+        )
 
         updated_quantity = int(existing_row["quantity"]) + quantity
         if before_write is not None:
@@ -582,11 +566,12 @@ def split_row(
         else:
             target_location = source_item["location"]
 
-        if (
-            target_condition == source_item["condition_code"]
-            and target_finish == source_item["finish"]
-            and target_language == source_item["language_code"]
-            and target_location == source_item["location"]
+        if row_matches_identity(
+            source_item,
+            condition_code=target_condition,
+            finish=target_finish,
+            language_code=target_language,
+            location=target_location,
         ):
             raise ValueError(
                 "split-row needs a different condition, finish, language, or location for the target row."

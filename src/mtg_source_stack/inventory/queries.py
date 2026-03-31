@@ -9,7 +9,6 @@ from .query_inventory import (
     get_or_create_inventory_row,
     inventory_item_result_from_row,
     merge_inventory_item_rows,
-    resolve_merge_acquisition,
 )
 from .query_pricing import (
     build_current_retail_prices_cte,
@@ -26,3 +25,4 @@ from .query_reporting import (
     query_missing_location_rows,
     query_missing_tag_rows,
 )
+from .policies import resolve_merge_acquisition

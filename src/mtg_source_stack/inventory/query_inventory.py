@@ -5,15 +5,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from .normalize import (
-    load_tags_json,
-    merge_note_text,
-    merge_tags,
-    normalize_finish,
-    parse_tag_filters,
-    tags_to_json,
-    text_or_none,
-)
+from .normalize import load_tags_json, normalize_finish, parse_tag_filters, text_or_none
+from .policies import build_merged_inventory_item_update
 
 
 def add_owned_filters(
@@ -224,40 +217,6 @@ def find_inventory_item_collision(
     ).fetchone()
 
 
-def resolve_merge_acquisition(
-    source_item: sqlite3.Row,
-    target_item: sqlite3.Row,
-    *,
-    acquisition_preference: str | None = None,
-) -> tuple[Any, str | None]:
-    if acquisition_preference not in (None, "source", "target"):
-        raise ValueError("keep_acquisition must be one of: source, target.")
-
-    def canonical_acquisition(item: sqlite3.Row) -> tuple[Any, str | None] | None:
-        price = item["acquisition_price"]
-        if price is None:
-            return None
-        return price, text_or_none(item["acquisition_currency"])
-
-    source_acquisition = canonical_acquisition(source_item)
-    target_acquisition = canonical_acquisition(target_item)
-
-    if target_acquisition is None:
-        return source_acquisition or (None, None)
-    if source_acquisition is None or source_acquisition == target_acquisition:
-        return target_acquisition
-
-    if acquisition_preference == "target":
-        return target_acquisition
-    if acquisition_preference == "source":
-        return source_acquisition
-
-    raise ValueError(
-        "Merging rows with different acquisition values requires choosing which acquisition to keep. "
-        "Re-run with --keep-acquisition target or --keep-acquisition source."
-    )
-
-
 def merge_inventory_item_rows(
     connection: sqlite3.Connection,
     *,
@@ -269,17 +228,11 @@ def merge_inventory_item_rows(
     acquisition_preference: str | None = None,
 ) -> dict[str, Any]:
     source_quantity = int(source_item["quantity"]) if source_quantity is None else int(source_quantity)
-    merged_quantity = int(target_item["quantity"]) + source_quantity
-    merged_tags = merge_tags(load_tags_json(target_item["tags_json"]), load_tags_json(source_item["tags_json"]))
-    merged_acquisition_price, merged_acquisition_currency = resolve_merge_acquisition(
+    merged_update = build_merged_inventory_item_update(
         source_item,
         target_item,
+        source_quantity=source_quantity,
         acquisition_preference=acquisition_preference,
-    )
-
-    merged_notes = merge_note_text(
-        target_notes=text_or_none(target_item["notes"]),
-        source_notes=text_or_none(source_item["notes"]),
     )
 
     connection.execute(
@@ -295,11 +248,11 @@ def merge_inventory_item_rows(
         WHERE id = ?
         """,
         (
-            merged_quantity,
-            merged_acquisition_price,
-            merged_acquisition_currency,
-            merged_notes,
-            tags_to_json(merged_tags),
+            merged_update["quantity"],
+            merged_update["acquisition_price"],
+            merged_update["acquisition_currency"],
+            merged_update["notes"],
+            merged_update["tags_json"],
             target_item["item_id"],
         ),
     )
