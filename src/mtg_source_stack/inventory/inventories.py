@@ -8,10 +8,15 @@ from pathlib import Path
 from ..db.connection import connect
 from ..db.schema import initialize_database, require_current_schema
 from .normalize import text_or_none
-from .response_models import InventoryListRow
+from .response_models import InventoryCreateResult, InventoryListRow
 
 
-def create_inventory(db_path: str | Path, slug: str, display_name: str, description: str | None) -> int:
+def create_inventory(
+    db_path: str | Path,
+    slug: str,
+    display_name: str,
+    description: str | None,
+) -> InventoryCreateResult:
     initialize_database(db_path)
     with connect(db_path) as connection:
         try:
@@ -25,7 +30,12 @@ def create_inventory(db_path: str | Path, slug: str, display_name: str, descript
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Inventory '{slug}' already exists.") from exc
         connection.commit()
-        return int(cursor.lastrowid)
+        return InventoryCreateResult(
+            inventory_id=int(cursor.lastrowid),
+            slug=slug,
+            display_name=display_name,
+            description=text_or_none(description),
+        )
 
 
 def list_inventories(db_path: str | Path) -> list[InventoryListRow]:

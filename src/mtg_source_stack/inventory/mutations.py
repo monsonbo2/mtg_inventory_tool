@@ -32,6 +32,24 @@ from .query_inventory import (
     inventory_item_result_from_row,
     merge_inventory_item_rows,
 )
+from .response_models import (
+    AddCardResult,
+    MergeRowsResult,
+    RemoveCardResult,
+    SetAcquisitionResult,
+    SetConditionResult,
+    SetFinishResult,
+    SetLocationResult,
+    SetNotesResult,
+    SetQuantityResult,
+    SetTagsResult,
+    SplitRowResult,
+    inventory_item_response_kwargs,
+)
+
+
+def _build_add_card_result(payload: dict[str, Any]) -> AddCardResult:
+    return AddCardResult(**inventory_item_response_kwargs(payload))
 
 
 def add_card_with_connection(
@@ -56,7 +74,10 @@ def add_card_with_connection(
     tags: str | None = None,
     inventory_cache: dict[str, sqlite3.Row] | None = None,
     before_write: Callable[[], Any] | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> AddCardResult:
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer.")
 
@@ -166,6 +187,7 @@ def add_card_with_connection(
             inventory_slug=inventory_slug,
             item_id=item_id,
         )
+        result_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -174,6 +196,9 @@ def add_card_with_connection(
             before=before_snapshot,
             after=after_snapshot,
             metadata={"mode": "increment"},
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
     else:
         if before_write is not None:
@@ -218,6 +243,7 @@ def add_card_with_connection(
             inventory_slug=inventory_slug,
             item_id=item_id,
         )
+        result_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -226,23 +252,11 @@ def add_card_with_connection(
             before=None,
             after=after_snapshot,
             metadata={"mode": "create"},
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
-
-    return {
-        "inventory": inventory["slug"],
-        "card_name": card["name"],
-        "set_code": card["set_code"],
-        "set_name": card["set_name"],
-        "collector_number": card["collector_number"],
-        "scryfall_id": card["scryfall_id"],
-        "item_id": item_id,
-        "quantity": item_quantity,
-        "finish": normalized_finish,
-        "condition_code": normalized_condition,
-        "language_code": normalized_language,
-        "location": normalized_location,
-        "tags": merged_tags,
-    }
+    return _build_add_card_result(inventory_item_result_from_row(result_row))
 
 
 def add_card(
@@ -265,7 +279,10 @@ def add_card(
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> AddCardResult:
     initialize_database(db_path)
     with connect(db_path) as connection:
         result = add_card_with_connection(
@@ -287,6 +304,9 @@ def add_card(
             acquisition_currency=acquisition_currency,
             notes=notes,
             tags=tags,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
     return result
@@ -298,7 +318,10 @@ def set_quantity(
     inventory_slug: str,
     item_id: int,
     quantity: int,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetQuantityResult:
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer. Use remove-card to delete a row.")
 
@@ -315,6 +338,7 @@ def set_quantity(
             (quantity, item_id),
         )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -323,13 +347,16 @@ def set_quantity(
             before=before_snapshot,
             after=after_snapshot,
             metadata={"old_quantity": int(item["quantity"]), "new_quantity": quantity},
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    result = inventory_item_result_from_row(item)
-    result["old_quantity"] = item["quantity"]
-    result["quantity"] = quantity
-    return result
+    return SetQuantityResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        old_quantity=int(item["quantity"]),
+    )
 
 
 def set_acquisition(
@@ -341,7 +368,10 @@ def set_acquisition(
     acquisition_currency: str | None,
     clear: bool = False,
     before_write: Callable[[], Any] | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetAcquisitionResult:
     require_database_file(db_path)
     if clear and (acquisition_price is not None or acquisition_currency is not None):
         raise ValueError("Use either --clear or --price / --currency, not both.")
@@ -378,6 +408,7 @@ def set_acquisition(
             (new_price, new_currency, item_id),
         )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -386,15 +417,17 @@ def set_acquisition(
             before=before_snapshot,
             after=after_snapshot,
             metadata={"clear": clear},
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    result = inventory_item_result_from_row(item)
-    result["old_acquisition_price"] = coerce_decimal(item["acquisition_price"])
-    result["old_acquisition_currency"] = current_currency
-    result["acquisition_price"] = new_price
-    result["acquisition_currency"] = new_currency
-    return result
+    return SetAcquisitionResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        old_acquisition_price=coerce_decimal(item["acquisition_price"]),
+        old_acquisition_currency=current_currency,
+    )
 
 
 def set_finish_with_connection(
@@ -403,14 +436,18 @@ def set_finish_with_connection(
     inventory_slug: str,
     item_id: int,
     finish: str,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetFinishResult:
     item = get_inventory_item_row(connection, inventory_slug, item_id)
     before_snapshot = inventory_item_result_from_row(item)
     normalized_finish = normalize_finish(finish)
     if normalized_finish == item["finish"]:
-        result = inventory_item_result_from_row(item)
-        result["old_finish"] = item["finish"]
-        return result
+        return SetFinishResult(
+            **inventory_item_response_kwargs(before_snapshot),
+            old_finish=str(item["finish"]),
+        )
 
     try:
         connection.execute(
@@ -428,6 +465,7 @@ def set_finish_with_connection(
         ) from exc
 
     after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+    after_row = get_inventory_item_row(connection, inventory_slug, item_id)
     write_inventory_audit_event(
         connection,
         inventory_slug=inventory_slug,
@@ -436,12 +474,15 @@ def set_finish_with_connection(
         before=before_snapshot,
         after=after_snapshot,
         metadata={"old_finish": item["finish"], "new_finish": normalized_finish},
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
     )
 
-    result = inventory_item_result_from_row(item)
-    result["old_finish"] = item["finish"]
-    result["finish"] = normalized_finish
-    return result
+    return SetFinishResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        old_finish=str(item["finish"]),
+    )
 
 
 def set_finish(
@@ -450,7 +491,10 @@ def set_finish(
     inventory_slug: str,
     item_id: int,
     finish: str,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetFinishResult:
     initialize_database(db_path)
     with connect(db_path) as connection:
         result = set_finish_with_connection(
@@ -458,6 +502,9 @@ def set_finish(
             inventory_slug=inventory_slug,
             item_id=item_id,
             finish=finish,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
     return result
@@ -472,7 +519,10 @@ def set_location(
     merge: bool = False,
     keep_acquisition: str | None = None,
     before_write: Callable[[], Any] | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetLocationResult:
     require_database_file(db_path)
     initialize_database(db_path)
     normalized_location = text_or_none(location) or ""
@@ -480,10 +530,11 @@ def set_location(
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         if normalized_location == item["location"]:
-            result = inventory_item_result_from_row(item)
-            result["old_location"] = item["location"]
-            result["merged"] = False
-            return result
+            return SetLocationResult(
+                **inventory_item_response_kwargs(before_snapshot),
+                old_location=text_or_none(item["location"]),
+                merged=False,
+            )
 
         collision = find_inventory_item_collision(
             connection,
@@ -532,6 +583,9 @@ def set_location(
                     "new_location": normalized_location,
                     "keep_acquisition": keep_acquisition,
                 },
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
             )
             write_inventory_audit_event(
                 connection,
@@ -546,9 +600,17 @@ def set_location(
                     "new_location": normalized_location,
                     "keep_acquisition": keep_acquisition,
                 },
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
             )
             connection.commit()
-            return result
+            return SetLocationResult(
+                **inventory_item_response_kwargs(result),
+                old_location=text_or_none(item["location"]),
+                merged=True,
+                merged_source_item_id=int(result["merged_source_item_id"]),
+            )
 
         connection.execute(
             """
@@ -559,6 +621,7 @@ def set_location(
             (normalized_location, item_id),
         )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -567,14 +630,17 @@ def set_location(
             before=before_snapshot,
             after=after_snapshot,
             metadata={"merged": False, "old_location": item["location"], "new_location": normalized_location},
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    result = inventory_item_result_from_row(item)
-    result["old_location"] = item["location"]
-    result["location"] = normalized_location
-    result["merged"] = False
-    return result
+    return SetLocationResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        old_location=text_or_none(item["location"]),
+        merged=False,
+    )
 
 
 def set_condition(
@@ -586,7 +652,10 @@ def set_condition(
     merge: bool = False,
     keep_acquisition: str | None = None,
     before_write: Callable[[], Any] | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetConditionResult:
     require_database_file(db_path)
     initialize_database(db_path)
     normalized_condition = normalize_condition_code(condition_code)
@@ -594,10 +663,11 @@ def set_condition(
         item = get_inventory_item_row(connection, inventory_slug, item_id)
         before_snapshot = inventory_item_result_from_row(item)
         if normalized_condition == item["condition_code"]:
-            result = inventory_item_result_from_row(item)
-            result["old_condition_code"] = item["condition_code"]
-            result["merged"] = False
-            return result
+            return SetConditionResult(
+                **inventory_item_response_kwargs(before_snapshot),
+                old_condition_code=str(item["condition_code"]),
+                merged=False,
+            )
 
         collision = find_inventory_item_collision(
             connection,
@@ -646,6 +716,9 @@ def set_condition(
                     "new_condition_code": normalized_condition,
                     "keep_acquisition": keep_acquisition,
                 },
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
             )
             write_inventory_audit_event(
                 connection,
@@ -660,9 +733,17 @@ def set_condition(
                     "new_condition_code": normalized_condition,
                     "keep_acquisition": keep_acquisition,
                 },
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
             )
             connection.commit()
-            return result
+            return SetConditionResult(
+                **inventory_item_response_kwargs(result),
+                old_condition_code=str(item["condition_code"]),
+                merged=True,
+                merged_source_item_id=int(result["merged_source_item_id"]),
+            )
 
         connection.execute(
             """
@@ -673,6 +754,7 @@ def set_condition(
             (normalized_condition, item_id),
         )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -685,14 +767,17 @@ def set_condition(
                 "old_condition_code": item["condition_code"],
                 "new_condition_code": normalized_condition,
             },
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    result = inventory_item_result_from_row(item)
-    result["old_condition_code"] = item["condition_code"]
-    result["condition_code"] = normalized_condition
-    result["merged"] = False
-    return result
+    return SetConditionResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        old_condition_code=str(item["condition_code"]),
+        merged=False,
+    )
 
 
 def split_row(
@@ -708,7 +793,10 @@ def split_row(
     clear_location: bool = False,
     keep_acquisition: str | None = None,
     before_write: Callable[[], Any] | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SplitRowResult:
     require_database_file(db_path)
     if quantity <= 0:
         raise ValueError("--quantity must be a positive integer.")
@@ -865,6 +953,9 @@ def split_row(
                 "merged_into_existing": bool(result["merged_into_existing"]),
                 "keep_acquisition": keep_acquisition,
             },
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         write_inventory_audit_event(
             connection,
@@ -880,16 +971,22 @@ def split_row(
                 "merged_into_existing": bool(result["merged_into_existing"]),
                 "keep_acquisition": keep_acquisition,
             },
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
 
         connection.commit()
 
-    result["source_item_id"] = item_id
-    result["source_old_quantity"] = source_quantity
-    result["source_quantity"] = remaining_quantity
-    result["source_deleted"] = source_deleted
-    result["moved_quantity"] = quantity
-    return result
+    return SplitRowResult(
+        **inventory_item_response_kwargs(result),
+        merged_into_existing=bool(result["merged_into_existing"]),
+        source_item_id=item_id,
+        source_old_quantity=source_quantity,
+        source_quantity=remaining_quantity,
+        source_deleted=source_deleted,
+        moved_quantity=quantity,
+    )
 
 
 def set_notes(
@@ -898,7 +995,10 @@ def set_notes(
     inventory_slug: str,
     item_id: int,
     notes: str | None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetNotesResult:
     initialize_database(db_path)
     normalized_notes = text_or_none(notes)
     with connect(db_path) as connection:
@@ -913,6 +1013,7 @@ def set_notes(
             (normalized_notes, item_id),
         )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -920,13 +1021,16 @@ def set_notes(
             item_id=item_id,
             before=before_snapshot,
             after=after_snapshot,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    result = inventory_item_result_from_row(item)
-    result["old_notes"] = result["notes"]
-    result["notes"] = normalized_notes
-    return result
+    return SetNotesResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        old_notes=text_or_none(item["notes"]),
+    )
 
 
 def set_tags(
@@ -935,7 +1039,10 @@ def set_tags(
     inventory_slug: str,
     item_id: int,
     tags: str | None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetTagsResult:
     initialize_database(db_path)
     with connect(db_path) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
@@ -950,6 +1057,7 @@ def set_tags(
             (tags_to_json(normalized_tags), item_id),
         )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+        after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -957,13 +1065,16 @@ def set_tags(
             item_id=item_id,
             before=before_snapshot,
             after=after_snapshot,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    result = inventory_item_result_from_row(item)
-    result["old_tags"] = result["tags"]
-    result["tags"] = normalized_tags
-    return result
+    return SetTagsResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        old_tags=list(before_snapshot["tags"]),
+    )
 
 
 def merge_rows(
@@ -974,7 +1085,10 @@ def merge_rows(
     target_item_id: int,
     keep_acquisition: str | None = None,
     before_write: Callable[[], Any] | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> MergeRowsResult:
     require_database_file(db_path)
     if source_item_id == target_item_id:
         raise ValueError("Choose two different item ids when using merge-rows.")
@@ -1015,6 +1129,9 @@ def merge_rows(
                 "target_item_id": target_item_id,
                 "keep_acquisition": keep_acquisition,
             },
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         write_inventory_audit_event(
             connection,
@@ -1028,12 +1145,18 @@ def merge_rows(
                 "source_item_id": source_item_id,
                 "keep_acquisition": keep_acquisition,
             },
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    result["target_old_quantity"] = target_item["quantity"]
-    result["source_quantity"] = source_item["quantity"]
-    return result
+    return MergeRowsResult(
+        **inventory_item_response_kwargs(result),
+        merged_source_item_id=int(result["merged_source_item_id"]),
+        source_quantity=int(source_item["quantity"]),
+        target_old_quantity=int(target_item["quantity"]),
+    )
 
 
 def remove_card(
@@ -1042,7 +1165,10 @@ def remove_card(
     inventory_slug: str,
     item_id: int,
     before_write: Callable[[], Any] | None = None,
-) -> dict[str, Any]:
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> RemoveCardResult:
     require_database_file(db_path)
     initialize_database(db_path)
     with connect(db_path) as connection:
@@ -1064,7 +1190,10 @@ def remove_card(
             item_id=item_id,
             before=before_snapshot,
             after=None,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
         )
         connection.commit()
 
-    return inventory_item_result_from_row(item)
+    return RemoveCardResult(**inventory_item_response_kwargs(before_snapshot))

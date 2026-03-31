@@ -22,6 +22,7 @@ from .normalize import (
 )
 from .money import parse_decimal_text
 from .mutations import add_card_with_connection
+from .response_models import serialize_response
 
 
 def normalize_csv_header(header: str) -> str:
@@ -147,7 +148,7 @@ def import_csv(
                 before_write=None if dry_run else before_write,
                 **add_kwargs,
             )
-            imported_rows.append({"csv_row": row_number, **result})
+            imported_rows.append({"csv_row": row_number, **serialize_response(result)})
 
         if dry_run:
             # Preview mode reuses the real add-card workflow, then rolls

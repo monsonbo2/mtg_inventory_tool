@@ -1,11 +1,11 @@
-"""Typed service response models for API-facing inventory reads."""
+"""Typed service response models for API-facing inventory operations."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .money import format_decimal
 
@@ -36,6 +36,29 @@ def serialize_response(value: Any) -> Any:
     return value
 
 
+def inventory_item_response_kwargs(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract the common inventory item fields shared by write responses."""
+
+    return {
+        "inventory": payload["inventory"],
+        "card_name": payload["card_name"],
+        "set_code": payload["set_code"],
+        "set_name": payload["set_name"],
+        "collector_number": payload["collector_number"],
+        "scryfall_id": payload["scryfall_id"],
+        "item_id": payload["item_id"],
+        "quantity": payload["quantity"],
+        "finish": payload["finish"],
+        "condition_code": payload["condition_code"],
+        "language_code": payload["language_code"],
+        "location": payload["location"],
+        "acquisition_price": payload["acquisition_price"],
+        "acquisition_currency": payload["acquisition_currency"],
+        "notes": payload["notes"],
+        "tags": list(payload["tags"]),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogSearchRow(ResponseModel):
     scryfall_id: str
@@ -56,6 +79,14 @@ class InventoryListRow(ResponseModel):
     description: str | None
     item_rows: int
     total_cards: int
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryCreateResult(ResponseModel):
+    inventory_id: int
+    slug: str
+    display_name: str
+    description: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +111,93 @@ class OwnedInventoryRow(ResponseModel):
     est_value: Decimal | None
     price_date: str | None
     notes: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryItemMutationRow(ResponseModel):
+    inventory: str
+    card_name: str
+    set_code: str
+    set_name: str
+    collector_number: str
+    scryfall_id: str
+    item_id: int
+    quantity: int
+    finish: str
+    condition_code: str
+    language_code: str
+    location: str | None
+    acquisition_price: Decimal | None
+    acquisition_currency: str | None
+    notes: str | None
+    tags: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class AddCardResult(InventoryItemMutationRow):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SetQuantityResult(InventoryItemMutationRow):
+    old_quantity: int
+
+
+@dataclass(frozen=True, slots=True)
+class RemoveCardResult(InventoryItemMutationRow):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SetTagsResult(InventoryItemMutationRow):
+    old_tags: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SetFinishResult(InventoryItemMutationRow):
+    old_finish: str
+
+
+@dataclass(frozen=True, slots=True)
+class SetLocationResult(InventoryItemMutationRow):
+    old_location: str | None
+    merged: bool
+    merged_source_item_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SetConditionResult(InventoryItemMutationRow):
+    old_condition_code: str
+    merged: bool
+    merged_source_item_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SetNotesResult(InventoryItemMutationRow):
+    old_notes: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SetAcquisitionResult(InventoryItemMutationRow):
+    old_acquisition_price: Decimal | None
+    old_acquisition_currency: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SplitRowResult(InventoryItemMutationRow):
+    merged_into_existing: bool
+    source_item_id: int
+    source_old_quantity: int
+    source_quantity: int
+    source_deleted: bool
+    moved_quantity: int
+
+
+@dataclass(frozen=True, slots=True)
+class MergeRowsResult(InventoryItemMutationRow):
+    merged_source_item_id: int
+    source_quantity: int
+    target_old_quantity: int
 
 
 @dataclass(frozen=True, slots=True)

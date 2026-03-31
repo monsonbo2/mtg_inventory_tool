@@ -380,8 +380,8 @@ def main() -> None:
 
     try:
         if args.command == "create-inventory":
-            inventory_id = create_inventory(args.db, args.slug, args.display_name, args.description)
-            print(f"Created inventory '{args.slug}' with id={inventory_id}")
+            result = serialize_response(create_inventory(args.db, args.slug, args.display_name, args.description))
+            print(f"Created inventory '{result['slug']}' with id={result['inventory_id']}")
             return
 
         if args.command == "list-inventories":
@@ -442,24 +442,26 @@ def main() -> None:
             return
 
         if args.command == "add-card":
-            result = add_card(
-                args.db,
-                inventory_slug=args.inventory,
-                scryfall_id=args.scryfall_id,
-                tcgplayer_product_id=args.tcgplayer_product_id,
-                name=args.name,
-                set_code=args.set_code,
-                collector_number=args.collector_number,
-                lang=args.lang,
-                quantity=args.quantity,
-                condition_code=args.condition,
-                finish=args.finish,
-                language_code=args.language_code,
-                location=args.location,
-                acquisition_price=args.acquisition_price,
-                acquisition_currency=args.acquisition_currency,
-                notes=args.notes,
-                tags=args.tags,
+            result = serialize_response(
+                add_card(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    scryfall_id=args.scryfall_id,
+                    tcgplayer_product_id=args.tcgplayer_product_id,
+                    name=args.name,
+                    set_code=args.set_code,
+                    collector_number=args.collector_number,
+                    lang=args.lang,
+                    quantity=args.quantity,
+                    condition_code=args.condition,
+                    finish=args.finish,
+                    language_code=args.language_code,
+                    location=args.location,
+                    acquisition_price=args.acquisition_price,
+                    acquisition_currency=args.acquisition_currency,
+                    notes=args.notes,
+                    tags=args.tags,
+                )
             )
             print(format_add_card_result(result))
             return
@@ -498,11 +500,13 @@ def main() -> None:
             return
 
         if args.command == "set-tags":
-            result = set_tags(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                tags="" if args.clear else args.tags,
+            result = serialize_response(
+                set_tags(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    tags="" if args.clear else args.tags,
+                )
             )
             print(format_set_tags_result(result))
             return
@@ -515,14 +519,16 @@ def main() -> None:
                     args.db,
                     label=f"before_set_location_merge_item_{args.item_id}",
                 )
-            result = set_location(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                location=None if args.clear else args.location,
-                merge=args.merge,
-                keep_acquisition=args.keep_acquisition,
-                before_write=before_write,
+            result = serialize_response(
+                set_location(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    location=None if args.clear else args.location,
+                    merge=args.merge,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
             if args.merge:
                 snapshot = get_snapshot()
@@ -537,14 +543,16 @@ def main() -> None:
                     args.db,
                     label=f"before_set_condition_merge_item_{args.item_id}",
                 )
-            result = set_condition(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                condition_code=args.condition,
-                merge=args.merge,
-                keep_acquisition=args.keep_acquisition,
-                before_write=before_write,
+            result = serialize_response(
+                set_condition(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    condition_code=args.condition,
+                    merge=args.merge,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
             if args.merge:
                 snapshot = get_snapshot()
@@ -556,45 +564,53 @@ def main() -> None:
                 args.db,
                 label=f"before_set_acquisition_item_{args.item_id}",
             )
-            result = set_acquisition(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                acquisition_price=args.price,
-                acquisition_currency=args.currency,
-                clear=args.clear,
-                before_write=before_write,
+            result = serialize_response(
+                set_acquisition(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    acquisition_price=args.price,
+                    acquisition_currency=args.currency,
+                    clear=args.clear,
+                    before_write=before_write,
+                )
             )
             snapshot = get_snapshot()
             print(append_snapshot_notice(format_set_acquisition_result(result), snapshot))
             return
 
         if args.command == "set-notes":
-            result = set_notes(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                notes=None if args.clear else args.notes,
+            result = serialize_response(
+                set_notes(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    notes=None if args.clear else args.notes,
+                )
             )
             print(format_set_notes_result(result))
             return
 
         if args.command == "set-finish":
-            result = set_finish(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                finish=args.finish,
+            result = serialize_response(
+                set_finish(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    finish=args.finish,
+                )
             )
             print(format_set_finish_result(result))
             return
 
         if args.command == "set-quantity":
-            result = set_quantity(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                quantity=args.quantity,
+            result = serialize_response(
+                set_quantity(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    quantity=args.quantity,
+                )
             )
             print(format_set_quantity_result(result))
             return
@@ -604,18 +620,20 @@ def main() -> None:
                 args.db,
                 label=f"before_split_row_item_{args.item_id}",
             )
-            result = split_row(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                quantity=args.quantity,
-                condition_code=args.condition,
-                finish=args.finish,
-                language_code=args.language_code,
-                location=args.location,
-                clear_location=args.clear_location,
-                keep_acquisition=args.keep_acquisition,
-                before_write=before_write,
+            result = serialize_response(
+                split_row(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    quantity=args.quantity,
+                    condition_code=args.condition,
+                    finish=args.finish,
+                    language_code=args.language_code,
+                    location=args.location,
+                    clear_location=args.clear_location,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
             snapshot = get_snapshot()
             print(append_snapshot_notice(format_split_row_result(result), snapshot))
@@ -626,13 +644,15 @@ def main() -> None:
                 args.db,
                 label=f"before_merge_rows_{args.source_item_id}_into_{args.target_item_id}",
             )
-            result = merge_rows(
-                args.db,
-                inventory_slug=args.inventory,
-                source_item_id=args.source_item_id,
-                target_item_id=args.target_item_id,
-                keep_acquisition=args.keep_acquisition,
-                before_write=before_write,
+            result = serialize_response(
+                merge_rows(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    source_item_id=args.source_item_id,
+                    target_item_id=args.target_item_id,
+                    keep_acquisition=args.keep_acquisition,
+                    before_write=before_write,
+                )
             )
             snapshot = get_snapshot()
             print(append_snapshot_notice(format_merge_rows_result(result), snapshot))
@@ -643,11 +663,13 @@ def main() -> None:
                 args.db,
                 label=f"before_remove_card_item_{args.item_id}",
             )
-            result = remove_card(
-                args.db,
-                inventory_slug=args.inventory,
-                item_id=args.item_id,
-                before_write=before_write,
+            result = serialize_response(
+                remove_card(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    item_id=args.item_id,
+                    before_write=before_write,
+                )
             )
             snapshot = get_snapshot()
             print(append_snapshot_notice(format_remove_card_result(result), snapshot))
