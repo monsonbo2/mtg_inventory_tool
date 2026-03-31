@@ -18,6 +18,7 @@ from mtg_source_stack.inventory.service import (
     list_owned_filtered,
     list_price_gaps,
     reconcile_prices,
+    search_cards,
     set_notes,
     valuation_filtered,
 )
@@ -25,6 +26,44 @@ from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryServiceTest(RepoSmokeTestCase):
+    def test_search_cards_returns_list_typed_catalog_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'search-card-1',
+                        'oracle-search-1',
+                        'Search Test Card',
+                        'tst',
+                        'Test Set',
+                        '9',
+                        'en',
+                        '["nonfoil","foil"]'
+                    )
+                    """
+                )
+                connection.commit()
+
+            rows = search_cards(db_path, query="Search Test", exact=False, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual(["normal", "foil"], rows[0].finishes)
+            self.assertEqual(["normal", "foil"], serialize_response(rows)[0]["finishes"])
+
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -340,6 +379,90 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 ],
                 serialize_response(valuation_rows),
             )
+
+    def test_latest_price_queries_treat_nonfoil_snapshots_as_normal_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('price-card-2', 'oracle-2', 'Finish Alias Test', 'tst', 'Test Set', '2')
+                    """
+                )
+                inventory_id = connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        tags_json
+                    )
+                    VALUES (?, 'price-card-2', 1, 'NM', 'normal', 'en', 'Binder', '[]')
+                    """,
+                    (inventory_id,),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO price_snapshots (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        price_value,
+                        source_name
+                    )
+                    VALUES ('price-card-2', 'tcgplayer', 'retail', 'nonfoil', 'USD', '2026-03-30', 4.25, 'legacy')
+                    """
+                )
+                connection.commit()
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            gap_rows = list_price_gaps(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+            )
+
+            self.assertEqual(1, len(owned_rows))
+            self.assertEqual(Decimal("4.25"), owned_rows[0].unit_price)
+            self.assertEqual([], gap_rows)
 
     def test_reconcile_prices_only_suggests_finish_when_one_priced_finish_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

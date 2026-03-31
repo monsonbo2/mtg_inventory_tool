@@ -248,6 +248,21 @@ def normalize_finish(value: str | None) -> str:
     return mapping[normalized]
 
 
+def normalize_price_snapshot_finish(value: str | None) -> str | None:
+    text = text_or_none(value)
+    if text is None:
+        return None
+
+    normalized = text.strip().lower()
+    if normalized == "etched foil":
+        normalized = "etched"
+
+    try:
+        return normalize_finish(normalized)
+    except ValueError:
+        return None
+
+
 def parse_json_list(value: str | None) -> list[str]:
     if not value:
         return []

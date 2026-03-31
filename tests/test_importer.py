@@ -301,6 +301,60 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(1, stats.rows_skipped)
             self.assertEqual(0, snapshot_count)
 
+    def test_import_mtgjson_prices_normalizes_nonfoil_finish_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            prices_path = Path(tmp_dir) / "prices.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        mtgjson_uuid,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-2', 'oracle-2', 'uuid-2', 'Finish Alias Test', 'tst', 'Test Set', '2')
+                    """
+                )
+                connection.commit()
+
+            prices_payload = {
+                "data": {
+                    "uuid-2": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"nonfoil": {"2026-03-27": 3.50}},
+                            }
+                        }
+                    }
+                }
+            }
+            prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_prices
+
+            stats = import_mtgjson_prices(db_path, prices_path)
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT finish, price_value
+                    FROM price_snapshots
+                    """
+                ).fetchall()
+
+            self.assertEqual(1, stats.rows_seen)
+            self.assertEqual(1, stats.rows_written)
+            self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual([("normal", 3.5)], [(row["finish"], row["price_value"]) for row in rows])
+
     def test_sync_bulk_downloads_and_imports_from_override_urls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

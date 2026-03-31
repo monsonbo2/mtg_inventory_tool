@@ -100,6 +100,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("0002 add tags json", migrate_output)
             self.assertIn("0003 add inventory audit log", migrate_output)
             self.assertIn("0004 add card search fts", migrate_output)
+            self.assertIn("0005 normalize price snapshot finishes", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",

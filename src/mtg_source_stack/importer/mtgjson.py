@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ..db.connection import connect
 from ..db.schema import initialize_database
 from ..inventory.money import coerce_decimal
+from ..inventory.normalize import normalize_price_snapshot_finish
 from ..pricing import DEFAULT_PRICE_CURRENCY
 from .service import ImportStats, first_non_empty, load_json, text_or_none
 
@@ -253,6 +254,9 @@ def import_mtgjson_prices(
                             continue
 
                         for finish, dated_points in price_points.items():
+                            normalized_finish = normalize_price_snapshot_finish(str(finish))
+                            if normalized_finish is None:
+                                continue
                             if isinstance(dated_points, dict):
                                 items = dated_points.items()
                             else:
@@ -270,7 +274,7 @@ def import_mtgjson_prices(
                                         scryfall_id,
                                         provider,
                                         price_kind,
-                                        str(finish),
+                                        normalized_finish,
                                         currency,
                                         str(snapshot_date),
                                         decimal_price,

@@ -12,6 +12,7 @@ from ..inventory.normalize import (
     DEFAULT_HEALTH_STALE_DAYS,
     DEFAULT_PROVIDER,
     HEALTH_PREVIEW_LIMIT,
+    format_finishes,
     truncate,
 )
 from ..inventory.reports import (
@@ -423,7 +424,7 @@ def main() -> None:
                         "number": row["collector_number"],
                         "lang": row["lang"],
                         "rarity": row["rarity"] or "",
-                        "finishes": row["finishes"],
+                        "finishes": format_finishes(row["finishes"]),
                         "scryfall_id": row["scryfall_id"],
                     }
                 )

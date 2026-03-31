@@ -8,7 +8,7 @@ from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
-from .normalize import normalize_catalog_finishes
+from .normalize import normalized_catalog_finish_list
 from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
 from .response_models import CatalogSearchRow
 
@@ -112,7 +112,7 @@ def search_cards(
                 collector_number=item["collector_number"],
                 lang=item["lang"],
                 rarity=item["rarity"],
-                finishes=normalize_catalog_finishes(item.pop("finishes_json", None)),
+                finishes=normalized_catalog_finish_list(item.pop("finishes_json", None)),
                 tcgplayer_product_id=item["tcgplayer_product_id"],
             )
         )

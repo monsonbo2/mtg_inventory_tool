@@ -10,6 +10,17 @@ from .normalize import parse_finish_list, truncate
 from .query_inventory import get_inventory_row, inventory_item_result_from_row
 
 
+def normalized_finish_sql(column: str) -> str:
+    return f"""
+        CASE
+            WHEN LOWER(TRIM({column})) IN ('normal', 'nonfoil') THEN 'normal'
+            WHEN LOWER(TRIM({column})) = 'foil' THEN 'foil'
+            WHEN LOWER(TRIM({column})) IN ('etched', 'etched foil') THEN 'etched'
+            ELSE LOWER(TRIM({column}))
+        END
+    """.strip()
+
+
 def build_latest_retail_prices_cte(*, provider: str | None, cte_name: str = "latest_prices") -> tuple[str, list[Any]]:
     where_parts = [
         "price_kind = 'retail'",
@@ -19,6 +30,7 @@ def build_latest_retail_prices_cte(*, provider: str | None, cte_name: str = "lat
     if provider is not None:
         where_parts.append("provider = ?")
         params.append(provider)
+    finish_expr = normalized_finish_sql("finish")
 
     return (
         f"""
@@ -26,12 +38,12 @@ def build_latest_retail_prices_cte(*, provider: str | None, cte_name: str = "lat
             SELECT
                 scryfall_id,
                 provider,
-                finish,
+                {finish_expr} AS finish,
                 currency,
                 price_value,
                 snapshot_date,
                 ROW_NUMBER() OVER (
-                    PARTITION BY scryfall_id, provider, finish
+                    PARTITION BY scryfall_id, provider, {finish_expr}
                     ORDER BY snapshot_date DESC, id DESC
                 ) AS rn
             FROM price_snapshots
@@ -43,6 +55,7 @@ def build_latest_retail_prices_cte(*, provider: str | None, cte_name: str = "lat
 
 
 def build_current_retail_prices_cte(*, provider: str, cte_name: str = "current_prices") -> tuple[str, list[Any]]:
+    finish_expr = normalized_finish_sql("finish")
     return (
         f"""
         {cte_name} AS (
@@ -50,7 +63,7 @@ def build_current_retail_prices_cte(*, provider: str, cte_name: str = "current_p
                 SELECT
                     scryfall_id,
                     provider,
-                    finish,
+                    {finish_expr} AS finish,
                     currency,
                     snapshot_date,
                     price_value,
