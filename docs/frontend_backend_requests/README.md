@@ -23,11 +23,11 @@ backend requests.
 
 | Request | Issue / PR | Status | Owner | Notes |
 | --- | --- | --- | --- | --- |
-| `api_base_path_compatibility.md` | _add link_ | Proposed | _unassigned_ | `/api` dev-proxy compatibility |
-| `card_image_fields_for_visual_ui.md` | _add link_ | Proposed | _unassigned_ | image-oriented UI fields |
-| `expanded_frontend_demo_seed_data.md` | _add link_ | Proposed | _unassigned_ | richer demo bootstrap data |
-| `patch_operation_contract_clarity.md` | _add link_ | Proposed | _unassigned_ | patch response semantics |
-| `published_value_enums_and_defaults.md` | _add link_ | Proposed | _unassigned_ | stable enums/defaults |
+| `api_base_path_compatibility.md` | [#7](https://github.com/monsonbo2/mtg_inventory_tool/issues/7) | Proposed | _unassigned_ | `/api` dev-proxy compatibility |
+| `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Proposed | _unassigned_ | image-oriented UI fields |
+| `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Proposed | _unassigned_ | richer demo bootstrap data |
+| `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Proposed | _unassigned_ | patch response semantics |
+| `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Proposed | _unassigned_ | stable enums/defaults |
 
 Update this table when a request changes status or gets tied to a GitHub issue
 or implementation PR.

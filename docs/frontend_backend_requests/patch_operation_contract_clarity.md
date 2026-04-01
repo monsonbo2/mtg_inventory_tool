@@ -2,7 +2,7 @@
 
 Status: Proposed
 Owner: Unassigned
-GitHub issue: Not linked yet
+GitHub issue: [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9)
 Implementation PR: Not linked yet
 Last updated: 2026-04-01
 
