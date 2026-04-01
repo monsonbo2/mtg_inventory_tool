@@ -8,7 +8,14 @@ from fastapi import APIRouter, Depends, Query, status
 
 from ..errors import ValidationError
 from ..inventory.money import coerce_decimal
-from ..inventory.normalize import DEFAULT_PROVIDER
+from ..inventory.normalize import (
+    DEFAULT_AUDIT_EVENT_LIMIT,
+    DEFAULT_PROVIDER,
+    DEFAULT_SEARCH_LIMIT,
+    MAX_AUDIT_EVENT_LIMIT,
+    MAX_OWNED_ROWS_LIMIT,
+    MAX_SEARCH_LIMIT,
+)
 from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
@@ -83,7 +90,7 @@ def _patch_operation(payload: PatchInventoryItemRequest) -> str:
 
 
 @router.get("/health")
-def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
+async def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
     return {
         "status": "ok",
         "db_path": str(settings.db_path),
@@ -92,12 +99,12 @@ def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str,
 
 
 @router.get("/inventories")
-def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings)]) -> Any:
+async def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings)]) -> Any:
     return _serialize(list_inventories(settings.db_path))
 
 
 @router.post("/inventories", status_code=status.HTTP_201_CREATED)
-def inventories_create(
+async def inventories_create(
     payload: InventoryCreateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
 ) -> Any:
@@ -112,7 +119,7 @@ def inventories_create(
 
 
 @router.get("/cards/search")
-def cards_search(
+async def cards_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     query: str,
     set_code: str | None = None,
@@ -120,7 +127,7 @@ def cards_search(
     finish: str | None = None,
     lang: str | None = None,
     exact: bool = False,
-    limit: int = 10,
+    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
 ) -> Any:
     return _serialize(
         search_cards(
@@ -137,11 +144,11 @@ def cards_search(
 
 
 @router.get("/inventories/{inventory_slug}/items")
-def inventory_items_list(
+async def inventory_items_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
     provider: str = DEFAULT_PROVIDER,
-    limit: int | None = None,
+    limit: Annotated[int | None, Query(ge=1, le=MAX_OWNED_ROWS_LIMIT)] = None,
     query: str | None = None,
     set_code: str | None = None,
     rarity: str | None = None,
@@ -170,7 +177,7 @@ def inventory_items_list(
 
 
 @router.post("/inventories/{inventory_slug}/items", status_code=status.HTTP_201_CREATED)
-def inventory_items_add(
+async def inventory_items_add(
     inventory_slug: str,
     payload: AddInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
@@ -204,7 +211,7 @@ def inventory_items_add(
 
 
 @router.patch("/inventories/{inventory_slug}/items/{item_id}")
-def inventory_items_patch(
+async def inventory_items_patch(
     inventory_slug: str,
     item_id: int,
     payload: PatchInventoryItemRequest,
@@ -266,7 +273,7 @@ def inventory_items_patch(
 
 
 @router.delete("/inventories/{inventory_slug}/items/{item_id}")
-def inventory_items_delete(
+async def inventory_items_delete(
     inventory_slug: str,
     item_id: int,
     settings: Annotated[ApiSettings, Depends(get_settings)],
@@ -285,10 +292,10 @@ def inventory_items_delete(
 
 
 @router.get("/inventories/{inventory_slug}/audit")
-def inventory_audit_list(
+async def inventory_audit_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    limit: int = 50,
+    limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_EVENT_LIMIT)] = DEFAULT_AUDIT_EVENT_LIMIT,
     item_id: int | None = None,
 ) -> Any:
     return _serialize(

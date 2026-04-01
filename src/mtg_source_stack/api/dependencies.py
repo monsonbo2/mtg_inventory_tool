@@ -1,17 +1,21 @@
 """Shared settings and request-context helpers for the web API."""
 
 from __future__ import annotations
-
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ..db.connection import DEFAULT_DB_PATH
 
 if TYPE_CHECKING:  # pragma: no cover - typing-only import
     from fastapi import Request
+else:  # pragma: no cover - optional runtime dependency for API-only paths
+    try:
+        from fastapi import Request
+    except ModuleNotFoundError:  # keeps parser/help imports working without web deps
+        Request = Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,11 +49,11 @@ def settings_from_env() -> ApiSettings:
     )
 
 
-def get_settings(request: "Request") -> ApiSettings:
+async def get_settings(request: "Request") -> ApiSettings:
     return request.app.state.settings
 
 
-def get_request_context(request: "Request") -> RequestContext:
+async def get_request_context(request: "Request") -> RequestContext:
     request_id = getattr(request.state, "request_id", None) or str(uuid4())
     request.state.request_id = request_id
     return RequestContext(

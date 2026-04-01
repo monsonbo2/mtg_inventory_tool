@@ -9,9 +9,14 @@ from .money import format_decimal
 
 
 DEFAULT_PROVIDER = "tcgplayer"
+DEFAULT_SEARCH_LIMIT = 10
+MAX_SEARCH_LIMIT = 100
 CSV_PREVIEW_LIMIT = 25
 DEFAULT_HEALTH_STALE_DAYS = 30
 HEALTH_PREVIEW_LIMIT = 10
+MAX_OWNED_ROWS_LIMIT = 250
+DEFAULT_AUDIT_EVENT_LIMIT = 50
+MAX_AUDIT_EVENT_LIMIT = 200
 MERGED_ACQUISITION_NOTE_MARKER = "Merged source acquisition from item "
 CSV_HEADER_ALIASES = {
     "inventory_slug": "inventory",
@@ -58,6 +63,24 @@ def text_or_none(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def validate_limit_value(
+    value: int | None,
+    *,
+    maximum: int,
+    allow_none: bool = False,
+    field_name: str = "--limit",
+) -> int | None:
+    if value is None:
+        if allow_none:
+            return None
+        raise ValidationError(f"{field_name} must be provided.")
+    if value <= 0:
+        raise ValidationError(f"{field_name} must be a positive integer.")
+    if value > maximum:
+        raise ValidationError(f"{field_name} cannot exceed {maximum}.")
+    return value
 
 
 def first_non_empty(*values: Any) -> str | None:

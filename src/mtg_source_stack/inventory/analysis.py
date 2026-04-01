@@ -11,7 +11,14 @@ from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import ValidationError
 from .money import coerce_decimal
-from .normalize import format_finishes, load_tags_json, text_or_none, truncate
+from .normalize import (
+    MAX_OWNED_ROWS_LIMIT,
+    format_finishes,
+    load_tags_json,
+    text_or_none,
+    truncate,
+    validate_limit_value,
+)
 from .query_inventory import add_owned_filters, get_inventory_row
 from .query_pricing import build_latest_retail_prices_cte, query_price_gaps, query_stale_price_rows
 from .query_reporting import (
@@ -349,6 +356,7 @@ def list_owned_filtered(
     location: str | None,
     tags: list[str] | None,
 ) -> list[OwnedInventoryRow]:
+    validate_limit_value(limit, maximum=MAX_OWNED_ROWS_LIMIT, allow_none=True)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)

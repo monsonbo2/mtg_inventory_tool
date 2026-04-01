@@ -9,7 +9,7 @@ from typing import Any
 from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import NotFoundError, ValidationError
-from .normalize import normalized_catalog_finish_list
+from .normalize import DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, normalized_catalog_finish_list, validate_limit_value
 from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
 from .response_models import CatalogSearchRow
 
@@ -22,8 +22,9 @@ def search_cards(
     finish: str | None = None,
     lang: str | None = None,
     exact: bool = False,
-    limit: int = 10,
+    limit: int = DEFAULT_SEARCH_LIMIT,
 ) -> list[CatalogSearchRow]:
+    validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         where_parts: list[str] = []

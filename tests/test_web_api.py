@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import importlib.util
 import tempfile
 import unittest
@@ -16,7 +17,7 @@ FASTAPI_TESTING_AVAILABLE = (
 )
 
 if FASTAPI_TESTING_AVAILABLE:
-    from fastapi.testclient import TestClient
+    import httpx
 
     from mtg_source_stack.api.app import create_app
     from mtg_source_stack.api.dependencies import ApiSettings
@@ -26,7 +27,19 @@ if FASTAPI_TESTING_AVAILABLE:
     FASTAPI_TESTING_AVAILABLE,
     "fastapi/httpx are not installed in this environment; API shell tests are skipped.",
 )
-class WebApiTest(unittest.TestCase):
+class WebApiTest(unittest.IsolatedAsyncioTestCase):
+    @asynccontextmanager
+    async def _client(self, db_path: Path):
+        app = create_app(ApiSettings(db_path=db_path, auto_migrate=True, host="127.0.0.1", port=8000))
+        lifespan = app.router.lifespan_context(app)
+        await lifespan.__aenter__()
+        try:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                yield client
+        finally:
+            await lifespan.__aexit__(None, None, None)
+
     def _seed_card(self, db_path: Path) -> None:
         with connect(db_path) as connection:
             connection.execute(
@@ -46,30 +59,28 @@ class WebApiTest(unittest.TestCase):
             )
             connection.commit()
 
-    def test_demo_api_exposes_inventory_item_and_audit_routes(self) -> None:
+    async def test_demo_api_exposes_inventory_item_and_audit_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
-            app = create_app(ApiSettings(db_path=db_path, auto_migrate=True, host="127.0.0.1", port=8000))
-
-            with TestClient(app) as client:
+            async with self._client(db_path) as client:
                 self._seed_card(db_path)
 
-                health = client.get("/health")
+                health = await client.get("/health")
                 self.assertEqual(200, health.status_code)
                 self.assertEqual("ok", health.json()["status"])
 
-                created_inventory = client.post(
+                created_inventory = await client.post(
                     "/inventories",
                     json={"slug": "personal", "display_name": "Personal Collection"},
                 )
                 self.assertEqual(201, created_inventory.status_code)
                 self.assertEqual("personal", created_inventory.json()["slug"])
 
-                search = client.get("/cards/search", params={"query": "API Test"})
+                search = await client.get("/cards/search", params={"query": "API Test"})
                 self.assertEqual(200, search.status_code)
                 self.assertEqual("api-card-1", search.json()[0]["scryfall_id"])
 
-                added = client.post(
+                added = await client.post(
                     "/inventories/personal/items",
                     headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-add"},
                     json={
@@ -86,12 +97,12 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(["demo", "web"], added_payload["tags"])
                 self.assertEqual("req-add", added.headers["X-Request-Id"])
 
-                listed = client.get("/inventories/personal/items")
+                listed = await client.get("/inventories/personal/items")
                 self.assertEqual(200, listed.status_code)
                 self.assertEqual(1, len(listed.json()))
                 self.assertEqual(2, listed.json()[0]["quantity"])
 
-                patched = client.patch(
+                patched = await client.patch(
                     f"/inventories/personal/items/{added_payload['item_id']}",
                     headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-finish"},
                     json={"finish": "foil"},
@@ -99,26 +110,39 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, patched.status_code)
                 self.assertEqual("foil", patched.json()["finish"])
 
-                audit = client.get("/inventories/personal/audit")
+                audit = await client.get("/inventories/personal/audit")
                 self.assertEqual(200, audit.status_code)
                 self.assertEqual("set_finish", audit.json()[0]["action"])
                 self.assertEqual("api", audit.json()[0]["actor_type"])
                 self.assertEqual("web-user", audit.json()[0]["actor_id"])
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
 
-    def test_demo_api_returns_contract_error_envelopes(self) -> None:
+    async def test_demo_api_returns_contract_error_envelopes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
-            app = create_app(ApiSettings(db_path=db_path, auto_migrate=True, host="127.0.0.1", port=8000))
-
-            with TestClient(app) as client:
-                missing_inventory = client.get("/inventories/missing/items")
+            async with self._client(db_path) as client:
+                missing_inventory = await client.get("/inventories/missing/items")
                 self.assertEqual(404, missing_inventory.status_code)
                 self.assertEqual("not_found", missing_inventory.json()["error"]["code"])
 
-                invalid_patch = client.patch(
+                invalid_patch = await client.patch(
                     "/inventories/missing/items/1",
                     json={"quantity": 1, "finish": "foil"},
                 )
                 self.assertEqual(400, invalid_patch.status_code)
                 self.assertEqual("validation_error", invalid_patch.json()["error"]["code"])
+
+    async def test_demo_api_rejects_invalid_limit_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            async with self._client(db_path) as client:
+                responses = [
+                    await client.get("/cards/search", params={"query": "API", "limit": -1}),
+                    await client.get("/cards/search", params={"query": "API", "limit": 0}),
+                    await client.get("/inventories/personal/items", params={"limit": -1}),
+                    await client.get("/inventories/personal/audit", params={"limit": -1}),
+                ]
+
+                for response in responses:
+                    self.assertEqual(400, response.status_code)
+                    self.assertEqual("validation_error", response.json()["error"]["code"])
