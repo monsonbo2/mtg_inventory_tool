@@ -114,4 +114,6 @@ Current Vite proxy:
 
 - Keep all UI code under `frontend/`.
 - Request backend contract changes instead of editing backend files directly.
+  Use `../docs/frontend_backend_requests/README.md` and the GitHub issue
+  template at `../.github/ISSUE_TEMPLATE/frontend-backend-request.yml`.
 - Do not duplicate backend business rules unless they are purely presentational.

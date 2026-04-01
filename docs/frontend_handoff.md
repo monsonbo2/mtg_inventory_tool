@@ -123,7 +123,8 @@ export default {
   backend contract change.
 - Backend changes should be requested as API-contract work, not merged in as
   opportunistic UI edits.
-- Use `docs/frontend_backend_requests/README.md` as the default format for frontend
+- Use `docs/frontend_backend_requests/README.md` plus the GitHub issue template
+  at `.github/ISSUE_TEMPLATE/frontend-backend-request.yml` for frontend
   requests into the backend/API layer.
 - The frontend may do UX validation, but backend validation remains the source
   of truth.

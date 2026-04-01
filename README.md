@@ -25,6 +25,9 @@ If you're planning backend or API work, the live runtime contract starts with
 
 If you're planning frontend work, start with `docs/frontend_handoff.md`,
 `docs/frontend_backend_requests/`, and `contracts/openapi.json`.
+Use the GitHub issue template at
+`.github/ISSUE_TEMPLATE/frontend-backend-request.yml` for new frontend backend
+requests.
 
 ## Current Runtime Shape
 

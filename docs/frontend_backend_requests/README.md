@@ -5,6 +5,17 @@ This folder is the home for frontend-requested backend/API changes.
 Use this README as the process guide and template whenever frontend work needs
 to ask for a backend contract change.
 
+## Official Tracking Surface
+
+Use these three pieces together:
+
+- request doc in `docs/frontend_backend_requests/`
+- GitHub issue created from `.github/ISSUE_TEMPLATE/frontend-backend-request.yml`
+- status row in the table below
+
+Use the markdown file for the detailed spec, the GitHub issue for live status
+and discussion, and the table below as the quick in-repo index.
+
 ## Status Index
 
 Use this table as the lightweight in-repo status board for active frontend
@@ -144,12 +155,13 @@ Compatibility note:
 
 ## Where To Put Requests
 
-Until a dedicated issue template exists, put frontend backend requests in:
+For each frontend-to-backend request:
 
-- a markdown file in this folder
-- the PR description for the frontend branch, or
-- a GitHub issue referencing the affected screen/flow and linking the matching
-  request doc
+1. Create or update the markdown file in this folder.
+2. Open a GitHub issue using:
+   `.github/ISSUE_TEMPLATE/frontend-backend-request.yml`
+3. Link the request doc from the issue and the issue from the request doc.
+4. Add the issue link to the status table in this README.
 
 The important thing is to keep the request concrete and contract-focused.
 
@@ -158,8 +170,9 @@ The important thing is to keep the request concrete and contract-focused.
 For each new request:
 
 1. Create or update the markdown file in this folder using the template below.
-2. Open a GitHub issue for the request, or record the active PR if the request
-   is being handled immediately.
+2. Open a GitHub issue for the request using the frontend backend request
+   template, or record the active PR if the request is being handled
+   immediately.
 3. Add the issue or PR link to the status table in this README.
 4. Update the status value as the request moves from `Proposed` to `Done` or
    another final state.

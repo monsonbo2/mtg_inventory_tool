@@ -1,0 +1,124 @@
+name: Frontend Backend Request
+description: Request a backend/API contract change needed by the frontend sandbox.
+title: "[Frontend Request] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when frontend work is blocked by the published backend/API contract.
+
+        Before submitting:
+        - create or update the matching request doc in `docs/frontend_backend_requests/`
+        - confirm the issue is not purely presentational or UI-only
+        - link the relevant contract artifacts and example payloads when possible
+
+  - type: input
+    id: request_doc
+    attributes:
+      label: Request doc path
+      description: Link or path to the matching markdown request in `docs/frontend_backend_requests/`.
+      placeholder: docs/frontend_backend_requests/example_request.md
+    validations:
+      required: true
+
+  - type: input
+    id: feature_screen
+    attributes:
+      label: Feature / screen
+      placeholder: Inventory table quick edit
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_blocker
+    attributes:
+      label: Current blocker
+      description: What exactly cannot be built or what remains ambiguous?
+      placeholder: The current PATCH response shape changes by operation and the client cannot branch on a published discriminator.
+    validations:
+      required: true
+
+  - type: input
+    id: endpoint_involved
+    attributes:
+      label: Endpoint involved
+      placeholder: PATCH /inventories/{inventory_slug}/items/{item_id}
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_behavior
+    attributes:
+      label: Current behavior
+      description: Describe the live API behavior today, including example payloads when helpful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: requested_change
+    attributes:
+      label: Requested change
+      description: Be concrete about the field, route, schema, or behavior change you want.
+    validations:
+      required: true
+
+  - type: textarea
+    id: example_request
+    attributes:
+      label: Example request JSON
+      render: json
+      placeholder: |
+        {
+          "finish": "foil"
+        }
+    validations:
+      required: false
+
+  - type: textarea
+    id: example_response
+    attributes:
+      label: Example response JSON
+      render: json
+      placeholder: |
+        {
+          "operation": "set_finish",
+          "finish": "foil"
+        }
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected_error_cases
+    attributes:
+      label: Expected error cases
+      description: Call out the expected HTTP errors such as 400, 404, or 409.
+      placeholder: |
+        - 400 validation for unsupported finish
+        - 404 when the item does not exist
+        - 409 if the request conflicts with another row
+    validations:
+      required: true
+
+  - type: dropdown
+    id: compatibility_note
+    attributes:
+      label: Compatibility note
+      description: What kind of change is this?
+      options:
+        - additive
+        - behavior-changing
+        - potentially breaking
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Working agreement
+      options:
+        - label: I created or updated the matching request doc in `docs/frontend_backend_requests/`.
+          required: true
+        - label: This request is about backend/API contract behavior, not a UI-only choice.
+          required: true
+        - label: I am not directly editing backend files under `src/mtg_source_stack/` for this request.
+          required: true
