@@ -1,5 +1,11 @@
 # Frontend Backend Request: Expanded Frontend Demo Seed Data
 
+Status: Proposed
+Owner: Unassigned
+GitHub issue: Not linked yet
+Implementation PR: Not linked yet
+Last updated: 2026-04-01
+
 ## Frontend Backend Request
 
 Feature / screen:

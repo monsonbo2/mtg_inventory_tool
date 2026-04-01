@@ -1,7 +1,36 @@
 # Frontend Backend Requests
 
-This document defines how frontend work should request backend/API changes
-without directly editing backend implementation code.
+This folder is the home for frontend-requested backend/API changes.
+
+Use this README as the process guide and template whenever frontend work needs
+to ask for a backend contract change.
+
+## Status Index
+
+Use this table as the lightweight in-repo status board for active frontend
+backend requests.
+
+| Request | Issue / PR | Status | Owner | Notes |
+| --- | --- | --- | --- | --- |
+| `api_base_path_compatibility.md` | _add link_ | Proposed | _unassigned_ | `/api` dev-proxy compatibility |
+| `card_image_fields_for_visual_ui.md` | _add link_ | Proposed | _unassigned_ | image-oriented UI fields |
+| `expanded_frontend_demo_seed_data.md` | _add link_ | Proposed | _unassigned_ | richer demo bootstrap data |
+| `patch_operation_contract_clarity.md` | _add link_ | Proposed | _unassigned_ | patch response semantics |
+| `published_value_enums_and_defaults.md` | _add link_ | Proposed | _unassigned_ | stable enums/defaults |
+
+Update this table when a request changes status or gets tied to a GitHub issue
+or implementation PR.
+
+### Suggested Status Values
+
+- `Proposed`
+- `Triaged`
+- `Accepted`
+- `In Progress`
+- `Done`
+- `Blocked`
+- `Declined`
+- `Superseded`
 
 ## Purpose
 
@@ -66,6 +95,12 @@ Each frontend-to-backend request should include:
 ```md
 ## Frontend Backend Request
 
+Status: Proposed
+Owner: Unassigned
+GitHub issue: Not linked yet
+Implementation PR: Not linked yet
+Last updated: YYYY-MM-DD
+
 Feature / screen:
 
 Current blocker:
@@ -85,6 +120,17 @@ Expected error cases:
 Compatibility note:
 ```
 
+## How To Use This Folder
+
+- Put each concrete frontend request in its own markdown file in this folder.
+- Use a short descriptive filename such as:
+  - `api_base_path_compatibility.md`
+  - `patch_operation_contract_clarity.md`
+- Keep each request concrete and contract-focused.
+- Include the metadata header from the template in every request file.
+- Keep the status row in the table above in sync with the current GitHub issue
+  or PR state.
+
 ## Review Expectations
 
 - Frontend contributors should not directly modify backend files under
@@ -100,9 +146,22 @@ Compatibility note:
 
 Until a dedicated issue template exists, put frontend backend requests in:
 
+- a markdown file in this folder
 - the PR description for the frontend branch, or
-- a GitHub issue referencing the affected screen/flow, or
-- a short written request shared with the backend owner using the template
-  above
+- a GitHub issue referencing the affected screen/flow and linking the matching
+  request doc
 
 The important thing is to keep the request concrete and contract-focused.
+
+## Recommended Tracking Flow
+
+For each new request:
+
+1. Create or update the markdown file in this folder using the template below.
+2. Open a GitHub issue for the request, or record the active PR if the request
+   is being handled immediately.
+3. Add the issue or PR link to the status table in this README.
+4. Update the status value as the request moves from `Proposed` to `Done` or
+   another final state.
+5. When a request is completed, link the implementation PR or commit in the
+   issue/PR column or notes column.

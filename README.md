@@ -23,8 +23,8 @@ If you're planning backend or API work, the live runtime contract starts with
 `docs/backend_v1_contract.md`, `docs/ingestion_flow.md`, and
 `docs/api_v1_contract.md`.
 
-If you're planning frontend work, start with `docs/frontend_handoff.md` and
-`contracts/openapi.json`.
+If you're planning frontend work, start with `docs/frontend_handoff.md`,
+`docs/frontend_backend_requests/`, and `contracts/openapi.json`.
 
 ## Current Runtime Shape
 
@@ -213,6 +213,8 @@ python -m unittest discover -s tests -q
 - `docs/frontend_handoff.md`
   Frontend/backend ownership boundary, demo scope, and integration rules for a
   UI specialist.
+- `docs/frontend_backend_requests/`
+  Request folder and tracking process for frontend-requested backend/API work.
 - `contracts/`
   OpenAPI snapshot and example JSON payloads for frontend integration.
 - `scripts/`

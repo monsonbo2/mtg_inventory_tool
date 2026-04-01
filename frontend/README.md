@@ -11,7 +11,7 @@ Use these as the integration contract:
 
 - `../docs/api_v1_contract.md`
 - `../docs/frontend_handoff.md`
-- `../docs/frontend_backend_requests.md`
+- `../docs/frontend_backend_requests/`
 - `../contracts/openapi.json`
 - `../contracts/demo_payloads/`
 

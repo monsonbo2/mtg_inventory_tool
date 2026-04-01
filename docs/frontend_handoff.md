@@ -32,7 +32,7 @@ replicate Python-side business logic.
 The frontend sandbox should treat these as the source of truth:
 
 - `docs/api_v1_contract.md`
-- `docs/frontend_backend_requests.md`
+- `docs/frontend_backend_requests/`
 - `contracts/openapi.json`
 - `contracts/demo_payloads/`
 
@@ -123,7 +123,7 @@ export default {
   backend contract change.
 - Backend changes should be requested as API-contract work, not merged in as
   opportunistic UI edits.
-- Use `docs/frontend_backend_requests.md` as the default format for frontend
+- Use `docs/frontend_backend_requests/README.md` as the default format for frontend
   requests into the backend/API layer.
 - The frontend may do UX validation, but backend validation remains the source
   of truth.
