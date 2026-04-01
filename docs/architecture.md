@@ -3,6 +3,8 @@
 This document describes the current runtime structure of the repo as it exists
 today.
 
+For the docs index and recommended reading order, start with `docs/README.md`.
+
 It is the best high-level orientation doc for contributors who want to
 understand where code lives before diving into implementation details.
 
@@ -15,6 +17,11 @@ The installable package lives under `src/mtg_source_stack/`.
 
 Top-level runtime areas:
 
+- `api/`
+  Demo/local-first FastAPI shell, request lifecycle, and HTTP route wiring for
+  the current backend contract. It currently wraps synchronous inventory and
+  SQLite-backed services, so it is suitable for local/demo use but is not yet a
+  concurrency-hardened shared deployment surface.
 - `cli/`
   Thin command-line entrypoints and argument parsing.
 - `db/`
@@ -29,7 +36,8 @@ Supporting top-level modules:
 - `errors.py`
   Shared domain error vocabulary used by app-facing services.
 - `api_contract.py`
-  Framework-agnostic JSON/error mapping helpers for the future web layer.
+  Framework-agnostic JSON/error mapping helpers used by the current demo API
+  shell and broader HTTP contract work.
 - `pricing.py`
   Small shared pricing constants.
 - `mvp_importer.py`
@@ -82,6 +90,7 @@ Internal query/report helper modules:
 The current intended public runtime surface is:
 
 - CLI entrypoints in `cli/`
+- API shell in `api/`
 - importer wrapper module `mvp_importer.py`
 - inventory wrapper module `personal_inventory_cli.py`
 - inventory domain facade `inventory/service.py`
@@ -92,6 +101,37 @@ intended as broad public compatibility layers.
 
 The older `inventory/reports.py` and `inventory/queries.py` facades have been
 retired.
+
+## Current API Posture
+
+The `api/` package should currently be understood as a local-demo HTTP layer,
+not a production-ready shared service.
+
+- The route surface is stable enough for local/demo UI work.
+- The API currently wraps synchronous inventory services and SQLite access.
+- The JSON and error contract is documented in `api_v1_contract.md`, but
+  concurrency guarantees are not yet part of that contract.
+- A dedicated API-hardening pass is still required before broader deployment.
+
+The next API-hardening steps are:
+
+- execution-boundary and concurrency hardening for shared deployment
+
+## Frontend Collaboration Boundary
+
+The repo now also carries a non-runtime frontend sandbox boundary:
+
+- `frontend/`
+  Reserved UI workspace. Frontend implementation should stay inside this tree.
+- `contracts/openapi.json`
+  Snapshot of the current demo API contract for client generation and review.
+- `contracts/demo_payloads/`
+  Example JSON payloads that mirror the shapes the UI should handle.
+- `docs/frontend_handoff.md`
+  Working agreement for how frontend and backend changes should be coordinated.
+
+The intended boundary is HTTP-only. Frontend code should not reach into the
+Python runtime packages for business logic or direct data access.
 
 ## Legacy / Compatibility Areas
 

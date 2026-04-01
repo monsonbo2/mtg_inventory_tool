@@ -1,0 +1,22 @@
+{
+  "inventory": "personal",
+  "card_name": "Counterspell",
+  "set_code": "7ed",
+  "set_name": "Seventh Edition",
+  "collector_number": "67",
+  "scryfall_id": "demo-counterspell",
+  "item_id": 13,
+  "quantity": 3,
+  "finish": "normal",
+  "condition_code": "NM",
+  "language_code": "en",
+  "location": "Deck Box",
+  "acquisition_price": "1.10",
+  "acquisition_currency": "USD",
+  "notes": null,
+  "tags": [
+    "control",
+    "blue"
+  ],
+  "old_quantity": 2
+}

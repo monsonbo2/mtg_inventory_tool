@@ -11,14 +11,23 @@ model, see `docs/api_v1_contract.md`.
 Web-v1 is built on the current MVP runtime schema, not the fully normalized
 future design.
 
-Canonical schema files:
+Canonical base schema:
 
-- Runtime schema: `src/mtg_source_stack/mtg_mvp_schema.sql`
-- Docs mirror: `docs/schema_mvp.sql`
+- `src/mtg_source_stack/mtg_mvp_schema.sql`
+
+Docs-side base-schema reference copy:
+
+- `docs/schema_mvp.sql`
 
 Future-target design only:
 
 - `docs/schema_full.sql`
+
+The live runtime database shape is the base schema plus the ordered migrations
+under `src/mtg_source_stack/db/migrations/`.
+
+If prose and SQL ever disagree, treat the runtime schema and migrations as the
+source of truth.
 
 ## Current Runtime Tables
 
@@ -75,3 +84,5 @@ runtime model and should not be treated as implemented backend behavior.
   truth.
 - Migration work should evolve from the MVP schema forward, rather than assume
   the normalized schema already exists.
+- Schema changes should update the runtime schema, migrations, and docs
+  together.

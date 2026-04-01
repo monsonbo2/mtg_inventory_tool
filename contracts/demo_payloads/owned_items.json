@@ -1,0 +1,27 @@
+[
+  {
+    "item_id": 12,
+    "scryfall_id": "api-card-1",
+    "name": "Lightning Bolt",
+    "set_code": "lea",
+    "set_name": "Limited Edition Alpha",
+    "rarity": "common",
+    "collector_number": "161",
+    "quantity": 4,
+    "condition_code": "NM",
+    "finish": "normal",
+    "language_code": "en",
+    "location": "Red Binder",
+    "tags": [
+      "burn",
+      "trade"
+    ],
+    "acquisition_price": "2.50",
+    "acquisition_currency": "USD",
+    "currency": "USD",
+    "unit_price": "3.00",
+    "est_value": "12.00",
+    "price_date": "2026-04-01",
+    "notes": null
+  }
+]

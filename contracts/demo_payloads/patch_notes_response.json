@@ -1,0 +1,22 @@
+{
+  "inventory": "personal",
+  "card_name": "Lightning Bolt",
+  "set_code": "lea",
+  "set_name": "Limited Edition Alpha",
+  "collector_number": "161",
+  "scryfall_id": "demo-bolt",
+  "item_id": 12,
+  "quantity": 2,
+  "finish": "foil",
+  "condition_code": "NM",
+  "language_code": "en",
+  "location": "Red Binder",
+  "acquisition_price": "2.25",
+  "acquisition_currency": "USD",
+  "notes": "Showcase card for the demo UI.",
+  "tags": [
+    "burn",
+    "trade"
+  ],
+  "old_notes": null
+}

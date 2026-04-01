@@ -1,7 +1,5 @@
 PRAGMA foreign_keys = ON;
 
--- This is the current web-v1 backend contract and the schema the runtime uses
--- today.
 -- This is a deliberately smaller MTG-specific schema for an MVP.
 -- It is meant for a first working build where you want:
 -- - exact printing-level inventory
@@ -123,37 +121,3 @@ CREATE INDEX IF NOT EXISTS idx_inventory_items_inventory
 
 CREATE INDEX IF NOT EXISTS idx_inventory_items_card
     ON inventory_items (scryfall_id);
-
--- Example "latest price" valuation query:
---
--- WITH latest_prices AS (
---     SELECT
---         ps.scryfall_id,
---         ps.provider,
---         ps.finish,
---         ps.currency,
---         ps.price_value,
---         ROW_NUMBER() OVER (
---             PARTITION BY ps.scryfall_id, ps.provider, ps.finish, ps.currency
---             ORDER BY ps.snapshot_date DESC
---         ) AS rn
---     FROM price_snapshots ps
---     WHERE ps.price_kind = 'retail'
--- )
--- SELECT
---     i.display_name,
---     c.name,
---     c.set_code,
---     c.collector_number,
---     ii.quantity,
---     lp.provider,
---     lp.currency,
---     lp.price_value,
---     ii.quantity * lp.price_value AS estimated_value
--- FROM inventory_items ii
--- JOIN inventories i ON i.id = ii.inventory_id
--- JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
--- LEFT JOIN latest_prices lp
---     ON lp.scryfall_id = ii.scryfall_id
---    AND lp.finish = ii.finish
---    AND lp.rn = 1;

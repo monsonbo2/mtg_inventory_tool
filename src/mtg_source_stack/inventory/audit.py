@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 from typing import Any
 
+from ..db.connection import connect
+from ..db.schema import require_current_schema
+from .normalize import DEFAULT_AUDIT_EVENT_LIMIT, MAX_AUDIT_EVENT_LIMIT, validate_limit_value
 from .query_inventory import get_inventory_item_row, inventory_item_result_from_row
-from .response_models import serialize_response
+from .query_inventory import get_inventory_row
+from .response_models import InventoryAuditEvent, serialize_response
 
 
 def inventory_item_snapshot(payload: sqlite3.Row | dict[str, Any] | None) -> dict[str, Any] | None:
@@ -80,3 +85,60 @@ def write_inventory_audit_event(
             json.dumps(serialize_response(metadata or {}), ensure_ascii=True, separators=(",", ":")),
         ),
     )
+
+
+def list_inventory_audit_events(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    limit: int = DEFAULT_AUDIT_EVENT_LIMIT,
+    item_id: int | None = None,
+) -> list[InventoryAuditEvent]:
+    validate_limit_value(limit, maximum=MAX_AUDIT_EVENT_LIMIT)
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        get_inventory_row(connection, inventory_slug)
+        where_parts = ["inventory_slug = ?"]
+        params: list[Any] = [inventory_slug]
+        if item_id is not None:
+            where_parts.append("item_id = ?")
+            params.append(item_id)
+
+        rows = connection.execute(
+            f"""
+            SELECT
+                id,
+                inventory_slug,
+                item_id,
+                action,
+                actor_type,
+                actor_id,
+                request_id,
+                occurred_at,
+                before_json,
+                after_json,
+                metadata_json
+            FROM inventory_audit_log
+            WHERE {' AND '.join(where_parts)}
+            ORDER BY occurred_at DESC, id DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        ).fetchall()
+
+    return [
+        InventoryAuditEvent(
+            id=int(row["id"]),
+            inventory=row["inventory_slug"],
+            item_id=int(row["item_id"]) if row["item_id"] is not None else None,
+            action=row["action"],
+            actor_type=row["actor_type"],
+            actor_id=row["actor_id"],
+            request_id=row["request_id"],
+            occurred_at=row["occurred_at"],
+            before=json.loads(row["before_json"]) if row["before_json"] else None,
+            after=json.loads(row["after_json"]) if row["after_json"] else None,
+            metadata=json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+        )
+        for row in rows
+    ]
