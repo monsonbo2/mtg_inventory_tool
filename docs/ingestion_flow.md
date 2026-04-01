@@ -16,8 +16,12 @@ The current importer writes into:
 
 - `mtg_cards`
 - `price_snapshots`
+
+The inventory domain separately writes:
+
 - `inventories`
 - `inventory_items`
+- `inventory_audit_log`
 
 The normalized tables described in `docs/schema_full.sql` are future-target
 design notes, not the live ingestion model.
@@ -57,7 +61,7 @@ Current runtime rules:
 
 Current constraint:
 
-- imported market data is restricted to USD so downstream valuation and health
+- imported price data is restricted to USD so downstream valuation and health
   queries stay unambiguous
 
 ## Matching Strategy

@@ -28,14 +28,15 @@ If you're planning backend or API work, the live runtime contract starts with
 - The active runtime package lives in `src/mtg_source_stack/`.
 - The main console entrypoints are `mtg-mvp-importer` and
   `mtg-personal-inventory`.
-- The canonical live schema is `src/mtg_source_stack/mtg_mvp_schema.sql`.
+- The runtime starts from `src/mtg_source_stack/mtg_mvp_schema.sql` and then
+  applies the tracked migrations in `src/mtg_source_stack/db/migrations/`.
 - `docs/schema_full.sql` is a future normalized design, not the live runtime
   model.
 - Ordinary search, valuation, and reporting commands read from local SQLite
   only.
 - `sync-bulk` can fetch fresh upstream bulk files, but normal read paths do not
   call live APIs.
-- Pricing imports currently keep USD market snapshots only.
+- Pricing imports currently keep USD retail and buylist snapshots only.
 
 ## Quick Start
 
@@ -220,4 +221,3 @@ python -m unittest discover -s tests -q
 - Price imports currently keep USD market snapshots only so valuation and health
   checks stay unambiguous.
 - `reconcile-prices` is suggestion-only; it does not mutate inventory finishes.
-

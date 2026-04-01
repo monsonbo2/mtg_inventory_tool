@@ -24,14 +24,15 @@ If you're building the future web layer, read `api_v1_contract.md` after those.
 - `api_v1_contract.md`
   JSON serialization and error mapping rules for the future API layer.
 - `schema_mvp.sql`
-  Docs-side copy of the current MVP runtime schema for convenient browsing.
+  Docs-side copy of the base MVP schema for convenient browsing.
 - `../src/mtg_source_stack/mtg_mvp_schema.sql`
-  Canonical runtime schema used by initialization and migrations.
+  Base runtime schema file loaded before later migrations add newer runtime
+  structures such as audit and search support.
 - `../examples/sample_queries.sql`
   Example SQL queries that target the current MVP runtime schema.
 
-If prose and SQL ever disagree, treat the runtime schema and migrations as the
-source of truth.
+If prose and SQL ever disagree, treat the runtime schema plus the recorded
+migrations as the source of truth.
 
 ## Future Design Notes
 
@@ -54,4 +55,3 @@ source of truth.
 - `../notebooks/02_importer_walkthrough.ipynb`
 - `../notebooks/03_inventory_domain_walkthrough.ipynb`
 - `../notebooks/04_reporting_and_api_contract_walkthrough.ipynb`
-
