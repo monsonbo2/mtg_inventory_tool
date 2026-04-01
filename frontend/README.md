@@ -56,7 +56,7 @@ root-mounted routes such as `/inventories` and `/cards/search`.
 2. Install the backend web dependencies if you have not already:
 
    ```bash
-   pip install -e ..[web]
+   pip install -e '..[web]'
    ```
 
 3. Start the API:
@@ -90,8 +90,9 @@ The scaffold currently includes:
 - a recent audit feed
 
 Quick edits intentionally follow the backend's current one-field-per-`PATCH`
-contract. If the backend later expands that contract, the client can be updated
-from one place in `src/api.ts` and the row editor flow.
+contract, and PATCH responses include an explicit `operation` discriminator the
+client can branch on. If the backend later expands that contract, the client
+can be updated from one place in `src/api.ts` and the row editor flow.
 
 ## Proxy Notes
 

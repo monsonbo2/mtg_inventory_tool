@@ -10,8 +10,8 @@ It is intentionally scoped to the current published HTTP contract in:
 - `../contracts/openapi.json`
 - `../contracts/demo_payloads/`
 
-The checklist is split into work we can do now and follow-up work that depends
-on backend request outcomes.
+The checklist is split into immediate UI work and a short reminder section for
+backend contract features the frontend should actively use.
 
 ## Stage 1: Demo-Good Enough
 
@@ -46,15 +46,18 @@ on backend request outcomes.
 - [ ] Add a small amount of client-side helper text around finishes, tags,
   notes, and row metadata.
 
-## Backend-Dependent Followups
+## Current Backend Contract To Use
 
-- [ ] Replace hardcoded enum assumptions with backend-published values once that
-  ticket lands.
-- [ ] Revisit the row editor if PATCH behavior expands beyond one-field-per-save.
-- [ ] Add richer inventory and demo-state coverage once expanded seed data is
-  available.
-- [ ] Add card thumbnails or a more visual result layout if image fields are
-  added by the backend.
+- [ ] Replace any remaining hardcoded enum assumptions with the published
+  values/defaults in `../contracts/openapi.json` and `api_v1_contract.md`.
+- [ ] Branch row-edit success handling on the PATCH `operation` discriminator
+  instead of inferring result types from optional fields.
+- [ ] Use the richer demo bootstrap data, including the empty `trade-binder`
+  inventory, when validating empty states and inventory switching.
+- [ ] Use `image_uri_small` / `image_uri_normal` where a more visual search or
+  owned-row layout improves the demo.
+- [ ] Keep the row editor aligned with the current one-field-per-save PATCH
+  contract unless the backend explicitly expands it later.
 
 ## Definition Of Done
 

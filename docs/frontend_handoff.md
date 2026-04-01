@@ -82,7 +82,7 @@ Use this as the first-pass UI-to-endpoint map:
 2. Start the backend locally:
 
    ```bash
-   pip install -e .[web]
+   pip install -e '.[web]'
    mtg-web-api --db var/db/frontend_demo.db
    ```
 

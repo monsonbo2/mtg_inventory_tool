@@ -24,7 +24,8 @@ If you're planning backend or API work, the live runtime contract starts with
 `docs/api_v1_contract.md`.
 
 If you're planning frontend work, start with `docs/frontend_handoff.md`,
-`docs/frontend_backend_requests/`, and `contracts/openapi.json`.
+`frontend/README.md`, `docs/frontend_backend_requests/`, and
+`contracts/openapi.json`.
 Use the GitHub issue template at
 `.github/ISSUE_TEMPLATE/frontend-backend-request.yml` for new frontend backend
 requests.
@@ -63,7 +64,7 @@ pip install -e .
 If you want to run the demo web API shell too, install the optional web extra:
 
 ```bash
-pip install -e .[web]
+pip install -e '.[web]'
 ```
 
 The current `mtg-web-api` shell is a local-demo layer over the existing

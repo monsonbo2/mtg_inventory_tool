@@ -14,7 +14,7 @@ If you're building against the current demo web API shell, read
 `api_v1_contract.md` after those.
 
 If you're preparing a separate frontend sandbox, also read
-`frontend_handoff.md`, `frontend_build_checklist.md`,
+`frontend_handoff.md`, `../frontend/README.md`, `frontend_build_checklist.md`,
 `frontend_backend_requests/`, and
 `../contracts/README.md`.
 

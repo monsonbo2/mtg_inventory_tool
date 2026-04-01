@@ -3,7 +3,7 @@
 Status: Done
 Owner: Steve
 GitHub issue: [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11)
-Implementation PR: Not linked yet
+Implementation PR: Commit `51c1828`
 Last updated: 2026-04-01
 
 ## Frontend Backend Request

@@ -10,7 +10,7 @@ preserve for the first API-backed version of the project.
 - The FastAPI layer publishes explicit HTTP response models in OpenAPI rather
   than relying on inferred `Any` responses.
 - Money values are emitted as decimal strings, not JSON numbers.
-  Example: `"2.50"`, not `2.5`.
+  Examples: `"2.5"` or `"2.50"`, but never the JSON number `2.5`.
 - Absent optional values are emitted as `null`.
 - Lists stay lists, including fields like catalog `finishes` and inventory
   `tags`.
