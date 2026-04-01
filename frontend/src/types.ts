@@ -13,15 +13,40 @@ export interface InventorySummary {
   total_cards: number;
 }
 
+export type FinishValue = "normal" | "foil" | "etched";
+export type FinishInput = FinishValue | "nonfoil";
+export type ConditionCode =
+  | "M"
+  | "NM"
+  | "LP"
+  | "MP"
+  | "HP"
+  | "DMG"
+  | (string & {});
+export type LanguageCode =
+  | "en"
+  | "ja"
+  | "de"
+  | "fr"
+  | "it"
+  | "es"
+  | "pt"
+  | "ru"
+  | "ko"
+  | "zhs"
+  | "zht"
+  | "ph"
+  | (string & {});
+
 export interface CatalogSearchRow {
   scryfall_id: string;
   name: string;
   set_code: string;
   set_name: string;
   collector_number: string;
-  lang: string;
+  lang: LanguageCode;
   rarity: string | null;
-  finishes: string[];
+  finishes: FinishValue[];
   tcgplayer_product_id: string | null;
   image_uri_small: string | null;
   image_uri_normal: string | null;
@@ -38,9 +63,9 @@ export interface OwnedInventoryRow {
   image_uri_small: string | null;
   image_uri_normal: string | null;
   quantity: number;
-  condition_code: string;
-  finish: string;
-  language_code: string;
+  condition_code: ConditionCode;
+  finish: FinishValue;
+  language_code: LanguageCode;
   location: string | null;
   tags: string[];
   acquisition_price: string | null;
@@ -69,7 +94,7 @@ export interface InventoryAuditEvent {
 export interface AddInventoryItemRequest {
   scryfall_id: string;
   quantity?: number;
-  finish?: string;
+  finish?: FinishInput;
   location?: string;
   notes?: string | null;
   tags?: string[];
@@ -77,7 +102,7 @@ export interface AddInventoryItemRequest {
 
 export interface PatchInventoryItemRequest {
   quantity?: number;
-  finish?: string;
+  finish?: FinishInput;
   location?: string;
   clear_location?: boolean;
   notes?: string;
@@ -104,9 +129,9 @@ export interface InventoryItemMutationResponse {
   scryfall_id: string;
   item_id: number;
   quantity: number;
-  finish: string;
-  condition_code: string;
-  language_code: string;
+  finish: FinishValue;
+  condition_code: ConditionCode;
+  language_code: LanguageCode;
   location: string | null;
   acquisition_price: string | null;
   acquisition_currency: string | null;
@@ -114,9 +139,9 @@ export interface InventoryItemMutationResponse {
   tags: string[];
   operation?: InventoryPatchOperation;
   old_quantity?: number;
-  old_finish?: string;
+  old_finish?: FinishValue;
   old_location?: string | null;
-  old_condition_code?: string;
+  old_condition_code?: ConditionCode;
   old_notes?: string | null;
   old_tags?: string[];
   old_acquisition_price?: string | null;
@@ -133,8 +158,8 @@ export interface SearchCardsParams {
   query: string;
   set_code?: string;
   rarity?: string;
-  finish?: string;
-  lang?: string;
+  finish?: FinishInput;
+  lang?: LanguageCode;
   exact?: boolean;
   limit?: number;
 }
