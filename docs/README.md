@@ -14,7 +14,8 @@ If you're building against the current demo web API shell, read
 `api_v1_contract.md` after those.
 
 If you're preparing a separate frontend sandbox, also read
-`frontend_handoff.md` and `../contracts/README.md`.
+`frontend_handoff.md`, `frontend_backend_requests.md`, and
+`../contracts/README.md`.
 
 ## Current Runtime Docs
 
@@ -31,6 +32,8 @@ If you're preparing a separate frontend sandbox, also read
 - `frontend_handoff.md`
   Frontend/backend ownership boundary and the expected demo-UI integration
   rules.
+- `frontend_backend_requests.md`
+  Process and template for frontend-requested backend/API changes.
 - `../src/mtg_source_stack/api/`
   Demo FastAPI shell that applies the API contract to the current service
   facade.
