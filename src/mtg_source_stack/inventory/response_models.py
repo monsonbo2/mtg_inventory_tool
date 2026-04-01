@@ -161,6 +161,7 @@ class AddCardResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetQuantityResult(InventoryItemMutationRow):
+    operation: str
     old_quantity: int
 
 
@@ -171,16 +172,19 @@ class RemoveCardResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetTagsResult(InventoryItemMutationRow):
+    operation: str
     old_tags: list[str]
 
 
 @dataclass(frozen=True, slots=True)
 class SetFinishResult(InventoryItemMutationRow):
+    operation: str
     old_finish: str
 
 
 @dataclass(frozen=True, slots=True)
 class SetLocationResult(InventoryItemMutationRow):
+    operation: str
     old_location: str | None
     merged: bool
     merged_source_item_id: int | None = None
@@ -188,6 +192,7 @@ class SetLocationResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetConditionResult(InventoryItemMutationRow):
+    operation: str
     old_condition_code: str
     merged: bool
     merged_source_item_id: int | None = None
@@ -195,11 +200,13 @@ class SetConditionResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetNotesResult(InventoryItemMutationRow):
+    operation: str
     old_notes: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class SetAcquisitionResult(InventoryItemMutationRow):
+    operation: str
     old_acquisition_price: Decimal | None
     old_acquisition_currency: str | None
 

@@ -18,8 +18,14 @@ preserve for the first API-backed version of the project.
   fields such as `image_uri_small` and `image_uri_normal` when card image data
   is available.
 - Dates remain ISO-8601 strings.
+- `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
+  mutation family per request: quantity, finish, location, condition, notes,
+  tags, or acquisition.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` returns
   operation-specific result shapes rather than one generic mutation envelope.
+- PATCH responses include an explicit `operation` discriminator such as
+  `set_finish` or `set_quantity`; clients should branch on `operation` instead
+  of inferring the result type from optional fields alone.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,

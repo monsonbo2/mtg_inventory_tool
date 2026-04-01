@@ -360,6 +360,7 @@ def set_quantity(
 
     return SetQuantityResult(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_quantity",
         old_quantity=int(item["quantity"]),
     )
 
@@ -431,6 +432,7 @@ def set_acquisition(
 
     return SetAcquisitionResult(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_acquisition",
         old_acquisition_price=coerce_decimal(item["acquisition_price"]),
         old_acquisition_currency=current_currency,
     )
@@ -452,6 +454,7 @@ def set_finish_with_connection(
     if normalized_finish == item["finish"]:
         return SetFinishResult(
             **inventory_item_response_kwargs(before_snapshot),
+            operation="set_finish",
             old_finish=str(item["finish"]),
         )
 
@@ -487,6 +490,7 @@ def set_finish_with_connection(
 
     return SetFinishResult(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_finish",
         old_finish=str(item["finish"]),
     )
 
@@ -537,6 +541,7 @@ def set_location(
         if normalized_location == item["location"]:
             return SetLocationResult(
                 **inventory_item_response_kwargs(before_snapshot),
+                operation="set_location",
                 old_location=text_or_none(item["location"]),
                 merged=False,
             )
@@ -612,6 +617,7 @@ def set_location(
             connection.commit()
             return SetLocationResult(
                 **inventory_item_response_kwargs(result),
+                operation="set_location",
                 old_location=text_or_none(item["location"]),
                 merged=True,
                 merged_source_item_id=int(result["merged_source_item_id"]),
@@ -643,6 +649,7 @@ def set_location(
 
     return SetLocationResult(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_location",
         old_location=text_or_none(item["location"]),
         merged=False,
     )
@@ -669,6 +676,7 @@ def set_condition(
         if normalized_condition == item["condition_code"]:
             return SetConditionResult(
                 **inventory_item_response_kwargs(before_snapshot),
+                operation="set_condition",
                 old_condition_code=str(item["condition_code"]),
                 merged=False,
             )
@@ -744,6 +752,7 @@ def set_condition(
             connection.commit()
             return SetConditionResult(
                 **inventory_item_response_kwargs(result),
+                operation="set_condition",
                 old_condition_code=str(item["condition_code"]),
                 merged=True,
                 merged_source_item_id=int(result["merged_source_item_id"]),
@@ -779,6 +788,7 @@ def set_condition(
 
     return SetConditionResult(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_condition",
         old_condition_code=str(item["condition_code"]),
         merged=False,
     )
@@ -1032,6 +1042,7 @@ def set_notes(
 
     return SetNotesResult(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_notes",
         old_notes=text_or_none(item["notes"]),
     )
 
@@ -1076,6 +1087,7 @@ def set_tags(
 
     return SetTagsResult(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_tags",
         old_tags=list(before_snapshot["tags"]),
     )
 

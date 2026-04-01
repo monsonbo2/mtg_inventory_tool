@@ -1,4 +1,5 @@
 {
+  "operation": "set_finish",
   "inventory": "personal",
   "card_name": "Lightning Bolt",
   "set_code": "lea",

@@ -9,11 +9,13 @@ from pathlib import Path
 
 from tests.common import RepoSmokeTestCase
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
-from mtg_source_stack.api.request_models import AddInventoryItemRequest
+from mtg_source_stack.api.request_models import AddInventoryItemRequest, PatchInventoryItemRequest
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
     CatalogSearchRowResponse,
     OwnedInventoryRowResponse,
+    SetAcquisitionResponse,
+    SetFinishResponse,
 )
 from mtg_source_stack.db.schema import initialize_database, require_current_schema
 from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReadyError, ValidationError
@@ -177,6 +179,46 @@ class ApiContractTest(RepoSmokeTestCase):
             catalog_properties["finishes"]["items"]["enum"],
         )
         self.assertIn("Catalog language code", catalog_properties["lang"]["description"])
+
+    def test_patch_contract_publishes_single_operation_rule_and_discriminator(self) -> None:
+        patch_schema = PatchInventoryItemRequest.model_json_schema()
+        patch_properties = patch_schema["properties"]
+
+        self.assertIn("exactly one mutation family", patch_schema["description"])
+        self.assertIn("Only applies to location or condition changes", patch_properties["merge"]["description"])
+        self.assertIn(
+            "Only applies to merged location or condition changes",
+            patch_properties["keep_acquisition"]["description"],
+        )
+
+        finish_response_schema = SetFinishResponse.model_json_schema()
+        finish_operation = finish_response_schema["properties"]["operation"]
+        self.assertEqual("set_finish", finish_operation.get("const", finish_operation.get("enum", [None])[0]))
+
+        acquisition_response = SetAcquisitionResponse.model_validate(
+            {
+                "operation": "set_acquisition",
+                "inventory": "personal",
+                "card_name": "Sol Ring",
+                "set_code": "cmd",
+                "set_name": "Commander",
+                "collector_number": "260",
+                "scryfall_id": "demo-sol-ring",
+                "item_id": 15,
+                "quantity": 1,
+                "finish": "foil",
+                "condition_code": "NM",
+                "language_code": "en",
+                "location": "Artifacts Binder",
+                "acquisition_price": "3.50",
+                "acquisition_currency": "USD",
+                "notes": None,
+                "tags": ["commander", "artifact"],
+                "old_acquisition_price": None,
+                "old_acquisition_currency": None,
+            }
+        )
+        self.assertEqual("set_acquisition", acquisition_response.operation)
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

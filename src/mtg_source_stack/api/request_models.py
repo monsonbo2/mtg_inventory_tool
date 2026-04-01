@@ -43,6 +43,19 @@ SEARCH_LANG_DESCRIPTION = (
     f"Catalog search language filter. Recommended codes include: {_CANONICAL_LANGUAGE_CODES_TEXT}. "
     "Search currently accepts the raw stored catalog language codes."
 )
+PATCH_REQUEST_DESCRIPTION = (
+    "Specify exactly one mutation family per request: quantity, finish, location, "
+    "condition_code, notes, tags, or acquisition. PATCH does not currently support "
+    "true multi-field updates in one request."
+)
+PATCH_MERGE_DESCRIPTION = (
+    "Only applies to location or condition changes. When true, a collision with an existing "
+    "row is merged instead of returning a conflict."
+)
+PATCH_KEEP_ACQUISITION_DESCRIPTION = (
+    "Only applies to merged location or condition changes. Choose whether the merged row keeps "
+    "the target row or source row acquisition metadata."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -74,13 +87,21 @@ class AddInventoryItemRequest(ApiBaseModel):
 
 
 class PatchInventoryItemRequest(ApiBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": PATCH_REQUEST_DESCRIPTION},
+    )
+
     quantity: int | None = None
     finish: FinishInput | None = Field(default=None, description=FINISH_INPUT_DESCRIPTION)
     location: str | None = None
     clear_location: bool = False
     condition_code: str | None = Field(default=None, description=CONDITION_CODE_DESCRIPTION)
-    merge: bool = False
-    keep_acquisition: Literal["target", "source"] | None = None
+    merge: bool = Field(default=False, description=PATCH_MERGE_DESCRIPTION)
+    keep_acquisition: Literal["target", "source"] | None = Field(
+        default=None,
+        description=PATCH_KEEP_ACQUISITION_DESCRIPTION,
+    )
     notes: str | None = None
     clear_notes: bool = False
     tags: list[str] | None = None

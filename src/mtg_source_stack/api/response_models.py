@@ -142,34 +142,41 @@ class RemoveInventoryItemResponse(InventoryItemMutationBaseResponse):
 
 
 class SetQuantityResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_quantity"]
     old_quantity: int
 
 
 class SetFinishResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_finish"]
     old_finish: str
 
 
 class SetLocationResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_location"]
     old_location: str | None
     merged: bool
     merged_source_item_id: int | None = None
 
 
 class SetConditionResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_condition"]
     old_condition_code: str
     merged: bool
     merged_source_item_id: int | None = None
 
 
 class SetNotesResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_notes"]
     old_notes: str | None
 
 
 class SetTagsResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_tags"]
     old_tags: list[str]
 
 
 class SetAcquisitionResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_acquisition"]
     old_acquisition_price: str | None
     old_acquisition_currency: str | None
 

@@ -184,8 +184,46 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][
                 "content"
             ]["application/json"]["schema"]
-            self.assertIn("anyOf", patch_schema)
-            self.assertGreaterEqual(len(patch_schema["anyOf"]), 2)
+            patch_variants = patch_schema.get("anyOf") or patch_schema.get("oneOf")
+            self.assertIsNotNone(patch_variants)
+            self.assertGreaterEqual(len(patch_variants), 2)
+            patch_schema_names = {self._schema_name_from_ref(variant["$ref"]) for variant in patch_variants}
+            self.assertEqual(
+                {
+                    "SetQuantityResponse",
+                    "SetFinishResponse",
+                    "SetLocationResponse",
+                    "SetConditionResponse",
+                    "SetNotesResponse",
+                    "SetTagsResponse",
+                    "SetAcquisitionResponse",
+                },
+                patch_schema_names,
+            )
+            for schema_name, expected_operation in {
+                "SetQuantityResponse": "set_quantity",
+                "SetFinishResponse": "set_finish",
+                "SetLocationResponse": "set_location",
+                "SetConditionResponse": "set_condition",
+                "SetNotesResponse": "set_notes",
+                "SetTagsResponse": "set_tags",
+                "SetAcquisitionResponse": "set_acquisition",
+            }.items():
+                operation_property = components[schema_name]["properties"]["operation"]
+                operation_value = operation_property.get("const", operation_property.get("enum", [None])[0])
+                self.assertEqual(expected_operation, operation_value)
+                self.assertIn("operation", components[schema_name]["required"])
+
+            patch_request_schema = components["PatchInventoryItemRequest"]
+            self.assertIn("exactly one mutation family", patch_request_schema["description"])
+            self.assertIn(
+                "Only applies to location or condition changes",
+                patch_request_schema["properties"]["merge"]["description"],
+            )
+            self.assertIn(
+                "Only applies to merged location or condition changes",
+                patch_request_schema["properties"]["keep_acquisition"]["description"],
+            )
 
             audit_schema = spec["paths"]["/inventories/{inventory_slug}/audit"]["get"]["responses"]["200"][
                 "content"
@@ -280,6 +318,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                     json={"finish": "foil"},
                 )
                 self.assertEqual(200, patched.status_code)
+                self.assertEqual("set_finish", patched.json()["operation"])
                 self.assertEqual("foil", patched.json()["finish"])
 
                 audit = await client.get("/inventories/personal/audit")

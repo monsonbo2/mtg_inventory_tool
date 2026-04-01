@@ -3,6 +3,7 @@ import type {
   ApiErrorEnvelope,
   CatalogSearchRow,
   InventoryAuditEvent,
+  InventoryItemPatchResponse,
   InventoryItemMutationResponse,
   InventorySummary,
   OwnedInventoryRow,
@@ -144,7 +145,7 @@ export async function patchInventoryItem(
   itemId: number,
   payload: PatchInventoryItemRequest,
 ) {
-  return request<InventoryItemMutationResponse>(
+  return request<InventoryItemPatchResponse>(
     `/inventories/${encodeURIComponent(inventorySlug)}/items/${itemId}`,
     {
       method: "PATCH",

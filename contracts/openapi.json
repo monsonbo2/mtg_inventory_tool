@@ -860,6 +860,7 @@
       },
       "PatchInventoryItemRequest": {
         "additionalProperties": false,
+        "description": "Specify exactly one mutation family per request: quantity, finish, location, condition_code, notes, tags, or acquisition. PATCH does not currently support true multi-field updates in one request.",
         "properties": {
           "acquisition_currency": {
             "anyOf": [
@@ -946,6 +947,7 @@
                 "type": "null"
               }
             ],
+            "description": "Only applies to merged location or condition changes. Choose whether the merged row keeps the target row or source row acquisition metadata.",
             "title": "Keep Acquisition"
           },
           "location": {
@@ -961,6 +963,7 @@
           },
           "merge": {
             "default": false,
+            "description": "Only applies to location or condition changes. When true, a collision with an existing row is merged instead of returning a conflict.",
             "title": "Merge",
             "type": "boolean"
           },
@@ -1237,6 +1240,11 @@
             ],
             "title": "Old Acquisition Price"
           },
+          "operation": {
+            "const": "set_acquisition",
+            "title": "Operation",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1278,6 +1286,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "operation",
           "old_acquisition_price",
           "old_acquisition_currency"
         ],
@@ -1386,6 +1395,11 @@
             "title": "Old Condition Code",
             "type": "string"
           },
+          "operation": {
+            "const": "set_condition",
+            "title": "Operation",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1427,6 +1441,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "operation",
           "old_condition_code",
           "merged"
         ],
@@ -1520,6 +1535,11 @@
             "title": "Old Finish",
             "type": "string"
           },
+          "operation": {
+            "const": "set_finish",
+            "title": "Operation",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1561,6 +1581,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "operation",
           "old_finish"
         ],
         "title": "SetFinishResponse",
@@ -1675,6 +1696,11 @@
             ],
             "title": "Old Location"
           },
+          "operation": {
+            "const": "set_location",
+            "title": "Operation",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1716,6 +1742,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "operation",
           "old_location",
           "merged"
         ],
@@ -1816,6 +1843,11 @@
             ],
             "title": "Old Notes"
           },
+          "operation": {
+            "const": "set_notes",
+            "title": "Operation",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1857,6 +1889,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "operation",
           "old_notes"
         ],
         "title": "SetNotesResponse",
@@ -1949,6 +1982,11 @@
             "title": "Old Quantity",
             "type": "integer"
           },
+          "operation": {
+            "const": "set_quantity",
+            "title": "Operation",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1990,6 +2028,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "operation",
           "old_quantity"
         ],
         "title": "SetQuantityResponse",
@@ -2085,6 +2124,11 @@
             "title": "Old Tags",
             "type": "array"
           },
+          "operation": {
+            "const": "set_tags",
+            "title": "Operation",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -2126,6 +2170,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "operation",
           "old_tags"
         ],
         "title": "SetTagsResponse",

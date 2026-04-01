@@ -1,6 +1,6 @@
 # Frontend Backend Request: PATCH Operation Contract Clarity
 
-Status: Triaged
+Status: Done
 Owner: Steve
 GitHub issue: [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9)
 Implementation PR: Not linked yet
@@ -100,3 +100,10 @@ Compatibility note:
 Additive if implemented through docs/examples plus an added discriminator field.
 Behavior-changing only if the backend decides to support true multi-field patch
 updates instead.
+
+Resolution:
+
+- PATCH remains single-mutation-only in web-v1
+- patch responses now include an explicit `operation` discriminator
+- demo payloads now include one request/response example for each supported
+  patch family

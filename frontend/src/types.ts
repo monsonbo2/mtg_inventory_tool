@@ -86,6 +86,15 @@ export interface PatchInventoryItemRequest {
   clear_tags?: boolean;
 }
 
+export type InventoryPatchOperation =
+  | "set_quantity"
+  | "set_finish"
+  | "set_location"
+  | "set_condition"
+  | "set_notes"
+  | "set_tags"
+  | "set_acquisition";
+
 export interface InventoryItemMutationResponse {
   inventory: string;
   card_name: string;
@@ -103,13 +112,21 @@ export interface InventoryItemMutationResponse {
   acquisition_currency: string | null;
   notes: string | null;
   tags: string[];
+  operation?: InventoryPatchOperation;
   old_quantity?: number;
   old_finish?: string;
   old_location?: string | null;
+  old_condition_code?: string;
   old_notes?: string | null;
   old_tags?: string[];
+  old_acquisition_price?: string | null;
+  old_acquisition_currency?: string | null;
   merged?: boolean;
   merged_source_item_id?: number | null;
+}
+
+export interface InventoryItemPatchResponse extends InventoryItemMutationResponse {
+  operation: InventoryPatchOperation;
 }
 
 export interface SearchCardsParams {
