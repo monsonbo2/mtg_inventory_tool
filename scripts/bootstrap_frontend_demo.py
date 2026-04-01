@@ -19,6 +19,8 @@ from mtg_source_stack.inventory.service import (
     add_card,
     create_inventory,
     remove_card,
+    set_acquisition,
+    set_condition,
     set_finish,
     set_location,
     set_notes,
@@ -99,6 +101,30 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     '{"small":"https://placehold.co/146x204/png?text=Forest","normal":"https://placehold.co/488x680/png?text=Forest"}',
                     "1003",
                 ),
+                (
+                    "demo-swords",
+                    "oracle-swords",
+                    "Swords to Plowshares",
+                    "ice",
+                    "Ice Age",
+                    "54",
+                    "uncommon",
+                    '["normal"]',
+                    '{"small":"https://placehold.co/146x204/png?text=Swords+to+Plowshares","normal":"https://placehold.co/488x680/png?text=Swords+to+Plowshares"}',
+                    "1004",
+                ),
+                (
+                    "demo-sol-ring",
+                    "oracle-sol-ring",
+                    "Sol Ring",
+                    "cmr",
+                    "Commander Legends",
+                    "334",
+                    "uncommon",
+                    '["normal","etched"]',
+                    '{"small":"https://placehold.co/146x204/png?text=Sol+Ring","normal":"https://placehold.co/488x680/png?text=Sol+Ring"}',
+                    "1005",
+                ),
             ],
         )
         connection.executemany(
@@ -121,6 +147,9 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                 ("demo-counterspell", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 1.25, "demo-seed"),
                 ("demo-counterspell", "tcgplayer", "retail", "foil", "USD", "2026-04-01", 4.25, "demo-seed"),
                 ("demo-forest", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 0.15, "demo-seed"),
+                ("demo-swords", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 3.50, "demo-seed"),
+                ("demo-sol-ring", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 1.75, "demo-seed"),
+                ("demo-sol-ring", "tcgplayer", "retail", "etched", "USD", "2026-04-01", 4.75, "demo-seed"),
             ],
         )
         connection.commit()
@@ -135,6 +164,12 @@ def bootstrap_demo_data(db_path: Path) -> None:
         slug="personal",
         display_name="Personal Collection",
         description="Frontend demo inventory",
+    )
+    create_inventory(
+        db_path,
+        slug="trade-binder",
+        display_name="Trade Binder",
+        description="Intentionally empty inventory for frontend empty states",
     )
 
     bolt = add_card(
@@ -230,6 +265,92 @@ def bootstrap_demo_data(db_path: Path) -> None:
         request_id="seed-quantity-counterspell",
     )
 
+    swords = add_card(
+        db_path,
+        inventory_slug="personal",
+        inventory_display_name=None,
+        scryfall_id="demo-swords",
+        tcgplayer_product_id=None,
+        name=None,
+        set_code=None,
+        collector_number=None,
+        lang=None,
+        quantity=1,
+        condition_code="NM",
+        finish="normal",
+        language_code="ja",
+        location="Commander Case",
+        acquisition_price=Decimal("3.00"),
+        acquisition_currency="USD",
+        notes=None,
+        tags=None,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-add-swords",
+    )
+    set_condition(
+        db_path,
+        inventory_slug="personal",
+        item_id=swords.item_id,
+        condition_code="LP",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-condition-swords",
+    )
+
+    sol_ring = add_card(
+        db_path,
+        inventory_slug="personal",
+        inventory_display_name=None,
+        scryfall_id="demo-sol-ring",
+        tcgplayer_product_id=None,
+        name=None,
+        set_code=None,
+        collector_number=None,
+        lang=None,
+        quantity=1,
+        condition_code="NM",
+        finish="normal",
+        language_code="en",
+        location="Commander Staples",
+        acquisition_price=Decimal("5.00"),
+        acquisition_currency="USD",
+        notes=None,
+        tags="commander,trade",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-add-sol-ring",
+    )
+    set_finish(
+        db_path,
+        inventory_slug="personal",
+        item_id=sol_ring.item_id,
+        finish="etched",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-finish-sol-ring",
+    )
+    set_tags(
+        db_path,
+        inventory_slug="personal",
+        item_id=sol_ring.item_id,
+        tags=None,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-clear-tags-sol-ring",
+    )
+    set_acquisition(
+        db_path,
+        inventory_slug="personal",
+        item_id=sol_ring.item_id,
+        acquisition_price=None,
+        acquisition_currency=None,
+        clear=True,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-clear-acquisition-sol-ring",
+    )
+
     forest = add_card(
         db_path,
         inventory_slug="personal",
@@ -277,8 +398,8 @@ def main(argv: list[str] | None = None) -> None:
 
     bootstrap_demo_data(db_path)
     print(f"Bootstrapped frontend demo data at {db_path}")
-    print("Inventory slug: personal")
-    print("Cards seeded for search: Lightning Bolt, Counterspell, Forest")
+    print("Inventories seeded: personal, trade-binder")
+    print("Cards seeded for search: Lightning Bolt, Counterspell, Swords to Plowshares, Sol Ring, Forest")
     print("Suggested API start command:")
     print(f"  mtg-web-api --db {db_path}")
 

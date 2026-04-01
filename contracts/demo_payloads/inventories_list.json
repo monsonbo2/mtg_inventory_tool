@@ -2,8 +2,15 @@
   {
     "slug": "personal",
     "display_name": "Personal Collection",
-    "description": "Main demo inventory",
-    "item_rows": 42,
-    "total_cards": 138
+    "description": "Frontend demo inventory",
+    "item_rows": 4,
+    "total_cards": 7
+  },
+  {
+    "slug": "trade-binder",
+    "display_name": "Trade Binder",
+    "description": "Intentionally empty inventory for frontend empty states",
+    "item_rows": 0,
+    "total_cards": 0
   }
 ]
