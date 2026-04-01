@@ -117,6 +117,22 @@ The next API-hardening steps are:
 
 - execution-boundary and concurrency hardening for shared deployment
 
+## Frontend Collaboration Boundary
+
+The repo now also carries a non-runtime frontend sandbox boundary:
+
+- `frontend/`
+  Reserved UI workspace. Frontend implementation should stay inside this tree.
+- `contracts/openapi.json`
+  Snapshot of the current demo API contract for client generation and review.
+- `contracts/demo_payloads/`
+  Example JSON payloads that mirror the shapes the UI should handle.
+- `docs/frontend_handoff.md`
+  Working agreement for how frontend and backend changes should be coordinated.
+
+The intended boundary is HTTP-only. Frontend code should not reach into the
+Python runtime packages for business logic or direct data access.
+
 ## Legacy / Compatibility Areas
 
 Two modules still exist primarily for compatibility and entrypoint stability:

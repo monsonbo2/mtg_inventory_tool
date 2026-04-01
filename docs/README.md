@@ -13,6 +13,9 @@ If you're new to the repo, the best reading order is:
 If you're building against the current demo web API shell, read
 `api_v1_contract.md` after those.
 
+If you're preparing a separate frontend sandbox, also read
+`frontend_handoff.md` and `../contracts/README.md`.
+
 ## Current Runtime Docs
 
 - `architecture.md`
@@ -25,9 +28,14 @@ If you're building against the current demo web API shell, read
 - `api_v1_contract.md`
   JSON serialization, error mapping, and operational contract notes for the
   current demo API shell.
+- `frontend_handoff.md`
+  Frontend/backend ownership boundary and the expected demo-UI integration
+  rules.
 - `../src/mtg_source_stack/api/`
   Demo FastAPI shell that applies the API contract to the current service
   facade.
+- `../contracts/`
+  OpenAPI snapshot and example payloads for frontend integration.
 - `schema_mvp.sql`
   Docs-side copy of the base MVP schema for convenient browsing.
 - `../src/mtg_source_stack/mtg_mvp_schema.sql`

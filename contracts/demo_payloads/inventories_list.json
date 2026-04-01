@@ -1,0 +1,9 @@
+[
+  {
+    "slug": "personal",
+    "display_name": "Personal Collection",
+    "description": "Main demo inventory",
+    "item_rows": 42,
+    "total_cards": 138
+  }
+]

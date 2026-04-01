@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "body -> quantity: Input should be greater than or equal to 1"
+  }
+}

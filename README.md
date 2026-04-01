@@ -23,6 +23,9 @@ If you're planning backend or API work, the live runtime contract starts with
 `docs/backend_v1_contract.md`, `docs/ingestion_flow.md`, and
 `docs/api_v1_contract.md`.
 
+If you're planning frontend work, start with `docs/frontend_handoff.md` and
+`contracts/openapi.json`.
+
 ## Current Runtime Shape
 
 - The active runtime package lives in `src/mtg_source_stack/`.
@@ -207,6 +210,11 @@ python -m unittest discover -s tests -q
 - `docs/api_v1_contract.md`
   JSON serialization, API error-shaping, and demo-shell runtime rules for the
   current web API layer.
+- `docs/frontend_handoff.md`
+  Frontend/backend ownership boundary, demo scope, and integration rules for a
+  UI specialist.
+- `contracts/`
+  OpenAPI snapshot and example JSON payloads for frontend integration.
 - `docs/source_map.md`
   Upstream source strategy and future integration notes.
 - `examples/sample_inventory_import.csv`
@@ -215,6 +223,8 @@ python -m unittest discover -s tests -q
   Current MVP-schema SQL examples for ad hoc SQLite inspection.
 - `notebooks/`
   Contributor walkthrough series.
+- `frontend/`
+  Reserved frontend sandbox for the demo UI.
 - `tests/`
   Local integration and service-level test coverage.
 - `var/`

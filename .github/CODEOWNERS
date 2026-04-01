@@ -1,0 +1,11 @@
+# Backend-owned surfaces
+/src/mtg_source_stack/ @monsonbo2
+/tests/ @monsonbo2
+/docs/api_v1_contract.md @monsonbo2
+/docs/backend_v1_contract.md @monsonbo2
+/docs/frontend_handoff.md @monsonbo2
+/contracts/openapi.json @monsonbo2
+/contracts/demo_payloads/ @monsonbo2
+
+# Frontend owner to be added once assigned.
+# /frontend/ @frontend-expert

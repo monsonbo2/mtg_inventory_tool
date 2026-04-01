@@ -1,0 +1,21 @@
+[
+  {
+    "id": 27,
+    "inventory": "personal",
+    "item_id": 12,
+    "action": "set_finish",
+    "actor_type": "api",
+    "actor_id": "local-demo",
+    "request_id": "req-demo-1",
+    "occurred_at": "2026-04-01T18:22:00Z",
+    "before": {
+      "finish": "normal",
+      "quantity": 4
+    },
+    "after": {
+      "finish": "foil",
+      "quantity": 4
+    },
+    "metadata": {}
+  }
+]
