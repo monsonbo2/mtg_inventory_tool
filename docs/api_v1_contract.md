@@ -10,18 +10,55 @@ preserve for the first API-backed version of the project.
 - The FastAPI layer publishes explicit HTTP response models in OpenAPI rather
   than relying on inferred `Any` responses.
 - Money values are emitted as decimal strings, not JSON numbers.
-  Example: `"2.50"`, not `2.5`.
+  Examples: `"2.5"` or `"2.50"`, but never the JSON number `2.5`.
 - Absent optional values are emitted as `null`.
 - Lists stay lists, including fields like catalog `finishes` and inventory
   `tags`.
+- Catalog search rows and owned inventory rows may include optional visual
+  fields such as `image_uri_small` and `image_uri_normal` when card image data
+  is available.
 - Dates remain ISO-8601 strings.
+- `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
+  mutation family per request: quantity, finish, location, condition, notes,
+  tags, or acquisition.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` returns
   operation-specific result shapes rather than one generic mutation envelope.
+- PATCH responses include an explicit `operation` discriminator such as
+  `set_finish` or `set_quantity`; clients should branch on `operation` instead
+  of inferring the result type from optional fields alone.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,
   `auto_migrate`, and `trusted_actor_headers`; it does not expose the SQLite
   filesystem path in web-v1.
+
+## Published Values And Defaults
+
+- `finish`
+  - canonical response values: `normal`, `foil`, `etched`
+  - default request value: `normal`
+  - accepted input alias: `nonfoil`, which is normalized to `normal`
+- `condition_code`
+  - canonical response values: `M`, `NM`, `LP`, `MP`, `HP`, `DMG`
+  - default request value: `NM`
+  - human-readable aliases such as `near mint` and `lightly played` are
+    accepted and normalized
+- `language_code`
+  - commonly published canonical codes: `en`, `ja`, `de`, `fr`, `it`, `es`,
+    `pt`, `ru`, `ko`, `zhs`, `zht`, `ph`
+  - default request value: `en`
+  - language-name aliases such as `english` and `japanese` are accepted and
+    normalized
+- `GET /cards/search` query `lang`
+  - uses the same published language-code guidance as `language_code`
+  - current search behavior still matches against the stored catalog language
+    values rather than enforcing a strict enum at the HTTP layer
+
+OpenAPI publishes these defaults and canonical values directly. For `finish`,
+the request contract is strict enough to advertise the accepted input set. For
+`condition_code` and `language_code`, the schema publishes defaults and
+canonical guidance without pretending the current runtime is stricter than it
+really is.
 
 ## Error Envelope
 

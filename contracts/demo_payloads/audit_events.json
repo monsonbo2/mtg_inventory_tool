@@ -1,21 +1,540 @@
 [
   {
-    "id": 27,
+    "id": 15,
     "inventory": "personal",
-    "item_id": 12,
-    "action": "set_finish",
-    "actor_type": "api",
-    "actor_id": "local-demo",
-    "request_id": "req-demo-1",
-    "occurred_at": "2026-04-01T18:22:00Z",
+    "item_id": 5,
+    "action": "remove_card",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-remove-forest",
+    "occurred_at": "2026-04-01 20:41:10",
     "before": {
+      "inventory": "personal",
+      "card_name": "Forest",
+      "set_code": "m10",
+      "set_name": "Magic 2010",
+      "collector_number": "246",
+      "scryfall_id": "demo-forest",
+      "item_id": 5,
+      "quantity": 10,
       "finish": "normal",
-      "quantity": 4
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Land Box",
+      "acquisition_price": null,
+      "acquisition_currency": null,
+      "notes": null,
+      "tags": [
+        "bulk"
+      ]
+    },
+    "after": null,
+    "metadata": {}
+  },
+  {
+    "id": 14,
+    "inventory": "personal",
+    "item_id": 5,
+    "action": "add_card",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-add-forest",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": null,
+    "after": {
+      "inventory": "personal",
+      "card_name": "Forest",
+      "set_code": "m10",
+      "set_name": "Magic 2010",
+      "collector_number": "246",
+      "scryfall_id": "demo-forest",
+      "item_id": 5,
+      "quantity": 10,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Land Box",
+      "acquisition_price": null,
+      "acquisition_currency": null,
+      "notes": null,
+      "tags": [
+        "bulk"
+      ]
+    },
+    "metadata": {
+      "mode": "create"
+    }
+  },
+  {
+    "id": 13,
+    "inventory": "personal",
+    "item_id": 4,
+    "action": "set_acquisition",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-clear-acquisition-sol-ring",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmr",
+      "set_name": "Commander Legends",
+      "collector_number": "334",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 4,
+      "quantity": 1,
+      "finish": "etched",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Commander Staples",
+      "acquisition_price": "5",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": []
     },
     "after": {
-      "finish": "foil",
-      "quantity": 4
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmr",
+      "set_name": "Commander Legends",
+      "collector_number": "334",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 4,
+      "quantity": 1,
+      "finish": "etched",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Commander Staples",
+      "acquisition_price": null,
+      "acquisition_currency": null,
+      "notes": null,
+      "tags": []
+    },
+    "metadata": {
+      "clear": true
+    }
+  },
+  {
+    "id": 12,
+    "inventory": "personal",
+    "item_id": 4,
+    "action": "set_tags",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-clear-tags-sol-ring",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmr",
+      "set_name": "Commander Legends",
+      "collector_number": "334",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 4,
+      "quantity": 1,
+      "finish": "etched",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Commander Staples",
+      "acquisition_price": "5",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "commander",
+        "trade"
+      ]
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmr",
+      "set_name": "Commander Legends",
+      "collector_number": "334",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 4,
+      "quantity": 1,
+      "finish": "etched",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Commander Staples",
+      "acquisition_price": "5",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": []
     },
     "metadata": {}
+  },
+  {
+    "id": 11,
+    "inventory": "personal",
+    "item_id": 4,
+    "action": "set_finish",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-finish-sol-ring",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmr",
+      "set_name": "Commander Legends",
+      "collector_number": "334",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 4,
+      "quantity": 1,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Commander Staples",
+      "acquisition_price": "5",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "commander",
+        "trade"
+      ]
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmr",
+      "set_name": "Commander Legends",
+      "collector_number": "334",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 4,
+      "quantity": 1,
+      "finish": "etched",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Commander Staples",
+      "acquisition_price": "5",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "commander",
+        "trade"
+      ]
+    },
+    "metadata": {
+      "old_finish": "normal",
+      "new_finish": "etched"
+    }
+  },
+  {
+    "id": 10,
+    "inventory": "personal",
+    "item_id": 4,
+    "action": "add_card",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-add-sol-ring",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": null,
+    "after": {
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmr",
+      "set_name": "Commander Legends",
+      "collector_number": "334",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 4,
+      "quantity": 1,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Commander Staples",
+      "acquisition_price": "5",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "commander",
+        "trade"
+      ]
+    },
+    "metadata": {
+      "mode": "create"
+    }
+  },
+  {
+    "id": 9,
+    "inventory": "personal",
+    "item_id": 3,
+    "action": "set_condition",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-condition-swords",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Swords to Plowshares",
+      "set_code": "ice",
+      "set_name": "Ice Age",
+      "collector_number": "54",
+      "scryfall_id": "demo-swords",
+      "item_id": 3,
+      "quantity": 1,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "ja",
+      "location": "Commander Case",
+      "acquisition_price": "3",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": []
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Swords to Plowshares",
+      "set_code": "ice",
+      "set_name": "Ice Age",
+      "collector_number": "54",
+      "scryfall_id": "demo-swords",
+      "item_id": 3,
+      "quantity": 1,
+      "finish": "normal",
+      "condition_code": "LP",
+      "language_code": "ja",
+      "location": "Commander Case",
+      "acquisition_price": "3",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": []
+    },
+    "metadata": {
+      "merged": false,
+      "old_condition_code": "NM",
+      "new_condition_code": "LP"
+    }
+  },
+  {
+    "id": 8,
+    "inventory": "personal",
+    "item_id": 3,
+    "action": "add_card",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-add-swords",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": null,
+    "after": {
+      "inventory": "personal",
+      "card_name": "Swords to Plowshares",
+      "set_code": "ice",
+      "set_name": "Ice Age",
+      "collector_number": "54",
+      "scryfall_id": "demo-swords",
+      "item_id": 3,
+      "quantity": 1,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "ja",
+      "location": "Commander Case",
+      "acquisition_price": "3",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": []
+    },
+    "metadata": {
+      "mode": "create"
+    }
+  },
+  {
+    "id": 7,
+    "inventory": "personal",
+    "item_id": 2,
+    "action": "set_quantity",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-quantity-counterspell",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "collector_number": "67",
+      "scryfall_id": "demo-counterspell",
+      "item_id": 2,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Deck Box",
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "control",
+        "blue"
+      ]
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "collector_number": "67",
+      "scryfall_id": "demo-counterspell",
+      "item_id": 2,
+      "quantity": 3,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Deck Box",
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "control",
+        "blue"
+      ]
+    },
+    "metadata": {
+      "old_quantity": 2,
+      "new_quantity": 3
+    }
+  },
+  {
+    "id": 6,
+    "inventory": "personal",
+    "item_id": 2,
+    "action": "set_location",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-location-counterspell",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "collector_number": "67",
+      "scryfall_id": "demo-counterspell",
+      "item_id": 2,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Blue Binder",
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "control",
+        "blue"
+      ]
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "collector_number": "67",
+      "scryfall_id": "demo-counterspell",
+      "item_id": 2,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Deck Box",
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "control",
+        "blue"
+      ]
+    },
+    "metadata": {
+      "merged": false,
+      "old_location": "Blue Binder",
+      "new_location": "Deck Box"
+    }
+  },
+  {
+    "id": 5,
+    "inventory": "personal",
+    "item_id": 2,
+    "action": "set_tags",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-tags-counterspell",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "collector_number": "67",
+      "scryfall_id": "demo-counterspell",
+      "item_id": 2,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Blue Binder",
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "control"
+      ]
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "collector_number": "67",
+      "scryfall_id": "demo-counterspell",
+      "item_id": 2,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Blue Binder",
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "control",
+        "blue"
+      ]
+    },
+    "metadata": {}
+  },
+  {
+    "id": 4,
+    "inventory": "personal",
+    "item_id": 2,
+    "action": "add_card",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-add-counterspell",
+    "occurred_at": "2026-04-01 20:41:10",
+    "before": null,
+    "after": {
+      "inventory": "personal",
+      "card_name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "collector_number": "67",
+      "scryfall_id": "demo-counterspell",
+      "item_id": 2,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Blue Binder",
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "control"
+      ]
+    },
+    "metadata": {
+      "mode": "create"
+    }
   }
 ]

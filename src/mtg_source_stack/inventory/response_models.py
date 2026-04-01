@@ -72,6 +72,8 @@ class CatalogSearchRow(ResponseModel):
     rarity: str | None
     finishes: list[str]
     tcgplayer_product_id: str | None
+    image_uri_small: str | None
+    image_uri_normal: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +117,8 @@ class OwnedInventoryRow(ResponseModel):
     set_name: str
     rarity: str | None
     collector_number: str
+    image_uri_small: str | None
+    image_uri_normal: str | None
     quantity: int
     condition_code: str
     finish: str
@@ -157,6 +161,7 @@ class AddCardResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetQuantityResult(InventoryItemMutationRow):
+    operation: str
     old_quantity: int
 
 
@@ -167,16 +172,19 @@ class RemoveCardResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetTagsResult(InventoryItemMutationRow):
+    operation: str
     old_tags: list[str]
 
 
 @dataclass(frozen=True, slots=True)
 class SetFinishResult(InventoryItemMutationRow):
+    operation: str
     old_finish: str
 
 
 @dataclass(frozen=True, slots=True)
 class SetLocationResult(InventoryItemMutationRow):
+    operation: str
     old_location: str | None
     merged: bool
     merged_source_item_id: int | None = None
@@ -184,6 +192,7 @@ class SetLocationResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetConditionResult(InventoryItemMutationRow):
+    operation: str
     old_condition_code: str
     merged: bool
     merged_source_item_id: int | None = None
@@ -191,11 +200,13 @@ class SetConditionResult(InventoryItemMutationRow):
 
 @dataclass(frozen=True, slots=True)
 class SetNotesResult(InventoryItemMutationRow):
+    operation: str
     old_notes: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class SetAcquisitionResult(InventoryItemMutationRow):
+    operation: str
     old_acquisition_price: Decimal | None
     old_acquisition_currency: str | None
 

@@ -17,6 +17,13 @@ HEALTH_PREVIEW_LIMIT = 10
 MAX_OWNED_ROWS_LIMIT = 250
 DEFAULT_AUDIT_EVENT_LIMIT = 50
 MAX_AUDIT_EVENT_LIMIT = 200
+DEFAULT_FINISH = "normal"
+DEFAULT_CONDITION_CODE = "NM"
+DEFAULT_LANGUAGE_CODE = "en"
+CANONICAL_FINISHES = ("normal", "foil", "etched")
+ACCEPTED_FINISH_INPUTS = ("normal", "nonfoil", "foil", "etched")
+CANONICAL_CONDITION_CODES = ("M", "NM", "LP", "MP", "HP", "DMG")
+CANONICAL_LANGUAGE_CODES = ("en", "ja", "de", "fr", "it", "es", "pt", "ru", "ko", "zhs", "zht", "ph")
 MERGED_ACQUISITION_NOTE_MARKER = "Merged source acquisition from item "
 CSV_HEADER_ALIASES = {
     "inventory_slug": "inventory",
@@ -104,7 +111,7 @@ def slugify_inventory_name(value: str) -> str:
 def normalize_condition_code(value: str | None) -> str:
     text = text_or_none(value)
     if text is None:
-        return "NM"
+        return DEFAULT_CONDITION_CODE
 
     normalized = text.strip().lower()
     for suffix in (" etched foil", " foil", " etched"):
@@ -137,7 +144,7 @@ def normalize_condition_code(value: str | None) -> str:
 def normalize_language_code(value: str | None) -> str:
     text = text_or_none(value)
     if text is None:
-        return "en"
+        return DEFAULT_LANGUAGE_CODE
 
     normalized = text.strip().lower()
     mapping = {
@@ -224,14 +231,14 @@ def finish_from_variant(variant: str | None, finish: str | None) -> str:
 
     variant_text = text_or_none(variant)
     if variant_text is None:
-        return "normal"
+        return DEFAULT_FINISH
 
     lowered = variant_text.lower()
     if "etched" in lowered:
         return "etched"
     if "foil" in lowered:
         return "foil"
-    return "normal"
+    return DEFAULT_FINISH
 
 
 def finish_and_source_from_row(row: dict[str, str | None]) -> tuple[str, str]:
@@ -251,7 +258,7 @@ def finish_and_source_from_row(row: dict[str, str | None]) -> tuple[str, str]:
         if "foil" in lowered:
             return "foil", "condition"
 
-    return "normal", "default"
+    return DEFAULT_FINISH, "default"
 
 
 def finish_from_row(row: dict[str, str | None]) -> str:
@@ -260,7 +267,7 @@ def finish_from_row(row: dict[str, str | None]) -> str:
 
 
 def normalize_finish(value: str | None) -> str:
-    normalized = (value or "normal").strip().lower()
+    normalized = (value or DEFAULT_FINISH).strip().lower()
     mapping = {
         "normal": "normal",
         "nonfoil": "normal",
@@ -297,6 +304,25 @@ def parse_json_list(value: str | None) -> list[str]:
     if isinstance(parsed, list):
         return [str(item) for item in parsed]
     return []
+
+
+def parse_json_object(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(parsed, dict):
+        return parsed
+    return {}
+
+
+def extract_image_uri_fields(value: str | None) -> tuple[str | None, str | None]:
+    image_uris = parse_json_object(value)
+    small = text_or_none(image_uris.get("small"))
+    normal = text_or_none(image_uris.get("normal"))
+    return small, normal
 
 
 def normalize_tag(value: str | None) -> str | None:
@@ -402,6 +428,8 @@ def truncate(value: Any, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+
 def parse_finish_list(value: str | None) -> list[str]:
     finishes: list[str] = []
     text = text_or_none(value)

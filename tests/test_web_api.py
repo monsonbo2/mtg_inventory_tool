@@ -59,9 +59,19 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                     set_code,
                     set_name,
                     collector_number,
-                    finishes_json
+                    finishes_json,
+                    image_uris_json
                 )
-                VALUES (?, ?, ?, 'tst', 'Test Set', '10', '["normal","foil"]')
+                VALUES (
+                    ?,
+                    ?,
+                    ?,
+                    'tst',
+                    'Test Set',
+                    '10',
+                    '["normal","foil"]',
+                    '{"small":"https://example.test/cards/api-card-1-small.jpg","normal":"https://example.test/cards/api-card-1-normal.jpg"}'
+                )
                 """,
                 ("api-card-1", "api-oracle-1", "API Test Card"),
             )
@@ -106,6 +116,26 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 "string",
                 components[card_schema_name]["properties"]["finishes"]["items"]["type"],
             )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                components[card_schema_name]["properties"]["image_uri_small"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                components[card_schema_name]["properties"]["image_uri_normal"]["anyOf"],
+            )
+            search_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/cards/search"]["get"]["parameters"]
+            }
+            self.assertEqual(
+                ["normal", "nonfoil", "foil", "etched"],
+                search_parameters["finish"]["schema"]["anyOf"][0]["enum"],
+            )
+            self.assertIn(
+                "Recommended codes include: en, ja, de, fr",
+                search_parameters["lang"]["description"],
+            )
 
             owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
                 "content"
@@ -126,12 +156,74 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 [{"type": "string"}, {"type": "null"}],
                 owned_properties["est_value"]["anyOf"],
             )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                owned_properties["image_uri_small"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                owned_properties["image_uri_normal"]["anyOf"],
+            )
+            inventory_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["parameters"]
+            }
+            self.assertEqual(
+                ["normal", "nonfoil", "foil", "etched"],
+                inventory_parameters["finish"]["schema"]["anyOf"][0]["enum"],
+            )
+            self.assertIn(
+                "Canonical condition codes: M, NM, LP, MP, HP, DMG",
+                inventory_parameters["condition_code"]["description"],
+            )
+            self.assertIn(
+                "Canonical language codes: en, ja, de, fr",
+                inventory_parameters["language_code"]["description"],
+            )
 
             patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][
                 "content"
             ]["application/json"]["schema"]
-            self.assertIn("anyOf", patch_schema)
-            self.assertGreaterEqual(len(patch_schema["anyOf"]), 2)
+            patch_variants = patch_schema.get("anyOf") or patch_schema.get("oneOf")
+            self.assertIsNotNone(patch_variants)
+            self.assertGreaterEqual(len(patch_variants), 2)
+            patch_schema_names = {self._schema_name_from_ref(variant["$ref"]) for variant in patch_variants}
+            self.assertEqual(
+                {
+                    "SetQuantityResponse",
+                    "SetFinishResponse",
+                    "SetLocationResponse",
+                    "SetConditionResponse",
+                    "SetNotesResponse",
+                    "SetTagsResponse",
+                    "SetAcquisitionResponse",
+                },
+                patch_schema_names,
+            )
+            for schema_name, expected_operation in {
+                "SetQuantityResponse": "set_quantity",
+                "SetFinishResponse": "set_finish",
+                "SetLocationResponse": "set_location",
+                "SetConditionResponse": "set_condition",
+                "SetNotesResponse": "set_notes",
+                "SetTagsResponse": "set_tags",
+                "SetAcquisitionResponse": "set_acquisition",
+            }.items():
+                operation_property = components[schema_name]["properties"]["operation"]
+                operation_value = operation_property.get("const", operation_property.get("enum", [None])[0])
+                self.assertEqual(expected_operation, operation_value)
+                self.assertIn("operation", components[schema_name]["required"])
+
+            patch_request_schema = components["PatchInventoryItemRequest"]
+            self.assertIn("exactly one mutation family", patch_request_schema["description"])
+            self.assertIn(
+                "Only applies to location or condition changes",
+                patch_request_schema["properties"]["merge"]["description"],
+            )
+            self.assertIn(
+                "Only applies to merged location or condition changes",
+                patch_request_schema["properties"]["keep_acquisition"]["description"],
+            )
 
             audit_schema = spec["paths"]["/inventories/{inventory_slug}/audit"]["get"]["responses"]["200"][
                 "content"
@@ -181,6 +273,14 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 search = await client.get("/cards/search", params={"query": "API Test"})
                 self.assertEqual(200, search.status_code)
                 self.assertEqual("api-card-1", search.json()[0]["scryfall_id"])
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-small.jpg",
+                    search.json()[0]["image_uri_small"],
+                )
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-normal.jpg",
+                    search.json()[0]["image_uri_normal"],
+                )
 
                 added = await client.post(
                     "/inventories/personal/items",
@@ -203,6 +303,14 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(200, listed.status_code)
                 self.assertEqual(1, len(listed.json()))
                 self.assertEqual(2, listed.json()[0]["quantity"])
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-small.jpg",
+                    listed.json()[0]["image_uri_small"],
+                )
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-normal.jpg",
+                    listed.json()[0]["image_uri_normal"],
+                )
 
                 patched = await client.patch(
                     f"/inventories/personal/items/{added_payload['item_id']}",
@@ -210,6 +318,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                     json={"finish": "foil"},
                 )
                 self.assertEqual(200, patched.status_code)
+                self.assertEqual("set_finish", patched.json()["operation"])
                 self.assertEqual("foil", patched.json()["finish"])
 
                 audit = await client.get("/inventories/personal/audit")

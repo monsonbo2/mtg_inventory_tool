@@ -11,6 +11,8 @@
       "normal",
       "foil"
     ],
-    "tcgplayer_product_id": null
+    "tcgplayer_product_id": null,
+    "image_uri_small": "https://placehold.co/146x204/png?text=Lightning+Bolt",
+    "image_uri_normal": "https://placehold.co/488x680/png?text=Lightning+Bolt"
   }
 ]

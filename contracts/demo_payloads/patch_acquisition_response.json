@@ -1,0 +1,24 @@
+{
+  "operation": "set_acquisition",
+  "inventory": "personal",
+  "card_name": "Sol Ring",
+  "set_code": "cmd",
+  "set_name": "Commander",
+  "collector_number": "260",
+  "scryfall_id": "demo-sol-ring",
+  "item_id": 15,
+  "quantity": 1,
+  "finish": "foil",
+  "condition_code": "NM",
+  "language_code": "en",
+  "location": "Artifacts Binder",
+  "acquisition_price": "3.50",
+  "acquisition_currency": "USD",
+  "notes": "Demo commander staple.",
+  "tags": [
+    "commander",
+    "artifact"
+  ],
+  "old_acquisition_price": null,
+  "old_acquisition_currency": null
+}

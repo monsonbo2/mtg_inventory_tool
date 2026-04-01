@@ -1,6 +1,6 @@
 # Frontend Sandbox
 
-This directory is reserved for the demo UI implementation.
+This directory now contains the local-demo frontend scaffold.
 
 ## Boundary
 
@@ -11,10 +11,19 @@ Use these as the integration contract:
 
 - `../docs/api_v1_contract.md`
 - `../docs/frontend_handoff.md`
+- `../docs/frontend_backend_requests/`
 - `../contracts/openapi.json`
 - `../contracts/demo_payloads/`
 
-## Expected Scope
+## Stack
+
+The scaffold uses:
+
+- Vite
+- React
+- TypeScript
+
+## Current Scope
 
 The first demo UI is expected to cover:
 
@@ -26,12 +35,15 @@ The first demo UI is expected to cover:
 
 ## Environment
 
-Copy or adapt `.env.example` into whatever env-file convention your chosen
-frontend toolchain expects.
+Copy `.env.example` to `.env.local` for local work.
 
-The backend default for local work is:
+The current scaffold expects:
 
-- API base URL: `http://127.0.0.1:8000`
+- browser-facing API base URL: `/api`
+- proxy target: `http://127.0.0.1:8000`
+
+The proxy rewrites `/api/*` to `/*` because the current backend serves
+root-mounted routes such as `/inventories` and `/cards/search`.
 
 ## Quick Start
 
@@ -44,7 +56,7 @@ The backend default for local work is:
 2. Install the backend web dependencies if you have not already:
 
    ```bash
-   pip install -e ..[web]
+   pip install -e '..[web]'
    ```
 
 3. Start the API:
@@ -53,26 +65,56 @@ The backend default for local work is:
    mtg-web-api --db ../var/db/frontend_demo.db
    ```
 
-4. Prefer a frontend dev proxy instead of direct browser cross-origin calls.
+4. Install the frontend dependencies:
 
-   The current demo API does not enable CORS by default. If your dev server
-   runs on another origin such as `localhost:3000` or `localhost:5173`, proxy
-   API requests back to `http://127.0.0.1:8000`.
-
-   Example Vite proxy:
-
-   ```ts
-   export default {
-     server: {
-       proxy: {
-         "/api": "http://127.0.0.1:8000",
-       },
-     },
-   }
+   ```bash
+   npm install
    ```
+
+5. Start the frontend:
+
+   ```bash
+   npm run dev
+   ```
+
+6. Open the local Vite URL, usually `http://127.0.0.1:5173`.
+
+## Current UI Shape
+
+The scaffold currently includes:
+
+- an inventory selector
+- a card search panel
+- an add-card form driven by search results
+- an owned-row editor with single-field save actions
+- a recent audit feed
+
+Quick edits intentionally follow the backend's current one-field-per-`PATCH`
+contract, and PATCH responses include an explicit `operation` discriminator the
+client can branch on. If the backend later expands that contract, the client
+can be updated from one place in `src/api.ts` and the row editor flow.
+
+## Proxy Notes
+
+Prefer the Vite dev proxy instead of direct browser cross-origin calls.
+
+The current demo API does not enable CORS by default. If your dev server runs
+on another origin such as `localhost:5173`, proxy API requests back to
+`http://127.0.0.1:8000`.
+
+Current Vite proxy:
+
+```ts
+"/api": {
+  target: "http://127.0.0.1:8000",
+  rewrite: (path) => path.replace(/^\/api/, ""),
+}
+```
 
 ## Working Agreement
 
 - Keep all UI code under `frontend/`.
 - Request backend contract changes instead of editing backend files directly.
+  Use `../docs/frontend_backend_requests/README.md` and the GitHub issue
+  template at `../.github/ISSUE_TEMPLATE/frontend-backend-request.yml`.
 - Do not duplicate backend business rules unless they are purely presentational.

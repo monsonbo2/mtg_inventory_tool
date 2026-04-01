@@ -9,10 +9,13 @@ from pathlib import Path
 
 from tests.common import RepoSmokeTestCase
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
+from mtg_source_stack.api.request_models import AddInventoryItemRequest, PatchInventoryItemRequest
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
     CatalogSearchRowResponse,
     OwnedInventoryRowResponse,
+    SetAcquisitionResponse,
+    SetFinishResponse,
 )
 from mtg_source_stack.db.schema import initialize_database, require_current_schema
 from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReadyError, ValidationError
@@ -107,6 +110,8 @@ class ApiContractTest(RepoSmokeTestCase):
                 "set_name": "Limited Edition Alpha",
                 "rarity": "common",
                 "collector_number": "161",
+                "image_uri_small": "https://example.test/cards/card-1-small.jpg",
+                "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
                 "quantity": 4,
                 "condition_code": "NM",
                 "finish": "normal",
@@ -132,6 +137,8 @@ class ApiContractTest(RepoSmokeTestCase):
             "rarity": "common",
             "finishes": ["normal", "foil"],
             "tcgplayer_product_id": None,
+            "image_uri_small": "https://example.test/cards/card-1-small.jpg",
+            "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
         }
         error_payload = api_error_payload(ValidationError("Bad request."))
 
@@ -141,9 +148,77 @@ class ApiContractTest(RepoSmokeTestCase):
 
         self.assertEqual("2.50", owned.acquisition_price)
         self.assertEqual("3.00", owned.unit_price)
+        self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
         self.assertIsNone(owned.price_date)
         self.assertEqual(["normal", "foil"], catalog.finishes)
+        self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertEqual("validation_error", error.error.code)
+
+    def test_api_models_publish_defaults_and_canonical_value_guidance(self) -> None:
+        add_schema = AddInventoryItemRequest.model_json_schema()
+        add_properties = add_schema["properties"]
+
+        self.assertEqual("normal", add_properties["finish"]["default"])
+        self.assertEqual(["normal", "nonfoil", "foil", "etched"], add_properties["finish"]["enum"])
+        self.assertIn("Canonical response values: normal, foil, etched", add_properties["finish"]["description"])
+        self.assertEqual("NM", add_properties["condition_code"]["default"])
+        self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", add_properties["condition_code"]["description"])
+        self.assertEqual("en", add_properties["language_code"]["default"])
+        self.assertIn("Canonical language codes: en, ja, de, fr", add_properties["language_code"]["description"])
+
+        owned_schema = OwnedInventoryRowResponse.model_json_schema()
+        owned_properties = owned_schema["properties"]
+        self.assertEqual(["normal", "foil", "etched"], owned_properties["finish"]["enum"])
+        self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
+        self.assertIn("Canonical language codes: en, ja, de, fr", owned_properties["language_code"]["description"])
+
+        catalog_schema = CatalogSearchRowResponse.model_json_schema()
+        catalog_properties = catalog_schema["properties"]
+        self.assertEqual(
+            ["normal", "foil", "etched"],
+            catalog_properties["finishes"]["items"]["enum"],
+        )
+        self.assertIn("Catalog language code", catalog_properties["lang"]["description"])
+
+    def test_patch_contract_publishes_single_operation_rule_and_discriminator(self) -> None:
+        patch_schema = PatchInventoryItemRequest.model_json_schema()
+        patch_properties = patch_schema["properties"]
+
+        self.assertIn("exactly one mutation family", patch_schema["description"])
+        self.assertIn("Only applies to location or condition changes", patch_properties["merge"]["description"])
+        self.assertIn(
+            "Only applies to merged location or condition changes",
+            patch_properties["keep_acquisition"]["description"],
+        )
+
+        finish_response_schema = SetFinishResponse.model_json_schema()
+        finish_operation = finish_response_schema["properties"]["operation"]
+        self.assertEqual("set_finish", finish_operation.get("const", finish_operation.get("enum", [None])[0]))
+
+        acquisition_response = SetAcquisitionResponse.model_validate(
+            {
+                "operation": "set_acquisition",
+                "inventory": "personal",
+                "card_name": "Sol Ring",
+                "set_code": "cmd",
+                "set_name": "Commander",
+                "collector_number": "260",
+                "scryfall_id": "demo-sol-ring",
+                "item_id": 15,
+                "quantity": 1,
+                "finish": "foil",
+                "condition_code": "NM",
+                "language_code": "en",
+                "location": "Artifacts Binder",
+                "acquisition_price": "3.50",
+                "acquisition_currency": "USD",
+                "notes": None,
+                "tags": ["commander", "artifact"],
+                "old_acquisition_price": None,
+                "old_acquisition_currency": None,
+            }
+        )
+        self.assertEqual("set_acquisition", acquisition_response.operation)
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

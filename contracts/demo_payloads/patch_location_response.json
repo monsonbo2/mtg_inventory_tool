@@ -1,4 +1,5 @@
 {
+  "operation": "set_location",
   "inventory": "personal",
   "card_name": "Counterspell",
   "set_code": "7ed",

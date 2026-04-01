@@ -23,8 +23,12 @@ If you're planning backend or API work, the live runtime contract starts with
 `docs/backend_v1_contract.md`, `docs/ingestion_flow.md`, and
 `docs/api_v1_contract.md`.
 
-If you're planning frontend work, start with `docs/frontend_handoff.md` and
+If you're planning frontend work, start with `docs/frontend_handoff.md`,
+`frontend/README.md`, `docs/frontend_backend_requests/`, and
 `contracts/openapi.json`.
+Use the GitHub issue template at
+`.github/ISSUE_TEMPLATE/frontend-backend-request.yml` for new frontend backend
+requests.
 
 ## Current Runtime Shape
 
@@ -60,7 +64,7 @@ pip install -e .
 If you want to run the demo web API shell too, install the optional web extra:
 
 ```bash
-pip install -e .[web]
+pip install -e '.[web]'
 ```
 
 The current `mtg-web-api` shell is a local-demo layer over the existing
@@ -213,6 +217,8 @@ python -m unittest discover -s tests -q
 - `docs/frontend_handoff.md`
   Frontend/backend ownership boundary, demo scope, and integration rules for a
   UI specialist.
+- `docs/frontend_backend_requests/`
+  Request folder and tracking process for frontend-requested backend/API work.
 - `contracts/`
   OpenAPI snapshot and example JSON payloads for frontend integration.
 - `scripts/`

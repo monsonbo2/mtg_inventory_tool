@@ -9,7 +9,13 @@ from typing import Any
 from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import NotFoundError, ValidationError
-from .normalize import DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, normalized_catalog_finish_list, validate_limit_value
+from .normalize import (
+    DEFAULT_SEARCH_LIMIT,
+    MAX_SEARCH_LIMIT,
+    extract_image_uri_fields,
+    normalized_catalog_finish_list,
+    validate_limit_value,
+)
 from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
 from .response_models import CatalogSearchRow
 
@@ -81,7 +87,8 @@ def search_cards(
                 mtg_cards.lang,
                 mtg_cards.rarity,
                 mtg_cards.finishes_json,
-                mtg_cards.tcgplayer_product_id
+                mtg_cards.tcgplayer_product_id,
+                mtg_cards.image_uris_json
             FROM mtg_cards
             {search_join}
             WHERE {' AND '.join(where_parts)}
@@ -105,6 +112,7 @@ def search_cards(
     results: list[CatalogSearchRow] = []
     for row in rows:
         item = dict(row)
+        image_uri_small, image_uri_normal = extract_image_uri_fields(item.pop("image_uris_json", None))
         results.append(
             CatalogSearchRow(
                 scryfall_id=item["scryfall_id"],
@@ -116,6 +124,8 @@ def search_cards(
                 rarity=item["rarity"],
                 finishes=normalized_catalog_finish_list(item.pop("finishes_json", None)),
                 tcgplayer_product_id=item["tcgplayer_product_id"],
+                image_uri_small=image_uri_small,
+                image_uri_normal=image_uri_normal,
             )
         )
     return results

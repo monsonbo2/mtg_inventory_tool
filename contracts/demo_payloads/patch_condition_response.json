@@ -1,0 +1,22 @@
+{
+  "operation": "set_condition",
+  "inventory": "personal",
+  "card_name": "Swords to Plowshares",
+  "set_code": "ice",
+  "set_name": "Ice Age",
+  "collector_number": "54",
+  "scryfall_id": "demo-swords",
+  "item_id": 14,
+  "quantity": 1,
+  "finish": "normal",
+  "condition_code": "LP",
+  "language_code": "ja",
+  "location": "White Binder",
+  "acquisition_price": null,
+  "acquisition_currency": null,
+  "notes": null,
+  "tags": [],
+  "old_condition_code": "NM",
+  "merged": false,
+  "merged_source_item_id": null
+}

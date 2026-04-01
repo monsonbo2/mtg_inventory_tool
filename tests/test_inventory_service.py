@@ -15,6 +15,7 @@ from mtg_source_stack.inventory.response_models import (
     AddCardResult,
     MergeRowsResult,
     RemoveCardResult,
+    SetAcquisitionResult,
     SetConditionResult,
     SetFinishResult,
     SetLocationResult,
@@ -34,6 +35,7 @@ from mtg_source_stack.inventory.service import (
     reconcile_prices,
     remove_card,
     search_cards,
+    set_acquisition,
     set_condition,
     set_finish,
     set_location,
@@ -63,7 +65,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         set_name,
                         collector_number,
                         lang,
-                        finishes_json
+                        finishes_json,
+                        image_uris_json
                     )
                     VALUES (
                         'search-card-1',
@@ -73,7 +76,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         'Test Set',
                         '9',
                         'en',
-                        '["nonfoil","foil"]'
+                        '["nonfoil","foil"]',
+                        '{"small":"https://example.test/cards/search-card-1-small.jpg","normal":"https://example.test/cards/search-card-1-normal.jpg"}'
                     )
                     """
                 )
@@ -86,7 +90,13 @@ class InventoryServiceTest(RepoSmokeTestCase):
             # display it later.
             self.assertEqual(1, len(rows))
             self.assertEqual(["normal", "foil"], rows[0].finishes)
+            self.assertEqual("https://example.test/cards/search-card-1-small.jpg", rows[0].image_uri_small)
+            self.assertEqual("https://example.test/cards/search-card-1-normal.jpg", rows[0].image_uri_normal)
             self.assertEqual(["normal", "foil"], serialize_response(rows)[0]["finishes"])
+            self.assertEqual(
+                "https://example.test/cards/search-card-1-small.jpg",
+                serialize_response(rows)[0]["image_uri_small"],
+            )
 
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -185,9 +195,11 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 quantity=3,
             )
             self.assertIsInstance(quantity_result, SetQuantityResult)
+            self.assertEqual("set_quantity", quantity_result.operation)
             self.assertEqual(4, quantity_result.old_quantity)
             self.assertEqual(3, quantity_result.quantity)
             self.assertEqual(4, serialize_response(quantity_result)["old_quantity"])
+            self.assertEqual("set_quantity", serialize_response(quantity_result)["operation"])
 
             finish_result = set_finish(
                 db_path,
@@ -196,6 +208,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 finish="foil",
             )
             self.assertIsInstance(finish_result, SetFinishResult)
+            self.assertEqual("set_finish", finish_result.operation)
             self.assertEqual("normal", finish_result.old_finish)
             self.assertEqual("foil", finish_result.finish)
 
@@ -206,6 +219,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 location="Deck Box",
             )
             self.assertIsInstance(location_result, SetLocationResult)
+            self.assertEqual("set_location", location_result.operation)
             self.assertEqual("Binder A", location_result.old_location)
             self.assertEqual("Deck Box", location_result.location)
             self.assertFalse(location_result.merged)
@@ -217,9 +231,21 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 condition_code="LP",
             )
             self.assertIsInstance(condition_result, SetConditionResult)
+            self.assertEqual("set_condition", condition_result.operation)
             self.assertEqual("NM", condition_result.old_condition_code)
             self.assertEqual("LP", condition_result.condition_code)
             self.assertFalse(condition_result.merged)
+
+            notes_result = set_notes(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                notes="Feature row for the demo",
+            )
+            self.assertIsInstance(notes_result, SetNotesResult)
+            self.assertEqual("set_notes", notes_result.operation)
+            self.assertIsNone(notes_result.old_notes)
+            self.assertEqual("Feature row for the demo", notes_result.notes)
 
             tags_result = set_tags(
                 db_path,
@@ -228,9 +254,23 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 tags="trade, staple",
             )
             self.assertIsInstance(tags_result, SetTagsResult)
+            self.assertEqual("set_tags", tags_result.operation)
             self.assertEqual(["deck"], tags_result.old_tags)
             self.assertEqual(["trade", "staple"], tags_result.tags)
             self.assertEqual(["trade", "staple"], serialize_response(tags_result)["tags"])
+
+            acquisition_result = set_acquisition(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                acquisition_price=Decimal("2.50"),
+                acquisition_currency="USD",
+            )
+            self.assertIsInstance(acquisition_result, SetAcquisitionResult)
+            self.assertEqual("set_acquisition", acquisition_result.operation)
+            self.assertIsNone(acquisition_result.old_acquisition_price)
+            self.assertIsNone(acquisition_result.old_acquisition_currency)
+            self.assertEqual("2.5", serialize_response(acquisition_result)["acquisition_price"])
 
             split_result = split_row(
                 db_path,
@@ -569,9 +609,18 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         name,
                         set_code,
                         set_name,
-                        collector_number
+                        collector_number,
+                        image_uris_json
                     )
-                    VALUES ('price-card-1', 'oracle-1', 'Price Test Card', 'tst', 'Test Set', '1')
+                    VALUES (
+                        'price-card-1',
+                        'oracle-1',
+                        'Price Test Card',
+                        'tst',
+                        'Test Set',
+                        '1',
+                        '{"small":"https://example.test/cards/price-card-1-small.jpg","normal":"https://example.test/cards/price-card-1-normal.jpg"}'
+                    )
                     """
                 )
                 inventory_id = connection.execute(
@@ -648,6 +697,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual(1, len(owned_rows))
             self.assertEqual("USD", owned_rows[0].currency)
+            self.assertEqual("https://example.test/cards/price-card-1-small.jpg", owned_rows[0].image_uri_small)
+            self.assertEqual("https://example.test/cards/price-card-1-normal.jpg", owned_rows[0].image_uri_normal)
             self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
             self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)
             self.assertIsNone(owned_rows[0].acquisition_price)
