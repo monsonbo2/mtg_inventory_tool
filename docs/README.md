@@ -14,7 +14,8 @@ If you're building against the current demo web API shell, read
 `api_v1_contract.md` after those.
 
 If you're preparing a separate frontend sandbox, also read
-`frontend_handoff.md`, `frontend_backend_requests/`, and
+`frontend_handoff.md`, `frontend_build_checklist.md`,
+`frontend_backend_requests/`, and
 `../contracts/README.md`.
 
 ## Current Runtime Docs
@@ -32,6 +33,8 @@ If you're preparing a separate frontend sandbox, also read
 - `frontend_handoff.md`
   Frontend/backend ownership boundary and the expected demo-UI integration
   rules.
+- `frontend_build_checklist.md`
+  Working implementation checklist for the next frontend demo-build pass.
 - `frontend_backend_requests/`
   Folder of frontend-requested backend/API changes, with
   `frontend_backend_requests/README.md` as the process guide and template.
