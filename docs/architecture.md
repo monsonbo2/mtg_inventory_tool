@@ -114,8 +114,6 @@ not a production-ready shared service.
 
 The next API-hardening steps are:
 
-- typed HTTP response models
-- an actor/auth seam
 - operational logging
 - execution-boundary and concurrency hardening for shared deployment
 

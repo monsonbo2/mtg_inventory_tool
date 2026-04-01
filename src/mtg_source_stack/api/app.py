@@ -118,11 +118,13 @@ def create_app(settings: ApiSettings | None = None):
 def main(argv: list[str] | None = None) -> None:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    defaults = settings_from_env()
     settings = ApiSettings(
         db_path=Path(args.db),
         auto_migrate=not args.no_auto_migrate,
         host=args.host,
         port=int(args.port),
+        trust_actor_headers=defaults.trust_actor_headers,
     )
 
     try:

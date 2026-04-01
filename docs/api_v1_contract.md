@@ -58,9 +58,15 @@ The message for unexpected exceptions should stay generic at the HTTP boundary:
 - Transport/runtime concurrency guarantees are not yet part of this contract.
 - The current API shell is intended for trusted local/demo usage and currently
   wraps synchronous inventory and SQLite-backed services.
-- Before broader deployment, the API still needs typed HTTP response models, an
-  actor/auth seam, operational logging, and a dedicated execution-boundary /
-  concurrency-hardening pass.
+- By default, the API ignores caller-supplied `X-Actor-Id` values and records
+  mutating audit entries with `actor_type="api"` and `actor_id="local-demo"`.
+- For explicit local/dev testing, setting
+  `MTG_API_TRUST_ACTOR_HEADERS=true` allows non-empty `X-Actor-Id` header
+  values to flow into audit attribution.
+- `X-Request-Id` remains a supported tracing header and is echoed back in API
+  responses.
+- Before broader deployment, the API still needs operational logging and a
+  dedicated execution-boundary / concurrency-hardening pass.
 
 ## Notes For Web V1
 

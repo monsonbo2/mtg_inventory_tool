@@ -64,6 +64,11 @@ The current `mtg-web-api` shell is a local-demo layer over the existing
 inventory services. It is useful for local UI and contract work, but it is not
 yet positioned as a shared or production-ready deployment target.
 
+By default, the API ignores caller-supplied `X-Actor-Id` headers and records
+mutating audit entries as coming from `local-demo`. For explicit local/dev
+testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust header-supplied actor
+IDs instead. `X-Request-Id` remains accepted for request tracing.
+
 Initialize a local database:
 
 ```bash
@@ -235,6 +240,9 @@ python -m unittest discover -s tests -q
   shared service.
 - The demo API currently exposes a verbose `/health` payload, including `db_path`
   details, and that response may tighten later for broader deployment targets.
+- The demo API ignores caller-supplied `X-Actor-Id` values by default and
+  stamps writes as `local-demo` unless trusted-header mode is explicitly
+  enabled.
 - Ordinary read commands do not do automatic live Scryfall fallback.
 - The runtime model is the MVP schema, not the normalized future schema.
 - Price imports currently keep USD retail and buylist snapshots only so
@@ -246,7 +254,5 @@ python -m unittest discover -s tests -q
 Before treating the API shell as more than a local/demo surface, the next
 planned hardening steps are:
 
-- typed HTTP response models
-- an actor/auth seam
 - operational logging
 - execution-boundary and concurrency hardening for shared deployment

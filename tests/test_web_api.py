@@ -29,8 +29,16 @@ if FASTAPI_TESTING_AVAILABLE:
 )
 class WebApiTest(unittest.IsolatedAsyncioTestCase):
     @asynccontextmanager
-    async def _client(self, db_path: Path):
-        app = create_app(ApiSettings(db_path=db_path, auto_migrate=True, host="127.0.0.1", port=8000))
+    async def _client(self, db_path: Path, *, trust_actor_headers: bool = False):
+        app = create_app(
+            ApiSettings(
+                db_path=db_path,
+                auto_migrate=True,
+                host="127.0.0.1",
+                port=8000,
+                trust_actor_headers=trust_actor_headers,
+            )
+        )
         lifespan = app.router.lifespan_context(app)
         await lifespan.__aenter__()
         try:
@@ -65,7 +73,14 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
     def test_demo_api_openapi_exposes_typed_response_schemas(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
-            app = create_app(ApiSettings(db_path=db_path, auto_migrate=True, host="127.0.0.1", port=8000))
+            app = create_app(
+                ApiSettings(
+                    db_path=db_path,
+                    auto_migrate=True,
+                    host="127.0.0.1",
+                    port=8000,
+                )
+            )
             spec = app.openapi()
             components = spec["components"]["schemas"]
 
@@ -174,8 +189,39 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(200, audit.status_code)
                 self.assertEqual("set_finish", audit.json()[0]["action"])
                 self.assertEqual("api", audit.json()[0]["actor_type"])
-                self.assertEqual("web-user", audit.json()[0]["actor_id"])
+                self.assertEqual("local-demo", audit.json()[0]["actor_id"])
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
+
+    async def test_demo_api_can_optionally_trust_actor_headers_in_dev_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            async with self._client(db_path, trust_actor_headers=True) as client:
+                self._seed_card(db_path)
+
+                created_inventory = await client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = await client.post(
+                    "/inventories/personal/items",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-dev-mode"},
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                audit = await client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("add_card", audit.json()[0]["action"])
+                self.assertEqual("api", audit.json()[0]["actor_type"])
+                self.assertEqual("web-user", audit.json()[0]["actor_id"])
+                self.assertEqual("req-dev-mode", audit.json()[0]["request_id"])
 
     async def test_demo_api_returns_contract_error_envelopes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
