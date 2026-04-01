@@ -41,13 +41,19 @@ The backend default for local work is:
    python3 ../scripts/bootstrap_frontend_demo.py --db ../var/db/frontend_demo.db --force
    ```
 
-2. Start the API:
+2. Install the backend web dependencies if you have not already:
+
+   ```bash
+   pip install -e ..[web]
+   ```
+
+3. Start the API:
 
    ```bash
    mtg-web-api --db ../var/db/frontend_demo.db
    ```
 
-3. Prefer a frontend dev proxy instead of direct browser cross-origin calls.
+4. Prefer a frontend dev proxy instead of direct browser cross-origin calls.
 
    The current demo API does not enable CORS by default. If your dev server
    runs on another origin such as `localhost:3000` or `localhost:5173`, proxy
