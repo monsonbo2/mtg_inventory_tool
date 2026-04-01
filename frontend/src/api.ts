@@ -101,7 +101,15 @@ export async function listInventories() {
 }
 
 export async function searchCards(params: SearchCardsParams) {
-  return request<CatalogSearchRow[]>("/cards/search", {}, params);
+  return request<CatalogSearchRow[]>("/cards/search", {}, {
+    query: params.query,
+    set_code: params.set_code,
+    rarity: params.rarity,
+    finish: params.finish,
+    lang: params.lang,
+    exact: params.exact,
+    limit: params.limit,
+  });
 }
 
 export async function listInventoryItems(inventorySlug: string) {

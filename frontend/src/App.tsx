@@ -89,6 +89,8 @@ export default function App() {
       return;
     }
 
+    const inventorySlug: string = selectedInventory;
+
     let cancelled = false;
 
     async function loadInventoryView() {
@@ -97,8 +99,8 @@ export default function App() {
 
       try {
         const [nextItems, nextAuditEvents] = await Promise.all([
-          listInventoryItems(selectedInventory),
-          listInventoryAudit(selectedInventory),
+          listInventoryItems(inventorySlug),
+          listInventoryAudit(inventorySlug),
         ]);
         if (cancelled) {
           return;
@@ -113,7 +115,7 @@ export default function App() {
         setViewError(
           toUserMessage(
             error,
-            `Could not load collection data for '${selectedInventory}'.`,
+            `Could not load collection data for '${inventorySlug}'.`,
           ),
         );
         setViewStatus("error");
