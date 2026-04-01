@@ -1,4 +1,9 @@
-"""FastAPI application factory for the demo web backend."""
+"""FastAPI application factory for the local-demo web backend.
+
+This shell currently wraps the existing synchronous inventory service layer and
+SQLite-backed runtime. It is suitable for local/demo HTTP work, but it should
+not yet be described as a concurrency-hardened shared deployment surface.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +25,9 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 def build_arg_parser() -> argparse.ArgumentParser:
     defaults = settings_from_env()
-    parser = argparse.ArgumentParser(description="Run the MTG Inventory Tool demo web API.")
+    parser = argparse.ArgumentParser(
+        description="Run the MTG Inventory Tool local-demo web API."
+    )
     parser.add_argument("--db", default=str(defaults.db_path), help="SQLite database path.")
     parser.add_argument("--host", default=defaults.host, help="Host interface to bind.")
     parser.add_argument("--port", default=defaults.port, type=int, help="TCP port to listen on.")

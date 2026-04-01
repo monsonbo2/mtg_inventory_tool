@@ -7,12 +7,18 @@ preserve for the first API-backed version of the project.
 
 - Service responses are serialized through
   `mtg_source_stack.inventory.response_models.serialize_response`.
+- The FastAPI layer publishes explicit HTTP response models in OpenAPI rather
+  than relying on inferred `Any` responses.
 - Money values are emitted as decimal strings, not JSON numbers.
   Example: `"2.50"`, not `2.5`.
 - Absent optional values are emitted as `null`.
 - Lists stay lists, including fields like catalog `finishes` and inventory
   `tags`.
 - Dates remain ISO-8601 strings.
+- `PATCH /inventories/{inventory_slug}/items/{item_id}` returns
+  operation-specific result shapes rather than one generic mutation envelope.
+- Audit event `before`, `after`, and `metadata` fields remain intentionally
+  loose JSON objects in web-v1.
 
 ## Error Envelope
 
@@ -45,6 +51,16 @@ The message for unexpected exceptions should stay generic at the HTTP boundary:
   }
 }
 ```
+
+## Execution Model
+
+- The JSON and error contract is the stable part of web-v1.
+- Transport/runtime concurrency guarantees are not yet part of this contract.
+- The current API shell is intended for trusted local/demo usage and currently
+  wraps synchronous inventory and SQLite-backed services.
+- Before broader deployment, the API still needs typed HTTP response models, an
+  actor/auth seam, operational logging, and a dedicated execution-boundary /
+  concurrency-hardening pass.
 
 ## Notes For Web V1
 

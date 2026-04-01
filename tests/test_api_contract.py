@@ -9,6 +9,11 @@ from pathlib import Path
 
 from tests.common import RepoSmokeTestCase
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
+from mtg_source_stack.api.response_models import (
+    ApiErrorResponse,
+    CatalogSearchRowResponse,
+    OwnedInventoryRowResponse,
+)
 from mtg_source_stack.db.schema import initialize_database, require_current_schema
 from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReadyError, ValidationError
 from mtg_source_stack.inventory.response_models import serialize_response
@@ -91,6 +96,54 @@ class ApiContractTest(RepoSmokeTestCase):
             },
             api_error_payload(exc),
         )
+
+    def test_api_response_models_match_serialized_http_shapes(self) -> None:
+        owned_payload = serialize_response(
+            {
+                "item_id": 1,
+                "scryfall_id": "card-1",
+                "name": "Lightning Bolt",
+                "set_code": "lea",
+                "set_name": "Limited Edition Alpha",
+                "rarity": "common",
+                "collector_number": "161",
+                "quantity": 4,
+                "condition_code": "NM",
+                "finish": "normal",
+                "language_code": "en",
+                "location": None,
+                "tags": ["burn", "trade"],
+                "acquisition_price": Decimal("2.50"),
+                "acquisition_currency": "USD",
+                "currency": None,
+                "unit_price": Decimal("3.00"),
+                "est_value": Decimal("12.00"),
+                "price_date": None,
+                "notes": None,
+            }
+        )
+        catalog_payload = {
+            "scryfall_id": "card-1",
+            "name": "Lightning Bolt",
+            "set_code": "lea",
+            "set_name": "Limited Edition Alpha",
+            "collector_number": "161",
+            "lang": "en",
+            "rarity": "common",
+            "finishes": ["normal", "foil"],
+            "tcgplayer_product_id": None,
+        }
+        error_payload = api_error_payload(ValidationError("Bad request."))
+
+        owned = OwnedInventoryRowResponse.model_validate(owned_payload)
+        catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
+        error = ApiErrorResponse.model_validate(error_payload)
+
+        self.assertEqual("2.50", owned.acquisition_price)
+        self.assertEqual("3.00", owned.unit_price)
+        self.assertIsNone(owned.price_date)
+        self.assertEqual(["normal", "foil"], catalog.finishes)
+        self.assertEqual("validation_error", error.error.code)
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

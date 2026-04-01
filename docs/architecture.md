@@ -18,8 +18,10 @@ The installable package lives under `src/mtg_source_stack/`.
 Top-level runtime areas:
 
 - `api/`
-  Demo FastAPI shell, request lifecycle, and HTTP route wiring for the current
-  backend contract.
+  Demo/local-first FastAPI shell, request lifecycle, and HTTP route wiring for
+  the current backend contract. It currently wraps synchronous inventory and
+  SQLite-backed services, so it is suitable for local/demo use but is not yet a
+  concurrency-hardened shared deployment surface.
 - `cli/`
   Thin command-line entrypoints and argument parsing.
 - `db/`
@@ -98,6 +100,24 @@ intended as broad public compatibility layers.
 
 The older `inventory/reports.py` and `inventory/queries.py` facades have been
 retired.
+
+## Current API Posture
+
+The `api/` package should currently be understood as a local-demo HTTP layer,
+not a production-ready shared service.
+
+- The route surface is stable enough for local/demo UI work.
+- The API currently wraps synchronous inventory services and SQLite access.
+- The JSON and error contract is documented in `api_v1_contract.md`, but
+  concurrency guarantees are not yet part of that contract.
+- A dedicated API-hardening pass is still required before broader deployment.
+
+The next API-hardening steps are:
+
+- typed HTTP response models
+- an actor/auth seam
+- operational logging
+- execution-boundary and concurrency hardening for shared deployment
 
 ## Legacy / Compatibility Areas
 

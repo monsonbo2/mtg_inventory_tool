@@ -1,4 +1,4 @@
-"""Pydantic request models for the demo web API."""
+"""Pydantic request models for the local-demo web API."""
 
 from __future__ import annotations
 

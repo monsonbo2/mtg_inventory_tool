@@ -28,7 +28,8 @@ If you're planning backend or API work, the live runtime contract starts with
 - The active runtime package lives in `src/mtg_source_stack/`.
 - The current entrypoints are `mtg-mvp-importer`, `mtg-personal-inventory`, and
   the optional demo web shell `mtg-web-api`.
-- The demo FastAPI layer lives in `src/mtg_source_stack/api/`.
+- The demo FastAPI layer lives in `src/mtg_source_stack/api/` and is currently
+  intended for local/demo use rather than shared deployment.
 - The runtime starts from `src/mtg_source_stack/mtg_mvp_schema.sql` and then
   applies the tracked migrations in `src/mtg_source_stack/db/migrations/`.
 - `docs/schema_full.sql` is a future normalized design, not the live runtime
@@ -38,6 +39,9 @@ If you're planning backend or API work, the live runtime contract starts with
 - `sync-bulk` can fetch fresh upstream bulk files, but normal read paths do not
   call live APIs.
 - Pricing imports currently keep USD retail and buylist snapshots only.
+- The current API shell intentionally keeps request handling simple and
+  SQLite-backed; shared-deployment concurrency hardening is deferred to a later
+  pass.
 
 ## Quick Start
 
@@ -55,6 +59,10 @@ If you want to run the demo web API shell too, install the optional web extra:
 ```bash
 pip install -e .[web]
 ```
+
+The current `mtg-web-api` shell is a local-demo layer over the existing
+inventory services. It is useful for local UI and contract work, but it is not
+yet positioned as a shared or production-ready deployment target.
 
 Initialize a local database:
 
@@ -223,8 +231,22 @@ python -m unittest discover -s tests -q
 ## Current Limitations
 
 - The repo is intentionally local-first and CLI-driven.
+- `mtg-web-api` is currently a local/demo HTTP shell, not a concurrency-hardened
+  shared service.
+- The demo API currently exposes a verbose `/health` payload, including `db_path`
+  details, and that response may tighten later for broader deployment targets.
 - Ordinary read commands do not do automatic live Scryfall fallback.
 - The runtime model is the MVP schema, not the normalized future schema.
-- Price imports currently keep USD market snapshots only so valuation and health
-  checks stay unambiguous.
+- Price imports currently keep USD retail and buylist snapshots only so
+  valuation and health checks stay unambiguous.
 - `reconcile-prices` is suggestion-only; it does not mutate inventory finishes.
+
+## Next API Hardening Steps
+
+Before treating the API shell as more than a local/demo surface, the next
+planned hardening steps are:
+
+- typed HTTP response models
+- an actor/auth seam
+- operational logging
+- execution-boundary and concurrency hardening for shared deployment

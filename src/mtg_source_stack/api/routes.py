@@ -34,10 +34,40 @@ from ..inventory.service import (
     set_tags,
 )
 from .dependencies import ApiSettings, RequestContext, get_request_context, get_settings
-from .models import AddInventoryItemRequest, InventoryCreateRequest, PatchInventoryItemRequest
+from .request_models import AddInventoryItemRequest, InventoryCreateRequest, PatchInventoryItemRequest
+from .response_models import (
+    AddInventoryItemResponse,
+    ApiErrorResponse,
+    CatalogSearchRowResponse,
+    HealthResponse,
+    InventoryAuditEventResponse,
+    InventoryCreateResponse,
+    InventoryItemPatchResponse,
+    InventoryListRowResponse,
+    OwnedInventoryRowResponse,
+    RemoveInventoryItemResponse,
+)
 
 
 router = APIRouter()
+
+ERROR_RESPONSE_DESCRIPTIONS = {
+    400: "Validation error",
+    404: "Not found",
+    409: "Conflict",
+    500: "Internal server error",
+    503: "Schema not ready",
+}
+
+
+def _error_responses(*status_codes: int) -> dict[int, dict[str, Any]]:
+    return {
+        status_code: {
+            "model": ApiErrorResponse,
+            "description": ERROR_RESPONSE_DESCRIPTIONS[status_code],
+        }
+        for status_code in status_codes
+    }
 
 
 def _serialize(payload: Any) -> Any:
@@ -89,7 +119,7 @@ def _patch_operation(payload: PatchInventoryItemRequest) -> str:
     return operation
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse, responses=_error_responses(500))
 async def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
     return {
         "status": "ok",
@@ -98,12 +128,21 @@ async def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dic
     }
 
 
-@router.get("/inventories")
+@router.get(
+    "/inventories",
+    response_model=list[InventoryListRowResponse],
+    responses=_error_responses(503, 500),
+)
 async def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings)]) -> Any:
     return _serialize(list_inventories(settings.db_path))
 
 
-@router.post("/inventories", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/inventories",
+    status_code=status.HTTP_201_CREATED,
+    response_model=InventoryCreateResponse,
+    responses=_error_responses(400, 409, 503, 500),
+)
 async def inventories_create(
     payload: InventoryCreateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
@@ -118,7 +157,11 @@ async def inventories_create(
     )
 
 
-@router.get("/cards/search")
+@router.get(
+    "/cards/search",
+    response_model=list[CatalogSearchRowResponse],
+    responses=_error_responses(400, 503, 500),
+)
 async def cards_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     query: str,
@@ -143,7 +186,11 @@ async def cards_search(
     )
 
 
-@router.get("/inventories/{inventory_slug}/items")
+@router.get(
+    "/inventories/{inventory_slug}/items",
+    response_model=list[OwnedInventoryRowResponse],
+    responses=_error_responses(400, 404, 503, 500),
+)
 async def inventory_items_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
@@ -176,7 +223,12 @@ async def inventory_items_list(
     )
 
 
-@router.post("/inventories/{inventory_slug}/items", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/inventories/{inventory_slug}/items",
+    status_code=status.HTTP_201_CREATED,
+    response_model=AddInventoryItemResponse,
+    responses=_error_responses(400, 404, 409, 503, 500),
+)
 async def inventory_items_add(
     inventory_slug: str,
     payload: AddInventoryItemRequest,
@@ -210,7 +262,11 @@ async def inventory_items_add(
     )
 
 
-@router.patch("/inventories/{inventory_slug}/items/{item_id}")
+@router.patch(
+    "/inventories/{inventory_slug}/items/{item_id}",
+    response_model=InventoryItemPatchResponse,
+    responses=_error_responses(400, 404, 409, 503, 500),
+)
 async def inventory_items_patch(
     inventory_slug: str,
     item_id: int,
@@ -272,7 +328,11 @@ async def inventory_items_patch(
     return _serialize(result)
 
 
-@router.delete("/inventories/{inventory_slug}/items/{item_id}")
+@router.delete(
+    "/inventories/{inventory_slug}/items/{item_id}",
+    response_model=RemoveInventoryItemResponse,
+    responses=_error_responses(404, 503, 500),
+)
 async def inventory_items_delete(
     inventory_slug: str,
     item_id: int,
@@ -291,7 +351,11 @@ async def inventory_items_delete(
     )
 
 
-@router.get("/inventories/{inventory_slug}/audit")
+@router.get(
+    "/inventories/{inventory_slug}/audit",
+    response_model=list[InventoryAuditEventResponse],
+    responses=_error_responses(400, 404, 503, 500),
+)
 async def inventory_audit_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],

@@ -59,6 +59,66 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             )
             connection.commit()
 
+    def _schema_name_from_ref(self, ref: str) -> str:
+        return ref.rsplit("/", 1)[-1]
+
+    def test_demo_api_openapi_exposes_typed_response_schemas(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            app = create_app(ApiSettings(db_path=db_path, auto_migrate=True, host="127.0.0.1", port=8000))
+            spec = app.openapi()
+            components = spec["components"]["schemas"]
+
+            cards_schema = spec["paths"]["/cards/search"]["get"]["responses"]["200"]["content"]["application/json"][
+                "schema"
+            ]
+            self.assertEqual("array", cards_schema["type"])
+            card_schema_name = self._schema_name_from_ref(cards_schema["items"]["$ref"])
+            self.assertEqual("CatalogSearchRowResponse", card_schema_name)
+            self.assertEqual("array", components[card_schema_name]["properties"]["finishes"]["type"])
+            self.assertEqual(
+                "string",
+                components[card_schema_name]["properties"]["finishes"]["items"]["type"],
+            )
+
+            owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertEqual("array", owned_schema["type"])
+            owned_schema_name = self._schema_name_from_ref(owned_schema["items"]["$ref"])
+            owned_properties = components[owned_schema_name]["properties"]
+            self.assertEqual("OwnedInventoryRowResponse", owned_schema_name)
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                owned_properties["acquisition_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                owned_properties["unit_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                owned_properties["est_value"]["anyOf"],
+            )
+
+            patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertIn("anyOf", patch_schema)
+            self.assertGreaterEqual(len(patch_schema["anyOf"]), 2)
+
+            audit_schema = spec["paths"]["/inventories/{inventory_slug}/audit"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertEqual("array", audit_schema["type"])
+            audit_schema_name = self._schema_name_from_ref(audit_schema["items"]["$ref"])
+            self.assertEqual("InventoryAuditEventResponse", audit_schema_name)
+
+            error_schema = spec["paths"]["/cards/search"]["get"]["responses"]["400"]["content"]["application/json"][
+                "schema"
+            ]
+            self.assertEqual("ApiErrorResponse", self._schema_name_from_ref(error_schema["$ref"]))
+
     async def test_demo_api_exposes_inventory_item_and_audit_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
