@@ -12,6 +12,7 @@ from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.inventory.service import (
     add_card,
     create_inventory,
+    list_inventory_audit_events,
     merge_rows,
     set_acquisition,
     set_condition,
@@ -390,3 +391,64 @@ class InventoryAuditTest(RepoSmokeTestCase):
             )
             self.assertEqual("user", merge_target_audit["actor_type"])
             self.assertEqual("audit-user", merge_target_audit["actor_id"])
+
+    def test_list_inventory_audit_events_returns_typed_decoded_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._seed_card(db_path, finishes_json='["normal"]')
+            self._create_personal_inventory(db_path)
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="audit-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes="Audit list demo",
+                tags="audit",
+                actor_type="user",
+                actor_id="audit-reader",
+                request_id="req-add",
+            )
+            set_finish(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                finish="foil",
+                actor_type="user",
+                actor_id="audit-reader",
+                request_id="req-finish",
+            )
+
+            # The API route will rely on this helper, so verify it returns typed
+            # decoded payloads with item filtering and newest-first ordering.
+            events = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual(2, len(events))
+            self.assertEqual("set_finish", events[0].action)
+            self.assertEqual("add_card", events[1].action)
+            self.assertEqual("audit-reader", events[0].actor_id)
+            self.assertEqual("req-finish", events[0].request_id)
+            self.assertEqual("normal", events[0].before["finish"])
+            self.assertEqual("foil", events[0].after["finish"])
+            self.assertEqual({"old_finish": "normal", "new_finish": "foil"}, events[0].metadata)
+
+            item_events = list_inventory_audit_events(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                limit=1,
+            )
+            self.assertEqual(1, len(item_events))
+            self.assertEqual("set_finish", item_events[0].action)

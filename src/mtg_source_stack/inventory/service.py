@@ -1,5 +1,6 @@
 """Public inventory domain facade used by the CLI and future app layer."""
 
+from .audit import list_inventory_audit_events
 from .analysis import (
     build_duplicate_groups_from_owned_rows,
     export_inventory_csv,

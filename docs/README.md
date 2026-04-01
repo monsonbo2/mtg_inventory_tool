@@ -23,6 +23,9 @@ If you're building the future web layer, read `api_v1_contract.md` after those.
   tables.
 - `api_v1_contract.md`
   JSON serialization and error mapping rules for the future API layer.
+- `../src/mtg_source_stack/api/`
+  Demo FastAPI shell that applies the API contract to the current service
+  facade.
 - `schema_mvp.sql`
   Docs-side copy of the base MVP schema for convenient browsing.
 - `../src/mtg_source_stack/mtg_mvp_schema.sql`

@@ -92,6 +92,21 @@ class InventoryCreateResult(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class InventoryAuditEvent(ResponseModel):
+    id: int
+    inventory: str
+    item_id: int | None
+    action: str
+    actor_type: str
+    actor_id: str | None
+    request_id: str | None
+    occurred_at: str
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class OwnedInventoryRow(ResponseModel):
     item_id: int
     scryfall_id: str

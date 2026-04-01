@@ -6,9 +6,16 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+]
+
 [project.scripts]
 mtg-mvp-importer = "mtg_source_stack.mvp_importer:main"
 mtg-personal-inventory = "mtg_source_stack.personal_inventory_cli:main"
+mtg-web-api = "mtg_source_stack.api.app:main"
 
 [build-system]
 requires = ["setuptools>=68"]

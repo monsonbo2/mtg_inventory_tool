@@ -17,6 +17,9 @@ The installable package lives under `src/mtg_source_stack/`.
 
 Top-level runtime areas:
 
+- `api/`
+  Demo FastAPI shell, request lifecycle, and HTTP route wiring for the current
+  backend contract.
 - `cli/`
   Thin command-line entrypoints and argument parsing.
 - `db/`
@@ -84,6 +87,7 @@ Internal query/report helper modules:
 The current intended public runtime surface is:
 
 - CLI entrypoints in `cli/`
+- API shell in `api/`
 - importer wrapper module `mvp_importer.py`
 - inventory wrapper module `personal_inventory_cli.py`
 - inventory domain facade `inventory/service.py`

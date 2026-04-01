@@ -26,8 +26,9 @@ If you're planning backend or API work, the live runtime contract starts with
 ## Current Runtime Shape
 
 - The active runtime package lives in `src/mtg_source_stack/`.
-- The main console entrypoints are `mtg-mvp-importer` and
-  `mtg-personal-inventory`.
+- The current entrypoints are `mtg-mvp-importer`, `mtg-personal-inventory`, and
+  the optional demo web shell `mtg-web-api`.
+- The demo FastAPI layer lives in `src/mtg_source_stack/api/`.
 - The runtime starts from `src/mtg_source_stack/mtg_mvp_schema.sql` and then
   applies the tracked migrations in `src/mtg_source_stack/db/migrations/`.
 - `docs/schema_full.sql` is a future normalized design, not the live runtime
@@ -47,6 +48,12 @@ virtualenv first:
 python3.12 -m venv .venv
 . .venv/bin/activate
 pip install -e .
+```
+
+If you want to run the demo web API shell too, install the optional web extra:
+
+```bash
+pip install -e .[web]
 ```
 
 Initialize a local database:
@@ -174,8 +181,8 @@ python -m unittest discover -s tests -q
 ## Repo Map
 
 - `src/mtg_source_stack/`
-  Active runtime package: CLI entrypoints, DB layer, importer, and inventory
-  domain code.
+  Active runtime package: API shell, CLI entrypoints, DB layer, importer, and
+  inventory domain code.
 - `docs/README.md`
   Entry point for the documentation set and recommended reading order.
 - `docs/architecture.md`
