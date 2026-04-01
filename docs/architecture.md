@@ -36,7 +36,8 @@ Supporting top-level modules:
 - `errors.py`
   Shared domain error vocabulary used by app-facing services.
 - `api_contract.py`
-  Framework-agnostic JSON/error mapping helpers for the future web layer.
+  Framework-agnostic JSON/error mapping helpers used by the current demo API
+  shell and broader HTTP contract work.
 - `pricing.py`
   Small shared pricing constants.
 - `mvp_importer.py`

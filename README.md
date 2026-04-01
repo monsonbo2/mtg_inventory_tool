@@ -205,7 +205,8 @@ python -m unittest discover -s tests -q
 - `docs/ingestion_flow.md`
   How Scryfall and MTGJSON bulk data become local runtime tables.
 - `docs/api_v1_contract.md`
-  JSON serialization and API error-shaping rules for the future web layer.
+  JSON serialization, API error-shaping, and demo-shell runtime rules for the
+  current web API layer.
 - `docs/source_map.md`
   Upstream source strategy and future integration notes.
 - `examples/sample_inventory_import.csv`

@@ -10,7 +10,8 @@ If you're new to the repo, the best reading order is:
 3. `ingestion_flow.md`
 4. `../notebooks/00_repo_architecture_walkthrough.ipynb`
 
-If you're building the future web layer, read `api_v1_contract.md` after those.
+If you're building against the current demo web API shell, read
+`api_v1_contract.md` after those.
 
 ## Current Runtime Docs
 
@@ -22,7 +23,8 @@ If you're building the future web layer, read `api_v1_contract.md` after those.
   How the importer turns Scryfall and MTGJSON bulk files into local runtime
   tables.
 - `api_v1_contract.md`
-  JSON serialization and error mapping rules for the future API layer.
+  JSON serialization, error mapping, and operational contract notes for the
+  current demo API shell.
 - `../src/mtg_source_stack/api/`
   Demo FastAPI shell that applies the API contract to the current service
   facade.
