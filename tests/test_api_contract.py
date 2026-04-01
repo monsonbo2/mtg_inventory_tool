@@ -107,6 +107,8 @@ class ApiContractTest(RepoSmokeTestCase):
                 "set_name": "Limited Edition Alpha",
                 "rarity": "common",
                 "collector_number": "161",
+                "image_uri_small": "https://example.test/cards/card-1-small.jpg",
+                "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
                 "quantity": 4,
                 "condition_code": "NM",
                 "finish": "normal",
@@ -132,6 +134,8 @@ class ApiContractTest(RepoSmokeTestCase):
             "rarity": "common",
             "finishes": ["normal", "foil"],
             "tcgplayer_product_id": None,
+            "image_uri_small": "https://example.test/cards/card-1-small.jpg",
+            "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
         }
         error_payload = api_error_payload(ValidationError("Bad request."))
 
@@ -141,8 +145,10 @@ class ApiContractTest(RepoSmokeTestCase):
 
         self.assertEqual("2.50", owned.acquisition_price)
         self.assertEqual("3.00", owned.unit_price)
+        self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
         self.assertIsNone(owned.price_date)
         self.assertEqual(["normal", "foil"], catalog.finishes)
+        self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertEqual("validation_error", error.error.code)
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:

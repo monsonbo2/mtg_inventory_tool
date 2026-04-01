@@ -312,6 +312,28 @@
             "title": "Finishes",
             "type": "array"
           },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
           "lang": {
             "title": "Lang",
             "type": "string"
@@ -364,7 +386,9 @@
           "lang",
           "rarity",
           "finishes",
-          "tcgplayer_product_id"
+          "tcgplayer_product_id",
+          "image_uri_small",
+          "image_uri_normal"
         ],
         "title": "CatalogSearchRowResponse",
         "type": "object"
@@ -661,6 +685,28 @@
             "title": "Finish",
             "type": "string"
           },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
           "item_id": {
             "title": "Item Id",
             "type": "integer"
@@ -760,6 +806,8 @@
           "set_name",
           "rarity",
           "collector_number",
+          "image_uri_small",
+          "image_uri_normal",
           "quantity",
           "condition_code",
           "finish",

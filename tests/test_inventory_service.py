@@ -63,7 +63,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         set_name,
                         collector_number,
                         lang,
-                        finishes_json
+                        finishes_json,
+                        image_uris_json
                     )
                     VALUES (
                         'search-card-1',
@@ -73,7 +74,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         'Test Set',
                         '9',
                         'en',
-                        '["nonfoil","foil"]'
+                        '["nonfoil","foil"]',
+                        '{"small":"https://example.test/cards/search-card-1-small.jpg","normal":"https://example.test/cards/search-card-1-normal.jpg"}'
                     )
                     """
                 )
@@ -86,7 +88,13 @@ class InventoryServiceTest(RepoSmokeTestCase):
             # display it later.
             self.assertEqual(1, len(rows))
             self.assertEqual(["normal", "foil"], rows[0].finishes)
+            self.assertEqual("https://example.test/cards/search-card-1-small.jpg", rows[0].image_uri_small)
+            self.assertEqual("https://example.test/cards/search-card-1-normal.jpg", rows[0].image_uri_normal)
             self.assertEqual(["normal", "foil"], serialize_response(rows)[0]["finishes"])
+            self.assertEqual(
+                "https://example.test/cards/search-card-1-small.jpg",
+                serialize_response(rows)[0]["image_uri_small"],
+            )
 
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -569,9 +577,18 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         name,
                         set_code,
                         set_name,
-                        collector_number
+                        collector_number,
+                        image_uris_json
                     )
-                    VALUES ('price-card-1', 'oracle-1', 'Price Test Card', 'tst', 'Test Set', '1')
+                    VALUES (
+                        'price-card-1',
+                        'oracle-1',
+                        'Price Test Card',
+                        'tst',
+                        'Test Set',
+                        '1',
+                        '{"small":"https://example.test/cards/price-card-1-small.jpg","normal":"https://example.test/cards/price-card-1-normal.jpg"}'
+                    )
                     """
                 )
                 inventory_id = connection.execute(
@@ -648,6 +665,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual(1, len(owned_rows))
             self.assertEqual("USD", owned_rows[0].currency)
+            self.assertEqual("https://example.test/cards/price-card-1-small.jpg", owned_rows[0].image_uri_small)
+            self.assertEqual("https://example.test/cards/price-card-1-normal.jpg", owned_rows[0].image_uri_normal)
             self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
             self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)
             self.assertIsNone(owned_rows[0].acquisition_price)

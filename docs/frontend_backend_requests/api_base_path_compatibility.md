@@ -1,9 +1,9 @@
 # Frontend Backend Request: API Base Path Compatibility
 
-Status: Proposed
-Owner: Unassigned
+Status: Superseded
+Owner: Steve
 GitHub issue: [#7](https://github.com/monsonbo2/mtg_inventory_tool/issues/7)
-Implementation PR: Not linked yet
+Implementation PR: Not planned
 Last updated: 2026-04-01
 
 ## Frontend Backend Request

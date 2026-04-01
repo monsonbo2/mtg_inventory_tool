@@ -299,6 +299,25 @@ def parse_json_list(value: str | None) -> list[str]:
     return []
 
 
+def parse_json_object(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(parsed, dict):
+        return parsed
+    return {}
+
+
+def extract_image_uri_fields(value: str | None) -> tuple[str | None, str | None]:
+    image_uris = parse_json_object(value)
+    small = text_or_none(image_uris.get("small"))
+    normal = text_or_none(image_uris.get("normal"))
+    return small, normal
+
+
 def normalize_tag(value: str | None) -> str | None:
     text = text_or_none(value)
     if text is None:
@@ -402,6 +421,8 @@ def truncate(value: Any, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+
 def parse_finish_list(value: str | None) -> list[str]:
     finishes: list[str] = []
     text = text_or_none(value)

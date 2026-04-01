@@ -14,6 +14,9 @@ preserve for the first API-backed version of the project.
 - Absent optional values are emitted as `null`.
 - Lists stay lists, including fields like catalog `finishes` and inventory
   `tags`.
+- Catalog search rows and owned inventory rows may include optional visual
+  fields such as `image_uri_small` and `image_uri_normal` when card image data
+  is available.
 - Dates remain ISO-8601 strings.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` returns
   operation-specific result shapes rather than one generic mutation envelope.

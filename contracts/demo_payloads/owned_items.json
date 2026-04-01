@@ -7,6 +7,8 @@
     "set_name": "Limited Edition Alpha",
     "rarity": "common",
     "collector_number": "161",
+    "image_uri_small": "https://placehold.co/146x204/png?text=Lightning+Bolt",
+    "image_uri_normal": "https://placehold.co/488x680/png?text=Lightning+Bolt",
     "quantity": 4,
     "condition_code": "NM",
     "finish": "normal",

@@ -57,9 +57,10 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                 lang,
                 rarity,
                 finishes_json,
+                image_uris_json,
                 tcgplayer_product_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'en', ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'en', ?, ?, ?, ?)
             """,
             [
                 (
@@ -71,6 +72,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "161",
                     "common",
                     '["normal","foil"]',
+                    '{"small":"https://placehold.co/146x204/png?text=Lightning+Bolt","normal":"https://placehold.co/488x680/png?text=Lightning+Bolt"}',
                     "1001",
                 ),
                 (
@@ -82,6 +84,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "67",
                     "uncommon",
                     '["normal","foil"]',
+                    '{"small":"https://placehold.co/146x204/png?text=Counterspell","normal":"https://placehold.co/488x680/png?text=Counterspell"}',
                     "1002",
                 ),
                 (
@@ -93,6 +96,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "246",
                     "common",
                     '["normal"]',
+                    '{"small":"https://placehold.co/146x204/png?text=Forest","normal":"https://placehold.co/488x680/png?text=Forest"}',
                     "1003",
                 ),
             ],

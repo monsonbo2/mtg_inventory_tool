@@ -23,6 +23,8 @@ export interface CatalogSearchRow {
   rarity: string | null;
   finishes: string[];
   tcgplayer_product_id: string | null;
+  image_uri_small: string | null;
+  image_uri_normal: string | null;
 }
 
 export interface OwnedInventoryRow {
@@ -33,6 +35,8 @@ export interface OwnedInventoryRow {
   set_name: string;
   rarity: string | null;
   collector_number: string;
+  image_uri_small: string | null;
+  image_uri_normal: string | null;
   quantity: number;
   condition_code: string;
   finish: string;

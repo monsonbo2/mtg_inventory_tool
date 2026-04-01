@@ -72,6 +72,8 @@ class CatalogSearchRow(ResponseModel):
     rarity: str | None
     finishes: list[str]
     tcgplayer_product_id: str | None
+    image_uri_small: str | None
+    image_uri_normal: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +117,8 @@ class OwnedInventoryRow(ResponseModel):
     set_name: str
     rarity: str | None
     collector_number: str
+    image_uri_small: str | None
+    image_uri_normal: str | None
     quantity: int
     condition_code: str
     finish: str

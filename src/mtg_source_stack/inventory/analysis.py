@@ -12,6 +12,7 @@ from ..db.schema import require_current_schema
 from ..errors import ValidationError
 from .money import coerce_decimal
 from .normalize import (
+    extract_image_uri_fields,
     MAX_OWNED_ROWS_LIMIT,
     format_finishes,
     load_tags_json,
@@ -83,6 +84,7 @@ def build_price_gap_row(row: dict[str, Any]) -> PriceGapRow:
 def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
     unit_price = coerce_decimal(row.get("unit_price"))
     quantity = int(row["quantity"])
+    image_uri_small, image_uri_normal = extract_image_uri_fields(row.get("image_uris_json"))
     return OwnedInventoryRow(
         item_id=int(row["item_id"]),
         scryfall_id=row["scryfall_id"],
@@ -91,6 +93,8 @@ def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
         set_name=row["set_name"],
         rarity=text_or_none(row.get("rarity")),
         collector_number=row["collector_number"],
+        image_uri_small=image_uri_small,
+        image_uri_normal=image_uri_normal,
         quantity=quantity,
         condition_code=row["condition_code"],
         finish=row["finish"],
@@ -392,6 +396,7 @@ def list_owned_filtered(
                 c.set_name,
                 c.rarity,
                 c.collector_number,
+                c.image_uris_json,
                 ii.quantity,
                 ii.condition_code,
                 ii.finish,
