@@ -11,7 +11,7 @@ import argparse
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ..api_contract import api_error_payload, api_error_status
@@ -25,6 +25,47 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 
 logger = logging.getLogger(__name__)
+
+
+def _spec_contains_ref(node: Any, target_ref: str) -> bool:
+    if isinstance(node, dict):
+        if node.get("$ref") == target_ref:
+            return True
+        return any(_spec_contains_ref(value, target_ref) for value in node.values())
+    if isinstance(node, list):
+        return any(_spec_contains_ref(value, target_ref) for value in node)
+    return False
+
+
+def _strip_generated_validation_responses(openapi_schema: dict[str, Any]) -> None:
+    for path_item in openapi_schema.get("paths", {}).values():
+        if not isinstance(path_item, dict):
+            continue
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses")
+            if not isinstance(responses, dict):
+                continue
+            response_422 = responses.get("422")
+            if not isinstance(response_422, dict):
+                continue
+            schema_ref = (
+                response_422.get("content", {})
+                .get("application/json", {})
+                .get("schema", {})
+                .get("$ref")
+            )
+            if response_422.get("description") == "Validation Error" or schema_ref == "#/components/schemas/HTTPValidationError":
+                responses.pop("422", None)
+
+    schemas = openapi_schema.get("components", {}).get("schemas", {})
+    if not isinstance(schemas, dict):
+        return
+    for schema_name in ("HTTPValidationError", "ValidationError"):
+        ref = f"#/components/schemas/{schema_name}"
+        if schema_name in schemas and not _spec_contains_ref(openapi_schema.get("paths", {}), ref):
+            schemas.pop(schema_name, None)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -64,6 +105,7 @@ async def lifespan(app):
 def create_app(settings: ApiSettings | None = None):
     from fastapi import FastAPI, Request
     from fastapi.exceptions import RequestValidationError
+    from fastapi.openapi.utils import get_openapi
     from fastapi.responses import JSONResponse
 
     from .routes import router
@@ -130,6 +172,21 @@ def create_app(settings: ApiSettings | None = None):
         )
 
     app.include_router(router)
+
+    def custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        openapi_schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        _strip_generated_validation_responses(openapi_schema)
+        app.openapi_schema = openapi_schema
+        return openapi_schema
+
+    app.openapi = custom_openapi
     return app
 
 

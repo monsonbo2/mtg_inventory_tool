@@ -84,6 +84,17 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             spec = app.openapi()
             components = spec["components"]["schemas"]
 
+            for path, method in [
+                ("/cards/search", "get"),
+                ("/inventories", "post"),
+                ("/inventories/{inventory_slug}/items", "get"),
+                ("/inventories/{inventory_slug}/items", "post"),
+                ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
+                ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
+                ("/inventories/{inventory_slug}/audit", "get"),
+            ]:
+                self.assertNotIn("422", spec["paths"][path][method]["responses"])
+
             cards_schema = spec["paths"]["/cards/search"]["get"]["responses"]["200"]["content"]["application/json"][
                 "schema"
             ]
@@ -144,6 +155,8 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 "boolean",
                 components[health_schema_name]["properties"]["trusted_actor_headers"]["type"],
             )
+            self.assertNotIn("HTTPValidationError", components)
+            self.assertNotIn("ValidationError", components)
 
     async def test_demo_api_exposes_inventory_item_and_audit_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
