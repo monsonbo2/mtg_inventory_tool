@@ -238,11 +238,13 @@ python -m unittest discover -s tests -q
 - The repo is intentionally local-first and CLI-driven.
 - `mtg-web-api` is currently a local/demo HTTP shell, not a concurrency-hardened
   shared service.
-- The demo API currently exposes a verbose `/health` payload, including `db_path`
-  details, and that response may tighten later for broader deployment targets.
+- The demo API exposes a minimal `/health` payload focused on status and mode,
+  not filesystem path details.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
+- The API now logs startup mode and unexpected failures, but it is still a
+  local/demo shell rather than a shared-service deployment target.
 - Ordinary read commands do not do automatic live Scryfall fallback.
 - The runtime model is the MVP schema, not the normalized future schema.
 - Price imports currently keep USD retail and buylist snapshots only so
@@ -254,5 +256,4 @@ python -m unittest discover -s tests -q
 Before treating the API shell as more than a local/demo surface, the next
 planned hardening steps are:
 
-- operational logging
 - execution-boundary and concurrency hardening for shared deployment

@@ -22,8 +22,8 @@ class ApiErrorResponse(ApiBaseModel):
 
 class HealthResponse(ApiBaseModel):
     status: str
-    db_path: str
     auto_migrate: bool
+    trusted_actor_headers: bool
 
 
 class InventoryListRowResponse(ApiBaseModel):

@@ -19,6 +19,9 @@ preserve for the first API-backed version of the project.
   operation-specific result shapes rather than one generic mutation envelope.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
+- `GET /health` returns mode-oriented fields such as `status`,
+  `auto_migrate`, and `trusted_actor_headers`; it does not expose the SQLite
+  filesystem path in web-v1.
 
 ## Error Envelope
 
@@ -52,6 +55,9 @@ The message for unexpected exceptions should stay generic at the HTTP boundary:
 }
 ```
 
+Unhandled exceptions should still be logged server-side with request context
+before the generic 500 envelope is returned.
+
 ## Execution Model
 
 - The JSON and error contract is the stable part of web-v1.
@@ -65,8 +71,9 @@ The message for unexpected exceptions should stay generic at the HTTP boundary:
   values to flow into audit attribution.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
-- Before broader deployment, the API still needs operational logging and a
-  dedicated execution-boundary / concurrency-hardening pass.
+- The demo API logs startup mode and unexpected failures, but it still needs a
+  dedicated execution-boundary / concurrency-hardening pass before broader
+  deployment.
 
 ## Notes For Web V1
 

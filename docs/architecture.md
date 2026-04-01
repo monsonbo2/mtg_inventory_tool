@@ -114,7 +114,6 @@ not a production-ready shared service.
 
 The next API-hardening steps are:
 
-- operational logging
 - execution-boundary and concurrency hardening for shared deployment
 
 ## Legacy / Compatibility Areas

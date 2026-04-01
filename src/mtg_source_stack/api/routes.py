@@ -123,8 +123,8 @@ def _patch_operation(payload: PatchInventoryItemRequest) -> str:
 async def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
     return {
         "status": "ok",
-        "db_path": str(settings.db_path),
         "auto_migrate": settings.auto_migrate,
+        "trusted_actor_headers": settings.trust_actor_headers,
     }
 
 

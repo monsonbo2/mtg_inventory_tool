@@ -134,6 +134,17 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual("ApiErrorResponse", self._schema_name_from_ref(error_schema["$ref"]))
 
+            health_schema = spec["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"][
+                "schema"
+            ]
+            health_schema_name = self._schema_name_from_ref(health_schema["$ref"])
+            self.assertEqual("HealthResponse", health_schema_name)
+            self.assertNotIn("db_path", components[health_schema_name]["properties"])
+            self.assertEqual(
+                "boolean",
+                components[health_schema_name]["properties"]["trusted_actor_headers"]["type"],
+            )
+
     async def test_demo_api_exposes_inventory_item_and_audit_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -143,6 +154,9 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 health = await client.get("/health")
                 self.assertEqual(200, health.status_code)
                 self.assertEqual("ok", health.json()["status"])
+                self.assertTrue(health.json()["auto_migrate"])
+                self.assertFalse(health.json()["trusted_actor_headers"])
+                self.assertNotIn("db_path", health.json())
 
                 created_inventory = await client.post(
                     "/inventories",
@@ -222,6 +236,10 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual("api", audit.json()[0]["actor_type"])
                 self.assertEqual("web-user", audit.json()[0]["actor_id"])
                 self.assertEqual("req-dev-mode", audit.json()[0]["request_id"])
+
+                health = await client.get("/health")
+                self.assertEqual(200, health.status_code)
+                self.assertTrue(health.json()["trusted_actor_headers"])
 
     async def test_demo_api_returns_contract_error_envelopes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

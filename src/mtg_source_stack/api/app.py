@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -21,6 +22,9 @@ from .dependencies import ApiSettings, settings_from_env
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from fastapi import FastAPI
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -42,9 +46,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
 @asynccontextmanager
 async def lifespan(app):
     settings: ApiSettings = app.state.settings
+    logger.info(
+        "Starting local-demo API with db_path=%s auto_migrate=%s trust_actor_headers=%s",
+        settings.db_path,
+        settings.auto_migrate,
+        settings.trust_actor_headers,
+    )
     if settings.auto_migrate:
+        logger.info("Applying pending migrations at startup")
         migrate_database(settings.db_path)
     else:
+        logger.info("Requiring current schema at startup without migration")
         require_current_schema(settings.db_path)
     yield
 
@@ -105,6 +117,12 @@ def create_app(settings: ApiSettings | None = None):
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
         headers = {"X-Request-Id": request_id} if request_id else None
+        logger.exception(
+            "Unhandled API error request_id=%s method=%s path=%s",
+            request_id,
+            request.method,
+            request.url.path,
+        )
         return JSONResponse(
             status_code=api_error_status(exc),
             content=api_error_payload(exc),
