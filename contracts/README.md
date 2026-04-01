@@ -10,6 +10,8 @@ API shell.
 - `demo_payloads/`
   Small example JSON payloads that mirror the expected request/response shapes
   a demo frontend should handle.
+- `../scripts/bootstrap_frontend_demo.py`
+  One-command local dataset bootstrap for frontend demos.
 
 ## Refreshing The OpenAPI Snapshot
 

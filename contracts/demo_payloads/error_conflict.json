@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "conflict",
+    "message": "Changing location would collide with an existing inventory row. Re-run with --merge to combine the rows, or resolve the duplicate row first."
+  }
+}

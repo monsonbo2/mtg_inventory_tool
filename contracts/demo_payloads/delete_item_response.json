@@ -1,0 +1,20 @@
+{
+  "inventory": "personal",
+  "card_name": "Forest",
+  "set_code": "m10",
+  "set_name": "Magic 2010",
+  "collector_number": "246",
+  "scryfall_id": "demo-forest",
+  "item_id": 14,
+  "quantity": 10,
+  "finish": "normal",
+  "condition_code": "NM",
+  "language_code": "en",
+  "location": "Land Box",
+  "acquisition_price": null,
+  "acquisition_currency": null,
+  "notes": null,
+  "tags": [
+    "bulk"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "scryfall_id": "demo-bolt",
+  "quantity": 2,
+  "condition_code": "NM",
+  "finish": "normal",
+  "language_code": "en",
+  "location": "Red Binder",
+  "acquisition_price": "2.25",
+  "acquisition_currency": "USD",
+  "notes": null,
+  "tags": [
+    "burn",
+    "trade"
+  ]
+}

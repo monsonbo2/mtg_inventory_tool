@@ -215,6 +215,9 @@ python -m unittest discover -s tests -q
   UI specialist.
 - `contracts/`
   OpenAPI snapshot and example JSON payloads for frontend integration.
+- `scripts/`
+  Small backend-owned utility scripts, including the frontend demo-data
+  bootstrap path.
 - `docs/source_map.md`
   Upstream source strategy and future integration notes.
 - `examples/sample_inventory_import.csv`

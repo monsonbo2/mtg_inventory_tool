@@ -49,17 +49,72 @@ The current intended demo surface is:
 - quick edit for quantity, finish, location, notes, and tags
 - recent audit activity
 
+## Feature Map
+
+Use this as the first-pass UI-to-endpoint map:
+
+- Inventory selector -> `GET /inventories`
+- Card search -> `GET /cards/search`
+- Add card -> `POST /inventories/{inventory_slug}/items`
+- Owned rows table -> `GET /inventories/{inventory_slug}/items`
+- Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
+  Request body: `{"quantity": ...}`
+- Quick edit finish -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
+  Request body: `{"finish": ...}`
+- Quick edit location -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
+  Request body: `{"location": ...}`
+- Quick edit notes -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
+  Request body: `{"notes": ...}`
+- Quick edit tags -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
+  Request body: `{"tags": [...]}` or `{"clear_tags": true}`
+- Remove card -> `DELETE /inventories/{inventory_slug}/items/{item_id}`
+- Recent activity -> `GET /inventories/{inventory_slug}/audit`
+
 ## Local Dev Flow
 
-1. Start the backend locally:
+1. Bootstrap a local demo database:
+
+   ```bash
+   python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
+   ```
+
+2. Start the backend locally:
 
    ```bash
    pip install -e .[web]
-   mtg-web-api --db var/db/mtg_mvp.db
+   mtg-web-api --db var/db/frontend_demo.db
    ```
 
-2. Point the frontend at the local API base URL.
-3. Build against the published HTTP contract rather than backend internals.
+3. Point the frontend at the local API base URL.
+4. Build against the published HTTP contract rather than backend internals.
+
+## Frontend Quick Start
+
+- Backend command:
+  `mtg-web-api --db var/db/frontend_demo.db`
+- Expected API base URL:
+  `http://127.0.0.1:8000`
+- Preferred browser-dev setup:
+  use a frontend dev proxy and talk to the backend through `/api` or your
+  framework's equivalent proxy base path
+- Why proxy first:
+  the demo API does not enable CORS by default, so a browser dev server on a
+  different origin will otherwise hit cross-origin restrictions
+- If you do not want a proxy:
+  coordinate a backend change first instead of silently working around the
+  current API boundary
+
+Example Vite proxy:
+
+```ts
+export default {
+  server: {
+    proxy: {
+      "/api": "http://127.0.0.1:8000",
+    },
+  },
+}
+```
 
 ## Working Rules
 
@@ -78,3 +133,5 @@ The current intended demo surface is:
 - The backend still uses synchronous SQLite-backed services under the HTTP
   layer.
 - Authentication and permissions are not implemented yet.
+- Browser-based local dev is expected to use a frontend proxy unless backend
+  CORS behavior is changed deliberately.

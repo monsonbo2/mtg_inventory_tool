@@ -10,6 +10,7 @@ depend on Python implementation details under `src/mtg_source_stack/`.
 Use these as the integration contract:
 
 - `../docs/api_v1_contract.md`
+- `../docs/frontend_handoff.md`
 - `../contracts/openapi.json`
 - `../contracts/demo_payloads/`
 
@@ -31,6 +32,38 @@ frontend toolchain expects.
 The backend default for local work is:
 
 - API base URL: `http://127.0.0.1:8000`
+
+## Quick Start
+
+1. Bootstrap a demo database:
+
+   ```bash
+   python3 ../scripts/bootstrap_frontend_demo.py --db ../var/db/frontend_demo.db --force
+   ```
+
+2. Start the API:
+
+   ```bash
+   mtg-web-api --db ../var/db/frontend_demo.db
+   ```
+
+3. Prefer a frontend dev proxy instead of direct browser cross-origin calls.
+
+   The current demo API does not enable CORS by default. If your dev server
+   runs on another origin such as `localhost:3000` or `localhost:5173`, proxy
+   API requests back to `http://127.0.0.1:8000`.
+
+   Example Vite proxy:
+
+   ```ts
+   export default {
+     server: {
+       proxy: {
+         "/api": "http://127.0.0.1:8000",
+       },
+     },
+   }
+   ```
 
 ## Working Agreement
 
