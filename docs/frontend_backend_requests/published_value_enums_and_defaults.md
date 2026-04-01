@@ -1,6 +1,6 @@
 # Frontend Backend Request: Published Value Enums And Defaults
 
-Status: Accepted
+Status: Done
 Owner: Steve
 GitHub issue: [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8)
 Implementation PR: Not linked yet

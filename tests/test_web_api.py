@@ -124,6 +124,18 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 [{"type": "string"}, {"type": "null"}],
                 components[card_schema_name]["properties"]["image_uri_normal"]["anyOf"],
             )
+            search_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/cards/search"]["get"]["parameters"]
+            }
+            self.assertEqual(
+                ["normal", "nonfoil", "foil", "etched"],
+                search_parameters["finish"]["schema"]["anyOf"][0]["enum"],
+            )
+            self.assertIn(
+                "Recommended codes include: en, ja, de, fr",
+                search_parameters["lang"]["description"],
+            )
 
             owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
                 "content"
@@ -151,6 +163,22 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [{"type": "string"}, {"type": "null"}],
                 owned_properties["image_uri_normal"]["anyOf"],
+            )
+            inventory_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["parameters"]
+            }
+            self.assertEqual(
+                ["normal", "nonfoil", "foil", "etched"],
+                inventory_parameters["finish"]["schema"]["anyOf"][0]["enum"],
+            )
+            self.assertIn(
+                "Canonical condition codes: M, NM, LP, MP, HP, DMG",
+                inventory_parameters["condition_code"]["description"],
+            )
+            self.assertIn(
+                "Canonical language codes: en, ja, de, fr",
+                inventory_parameters["language_code"]["description"],
             )
 
             patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][

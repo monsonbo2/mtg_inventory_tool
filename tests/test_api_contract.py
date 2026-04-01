@@ -9,6 +9,7 @@ from pathlib import Path
 
 from tests.common import RepoSmokeTestCase
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
+from mtg_source_stack.api.request_models import AddInventoryItemRequest
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
     CatalogSearchRowResponse,
@@ -150,6 +151,32 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertEqual("validation_error", error.error.code)
+
+    def test_api_models_publish_defaults_and_canonical_value_guidance(self) -> None:
+        add_schema = AddInventoryItemRequest.model_json_schema()
+        add_properties = add_schema["properties"]
+
+        self.assertEqual("normal", add_properties["finish"]["default"])
+        self.assertEqual(["normal", "nonfoil", "foil", "etched"], add_properties["finish"]["enum"])
+        self.assertIn("Canonical response values: normal, foil, etched", add_properties["finish"]["description"])
+        self.assertEqual("NM", add_properties["condition_code"]["default"])
+        self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", add_properties["condition_code"]["description"])
+        self.assertEqual("en", add_properties["language_code"]["default"])
+        self.assertIn("Canonical language codes: en, ja, de, fr", add_properties["language_code"]["description"])
+
+        owned_schema = OwnedInventoryRowResponse.model_json_schema()
+        owned_properties = owned_schema["properties"]
+        self.assertEqual(["normal", "foil", "etched"], owned_properties["finish"]["enum"])
+        self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
+        self.assertIn("Canonical language codes: en, ja, de, fr", owned_properties["language_code"]["description"])
+
+        catalog_schema = CatalogSearchRowResponse.model_json_schema()
+        catalog_properties = catalog_schema["properties"]
+        self.assertEqual(
+            ["normal", "foil", "etched"],
+            catalog_properties["finishes"]["items"]["enum"],
+        )
+        self.assertIn("Catalog language code", catalog_properties["lang"]["description"])
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

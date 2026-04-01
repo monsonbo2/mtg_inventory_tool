@@ -39,11 +39,19 @@
           },
           "condition_code": {
             "default": "NM",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
             "default": "normal",
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+            "enum": [
+              "normal",
+              "nonfoil",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -56,10 +64,12 @@
                 "type": "null"
               }
             ],
+            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes.",
             "title": "Lang"
           },
           "language_code": {
             "default": "en",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
             "title": "Language Code",
             "type": "string"
           },
@@ -180,10 +190,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -196,6 +213,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -306,7 +324,13 @@
             "type": "string"
           },
           "finishes": {
+            "description": "Canonical finish values: normal, foil, etched.",
             "items": {
+              "enum": [
+                "normal",
+                "foil",
+                "etched"
+              ],
               "type": "string"
             },
             "title": "Finishes",
@@ -335,6 +359,7 @@
             "title": "Image Uri Small"
           },
           "lang": {
+            "description": "Catalog language code. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph.",
             "title": "Lang",
             "type": "string"
           },
@@ -656,6 +681,7 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
@@ -682,6 +708,12 @@
             "title": "Est Value"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -712,6 +744,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -879,17 +912,25 @@
                 "type": "null"
               }
             ],
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
             "title": "Condition Code"
           },
           "finish": {
             "anyOf": [
               {
+                "enum": [
+                  "normal",
+                  "nonfoil",
+                  "foil",
+                  "etched"
+                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
             "title": "Finish"
           },
           "keep_acquisition": {
@@ -997,10 +1038,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1013,6 +1061,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -1117,10 +1166,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1133,6 +1189,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -1261,10 +1318,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1277,6 +1341,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -1402,10 +1467,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1418,6 +1490,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -1527,10 +1600,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1543,6 +1623,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -1675,10 +1756,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1691,6 +1779,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -1807,10 +1896,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1823,6 +1919,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -1932,10 +2029,17 @@
             "type": "string"
           },
           "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
             "title": "Condition Code",
             "type": "string"
           },
           "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
             "title": "Finish",
             "type": "string"
           },
@@ -1948,6 +2052,7 @@
             "type": "integer"
           },
           "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
             "title": "Language Code",
             "type": "string"
           },
@@ -2080,22 +2185,31 @@
             }
           },
           {
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
             "in": "query",
             "name": "finish",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "normal",
+                    "nonfoil",
+                    "foil",
+                    "etched"
+                  ],
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
               "title": "Finish"
             }
           },
           {
+            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes.",
             "in": "query",
             "name": "lang",
             "required": false,
@@ -2108,6 +2222,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes.",
               "title": "Lang"
             }
           },
@@ -2510,22 +2625,31 @@
             }
           },
           {
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
             "in": "query",
             "name": "finish",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "normal",
+                    "nonfoil",
+                    "foil",
+                    "etched"
+                  ],
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
               "title": "Finish"
             }
           },
           {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
             "in": "query",
             "name": "condition_code",
             "required": false,
@@ -2538,10 +2662,12 @@
                   "type": "null"
                 }
               ],
+              "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
               "title": "Condition Code"
             }
           },
           {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
             "in": "query",
             "name": "language_code",
             "required": false,
@@ -2554,6 +2680,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
               "title": "Language Code"
             }
           },

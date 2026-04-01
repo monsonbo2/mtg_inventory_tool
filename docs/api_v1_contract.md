@@ -26,6 +26,34 @@ preserve for the first API-backed version of the project.
   `auto_migrate`, and `trusted_actor_headers`; it does not expose the SQLite
   filesystem path in web-v1.
 
+## Published Values And Defaults
+
+- `finish`
+  - canonical response values: `normal`, `foil`, `etched`
+  - default request value: `normal`
+  - accepted input alias: `nonfoil`, which is normalized to `normal`
+- `condition_code`
+  - canonical response values: `M`, `NM`, `LP`, `MP`, `HP`, `DMG`
+  - default request value: `NM`
+  - human-readable aliases such as `near mint` and `lightly played` are
+    accepted and normalized
+- `language_code`
+  - commonly published canonical codes: `en`, `ja`, `de`, `fr`, `it`, `es`,
+    `pt`, `ru`, `ko`, `zhs`, `zht`, `ph`
+  - default request value: `en`
+  - language-name aliases such as `english` and `japanese` are accepted and
+    normalized
+- `GET /cards/search` query `lang`
+  - uses the same published language-code guidance as `language_code`
+  - current search behavior still matches against the stored catalog language
+    values rather than enforcing a strict enum at the HTTP layer
+
+OpenAPI publishes these defaults and canonical values directly. For `finish`,
+the request contract is strict enough to advertise the accepted input set. For
+`condition_code` and `language_code`, the schema publishes defaults and
+canonical guidance without pretending the current runtime is stricter than it
+really is.
+
 ## Error Envelope
 
 The API layer should return errors in this shape:

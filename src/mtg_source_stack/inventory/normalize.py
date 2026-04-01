@@ -17,6 +17,13 @@ HEALTH_PREVIEW_LIMIT = 10
 MAX_OWNED_ROWS_LIMIT = 250
 DEFAULT_AUDIT_EVENT_LIMIT = 50
 MAX_AUDIT_EVENT_LIMIT = 200
+DEFAULT_FINISH = "normal"
+DEFAULT_CONDITION_CODE = "NM"
+DEFAULT_LANGUAGE_CODE = "en"
+CANONICAL_FINISHES = ("normal", "foil", "etched")
+ACCEPTED_FINISH_INPUTS = ("normal", "nonfoil", "foil", "etched")
+CANONICAL_CONDITION_CODES = ("M", "NM", "LP", "MP", "HP", "DMG")
+CANONICAL_LANGUAGE_CODES = ("en", "ja", "de", "fr", "it", "es", "pt", "ru", "ko", "zhs", "zht", "ph")
 MERGED_ACQUISITION_NOTE_MARKER = "Merged source acquisition from item "
 CSV_HEADER_ALIASES = {
     "inventory_slug": "inventory",
@@ -104,7 +111,7 @@ def slugify_inventory_name(value: str) -> str:
 def normalize_condition_code(value: str | None) -> str:
     text = text_or_none(value)
     if text is None:
-        return "NM"
+        return DEFAULT_CONDITION_CODE
 
     normalized = text.strip().lower()
     for suffix in (" etched foil", " foil", " etched"):
@@ -137,7 +144,7 @@ def normalize_condition_code(value: str | None) -> str:
 def normalize_language_code(value: str | None) -> str:
     text = text_or_none(value)
     if text is None:
-        return "en"
+        return DEFAULT_LANGUAGE_CODE
 
     normalized = text.strip().lower()
     mapping = {
@@ -224,14 +231,14 @@ def finish_from_variant(variant: str | None, finish: str | None) -> str:
 
     variant_text = text_or_none(variant)
     if variant_text is None:
-        return "normal"
+        return DEFAULT_FINISH
 
     lowered = variant_text.lower()
     if "etched" in lowered:
         return "etched"
     if "foil" in lowered:
         return "foil"
-    return "normal"
+    return DEFAULT_FINISH
 
 
 def finish_and_source_from_row(row: dict[str, str | None]) -> tuple[str, str]:
@@ -251,7 +258,7 @@ def finish_and_source_from_row(row: dict[str, str | None]) -> tuple[str, str]:
         if "foil" in lowered:
             return "foil", "condition"
 
-    return "normal", "default"
+    return DEFAULT_FINISH, "default"
 
 
 def finish_from_row(row: dict[str, str | None]) -> str:
@@ -260,7 +267,7 @@ def finish_from_row(row: dict[str, str | None]) -> str:
 
 
 def normalize_finish(value: str | None) -> str:
-    normalized = (value or "normal").strip().lower()
+    normalized = (value or DEFAULT_FINISH).strip().lower()
     mapping = {
         "normal": "normal",
         "nonfoil": "normal",

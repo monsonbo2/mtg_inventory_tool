@@ -34,7 +34,16 @@ from ..inventory.service import (
     set_tags,
 )
 from .dependencies import ApiSettings, RequestContext, get_request_context, get_settings
-from .request_models import AddInventoryItemRequest, InventoryCreateRequest, PatchInventoryItemRequest
+from .request_models import (
+    AddInventoryItemRequest,
+    CONDITION_CODE_DESCRIPTION,
+    FINISH_INPUT_DESCRIPTION,
+    FinishInput,
+    InventoryCreateRequest,
+    LANGUAGE_CODE_DESCRIPTION,
+    PatchInventoryItemRequest,
+    SEARCH_LANG_DESCRIPTION,
+)
 from .response_models import (
     AddInventoryItemResponse,
     ApiErrorResponse,
@@ -167,8 +176,8 @@ async def cards_search(
     query: str,
     set_code: str | None = None,
     rarity: str | None = None,
-    finish: str | None = None,
-    lang: str | None = None,
+    finish: Annotated[FinishInput | None, Query(description=FINISH_INPUT_DESCRIPTION)] = None,
+    lang: Annotated[str | None, Query(description=SEARCH_LANG_DESCRIPTION)] = None,
     exact: bool = False,
     limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
 ) -> Any:
@@ -199,9 +208,9 @@ async def inventory_items_list(
     query: str | None = None,
     set_code: str | None = None,
     rarity: str | None = None,
-    finish: str | None = None,
-    condition_code: str | None = None,
-    language_code: str | None = None,
+    finish: Annotated[FinishInput | None, Query(description=FINISH_INPUT_DESCRIPTION)] = None,
+    condition_code: Annotated[str | None, Query(description=CONDITION_CODE_DESCRIPTION)] = None,
+    language_code: Annotated[str | None, Query(description=LANGUAGE_CODE_DESCRIPTION)] = None,
     location: str | None = None,
     tags: Annotated[list[str] | None, Query()] = None,
 ) -> Any:

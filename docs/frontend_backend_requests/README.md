@@ -27,7 +27,7 @@ backend requests.
 | `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Done | Steve | stored image URLs exposed in search and owned-item responses |
 | `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
 | `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Triaged | Steve | narrow to discriminator/contract clarity decision |
-| `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Accepted | Steve | publish canonical values and defaults carefully |
+| `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Done | Steve | canonical values, defaults, and finish aliases published in API contract |
 
 Update this table when a request changes status or gets tied to a GitHub issue
 or implementation PR.
