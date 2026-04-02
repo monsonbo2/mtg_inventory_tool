@@ -21,6 +21,10 @@ class AuthenticationError(MtgStackError):
     default_error_code = "authentication_required"
 
 
+class AuthorizationError(MtgStackError):
+    default_error_code = "forbidden"
+
+
 class NotFoundError(MtgStackError):
     default_error_code = "not_found"
 

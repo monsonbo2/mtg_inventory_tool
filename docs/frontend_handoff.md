@@ -132,17 +132,18 @@ export default {
 - In `local_demo`, `X-Actor-Id` is ignored by default by the API shell. Audit
   writes will appear as `local-demo` unless trusted-header mode is
   deliberately enabled.
-- `shared_service` uses a verified upstream user header such as
-  `X-Authenticated-User` for mutating audit attribution; frontend code should
-  not treat `X-Actor-Id` as the shared-service auth model.
+- `shared_service` uses verified upstream identity headers such as
+  `X-Authenticated-User` and optionally `X-Authenticated-Roles`; frontend code
+  should not treat `X-Actor-Id` as the shared-service auth model.
 
 ## Known Limits
 
 - The current frontend sandbox should keep using the default `local_demo` API
   posture for local work.
 - The backend now also has a `shared_service` startup mode for pre-migrated,
-  single-host deployments, with required verified-user attribution on mutating
-  requests. Broader authorization and deployment policy are not finished yet.
+  single-host deployments. In that mode, all current non-health routes require
+  an authenticated `editor` user, and `admin` is reserved for maintenance
+  surfaces. Broader deployment policy is not finished yet.
 - The backend still uses synchronous SQLite-backed services under the HTTP
   layer, with sync HTTP route handlers aligned to that service boundary.
 - Permissions are not implemented yet.

@@ -78,9 +78,9 @@ inventory services:
   SQLite deployment with WAL and busy-timeout enabled through the shared
   connection layer
 
-`shared_service` is a better fit for modest shared use. It now requires a
-verified upstream user identity for mutating requests, while broader
-authorization and deployment policy still remain outside this pass.
+`shared_service` is a better fit for modest shared use. It now expects verified
+upstream identity for the app route surface, while broader deployment policy
+still remains outside this pass.
 
 In `local_demo`, the API ignores caller-supplied `X-Actor-Id` headers and
 records mutating audit entries as coming from `local-demo`. For explicit
@@ -88,9 +88,15 @@ local/dev testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust
 header-supplied actor IDs instead. `X-Request-Id` remains accepted for request
 tracing.
 
-In `shared_service`, mutating requests must include a verified upstream user
-header. The default header name is `X-Authenticated-User`, and you can override
-it with `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
+In `shared_service`, every current app route except `/health` requires an
+authenticated app user. The default verified identity header is
+`X-Authenticated-User`, and you can override it with
+`MTG_API_AUTHENTICATED_ACTOR_HEADER`.
+
+`shared_service` also supports a normalized roles header,
+`X-Authenticated-Roles` by default, with `editor` and `admin` as the current
+recognized roles. If the verified user header is present and no roles header is
+supplied, the app defaults that user to `editor`. `admin` implies `editor`.
 
 Run the local-demo API:
 
@@ -237,6 +243,8 @@ Operational expectations:
   `synchronous=NORMAL`, and `foreign_keys=ON`
 - run the API behind an auth boundary that injects a verified user header such
   as `X-Authenticated-User`
+- if you forward app roles, normalize them to `editor` and `admin` in a header
+  such as `X-Authenticated-Roles`
 - validate snapshot backup and restore before live use
 - keep the database on local storage, not a shared/network filesystem
 - treat `sync-bulk`, `import-all`, and large import/update jobs as admin
@@ -316,16 +324,18 @@ python -m unittest discover -s tests -q
 
 - The repo is intentionally local-first and CLI-driven.
 - `mtg-web-api` now supports a safer `shared_service` runtime mode with
-  verified-user audit attribution, but broader authorization and deployment
-  policy still need follow-up
-  before broader shared use.
+  verified-user audit attribution and a minimal `editor` / `admin` role model,
+  but finer-grained authorization and broader deployment policy still need
+  follow-up before broader shared use.
 - The demo API exposes a minimal `/health` payload focused on status and mode,
   not filesystem path details.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
-- In `shared_service`, mutating writes require a verified upstream user header
-  such as `X-Authenticated-User`.
+- In `shared_service`, all current non-health routes require an authenticated
+  `editor` user. The default verified identity header is
+  `X-Authenticated-User`, and the default roles header is
+  `X-Authenticated-Roles`.
 - The current shared-service SQLite posture is single-host only and depends on
   WAL, busy-timeout, and tested snapshot restore rather than a distributed DB
   story.

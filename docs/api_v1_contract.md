@@ -126,9 +126,17 @@ before the generic 500 envelope is returned.
   values to flow into audit attribution.
 - `shared_service` disables auto-migrate by default. It should be started
   against a pre-migrated database and a single app process for now.
-- In `shared_service`, mutating requests require a verified upstream user
-  header. The default header name is `X-Authenticated-User`, and it can be
-  overridden with `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
+- In `shared_service`, every current app route except `/health` requires a
+  verified upstream user header. The default header name is
+  `X-Authenticated-User`, and it can be overridden with
+  `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
+- In `shared_service`, the API also accepts a normalized roles header. The
+  default header name is `X-Authenticated-Roles`, and it can be overridden with
+  `MTG_API_AUTHENTICATED_ROLES_HEADER`.
+- The current recognized app roles are `editor` and `admin`.
+- If the verified user header is present and the roles header is missing, the
+  API defaults that caller to `editor`.
+- `admin` implies `editor`.
 - In `shared_service`, caller-controlled `X-Actor-Id` values are not part of
   the trust boundary for audit attribution.
 - Snapshot backup and restore are part of the supported recovery model for the
@@ -136,8 +144,8 @@ before the generic 500 envelope is returned.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
 - The API logs startup mode and unexpected failures. The main remaining
-  blockers before broader shared deployment are authorization/permission rules
-  and broader deployment policy choices.
+  blockers before broader shared deployment are finer-grained permission rules
+  for admin-only surfaces and broader deployment policy choices.
 
 ## Notes For Web V1
 

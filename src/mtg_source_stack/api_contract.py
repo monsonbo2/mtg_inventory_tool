@@ -6,6 +6,7 @@ from typing import Any
 
 from .errors import (
     AuthenticationError,
+    AuthorizationError,
     ConflictError,
     MtgStackError,
     NotFoundError,
@@ -19,6 +20,8 @@ def api_error_status(exc: Exception) -> int:
         return 503
     if isinstance(exc, AuthenticationError):
         return 401
+    if isinstance(exc, AuthorizationError):
+        return 403
     if isinstance(exc, NotFoundError):
         return 404
     if isinstance(exc, ConflictError):

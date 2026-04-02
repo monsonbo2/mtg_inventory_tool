@@ -36,6 +36,7 @@ from ..inventory.service import (
 from .dependencies import (
     ApiSettings,
     RequestContext,
+    get_editor_request_context,
     get_mutating_request_context,
     get_request_context,
     get_settings,
@@ -68,6 +69,7 @@ router = APIRouter()
 
 ERROR_RESPONSE_DESCRIPTIONS = {
     401: "Authentication required",
+    403: "Forbidden",
     400: "Validation error",
     404: "Not found",
     409: "Conflict",
@@ -147,9 +149,12 @@ def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str,
 @router.get(
     "/inventories",
     response_model=list[InventoryListRowResponse],
-    responses=_error_responses(503, 500),
+    responses=_error_responses(401, 403, 503, 500),
 )
-def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings)]) -> Any:
+def inventories_list(
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+) -> Any:
     return _serialize(list_inventories(settings.db_path))
 
 
@@ -157,12 +162,12 @@ def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings)]) ->
     "/inventories",
     status_code=status.HTTP_201_CREATED,
     response_model=InventoryCreateResponse,
-    responses=_error_responses(401, 400, 409, 503, 500),
+    responses=_error_responses(401, 403, 400, 409, 503, 500),
 )
 def inventories_create(
     payload: InventoryCreateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_mutating_request_context)],
+    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
 ) -> Any:
     return _serialize(
         create_inventory(
@@ -177,10 +182,11 @@ def inventories_create(
 @router.get(
     "/cards/search",
     response_model=list[CatalogSearchRowResponse],
-    responses=_error_responses(400, 503, 500),
+    responses=_error_responses(401, 403, 400, 503, 500),
 )
 def cards_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
     query: str,
     set_code: str | None = None,
     rarity: str | None = None,
@@ -206,11 +212,12 @@ def cards_search(
 @router.get(
     "/inventories/{inventory_slug}/items",
     response_model=list[OwnedInventoryRowResponse],
-    responses=_error_responses(400, 404, 503, 500),
+    responses=_error_responses(401, 403, 400, 404, 503, 500),
 )
 def inventory_items_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
     provider: str = DEFAULT_PROVIDER,
     limit: Annotated[int | None, Query(ge=1, le=MAX_OWNED_ROWS_LIMIT)] = None,
     query: str | None = None,
@@ -244,13 +251,13 @@ def inventory_items_list(
     "/inventories/{inventory_slug}/items",
     status_code=status.HTTP_201_CREATED,
     response_model=AddInventoryItemResponse,
-    responses=_error_responses(401, 400, 404, 409, 503, 500),
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
 )
 def inventory_items_add(
     inventory_slug: str,
     payload: AddInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_mutating_request_context)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
 ) -> Any:
     return _serialize(
         add_card(
@@ -282,14 +289,14 @@ def inventory_items_add(
 @router.patch(
     "/inventories/{inventory_slug}/items/{item_id}",
     response_model=InventoryItemPatchResponse,
-    responses=_error_responses(401, 400, 404, 409, 503, 500),
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
 )
 def inventory_items_patch(
     inventory_slug: str,
     item_id: int,
     payload: PatchInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_mutating_request_context)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
 ) -> Any:
     operation = _patch_operation(payload)
     db_path = settings.db_path
@@ -348,13 +355,13 @@ def inventory_items_patch(
 @router.delete(
     "/inventories/{inventory_slug}/items/{item_id}",
     response_model=RemoveInventoryItemResponse,
-    responses=_error_responses(401, 404, 503, 500),
+    responses=_error_responses(401, 403, 404, 503, 500),
 )
 def inventory_items_delete(
     inventory_slug: str,
     item_id: int,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_mutating_request_context)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
 ) -> Any:
     return _serialize(
         remove_card(
@@ -371,11 +378,12 @@ def inventory_items_delete(
 @router.get(
     "/inventories/{inventory_slug}/audit",
     response_model=list[InventoryAuditEventResponse],
-    responses=_error_responses(400, 404, 503, 500),
+    responses=_error_responses(401, 403, 400, 404, 503, 500),
 )
 def inventory_audit_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
     limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_EVENT_LIMIT)] = DEFAULT_AUDIT_EVENT_LIMIT,
     item_id: int | None = None,
 ) -> Any:

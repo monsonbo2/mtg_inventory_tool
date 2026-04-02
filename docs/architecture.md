@@ -115,6 +115,8 @@ shared service.
   use.
 - The API now uses sync route handlers to match the current synchronous
   inventory services and SQLite access.
+- In `shared_service`, all current app routes except `/health` now require an
+  authenticated `editor` user, with `admin` reserved for maintenance surfaces.
 - The shared-service SQLite posture now relies on the central connection layer
   enabling WAL, busy-timeout, `synchronous=NORMAL`, and tested snapshot-based
   recovery.
@@ -124,7 +126,7 @@ shared service.
 
 The next API-hardening steps are:
 
-- authorization and permission rules for shared use
+- finer-grained authorization and admin-only route policy for shared use
 - broader deployment policy decisions such as CORS/base-path/topology
 - rollout validation against the real single-host deployment shape
 

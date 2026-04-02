@@ -108,12 +108,17 @@ class WebApiSchemaTest(unittest.TestCase):
                 self.assertNotIn("422", spec["paths"][path][method]["responses"])
 
             for path, method in [
+                ("/inventories", "get"),
                 ("/inventories", "post"),
+                ("/cards/search", "get"),
+                ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
+                ("/inventories/{inventory_slug}/audit", "get"),
             ]:
                 self.assertIn("401", spec["paths"][path][method]["responses"])
+                self.assertIn("403", spec["paths"][path][method]["responses"])
 
             cards_schema = spec["paths"]["/cards/search"]["get"]["responses"]["200"]["content"]["application/json"][
                 "schema"
@@ -397,7 +402,10 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("set_finish", patched.json()["operation"])
                 self.assertEqual("foil", patched.json()["finish"])
 
-                audit = client.get("/inventories/personal/audit")
+                audit = client.get(
+                    "/inventories/personal/audit",
+                    headers={"X-Authenticated-User": "shared-user"},
+                )
                 self.assertEqual(200, audit.status_code)
                 self.assertEqual("set_finish", audit.json()[0]["action"])
                 self.assertEqual("api", audit.json()[0]["actor_type"])
@@ -413,6 +421,9 @@ class WebApiTest(unittest.TestCase):
 
             with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
                 self._seed_card(db_path)
+
+                self.assertEqual(401, client.get("/inventories").status_code)
+                self.assertEqual(401, client.get("/cards/search", params={"query": "API"}).status_code)
 
                 created_inventory = client.post(
                     "/inventories",
@@ -435,12 +446,12 @@ class WebApiTest(unittest.TestCase):
                 item_id = added.json()["item_id"]
 
                 def get_inventories():
-                    response = client.get("/inventories")
+                    response = client.get("/inventories", headers=auth_headers)
                     self.assertEqual(200, response.status_code)
                     return response.status_code
 
                 def get_items():
-                    response = client.get("/inventories/personal/items")
+                    response = client.get("/inventories/personal/items", headers=auth_headers)
                     self.assertEqual(200, response.status_code)
                     return response.status_code
 
@@ -454,7 +465,7 @@ class WebApiTest(unittest.TestCase):
                     return response.status_code
 
                 def get_audit():
-                    response = client.get("/inventories/personal/audit")
+                    response = client.get("/inventories/personal/audit", headers=auth_headers)
                     self.assertEqual(200, response.status_code)
                     return response.status_code
 
@@ -469,6 +480,62 @@ class WebApiTest(unittest.TestCase):
                     results = [future.result(timeout=5) for future in futures]
 
                 self.assertEqual([200, 200, 200, 200, 200], results)
+
+    def test_shared_service_read_routes_require_editor_role(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            editor_headers = {"X-Authenticated-User": "shared-user"}
+            unrecognized_role_headers = {
+                "X-Authenticated-User": "shared-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    headers=editor_headers,
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers=editor_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                anonymous_inventories = client.get("/inventories")
+                self.assertEqual(401, anonymous_inventories.status_code)
+                self.assertEqual("authentication_required", anonymous_inventories.json()["error"]["code"])
+
+                unauthorized_search = client.get(
+                    "/cards/search",
+                    headers=unrecognized_role_headers,
+                    params={"query": "API Test"},
+                )
+                self.assertEqual(403, unauthorized_search.status_code)
+                self.assertEqual("forbidden", unauthorized_search.json()["error"]["code"])
+
+                inventories = client.get("/inventories", headers=editor_headers)
+                self.assertEqual(200, inventories.status_code)
+
+                search = client.get("/cards/search", headers=editor_headers, params={"query": "API Test"})
+                self.assertEqual(200, search.status_code)
+
+                items = client.get("/inventories/personal/items", headers=editor_headers)
+                self.assertEqual(200, items.status_code)
+
+                audit = client.get("/inventories/personal/audit", headers=editor_headers)
+                self.assertEqual(200, audit.status_code)
 
     def test_shared_service_mutating_requests_require_authenticated_actor_header(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -548,7 +615,10 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(200, patched.status_code)
 
-                audit = client.get("/inventories/personal/audit")
+                audit = client.get(
+                    "/inventories/personal/audit",
+                    headers={"X-Authenticated-User": "shared-user"},
+                )
                 self.assertEqual(200, audit.status_code)
                 self.assertEqual("set_finish", audit.json()[0]["action"])
                 self.assertEqual("api", audit.json()[0]["actor_type"])

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from ..db.connection import DEFAULT_DB_PATH
-from ..errors import AuthenticationError
+from ..errors import AuthenticationError, AuthorizationError
 
 if TYPE_CHECKING:  # pragma: no cover - typing-only import
     from fastapi import Request
@@ -22,6 +22,8 @@ else:  # pragma: no cover - optional runtime dependency for API-only paths
 RuntimeMode = Literal["local_demo", "shared_service"]
 DEFAULT_RUNTIME_MODE: RuntimeMode = "local_demo"
 DEFAULT_AUTHENTICATED_ACTOR_HEADER = "X-Authenticated-User"
+DEFAULT_AUTHENTICATED_ROLES_HEADER = "X-Authenticated-Roles"
+APP_ROLES = frozenset({"editor", "admin"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +35,7 @@ class ApiSettings:
     port: int
     trust_actor_headers: bool = False
     authenticated_actor_header: str = DEFAULT_AUTHENTICATED_ACTOR_HEADER
+    authenticated_roles_header: str = DEFAULT_AUTHENTICATED_ROLES_HEADER
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +43,7 @@ class RequestContext:
     actor_type: str
     actor_id: str | None
     request_id: str
+    roles: frozenset[str]
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -105,6 +109,10 @@ def settings_from_env() -> ApiSettings:
             os.getenv("MTG_API_AUTHENTICATED_ACTOR_HEADER", DEFAULT_AUTHENTICATED_ACTOR_HEADER).strip()
             or DEFAULT_AUTHENTICATED_ACTOR_HEADER
         ),
+        authenticated_roles_header=(
+            os.getenv("MTG_API_AUTHENTICATED_ROLES_HEADER", DEFAULT_AUTHENTICATED_ROLES_HEADER).strip()
+            or DEFAULT_AUTHENTICATED_ROLES_HEADER
+        ),
     )
 
 
@@ -124,6 +132,29 @@ def _resolve_shared_service_actor_id(request: "Request", settings: ApiSettings) 
     return actor_id or None
 
 
+def _normalize_roles(raw_roles: str | None) -> frozenset[str]:
+    if not raw_roles:
+        return frozenset()
+    roles = {role.strip().lower() for role in raw_roles.split(",") if role.strip()}
+    normalized = frozenset(role for role in roles if role in APP_ROLES)
+    if "admin" in normalized:
+        return frozenset({"editor", "admin"})
+    return normalized
+
+
+def _resolve_local_demo_roles() -> frozenset[str]:
+    return frozenset({"editor", "admin"})
+
+
+def _resolve_shared_service_roles(request: "Request", settings: ApiSettings, actor_id: str | None) -> frozenset[str]:
+    if not actor_id:
+        return frozenset()
+    raw_roles = request.headers.get(settings.authenticated_roles_header, "").strip()
+    if not raw_roles:
+        return frozenset({"editor"})
+    return _normalize_roles(raw_roles)
+
+
 def _build_request_context(request: "Request", *, require_authenticated_actor: bool) -> RequestContext:
     settings = request.app.state.settings
     request_id = getattr(request.state, "request_id", None) or str(uuid4())
@@ -135,13 +166,16 @@ def _build_request_context(request: "Request", *, require_authenticated_actor: b
             raise AuthenticationError(
                 f"Authenticated user header '{settings.authenticated_actor_header}' is required for shared_service writes."
             )
+        roles = _resolve_shared_service_roles(request, settings, actor_id)
     else:
         actor_id = _resolve_local_demo_actor_id(request, settings)
+        roles = _resolve_local_demo_roles()
 
     return RequestContext(
         actor_type="api",
         actor_id=actor_id,
         request_id=request_id,
+        roles=roles,
     )
 
 
@@ -149,5 +183,23 @@ def get_request_context(request: "Request") -> RequestContext:
     return _build_request_context(request, require_authenticated_actor=False)
 
 
-def get_mutating_request_context(request: "Request") -> RequestContext:
+def get_authenticated_request_context(request: "Request") -> RequestContext:
     return _build_request_context(request, require_authenticated_actor=True)
+
+
+def get_mutating_request_context(request: "Request") -> RequestContext:
+    return get_authenticated_request_context(request)
+
+
+def _require_role(context: RequestContext, *, role: str) -> RequestContext:
+    if role not in context.roles:
+        raise AuthorizationError(f"Role '{role}' is required for this shared_service request.")
+    return context
+
+
+def get_editor_request_context(request: "Request") -> RequestContext:
+    return _require_role(get_authenticated_request_context(request), role="editor")
+
+
+def get_admin_request_context(request: "Request") -> RequestContext:
+    return _require_role(get_authenticated_request_context(request), role="admin")
