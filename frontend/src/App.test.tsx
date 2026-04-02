@@ -363,6 +363,15 @@ describe("App", () => {
             collector_number: "146",
             finishes: ["normal", "foil"],
           }),
+          buildSearchRow({
+            scryfall_id: "bolt-sta-ja",
+            name: "Lightning Bolt",
+            set_code: "sta",
+            set_name: "Strixhaven Mystical Archive",
+            collector_number: "39",
+            lang: "ja",
+            finishes: ["normal"],
+          }),
         ];
       }
 
@@ -398,6 +407,39 @@ describe("App", () => {
       );
     });
 
+    expect(
+      within(boltCard!).getByRole("button", { name: "Other languages available" }),
+    ).toBeInTheDocument();
+    expect(
+      within(printingSelect).queryByRole("option", { name: /STRIXHAVEN MYSTICAL ARCHIVE/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(boltCard!).getByRole("button", { name: "Other languages available" }),
+    );
+
+    const languageSelect = within(boltCard!).getByRole("combobox", { name: "Language" });
+    await user.selectOptions(languageSelect, "ja");
+
+    expect(
+      within(printingSelect).getByRole("option", { name: /STRIXHAVEN MYSTICAL ARCHIVE/i }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(printingSelect, "bolt-sta-ja");
+    await user.click(within(boltCard!).getByRole("button", { name: "Add to inventory" }));
+
+    await waitFor(() => {
+      expect(addInventoryItem).toHaveBeenCalledWith(
+        "personal",
+        expect.objectContaining({
+          scryfall_id: "bolt-sta-ja",
+          quantity: 1,
+          finish: "normal",
+        }),
+      );
+    });
+
+    await user.selectOptions(languageSelect, "en");
     await user.selectOptions(printingSelect, "bolt-m11");
 
     expect(finishSelect).toBeEnabled();
