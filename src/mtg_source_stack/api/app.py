@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ..api_contract import api_error_payload, api_error_status
+from ..db.connection import describe_sqlite_runtime_posture
 from ..db.migrator import migrate_database
 from ..db.schema import require_current_schema
 from ..errors import MtgStackError
@@ -131,6 +132,15 @@ async def lifespan(app):
     else:
         logger.info("Requiring current schema at startup without migration")
         require_current_schema(settings.db_path)
+    sqlite_posture = describe_sqlite_runtime_posture(settings.db_path)
+    logger.info(
+        "SQLite runtime posture db_path=%s journal_mode=%s synchronous=%s busy_timeout_ms=%s foreign_keys=%s",
+        settings.db_path,
+        sqlite_posture["journal_mode"],
+        sqlite_posture["synchronous"],
+        sqlite_posture["busy_timeout_ms"],
+        sqlite_posture["foreign_keys"],
+    )
     yield
 
 

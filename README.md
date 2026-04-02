@@ -48,9 +48,10 @@ requests.
   call live APIs.
 - Pricing imports currently keep USD retail and buylist snapshots only.
 - The current API shell now aligns its HTTP route boundary with the existing
-  synchronous SQLite-backed service layer. Shared-service identity resolution
-  now exists at the API boundary, while broader authorization and deployment
-  policy are still deferred.
+  synchronous SQLite-backed service layer. Shared-service identity resolution,
+  SQLite WAL/busy-timeout posture, and backup/restore recovery now exist in the
+  supported single-host operating model, while broader authorization and
+  deployment policy are still deferred.
 
 ## Quick Start
 
@@ -74,7 +75,8 @@ inventory services:
 
 - `local_demo` is the default local-first mode for UI and contract work
 - `shared_service` uses safer startup defaults for a pre-migrated, single-host
-  SQLite deployment
+  SQLite deployment with WAL and busy-timeout enabled through the shared
+  connection layer
 
 `shared_service` is a better fit for modest shared use. It now requires a
 verified upstream user identity for mutating requests, while broader
@@ -219,6 +221,34 @@ mtg-mvp-importer restore-snapshot \
   --snapshot SNAPSHOT_NAME_FROM_LIST
 ```
 
+## Shared-Service SQLite Runbook
+
+For the current shared-service phase, the intended deployment shape is:
+
+- one app process
+- one SQLite database file
+- one host
+- local disk storage
+- a pre-migrated database started with `--runtime-mode shared_service`
+
+Operational expectations:
+
+- the shared connection layer enables SQLite `WAL`, `busy_timeout`,
+  `synchronous=NORMAL`, and `foreign_keys=ON`
+- run the API behind an auth boundary that injects a verified user header such
+  as `X-Authenticated-User`
+- validate snapshot backup and restore before live use
+- keep the database on local storage, not a shared/network filesystem
+- treat `sync-bulk`, `import-all`, and large import/update jobs as admin
+  operations and avoid running them during active user editing windows
+
+A typical startup flow is:
+
+```bash
+mtg-mvp-importer migrate-db --db "var/db/mtg_mvp.db"
+mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
+```
+
 ## Testing
 
 With the virtualenv active, run the full local test suite:
@@ -296,8 +326,9 @@ python -m unittest discover -s tests -q
   enabled.
 - In `shared_service`, mutating writes require a verified upstream user header
   such as `X-Authenticated-User`.
-- The API now logs startup mode and unexpected failures, but it is still a
-  local/demo shell rather than a shared-service deployment target.
+- The current shared-service SQLite posture is single-host only and depends on
+  WAL, busy-timeout, and tested snapshot restore rather than a distributed DB
+  story.
 - Ordinary read commands do not do automatic live Scryfall fallback.
 - The runtime model is the MVP schema, not the normalized future schema.
 - Price imports currently keep USD retail and buylist snapshots only so

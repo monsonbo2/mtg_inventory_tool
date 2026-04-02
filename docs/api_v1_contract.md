@@ -116,6 +116,8 @@ before the generic 500 envelope is returned.
   synchronous inventory and SQLite-backed service layer.
 - Broader transport/runtime guarantees are still intentionally modest and
   single-host scoped in web-v1.
+- `shared_service` assumes a single-host SQLite deployment with WAL and
+  busy-timeout configured by the shared connection layer.
 - In `local_demo`, the API ignores caller-supplied `X-Actor-Id` values and
   records mutating audit entries with `actor_type="api"` and
   `actor_id="local-demo"`.
@@ -129,6 +131,8 @@ before the generic 500 envelope is returned.
   overridden with `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
 - In `shared_service`, caller-controlled `X-Actor-Id` values are not part of
   the trust boundary for audit attribution.
+- Snapshot backup and restore are part of the supported recovery model for the
+  current shared-service SQLite posture.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
 - The API logs startup mode and unexpected failures. The main remaining

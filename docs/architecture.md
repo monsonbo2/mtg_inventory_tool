@@ -115,6 +115,9 @@ shared service.
   use.
 - The API now uses sync route handlers to match the current synchronous
   inventory services and SQLite access.
+- The shared-service SQLite posture now relies on the central connection layer
+  enabling WAL, busy-timeout, `synchronous=NORMAL`, and tested snapshot-based
+  recovery.
 - The JSON and error contract is documented in `api_v1_contract.md`, but
   broader deployment guarantees are still limited.
 - Dedicated follow-up passes are still required before broader deployment.
@@ -123,6 +126,7 @@ The next API-hardening steps are:
 
 - authorization and permission rules for shared use
 - broader deployment policy decisions such as CORS/base-path/topology
+- rollout validation against the real single-host deployment shape
 
 ## Frontend Collaboration Boundary
 

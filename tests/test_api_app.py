@@ -150,6 +150,7 @@ class ApiAppTest(unittest.TestCase):
             self.assertFalse(response.json()["auto_migrate"])
 
     def test_startup_logging_includes_runtime_mode_and_effective_auto_migrate(self) -> None:
+        from mtg_source_stack.db.connection import SQLITE_BUSY_TIMEOUT_MS, SQLITE_JOURNAL_MODE, SQLITE_SYNCHRONOUS_MODE
         from mtg_source_stack.db.schema import initialize_database
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -166,6 +167,14 @@ class ApiAppTest(unittest.TestCase):
                 db_path,
                 False,
                 False,
+            )
+            mock_logger.info.assert_any_call(
+                "SQLite runtime posture db_path=%s journal_mode=%s synchronous=%s busy_timeout_ms=%s foreign_keys=%s",
+                db_path,
+                SQLITE_JOURNAL_MODE,
+                SQLITE_SYNCHRONOUS_MODE,
+                SQLITE_BUSY_TIMEOUT_MS,
+                True,
             )
 
 
