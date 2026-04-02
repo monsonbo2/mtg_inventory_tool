@@ -59,7 +59,7 @@ export function SearchPanel(props: {
   }, [props.onSuggestionRequestClose, props.suggestionOpen]);
 
   return (
-    <section className="panel panel-featured">
+    <section className="panel panel-featured search-panel">
       <div className="panel-heading">
         <div>
           <p className="section-kicker">Search And Add</p>

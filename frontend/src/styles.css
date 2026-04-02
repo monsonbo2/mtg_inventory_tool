@@ -251,6 +251,11 @@ button {
     var(--panel-bg);
 }
 
+.search-panel {
+  position: relative;
+  z-index: 4;
+}
+
 .panel-heading {
   display: flex;
   justify-content: space-between;
@@ -762,6 +767,7 @@ button {
 
 .search-input-stack {
   position: relative;
+  isolation: isolate;
 }
 
 .search-autocomplete {
@@ -769,7 +775,7 @@ button {
   top: calc(100% + 8px);
   left: 0;
   right: 0;
-  z-index: 12;
+  z-index: 20;
   display: grid;
   gap: 8px;
   border-radius: 18px;
