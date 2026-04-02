@@ -34,6 +34,7 @@ class ApiDependenciesTest(unittest.TestCase):
 
         self.assertEqual("shared_service", settings.runtime_mode)
         self.assertFalse(settings.auto_migrate)
+        self.assertTrue(settings.proxy_headers)
 
     def test_settings_from_env_explicit_auto_migrate_override_wins(self) -> None:
         scenarios = (
@@ -87,6 +88,28 @@ class ApiDependenciesTest(unittest.TestCase):
             settings = settings_from_env()
 
         self.assertEqual("X-Forwarded-Roles", settings.authenticated_roles_header)
+
+    def test_settings_from_env_defaults_proxy_headers_off_in_local_demo(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = settings_from_env()
+
+        self.assertFalse(settings.proxy_headers)
+
+    def test_settings_from_env_reads_proxy_header_override(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"MTG_API_RUNTIME_MODE": "shared_service", "MTG_API_PROXY_HEADERS": "false"},
+            clear=True,
+        ):
+            settings = settings_from_env()
+
+        self.assertFalse(settings.proxy_headers)
+
+    def test_settings_from_env_reads_forwarded_allow_ips_override(self) -> None:
+        with patch.dict(os.environ, {"MTG_API_FORWARDED_ALLOW_IPS": "10.0.0.1,127.0.0.1"}, clear=True):
+            settings = settings_from_env()
+
+        self.assertEqual("10.0.0.1,127.0.0.1", settings.forwarded_allow_ips)
 
     def test_get_request_context_defaults_to_local_demo_actor(self) -> None:
         settings = ApiSettings(

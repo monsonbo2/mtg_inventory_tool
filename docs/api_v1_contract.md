@@ -118,6 +118,9 @@ before the generic 500 envelope is returned.
   single-host scoped in web-v1.
 - `shared_service` assumes a single-host SQLite deployment with WAL and
   busy-timeout configured by the shared connection layer.
+- The recommended first-live browser deployment is same-origin through a reverse
+  proxy that publishes `/api` publicly and strips that prefix before forwarding
+  to the backend root-route surface.
 - In `local_demo`, the API ignores caller-supplied `X-Actor-Id` values and
   records mutating audit entries with `actor_type="api"` and
   `actor_id="local-demo"`.
@@ -139,6 +142,12 @@ before the generic 500 envelope is returned.
 - `admin` implies `editor`.
 - In `shared_service`, caller-controlled `X-Actor-Id` values are not part of
   the trust boundary for audit attribution.
+- In `shared_service`, `MTG_API_TRUST_ACTOR_HEADERS=true` is not a valid
+  startup posture.
+- In `shared_service`, blank or colliding verified-user header names are
+  rejected at startup.
+- The current deployment guidance expects the reverse proxy to strip any
+  client-supplied identity headers before injecting verified values.
 - Snapshot backup and restore are part of the supported recovery model for the
   current shared-service SQLite posture.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API

@@ -284,15 +284,17 @@ class WebApiTest(unittest.TestCase):
         runtime_mode: str = "local_demo",
         auto_migrate: bool = True,
     ):
+        settings_kwargs = {
+            "db_path": db_path,
+            "runtime_mode": runtime_mode,
+            "auto_migrate": auto_migrate,
+            "host": "127.0.0.1",
+            "port": 8000,
+            "trust_actor_headers": trust_actor_headers,
+            "proxy_headers": runtime_mode == "shared_service",
+        }
         app = create_app(
-            ApiSettings(
-                db_path=db_path,
-                runtime_mode=runtime_mode,
-                auto_migrate=auto_migrate,
-                host="127.0.0.1",
-                port=8000,
-                trust_actor_headers=trust_actor_headers,
-            )
+            ApiSettings(**settings_kwargs)
         )
         with _live_test_server(app) as base_url:
             with httpx.Client(base_url=base_url, timeout=5.0) as client:

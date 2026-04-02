@@ -28,7 +28,9 @@ from .dependencies import (
     DEFAULT_RUNTIME_MODE,
     ApiSettings,
     auto_migrate_override_from_env,
+    proxy_headers_override_from_env,
     resolve_auto_migrate,
+    resolve_proxy_headers,
     resolve_runtime_mode,
     settings_from_env,
 )
@@ -38,6 +40,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 
 logger = logging.getLogger(__name__)
+WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
 
 def _spec_contains_ref(node: Any, target_ref: str) -> bool:
@@ -81,6 +84,29 @@ def _strip_generated_validation_responses(openapi_schema: dict[str, Any]) -> Non
             schemas.pop(schema_name, None)
 
 
+def validate_runtime_settings(settings: ApiSettings) -> None:
+    actor_header = settings.authenticated_actor_header.strip()
+    roles_header = settings.authenticated_roles_header.strip()
+    forwarded_allow_ips = settings.forwarded_allow_ips.strip()
+
+    if settings.runtime_mode != "shared_service":
+        return
+    if settings.trust_actor_headers:
+        raise ValueError(
+            "shared_service cannot enable trust_actor_headers; use verified upstream identity headers instead."
+        )
+    if not actor_header:
+        raise ValueError("shared_service requires a non-empty authenticated actor header name.")
+    if not roles_header:
+        raise ValueError("shared_service requires a non-empty authenticated roles header name.")
+    if actor_header.casefold() == roles_header.casefold():
+        raise ValueError("shared_service authenticated actor and roles headers must be different.")
+    if actor_header.casefold() == "x-actor-id" or roles_header.casefold() == "x-actor-id":
+        raise ValueError("shared_service cannot reuse X-Actor-Id for verified identity or roles.")
+    if settings.proxy_headers and not forwarded_allow_ips:
+        raise ValueError("shared_service requires a non-empty forwarded_allow_ips value when proxy headers are enabled.")
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     defaults = settings_from_env()
     parser = argparse.ArgumentParser(
@@ -113,6 +139,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Require a current schema at startup instead of applying pending migrations.",
     )
+    proxy_group = parser.add_mutually_exclusive_group()
+    proxy_group.add_argument(
+        "--proxy-headers",
+        dest="proxy_headers",
+        action="store_true",
+        default=None,
+        help="Trust proxy-provided forwarding headers based on the configured allowlist.",
+    )
+    proxy_group.add_argument(
+        "--no-proxy-headers",
+        dest="proxy_headers",
+        action="store_false",
+        default=None,
+        help="Ignore proxy-provided forwarding headers.",
+    )
+    parser.add_argument(
+        "--forwarded-allow-ips",
+        default=None,
+        help="Comma-separated IPs or networks allowed to supply forwarded headers.",
+    )
     return parser
 
 
@@ -120,12 +166,37 @@ def build_arg_parser() -> argparse.ArgumentParser:
 async def lifespan(app):
     settings: ApiSettings = app.state.settings
     logger.info(
-        "Starting API runtime_mode=%s db_path=%s auto_migrate=%s trust_actor_headers=%s",
+        "Starting API runtime_mode=%s db_path=%s auto_migrate=%s trust_actor_headers=%s proxy_headers=%s forwarded_allow_ips=%s",
         settings.runtime_mode,
         settings.db_path,
         settings.auto_migrate,
         settings.trust_actor_headers,
+        settings.proxy_headers,
+        settings.forwarded_allow_ips,
     )
+    if settings.runtime_mode == "shared_service":
+        logger.info(
+            "Shared-service auth posture authenticated_actor_header=%s authenticated_roles_header=%s",
+            settings.authenticated_actor_header,
+            settings.authenticated_roles_header,
+        )
+        if settings.auto_migrate:
+            logger.warning(
+                "shared_service is starting with auto_migrate enabled; prefer a pre-migrated database for routine deploys."
+            )
+        if not settings.proxy_headers:
+            logger.warning(
+                "shared_service is starting with proxy header handling disabled; confirm the reverse-proxy topology intentionally does not rely on forwarded headers."
+            )
+        if settings.forwarded_allow_ips.strip() == "*":
+            logger.warning(
+                "shared_service trusts forwarded headers from all IPs; prefer a loopback or private allowlist."
+            )
+        if settings.host in WILDCARD_HOSTS:
+            logger.warning(
+                "shared_service is binding wildcard host=%s; prefer loopback or a private interface behind the reverse proxy.",
+                settings.host,
+            )
     if settings.auto_migrate:
         logger.info("Applying pending migrations at startup")
         migrate_database(settings.db_path)
@@ -153,6 +224,7 @@ def create_app(settings: ApiSettings | None = None):
     from .routes import router
 
     effective_settings = settings or settings_from_env()
+    validate_runtime_settings(effective_settings)
     app = FastAPI(
         title="MTG Inventory Tool API",
         version="0.1.0",
@@ -246,6 +318,14 @@ def settings_from_cli_args(args: argparse.Namespace) -> ApiSettings:
         host=args.host,
         port=int(args.port),
         trust_actor_headers=defaults.trust_actor_headers,
+        authenticated_actor_header=defaults.authenticated_actor_header,
+        authenticated_roles_header=defaults.authenticated_roles_header,
+        proxy_headers=resolve_proxy_headers(
+            runtime_mode=runtime_mode,
+            env_override=proxy_headers_override_from_env(),
+            cli_override=args.proxy_headers,
+        ),
+        forwarded_allow_ips=args.forwarded_allow_ips or defaults.forwarded_allow_ips,
     )
 
 
@@ -262,4 +342,10 @@ def main(argv: list[str] | None = None) -> None:
             "FastAPI web dependencies are not installed. Run `pip install -e .[web]` first."
         ) from exc
 
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        proxy_headers=settings.proxy_headers,
+        forwarded_allow_ips=settings.forwarded_allow_ips,
+    )

@@ -40,6 +40,9 @@ If you're preparing a separate frontend sandbox, also read
 - `frontend_backend_requests/`
   Folder of frontend-requested backend/API changes, with
   `frontend_backend_requests/README.md` as the process guide and template.
+- `shared_service_deploy.md`
+  First-live deployment runbook for the current single-host shared-service API
+  posture.
 - `../src/mtg_source_stack/api/`
   FastAPI shell that applies the API contract to the current sync service
   facade, with `local_demo` and `shared_service` runtime modes plus a minimal

@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mtg_source_stack.api.app import build_arg_parser, settings_from_cli_args
+from mtg_source_stack.api.app import build_arg_parser, main, settings_from_cli_args
 
 
 FASTAPI_TESTING_AVAILABLE = (
@@ -79,15 +79,25 @@ def _live_test_server(app):
 )
 class ApiAppTest(unittest.TestCase):
     @contextmanager
-    def _client(self, db_path: Path, *, runtime_mode: str = "local_demo", auto_migrate: bool = True):
+    def _client(
+        self,
+        db_path: Path,
+        *,
+        runtime_mode: str = "local_demo",
+        auto_migrate: bool = True,
+        **setting_overrides,
+    ):
+        settings_kwargs = {
+            "db_path": db_path,
+            "runtime_mode": runtime_mode,
+            "auto_migrate": auto_migrate,
+            "host": "127.0.0.1",
+            "port": 8000,
+            "proxy_headers": runtime_mode == "shared_service",
+        }
+        settings_kwargs.update(setting_overrides)
         app = create_app(
-            ApiSettings(
-                db_path=db_path,
-                runtime_mode=runtime_mode,
-                auto_migrate=auto_migrate,
-                host="127.0.0.1",
-                port=8000,
-            )
+            ApiSettings(**settings_kwargs)
         )
         with _live_test_server(app) as base_url:
             with httpx.Client(base_url=base_url, timeout=5.0) as client:
@@ -158,15 +168,30 @@ class ApiAppTest(unittest.TestCase):
             initialize_database(db_path)
 
             with patch("mtg_source_stack.api.app.logger") as mock_logger:
-                with self._client(db_path, runtime_mode="shared_service", auto_migrate=False):
+                with self._client(
+                    db_path,
+                    runtime_mode="shared_service",
+                    auto_migrate=False,
+                    authenticated_actor_header="X-Verified-User",
+                    authenticated_roles_header="X-Verified-Roles",
+                    proxy_headers=True,
+                    forwarded_allow_ips="127.0.0.1",
+                ):
                     pass
 
             mock_logger.info.assert_any_call(
-                "Starting API runtime_mode=%s db_path=%s auto_migrate=%s trust_actor_headers=%s",
+                "Starting API runtime_mode=%s db_path=%s auto_migrate=%s trust_actor_headers=%s proxy_headers=%s forwarded_allow_ips=%s",
                 "shared_service",
                 db_path,
                 False,
                 False,
+                True,
+                "127.0.0.1",
+            )
+            mock_logger.info.assert_any_call(
+                "Shared-service auth posture authenticated_actor_header=%s authenticated_roles_header=%s",
+                "X-Verified-User",
+                "X-Verified-Roles",
             )
             mock_logger.info.assert_any_call(
                 "SQLite runtime posture db_path=%s journal_mode=%s synchronous=%s busy_timeout_ms=%s foreign_keys=%s",
@@ -176,6 +201,45 @@ class ApiAppTest(unittest.TestCase):
                 SQLITE_BUSY_TIMEOUT_MS,
                 True,
             )
+
+    def test_shared_service_rejects_trusted_actor_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+
+            with self.assertRaisesRegex(ValueError, "trust_actor_headers"):
+                create_app(
+                    ApiSettings(
+                        db_path=db_path,
+                        runtime_mode="shared_service",
+                        auto_migrate=False,
+                        host="127.0.0.1",
+                        port=8000,
+                        trust_actor_headers=True,
+                    )
+                )
+
+    def test_shared_service_rejects_colliding_or_blank_verified_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            scenarios = (
+                {"authenticated_actor_header": "", "authenticated_roles_header": "X-Authenticated-Roles"},
+                {"authenticated_actor_header": "X-Authenticated-User", "authenticated_roles_header": ""},
+                {"authenticated_actor_header": "X-Authenticated-User", "authenticated_roles_header": "X-Authenticated-User"},
+                {"authenticated_actor_header": "X-Actor-Id", "authenticated_roles_header": "X-Authenticated-Roles"},
+            )
+            for overrides in scenarios:
+                with self.subTest(overrides=overrides):
+                    with self.assertRaises(ValueError):
+                        create_app(
+                            ApiSettings(
+                                db_path=db_path,
+                                runtime_mode="shared_service",
+                                auto_migrate=False,
+                                host="127.0.0.1",
+                                port=8000,
+                                **overrides,
+                            )
+                        )
 
 
 class ApiCliSettingsTest(unittest.TestCase):
@@ -208,3 +272,67 @@ class ApiCliSettingsTest(unittest.TestCase):
 
         self.assertEqual("shared_service", settings.runtime_mode)
         self.assertFalse(settings.auto_migrate)
+
+    def test_cli_settings_default_shared_service_proxy_headers_on(self) -> None:
+        parser = build_arg_parser()
+        args = parser.parse_args(["--runtime-mode", "shared_service"])
+
+        with patch.dict("os.environ", {}, clear=True):
+            settings = settings_from_cli_args(args)
+
+        self.assertTrue(settings.proxy_headers)
+        self.assertEqual("127.0.0.1", settings.forwarded_allow_ips)
+
+    def test_cli_settings_can_disable_proxy_headers(self) -> None:
+        parser = build_arg_parser()
+        args = parser.parse_args(["--runtime-mode", "shared_service", "--no-proxy-headers"])
+
+        with patch.dict("os.environ", {}, clear=True):
+            settings = settings_from_cli_args(args)
+
+        self.assertFalse(settings.proxy_headers)
+
+    def test_cli_settings_preserve_verified_header_names_from_env(self) -> None:
+        parser = build_arg_parser()
+        args = parser.parse_args(["--runtime-mode", "shared_service"])
+
+        with patch.dict(
+            "os.environ",
+            {
+                "MTG_API_AUTHENTICATED_ACTOR_HEADER": "X-Verified-User",
+                "MTG_API_AUTHENTICATED_ROLES_HEADER": "X-Verified-Roles",
+                "MTG_API_PROXY_HEADERS": "false",
+                "MTG_API_FORWARDED_ALLOW_IPS": "10.0.0.1",
+            },
+            clear=True,
+        ):
+            settings = settings_from_cli_args(args)
+
+        self.assertEqual("X-Verified-User", settings.authenticated_actor_header)
+        self.assertEqual("X-Verified-Roles", settings.authenticated_roles_header)
+        self.assertFalse(settings.proxy_headers)
+        self.assertEqual("10.0.0.1", settings.forwarded_allow_ips)
+
+    def test_main_passes_explicit_proxy_settings_to_uvicorn(self) -> None:
+        with patch("mtg_source_stack.api.app.create_app", return_value=object()) as mock_create_app:
+            with patch("uvicorn.run") as mock_run:
+                main(
+                    [
+                        "--runtime-mode",
+                        "shared_service",
+                        "--proxy-headers",
+                        "--forwarded-allow-ips",
+                        "127.0.0.1",
+                    ]
+                )
+
+        settings = mock_create_app.call_args.args[0]
+        self.assertTrue(settings.proxy_headers)
+        self.assertEqual("127.0.0.1", settings.forwarded_allow_ips)
+        mock_run.assert_called_once_with(
+            mock_create_app.return_value,
+            host=settings.host,
+            port=settings.port,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1",
+        )

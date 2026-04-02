@@ -23,6 +23,7 @@ RuntimeMode = Literal["local_demo", "shared_service"]
 DEFAULT_RUNTIME_MODE: RuntimeMode = "local_demo"
 DEFAULT_AUTHENTICATED_ACTOR_HEADER = "X-Authenticated-User"
 DEFAULT_AUTHENTICATED_ROLES_HEADER = "X-Authenticated-Roles"
+DEFAULT_FORWARDED_ALLOW_IPS = "127.0.0.1"
 APP_ROLES = frozenset({"editor", "admin"})
 
 
@@ -36,6 +37,8 @@ class ApiSettings:
     trust_actor_headers: bool = False
     authenticated_actor_header: str = DEFAULT_AUTHENTICATED_ACTOR_HEADER
     authenticated_roles_header: str = DEFAULT_AUTHENTICATED_ROLES_HEADER
+    proxy_headers: bool = False
+    forwarded_allow_ips: str = DEFAULT_FORWARDED_ALLOW_IPS
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,10 @@ def auto_migrate_override_from_env() -> bool | None:
     return _env_optional_bool("MTG_API_AUTO_MIGRATE")
 
 
+def proxy_headers_override_from_env() -> bool | None:
+    return _env_optional_bool("MTG_API_PROXY_HEADERS")
+
+
 def resolve_runtime_mode(raw: str | None) -> RuntimeMode:
     if raw is None:
         return DEFAULT_RUNTIME_MODE
@@ -79,6 +86,12 @@ def default_auto_migrate_for_mode(runtime_mode: RuntimeMode) -> bool:
     return True
 
 
+def default_proxy_headers_for_mode(runtime_mode: RuntimeMode) -> bool:
+    if runtime_mode == "shared_service":
+        return True
+    return False
+
+
 def resolve_auto_migrate(
     *,
     runtime_mode: RuntimeMode,
@@ -90,6 +103,19 @@ def resolve_auto_migrate(
     if cli_override is not None:
         return cli_override
     return default_auto_migrate_for_mode(runtime_mode)
+
+
+def resolve_proxy_headers(
+    *,
+    runtime_mode: RuntimeMode,
+    env_override: bool | None,
+    cli_override: bool | None,
+) -> bool:
+    if env_override is not None:
+        return env_override
+    if cli_override is not None:
+        return cli_override
+    return default_proxy_headers_for_mode(runtime_mode)
 
 
 def settings_from_env() -> ApiSettings:
@@ -112,6 +138,15 @@ def settings_from_env() -> ApiSettings:
         authenticated_roles_header=(
             os.getenv("MTG_API_AUTHENTICATED_ROLES_HEADER", DEFAULT_AUTHENTICATED_ROLES_HEADER).strip()
             or DEFAULT_AUTHENTICATED_ROLES_HEADER
+        ),
+        proxy_headers=resolve_proxy_headers(
+            runtime_mode=runtime_mode,
+            env_override=proxy_headers_override_from_env(),
+            cli_override=None,
+        ),
+        forwarded_allow_ips=(
+            os.getenv("MTG_API_FORWARDED_ALLOW_IPS", DEFAULT_FORWARDED_ALLOW_IPS).strip()
+            or DEFAULT_FORWARDED_ALLOW_IPS
         ),
     )
 

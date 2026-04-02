@@ -105,6 +105,9 @@ Use this as the first-pass UI-to-endpoint map:
 - If you do not want a proxy:
   coordinate a backend change first instead of silently working around the
   current API boundary
+- For the first live shared-service deployment:
+  assume a same-origin reverse proxy that publishes `/api` publicly and strips
+  that prefix before forwarding to the backend root-route API
 
 Example Vite proxy:
 
@@ -144,8 +147,12 @@ export default {
   single-host deployments. In that mode, all current non-health routes require
   an authenticated `editor` user, and `admin` is reserved for maintenance
   surfaces. Broader deployment policy is not finished yet.
+- The recommended first-live deployment shape is same-origin and proxy-based,
+  not separate-origin CORS.
 - The backend still uses synchronous SQLite-backed services under the HTTP
   layer, with sync HTTP route handlers aligned to that service boundary.
-- Permissions are not implemented yet.
+- The current backend permission model is intentionally coarse:
+  authenticated `editor` access for the app routes, with `admin` reserved for
+  maintenance surfaces.
 - Browser-based local dev is expected to use a frontend proxy unless backend
   CORS behavior is changed deliberately.

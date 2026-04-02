@@ -79,8 +79,9 @@ inventory services:
   connection layer
 
 `shared_service` is a better fit for modest shared use. It now expects verified
-upstream identity for the app route surface, while broader deployment policy
-still remains outside this pass.
+upstream identity for the app route surface, and the recommended first-live
+deployment shape is a same-origin reverse proxy over the current root-route API
+surface.
 
 In `local_demo`, the API ignores caller-supplied `X-Actor-Id` headers and
 records mutating audit entries as coming from `local-demo`. For explicit
@@ -98,6 +99,14 @@ authenticated app user. The default verified identity header is
 recognized roles. If the verified user header is present and no roles header is
 supplied, the app defaults that user to `editor`. `admin` implies `editor`.
 
+For the first live cohort, the recommended deployment shape is:
+
+- same-origin frontend and backend
+- reverse proxy publishes `/api` and strips that prefix before forwarding
+- reverse proxy injects verified `X-Authenticated-User`
+- reverse proxy optionally injects normalized `X-Authenticated-Roles`
+- backend binds loopback or a private interface behind the proxy
+
 Run the local-demo API:
 
 ```bash
@@ -112,6 +121,14 @@ mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
 
 If you need to override startup migration behavior explicitly, use
 `--auto-migrate` or `--no-auto-migrate`, or set `MTG_API_AUTO_MIGRATE`.
+
+`shared_service` also supports:
+
+- `--proxy-headers` / `--no-proxy-headers`
+- `--forwarded-allow-ips`
+
+The current recommended deployment runbook lives in
+[`docs/shared_service_deploy.md`](docs/shared_service_deploy.md).
 
 Initialize a local database:
 
@@ -245,6 +262,8 @@ Operational expectations:
   as `X-Authenticated-User`
 - if you forward app roles, normalize them to `editor` and `admin` in a header
   such as `X-Authenticated-Roles`
+- publish the API to browsers through a same-origin reverse proxy, not by
+  exposing the backend directly
 - validate snapshot backup and restore before live use
 - keep the database on local storage, not a shared/network filesystem
 - treat `sync-bulk`, `import-all`, and large import/update jobs as admin
@@ -324,9 +343,9 @@ python -m unittest discover -s tests -q
 
 - The repo is intentionally local-first and CLI-driven.
 - `mtg-web-api` now supports a safer `shared_service` runtime mode with
-  verified-user audit attribution and a minimal `editor` / `admin` role model,
-  but finer-grained authorization and broader deployment policy still need
-  follow-up before broader shared use.
+  verified-user audit attribution, a minimal `editor` / `admin` role model, and
+  a documented first-live reverse-proxy deployment shape. Finer-grained admin
+  policy and rollout validation still need follow-up before broader shared use.
 - The demo API exposes a minimal `/health` payload focused on status and mode,
   not filesystem path details.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and
@@ -336,6 +355,9 @@ python -m unittest discover -s tests -q
   `editor` user. The default verified identity header is
   `X-Authenticated-User`, and the default roles header is
   `X-Authenticated-Roles`.
+- The recommended first-live deployment is same-origin and proxy-based. The
+  backend is not yet intended to be exposed directly to browsers on a separate
+  origin.
 - The current shared-service SQLite posture is single-host only and depends on
   WAL, busy-timeout, and tested snapshot restore rather than a distributed DB
   story.

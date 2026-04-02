@@ -117,6 +117,9 @@ shared service.
   inventory services and SQLite access.
 - In `shared_service`, all current app routes except `/health` now require an
   authenticated `editor` user, with `admin` reserved for maintenance surfaces.
+- The recommended first-live deployment is same-origin through a reverse proxy
+  that publishes `/api`, strips that prefix before forwarding, and injects
+  verified identity headers.
 - The shared-service SQLite posture now relies on the central connection layer
   enabling WAL, busy-timeout, `synchronous=NORMAL`, and tested snapshot-based
   recovery.
@@ -127,8 +130,8 @@ shared service.
 The next API-hardening steps are:
 
 - finer-grained authorization and admin-only route policy for shared use
-- broader deployment policy decisions such as CORS/base-path/topology
 - rollout validation against the real single-host deployment shape
+- observability and operator automation for the shared-service deployment
 
 ## Frontend Collaboration Boundary
 
