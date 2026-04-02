@@ -4,20 +4,67 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import NotFoundError, ValidationError
 from .normalize import (
+    CANONICAL_LANGUAGE_CODES,
     DEFAULT_SEARCH_LIMIT,
     MAX_SEARCH_LIMIT,
     extract_image_uri_fields,
+    normalize_language_code,
     normalized_catalog_finish_list,
+    text_or_none,
     validate_limit_value,
 )
 from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
-from .response_models import CatalogSearchRow
+from .response_models import CatalogNameSearchRow, CatalogSearchRow
+
+
+_LANGUAGE_ORDER = {code: index for index, code in enumerate(CANONICAL_LANGUAGE_CODES)}
+
+
+def _catalog_search_row_from_payload(payload: Mapping[str, Any]) -> CatalogSearchRow:
+    item = dict(payload)
+    image_uri_small, image_uri_normal = extract_image_uri_fields(item.pop("image_uris_json", None))
+    return CatalogSearchRow(
+        scryfall_id=item["scryfall_id"],
+        name=item["name"],
+        set_code=item["set_code"],
+        set_name=item["set_name"],
+        collector_number=item["collector_number"],
+        lang=item["lang"],
+        rarity=item["rarity"],
+        finishes=normalized_catalog_finish_list(item.pop("finishes_json", None)),
+        tcgplayer_product_id=item["tcgplayer_product_id"],
+        image_uri_small=image_uri_small,
+        image_uri_normal=image_uri_normal,
+    )
+
+
+def _language_sort_key(code: str) -> tuple[int, int, str]:
+    normalized = normalize_language_code(code)
+    return (
+        0 if normalized == "en" else 1,
+        _LANGUAGE_ORDER.get(normalized, len(_LANGUAGE_ORDER)),
+        normalized,
+    )
+
+
+def _sorted_available_languages(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in sorted(
+        (normalize_language_code(raw) for raw in values if text_or_none(raw) is not None),
+        key=_language_sort_key,
+    ):
+        if value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
 
 
 def search_cards(
@@ -111,26 +158,220 @@ def search_cards(
             params,
         ).fetchall()
 
-    results: list[CatalogSearchRow] = []
+    return [_catalog_search_row_from_payload(row) for row in rows]
+
+
+def search_card_names(
+    db_path: str | Path,
+    query: str,
+    *,
+    exact: bool = False,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+) -> list[CatalogNameSearchRow]:
+    if not query.strip():
+        raise ValidationError("query is required.")
+    validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
+    require_current_schema(db_path)
+    with connect(db_path) as connection:
+        search_cte = """
+        WITH search_match AS (
+            SELECT
+                NULL AS scryfall_id,
+                NULL AS search_rank
+            WHERE 0
+        )
+        """
+        search_join = "LEFT JOIN search_match ON 1 = 0"
+        where_parts: list[str] = []
+        params: list[Any] = []
+        fts_query = build_catalog_search_fts_query(query) if not exact else None
+        if exact:
+            where_parts.append("LOWER(mtg_cards.name) = LOWER(?)")
+            params.append(query)
+        else:
+            where_parts.append("(search_match.scryfall_id IS NOT NULL OR LOWER(mtg_cards.name) LIKE LOWER(?))")
+            params.append(f"%{query}%")
+            if fts_query is not None:
+                search_cte = """
+                WITH search_match AS (
+                    SELECT
+                        scryfall_id,
+                        bm25(mtg_cards_fts) AS search_rank
+                    FROM mtg_cards_fts
+                    WHERE mtg_cards_fts MATCH ?
+                )
+                """
+                search_join = "LEFT JOIN search_match ON search_match.scryfall_id = mtg_cards.scryfall_id"
+
+        if not exact and fts_query is not None:
+            params = [fts_query, *params]
+        params.extend([query, f"{query}%", limit])
+        rows = connection.execute(
+            f"""
+            {search_cte},
+            matched_printings AS (
+                SELECT
+                    mtg_cards.oracle_id,
+                    CASE
+                        WHEN LOWER(mtg_cards.name) = LOWER(?) THEN 0
+                        WHEN LOWER(mtg_cards.name) LIKE LOWER(?) THEN 1
+                        WHEN search_match.scryfall_id IS NOT NULL THEN 2
+                        ELSE 3
+                    END AS match_order,
+                    COALESCE(search_match.search_rank, 0) AS search_rank
+                FROM mtg_cards
+                {search_join}
+                WHERE {' AND '.join(where_parts)}
+            ),
+            matched_groups AS (
+                SELECT
+                    oracle_id,
+                    MIN(match_order) AS match_order,
+                    MIN(search_rank) AS best_search_rank
+                FROM matched_printings
+                GROUP BY oracle_id
+            ),
+            group_counts AS (
+                SELECT
+                    oracle_id,
+                    COUNT(*) AS printings_count
+                FROM mtg_cards
+                WHERE oracle_id IN (SELECT oracle_id FROM matched_groups)
+                GROUP BY oracle_id
+            ),
+            representative_rows AS (
+                SELECT
+                    mtg_cards.oracle_id,
+                    mtg_cards.name,
+                    mtg_cards.image_uris_json,
+                    mtg_cards.released_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY mtg_cards.oracle_id
+                        ORDER BY
+                            CASE
+                                WHEN LOWER(mtg_cards.lang) = 'en'
+                                     AND COALESCE(mtg_cards.image_uris_json, '') <> '' THEN 0
+                                WHEN LOWER(mtg_cards.lang) = 'en' THEN 1
+                                WHEN COALESCE(mtg_cards.image_uris_json, '') <> '' THEN 2
+                                ELSE 3
+                            END,
+                            COALESCE(mtg_cards.released_at, '') DESC,
+                            LOWER(mtg_cards.name),
+                            mtg_cards.set_code,
+                            mtg_cards.collector_number,
+                            mtg_cards.scryfall_id
+                    ) AS row_number
+                FROM mtg_cards
+                INNER JOIN matched_groups ON matched_groups.oracle_id = mtg_cards.oracle_id
+            )
+            SELECT
+                representative_rows.oracle_id,
+                representative_rows.name,
+                representative_rows.image_uris_json,
+                representative_rows.released_at,
+                group_counts.printings_count
+            FROM matched_groups
+            INNER JOIN representative_rows ON representative_rows.oracle_id = matched_groups.oracle_id
+            INNER JOIN group_counts ON group_counts.oracle_id = matched_groups.oracle_id
+            WHERE representative_rows.row_number = 1
+            ORDER BY
+                matched_groups.match_order,
+                matched_groups.best_search_rank,
+                LOWER(representative_rows.name),
+                COALESCE(representative_rows.released_at, '') DESC,
+                representative_rows.oracle_id
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        if not rows:
+            return []
+
+        oracle_ids = [row["oracle_id"] for row in rows]
+        placeholders = ", ".join("?" for _ in oracle_ids)
+        language_rows = connection.execute(
+            f"""
+            SELECT oracle_id, lang
+            FROM mtg_cards
+            WHERE oracle_id IN ({placeholders})
+            ORDER BY
+                CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
+                LOWER(lang),
+                COALESCE(released_at, '') DESC,
+                scryfall_id
+            """,
+            oracle_ids,
+        ).fetchall()
+
+    languages_by_oracle: dict[str, list[str]] = {}
+    for row in language_rows:
+        languages_by_oracle.setdefault(row["oracle_id"], []).append(row["lang"])
+
+    results: list[CatalogNameSearchRow] = []
     for row in rows:
-        item = dict(row)
-        image_uri_small, image_uri_normal = extract_image_uri_fields(item.pop("image_uris_json", None))
+        image_uri_small, image_uri_normal = extract_image_uri_fields(row["image_uris_json"])
         results.append(
-            CatalogSearchRow(
-                scryfall_id=item["scryfall_id"],
-                name=item["name"],
-                set_code=item["set_code"],
-                set_name=item["set_name"],
-                collector_number=item["collector_number"],
-                lang=item["lang"],
-                rarity=item["rarity"],
-                finishes=normalized_catalog_finish_list(item.pop("finishes_json", None)),
-                tcgplayer_product_id=item["tcgplayer_product_id"],
+            CatalogNameSearchRow(
+                oracle_id=row["oracle_id"],
+                name=row["name"],
+                printings_count=row["printings_count"],
+                available_languages=_sorted_available_languages(languages_by_oracle.get(row["oracle_id"], [])),
                 image_uri_small=image_uri_small,
                 image_uri_normal=image_uri_normal,
             )
         )
     return results
+
+
+def list_card_printings_for_oracle(
+    db_path: str | Path,
+    oracle_id: str,
+    *,
+    lang: str | None = None,
+) -> list[CatalogSearchRow]:
+    oracle_id_text = text_or_none(oracle_id)
+    if oracle_id_text is None:
+        raise ValidationError("oracle_id is required.")
+    requested_lang = text_or_none(lang)
+    require_current_schema(db_path)
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                scryfall_id,
+                name,
+                set_code,
+                set_name,
+                collector_number,
+                lang,
+                rarity,
+                finishes_json,
+                tcgplayer_product_id,
+                image_uris_json
+            FROM mtg_cards
+            WHERE oracle_id = ?
+            ORDER BY
+                COALESCE(released_at, '') DESC,
+                CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
+                set_code,
+                collector_number,
+                scryfall_id
+            """,
+            (oracle_id_text,),
+        ).fetchall()
+    if not rows:
+        raise NotFoundError(f"No printings found for oracle_id '{oracle_id_text}'.")
+
+    if requested_lang is None:
+        english_rows = [row for row in rows if normalize_language_code(row["lang"]) == "en"]
+        selected_rows = english_rows or rows
+    elif requested_lang.lower() == "all":
+        selected_rows = rows
+    else:
+        normalized_lang = normalize_language_code(requested_lang)
+        selected_rows = [row for row in rows if normalize_language_code(row["lang"]) == normalized_lang]
+
+    return [_catalog_search_row_from_payload(row) for row in selected_rows]
 
 
 def resolve_card_row(

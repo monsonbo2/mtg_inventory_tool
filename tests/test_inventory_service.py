@@ -29,11 +29,13 @@ from mtg_source_stack.inventory.service import (
     add_card,
     create_inventory,
     inventory_report,
+    list_card_printings_for_oracle,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
     reconcile_prices,
     remove_card,
+    search_card_names,
     search_cards,
     set_acquisition,
     set_condition,
@@ -108,6 +110,193 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             with self.assertRaisesRegex(ValidationError, "query is required"):
                 search_cards(db_path, query="   ", exact=False, limit=10)
+
+    def test_search_card_names_groups_by_oracle_id_and_surfaces_languages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json,
+                        image_uris_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '["nonfoil","foil"]', ?)
+                    """,
+                    [
+                        (
+                            "grouped-search-en",
+                            "grouped-search-oracle",
+                            "Search Group Card",
+                            "neo",
+                            "Neon Dynasty",
+                            "15",
+                            "en",
+                            "2024-01-01",
+                            '{"small":"https://example.test/cards/grouped-search-en-small.jpg","normal":"https://example.test/cards/grouped-search-en-normal.jpg"}',
+                        ),
+                        (
+                            "grouped-search-ja",
+                            "grouped-search-oracle",
+                            "Search Group Card",
+                            "neo",
+                            "Neon Dynasty",
+                            "16",
+                            "ja",
+                            "2024-02-01",
+                            '{"small":"https://example.test/cards/grouped-search-ja-small.jpg","normal":"https://example.test/cards/grouped-search-ja-normal.jpg"}',
+                        ),
+                        (
+                            "grouped-search-de",
+                            "grouped-search-oracle",
+                            "Search Group Card",
+                            "neo",
+                            "Neon Dynasty",
+                            "17",
+                            "de",
+                            "2023-12-01",
+                            '{"small":"https://example.test/cards/grouped-search-de-small.jpg","normal":"https://example.test/cards/grouped-search-de-normal.jpg"}',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            rows = search_card_names(db_path, query="Search Group", exact=False, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("grouped-search-oracle", rows[0].oracle_id)
+            self.assertEqual("Search Group Card", rows[0].name)
+            self.assertEqual(3, rows[0].printings_count)
+            self.assertEqual(["en", "ja", "de"], rows[0].available_languages)
+            self.assertEqual(
+                "https://example.test/cards/grouped-search-en-small.jpg",
+                rows[0].image_uri_small,
+            )
+            self.assertEqual(
+                "https://example.test/cards/grouped-search-en-normal.jpg",
+                rows[0].image_uri_normal,
+            )
+
+    def test_list_card_printings_for_oracle_defaults_to_english_but_supports_language_expansion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json,
+                        image_uris_json
+                    )
+                    VALUES (?, 'lookup-oracle', ?, ?, ?, ?, ?, ?, '["nonfoil","foil"]', ?)
+                    """,
+                    [
+                        (
+                            "lookup-en-new",
+                            "Lookup Card",
+                            "mkm",
+                            "Murders at Karlov Manor",
+                            "41",
+                            "en",
+                            "2024-02-09",
+                            '{"small":"https://example.test/cards/lookup-en-new-small.jpg","normal":"https://example.test/cards/lookup-en-new-normal.jpg"}',
+                        ),
+                        (
+                            "lookup-ja",
+                            "Lookup Card",
+                            "mkm",
+                            "Murders at Karlov Manor",
+                            "42",
+                            "ja",
+                            "2024-03-01",
+                            '{"small":"https://example.test/cards/lookup-ja-small.jpg","normal":"https://example.test/cards/lookup-ja-normal.jpg"}',
+                        ),
+                        (
+                            "lookup-en-old",
+                            "Lookup Card",
+                            "woe",
+                            "Wilds of Eldraine",
+                            "12",
+                            "en",
+                            "2023-09-01",
+                            '{"small":"https://example.test/cards/lookup-en-old-small.jpg","normal":"https://example.test/cards/lookup-en-old-normal.jpg"}',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            default_rows = list_card_printings_for_oracle(db_path, "lookup-oracle")
+            self.assertEqual(["lookup-en-new", "lookup-en-old"], [row.scryfall_id for row in default_rows])
+
+            all_rows = list_card_printings_for_oracle(db_path, "lookup-oracle", lang="all")
+            self.assertEqual(["lookup-ja", "lookup-en-new", "lookup-en-old"], [row.scryfall_id for row in all_rows])
+
+            japanese_rows = list_card_printings_for_oracle(db_path, "lookup-oracle", lang="ja")
+            self.assertEqual(["lookup-ja"], [row.scryfall_id for row in japanese_rows])
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json,
+                        image_uris_json
+                    )
+                    VALUES (?, 'lookup-no-english', 'Foreign Only Card', 'fdn', 'Foundations', ?, ?, ?, '["nonfoil"]', ?)
+                    """,
+                    [
+                        (
+                            "lookup-no-english-ja",
+                            "77",
+                            "ja",
+                            "2024-01-01",
+                            '{"small":"https://example.test/cards/lookup-no-english-ja-small.jpg","normal":"https://example.test/cards/lookup-no-english-ja-normal.jpg"}',
+                        ),
+                        (
+                            "lookup-no-english-de",
+                            "78",
+                            "de",
+                            "2023-12-01",
+                            '{"small":"https://example.test/cards/lookup-no-english-de-small.jpg","normal":"https://example.test/cards/lookup-no-english-de-normal.jpg"}',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            fallback_rows = list_card_printings_for_oracle(db_path, "lookup-no-english")
+            self.assertEqual(
+                ["lookup-no-english-ja", "lookup-no-english-de"],
+                [row.scryfall_id for row in fallback_rows],
+            )
+
+            with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'missing-oracle'"):
+                list_card_printings_for_oracle(db_path, "missing-oracle")
 
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

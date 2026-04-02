@@ -1,13 +1,16 @@
 import type {
   AddInventoryItemRequest,
   ApiErrorEnvelope,
+  CatalogNameSearchRow,
   CatalogSearchRow,
   InventoryAuditEvent,
   InventoryItemPatchResponse,
   InventoryItemMutationResponse,
   InventorySummary,
+  ListCardPrintingsParams,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
+  SearchCardNamesParams,
   SearchCardsParams,
 } from "./types";
 
@@ -111,6 +114,25 @@ export async function searchCards(params: SearchCardsParams) {
     exact: params.exact,
     limit: params.limit,
   });
+}
+
+export async function searchCardNames(params: SearchCardNamesParams) {
+  return request<CatalogNameSearchRow[]>("/cards/search/names", {}, {
+    query: params.query,
+    exact: params.exact,
+    limit: params.limit,
+  });
+}
+
+export async function listCardPrintings(
+  oracleId: string,
+  params: ListCardPrintingsParams = {},
+) {
+  return request<CatalogSearchRow[]>(
+    `/cards/oracle/${encodeURIComponent(oracleId)}/printings`,
+    {},
+    { lang: params.lang },
+  );
 }
 
 export async function listInventoryItems(inventorySlug: string) {

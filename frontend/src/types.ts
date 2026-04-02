@@ -52,6 +52,15 @@ export interface CatalogSearchRow {
   image_uri_normal: string | null;
 }
 
+export interface CatalogNameSearchRow {
+  oracle_id: string;
+  name: string;
+  printings_count: number;
+  available_languages: LanguageCode[];
+  image_uri_small: string | null;
+  image_uri_normal: string | null;
+}
+
 export interface OwnedInventoryRow {
   item_id: number;
   scryfall_id: string;
@@ -163,4 +172,14 @@ export interface SearchCardsParams {
   lang?: LanguageCode;
   exact?: boolean;
   limit?: number;
+}
+
+export interface SearchCardNamesParams {
+  query: string;
+  exact?: boolean;
+  limit?: number;
+}
+
+export interface ListCardPrintingsParams {
+  lang?: LanguageCode | "all";
 }

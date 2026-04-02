@@ -45,6 +45,7 @@ The current intended demo surface is:
 
 - inventory selector
 - card search
+- card-name search plus printing lookup
 - add card flow
 - owned rows table
 - quick edit for quantity, finish, location, notes, and tags
@@ -56,6 +57,11 @@ Use this as the first-pass UI-to-endpoint map:
 
 - Inventory selector -> `GET /inventories`
 - Card search -> `GET /cards/search`
+- Card-name search -> `GET /cards/search/names`
+  Returns one row per card/oracle and includes `available_languages`.
+- Printing lookup for a selected card -> `GET /cards/oracle/{oracle_id}/printings`
+  Defaults to English printings when available; use `lang=all` or a specific
+  language code to expand the list.
 - Add card -> `POST /inventories/{inventory_slug}/items`
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
   Returned rows include `allowed_finishes` for safe finish-edit controls.

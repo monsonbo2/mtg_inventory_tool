@@ -77,6 +77,16 @@ class CatalogSearchRow(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogNameSearchRow(ResponseModel):
+    oracle_id: str
+    name: str
+    printings_count: int
+    available_languages: list[str]
+    image_uri_small: str | None
+    image_uri_normal: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class InventoryListRow(ResponseModel):
     slug: str
     display_name: str

@@ -12,6 +12,7 @@ from mtg_source_stack.api_contract import api_error_payload, api_error_status
 from mtg_source_stack.api.request_models import AddInventoryItemRequest, PatchInventoryItemRequest
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
+    CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
     OwnedInventoryRowResponse,
     SetAcquisitionResponse,
@@ -25,6 +26,7 @@ from mtg_source_stack.inventory.service import (
     list_inventory_audit_events,
     list_owned_filtered,
     reconcile_prices,
+    search_card_names,
     search_cards,
 )
 
@@ -141,10 +143,19 @@ class ApiContractTest(RepoSmokeTestCase):
             "image_uri_small": "https://example.test/cards/card-1-small.jpg",
             "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
         }
+        catalog_name_payload = {
+            "oracle_id": "oracle-lightning-bolt",
+            "name": "Lightning Bolt",
+            "printings_count": 27,
+            "available_languages": ["en", "ja", "de"],
+            "image_uri_small": "https://example.test/cards/card-1-small.jpg",
+            "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
+        }
         error_payload = api_error_payload(ValidationError("Bad request."))
 
         owned = OwnedInventoryRowResponse.model_validate(owned_payload)
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
+        catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
         error = ApiErrorResponse.model_validate(error_payload)
 
         self.assertEqual("2.50", owned.acquisition_price)
@@ -154,6 +165,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIsNone(owned.price_date)
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
+        self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
         self.assertEqual("validation_error", error.error.code)
 
     def test_api_models_publish_defaults_and_canonical_value_guidance(self) -> None:
@@ -182,6 +194,15 @@ class ApiContractTest(RepoSmokeTestCase):
             catalog_properties["finishes"]["items"]["enum"],
         )
         self.assertIn("Catalog language code", catalog_properties["lang"]["description"])
+
+        catalog_name_schema = CatalogNameSearchRowResponse.model_json_schema()
+        catalog_name_properties = catalog_name_schema["properties"]
+        self.assertEqual("array", catalog_name_properties["available_languages"]["type"])
+        self.assertEqual("string", catalog_name_properties["available_languages"]["items"]["type"])
+        self.assertIn(
+            "Catalog language codes available for the matched card",
+            catalog_name_properties["available_languages"]["description"],
+        )
 
     def test_patch_contract_publishes_single_operation_rule_and_discriminator(self) -> None:
         patch_schema = PatchInventoryItemRequest.model_json_schema()
@@ -257,6 +278,7 @@ class ApiContractTest(RepoSmokeTestCase):
             lambda: search_cards(Path("var/db/not-used.db"), query="bolt", limit=-1),
             lambda: search_cards(Path("var/db/not-used.db"), query="", limit=10),
             lambda: search_cards(Path("var/db/not-used.db"), query="   ", limit=10),
+            lambda: search_card_names(Path("var/db/not-used.db"), query="", limit=10),
             lambda: list_owned_filtered(
                 Path("var/db/not-used.db"),
                 inventory_slug="personal",

@@ -98,6 +98,8 @@ class WebApiSchemaTest(unittest.TestCase):
 
             for path, method in [
                 ("/cards/search", "get"),
+                ("/cards/search/names", "get"),
+                ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories", "post"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
@@ -111,6 +113,8 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories", "get"),
                 ("/inventories", "post"),
                 ("/cards/search", "get"),
+                ("/cards/search/names", "get"),
+                ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
@@ -151,6 +155,35 @@ class WebApiSchemaTest(unittest.TestCase):
                 "Recommended codes include: en, ja, de, fr",
                 search_parameters["lang"]["description"],
             )
+
+            card_names_schema = spec["paths"]["/cards/search/names"]["get"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]
+            self.assertEqual("array", card_names_schema["type"])
+            card_name_schema_name = self._schema_name_from_ref(card_names_schema["items"]["$ref"])
+            self.assertEqual("CatalogNameSearchRowResponse", card_name_schema_name)
+            self.assertEqual(
+                "array",
+                components[card_name_schema_name]["properties"]["available_languages"]["type"],
+            )
+            self.assertEqual(
+                "string",
+                components[card_name_schema_name]["properties"]["available_languages"]["items"]["type"],
+            )
+
+            printings_schema = spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertEqual("array", printings_schema["type"])
+            self.assertEqual(
+                "CatalogSearchRowResponse",
+                self._schema_name_from_ref(printings_schema["items"]["$ref"]),
+            )
+            printings_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["parameters"]
+            }
+            self.assertIn("Use `all` to include every available catalog language", printings_parameters["lang"]["description"])
 
             owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
                 "content"
@@ -329,6 +362,59 @@ class WebApiTest(unittest.TestCase):
             )
             connection.commit()
 
+    def _seed_oracle_printings(self, db_path: Path) -> None:
+        with connect(db_path) as connection:
+            connection.executemany(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json
+                )
+                VALUES (?, 'api-oracle-lookup', ?, ?, ?, ?, ?, ?, '["nonfoil","foil"]', ?)
+                """,
+                [
+                    (
+                        "api-printing-en-new",
+                        "API Lookup Card",
+                        "mkm",
+                        "Murders at Karlov Manor",
+                        "14",
+                        "en",
+                        "2024-02-09",
+                        '{"small":"https://example.test/cards/api-printing-en-new-small.jpg","normal":"https://example.test/cards/api-printing-en-new-normal.jpg"}',
+                    ),
+                    (
+                        "api-printing-ja",
+                        "API Lookup Card",
+                        "mkm",
+                        "Murders at Karlov Manor",
+                        "15",
+                        "ja",
+                        "2024-03-01",
+                        '{"small":"https://example.test/cards/api-printing-ja-small.jpg","normal":"https://example.test/cards/api-printing-ja-normal.jpg"}',
+                    ),
+                    (
+                        "api-printing-en-old",
+                        "API Lookup Card",
+                        "woe",
+                        "Wilds of Eldraine",
+                        "16",
+                        "en",
+                        "2023-09-01",
+                        '{"small":"https://example.test/cards/api-printing-en-old-small.jpg","normal":"https://example.test/cards/api-printing-en-old-normal.jpg"}',
+                    ),
+                ],
+            )
+            connection.commit()
+
     def _schema_name_from_ref(self, ref: str) -> str:
         return ref.rsplit("/", 1)[-1]
 
@@ -414,6 +500,50 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("local-demo", audit.json()[0]["actor_id"])
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
                 self.assertRegex(audit.json()[0]["occurred_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_demo_api_exposes_name_search_and_oracle_printings_lookup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_oracle_printings(db_path)
+
+                name_search = client.get("/cards/search/names", params={"query": "API Lookup"})
+                self.assertEqual(200, name_search.status_code)
+                self.assertEqual(1, len(name_search.json()))
+                self.assertEqual("api-oracle-lookup", name_search.json()[0]["oracle_id"])
+                self.assertEqual(["en", "ja"], name_search.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-printing-en-new-small.jpg",
+                    name_search.json()[0]["image_uri_small"],
+                )
+
+                default_printings = client.get("/cards/oracle/api-oracle-lookup/printings")
+                self.assertEqual(200, default_printings.status_code)
+                self.assertEqual(
+                    ["api-printing-en-new", "api-printing-en-old"],
+                    [row["scryfall_id"] for row in default_printings.json()],
+                )
+
+                all_printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    params={"lang": "all"},
+                )
+                self.assertEqual(200, all_printings.status_code)
+                self.assertEqual(
+                    ["api-printing-ja", "api-printing-en-new", "api-printing-en-old"],
+                    [row["scryfall_id"] for row in all_printings.json()],
+                )
+
+                japanese_printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    params={"lang": "ja"},
+                )
+                self.assertEqual(200, japanese_printings.status_code)
+                self.assertEqual(["api-printing-ja"], [row["scryfall_id"] for row in japanese_printings.json()])
+
+                missing = client.get("/cards/oracle/missing-oracle/printings")
+                self.assertEqual(404, missing.status_code)
+                self.assertEqual("not_found", missing.json()["error"]["code"])
 
     def test_shared_service_mode_handles_a_small_concurrent_request_burst(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -527,11 +657,28 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(403, unauthorized_search.status_code)
                 self.assertEqual("forbidden", unauthorized_search.json()["error"]["code"])
 
+                unauthorized_name_search = client.get(
+                    "/cards/search/names",
+                    headers=unrecognized_role_headers,
+                    params={"query": "API Test"},
+                )
+                self.assertEqual(403, unauthorized_name_search.status_code)
+                self.assertEqual("forbidden", unauthorized_name_search.json()["error"]["code"])
+
                 inventories = client.get("/inventories", headers=editor_headers)
                 self.assertEqual(200, inventories.status_code)
 
                 search = client.get("/cards/search", headers=editor_headers, params={"query": "API Test"})
                 self.assertEqual(200, search.status_code)
+
+                self._seed_oracle_printings(db_path)
+                name_search = client.get("/cards/search/names", headers=editor_headers, params={"query": "API Lookup"})
+                self.assertEqual(200, name_search.status_code)
+                printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    headers=editor_headers,
+                )
+                self.assertEqual(200, printings.status_code)
 
                 items = client.get("/inventories/personal/items", headers=editor_headers)
                 self.assertEqual(200, items.status_code)
@@ -737,6 +884,11 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(400, whitespace.status_code)
                 self.assertEqual("validation_error", whitespace.json()["error"]["code"])
                 self.assertIn("query is required", whitespace.json()["error"]["message"])
+
+                grouped_blank = client.get("/cards/search/names", params={"query": ""})
+                self.assertEqual(400, grouped_blank.status_code)
+                self.assertEqual("validation_error", grouped_blank.json()["error"]["code"])
+                self.assertIn("query is required", grouped_blank.json()["error"]["message"])
 
     def test_demo_api_rejects_invalid_limit_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

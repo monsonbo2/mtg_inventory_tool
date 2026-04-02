@@ -20,10 +20,12 @@ from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
     create_inventory,
+    list_card_printings_for_oracle,
     list_inventories,
     list_inventory_audit_events,
     list_owned_filtered,
     remove_card,
+    search_card_names,
     search_cards,
     set_acquisition,
     set_condition,
@@ -54,6 +56,7 @@ from .request_models import (
 from .response_models import (
     AddInventoryItemResponse,
     ApiErrorResponse,
+    CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
     HealthResponse,
     InventoryAuditEventResponse,
@@ -66,6 +69,11 @@ from .response_models import (
 
 
 router = APIRouter()
+
+PRINTINGS_LANG_DESCRIPTION = (
+    f"{SEARCH_LANG_DESCRIPTION} Omit this parameter to prefer English printings by default. "
+    "Use `all` to include every available catalog language."
+)
 
 ERROR_RESPONSE_DESCRIPTIONS = {
     401: "Authentication required",
@@ -205,6 +213,48 @@ def cards_search(
             lang=lang,
             exact=exact,
             limit=limit,
+        )
+    )
+
+
+@router.get(
+    "/cards/search/names",
+    response_model=list[CatalogNameSearchRowResponse],
+    responses=_error_responses(401, 403, 400, 503, 500),
+)
+def card_names_search(
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    query: str,
+    exact: bool = False,
+    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
+) -> Any:
+    return _serialize(
+        search_card_names(
+            settings.db_path,
+            query=query,
+            exact=exact,
+            limit=limit,
+        )
+    )
+
+
+@router.get(
+    "/cards/oracle/{oracle_id}/printings",
+    response_model=list[CatalogSearchRowResponse],
+    responses=_error_responses(401, 403, 400, 404, 503, 500),
+)
+def card_printings_lookup(
+    oracle_id: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    lang: Annotated[str | None, Query(description=PRINTINGS_LANG_DESCRIPTION)] = None,
+) -> Any:
+    return _serialize(
+        list_card_printings_for_oracle(
+            settings.db_path,
+            oracle_id=oracle_id,
+            lang=lang,
         )
     )
 

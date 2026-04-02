@@ -1,0 +1,13 @@
+[
+  {
+    "oracle_id": "demo-lightning-bolt-oracle",
+    "name": "Lightning Bolt",
+    "printings_count": 3,
+    "available_languages": [
+      "en",
+      "ja"
+    ],
+    "image_uri_small": "https://example.test/cards/lightning-bolt-en-small.jpg",
+    "image_uri_normal": "https://example.test/cards/lightning-bolt-en-normal.jpg"
+  }
+]

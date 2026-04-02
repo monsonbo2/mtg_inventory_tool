@@ -25,6 +25,9 @@ LANGUAGE_CODE_RESPONSE_DESCRIPTION = (
 SEARCH_LANG_RESPONSE_DESCRIPTION = (
     f"Catalog language code. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
 )
+AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION = (
+    f"Catalog language codes available for the matched card. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -71,6 +74,15 @@ class CatalogSearchRowResponse(ApiBaseModel):
     rarity: str | None
     finishes: list[Literal["normal", "foil", "etched"]] = Field(description=FINISH_RESPONSE_DESCRIPTION)
     tcgplayer_product_id: str | None
+    image_uri_small: str | None
+    image_uri_normal: str | None
+
+
+class CatalogNameSearchRowResponse(ApiBaseModel):
+    oracle_id: str
+    name: str
+    printings_count: int
+    available_languages: list[str] = Field(description=AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION)
     image_uri_small: str | None
     image_uri_normal: str | None
 

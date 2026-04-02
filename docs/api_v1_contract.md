@@ -17,6 +17,9 @@ preserve for the first API-backed version of the project.
 - Catalog search rows and owned inventory rows may include optional visual
   fields such as `image_uri_small` and `image_uri_normal` when card image data
   is available.
+- Card-name search rows include `available_languages` so the frontend can hint
+  when alternate-language printings exist before fetching the full printing
+  list.
 - Owned inventory rows include `allowed_finishes` so edit UIs can constrain
   finish changes without doing an extra catalog lookup.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
@@ -59,6 +62,15 @@ preserve for the first API-backed version of the project.
 - `GET /cards/search` query `query`
   - must be non-empty after trimming whitespace
   - blank or whitespace-only search queries return `400 validation_error`
+- `GET /cards/search/names`
+  - groups results by `oracle_id`
+  - prefers an English representative row and image when available
+  - includes `available_languages` for the matched card
+- `GET /cards/oracle/{oracle_id}/printings`
+  - returns printing-level rows for one `oracle_id`
+  - defaults to English printings when available
+  - accepts `lang=all` to include all available catalog languages
+  - accepts specific language codes such as `lang=ja` to request one language
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For

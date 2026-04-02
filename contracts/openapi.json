@@ -360,6 +360,222 @@
         }
       }
     },
+    "/cards/search/names": {
+      "get": {
+        "summary": "Card Names Search",
+        "operationId": "card_names_search_cards_search_names_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "exact",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Exact"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogNameSearchRowResponse"
+                  },
+                  "title": "Response Card Names Search Cards Search Names Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Schema not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cards/oracle/{oracle_id}/printings": {
+      "get": {
+        "summary": "Card Printings Lookup",
+        "operationId": "card_printings_lookup_cards_oracle__oracle_id__printings_get",
+        "parameters": [
+          {
+            "name": "oracle_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oracle Id"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes. Omit this parameter to prefer English printings by default. Use `all` to include every available catalog language.",
+              "title": "Lang"
+            },
+            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes. Omit this parameter to prefer English printings by default. Use `all` to include every available catalog language."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogSearchRowResponse"
+                  },
+                  "title": "Response Card Printings Lookup Cards Oracle  Oracle Id  Printings Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Schema not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/inventories/{inventory_slug}/items": {
       "get": {
         "summary": "Inventory Items List",
@@ -1396,6 +1612,63 @@
           "error"
         ],
         "title": "ApiErrorResponse"
+      },
+      "CatalogNameSearchRowResponse": {
+        "properties": {
+          "oracle_id": {
+            "type": "string",
+            "title": "Oracle Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "printings_count": {
+            "type": "integer",
+            "title": "Printings Count"
+          },
+          "available_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Languages",
+            "description": "Catalog language codes available for the matched card. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph."
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "oracle_id",
+          "name",
+          "printings_count",
+          "available_languages",
+          "image_uri_small",
+          "image_uri_normal"
+        ],
+        "title": "CatalogNameSearchRowResponse"
       },
       "CatalogSearchRowResponse": {
         "properties": {
