@@ -423,6 +423,18 @@ def normalized_catalog_finish_list(raw_finishes: str | None) -> list[str]:
     return finishes
 
 
+def validate_supported_finish(raw_finishes: str | None, requested_finish: str) -> str:
+    available_finishes = normalized_catalog_finish_list(raw_finishes)
+    if requested_finish in available_finishes:
+        return requested_finish
+
+    available_text = ", ".join(available_finishes) if available_finishes else "(none recorded)"
+    raise ValidationError(
+        f"Finish '{requested_finish}' is not available for this card printing. "
+        f"Available finishes: {available_text}."
+    )
+
+
 def truncate(value: Any, max_len: int) -> str:
     text = "" if value is None else str(value)
     if len(text) <= max_len:

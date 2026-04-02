@@ -48,7 +48,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await lifespan.__aexit__(None, None, None)
 
-    def _seed_card(self, db_path: Path) -> None:
+    def _seed_card(self, db_path: Path, *, finishes_json: str = '["normal","foil"]') -> None:
         with connect(db_path) as connection:
             connection.execute(
                 """
@@ -69,11 +69,11 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                     'tst',
                     'Test Set',
                     '10',
-                    '["normal","foil"]',
+                    ?,
                     '{"small":"https://example.test/cards/api-card-1-small.jpg","normal":"https://example.test/cards/api-card-1-normal.jpg"}'
                 )
                 """,
-                ("api-card-1", "api-oracle-1", "API Test Card"),
+                ("api-card-1", "api-oracle-1", "API Test Card", finishes_json),
             )
             connection.commit()
 
@@ -327,6 +327,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual("api", audit.json()[0]["actor_type"])
                 self.assertEqual("local-demo", audit.json()[0]["actor_id"])
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
+                self.assertRegex(audit.json()[0]["occurred_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
     async def test_demo_api_can_optionally_trust_actor_headers_in_dev_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -377,6 +378,53 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(400, invalid_patch.status_code)
                 self.assertEqual("validation_error", invalid_patch.json()["error"]["code"])
+
+    async def test_demo_api_rejects_unsupported_finishes_for_a_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            async with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = await client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                invalid_add = await client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "foil",
+                    },
+                )
+                self.assertEqual(400, invalid_add.status_code)
+                self.assertEqual("validation_error", invalid_add.json()["error"]["code"])
+                self.assertIn("Available finishes: normal", invalid_add.json()["error"]["message"])
+
+                added = await client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                invalid_finish_patch = await client.patch(
+                    f"/inventories/personal/items/{added.json()['item_id']}",
+                    json={"finish": "foil"},
+                )
+                self.assertEqual(400, invalid_finish_patch.status_code)
+                self.assertEqual("validation_error", invalid_finish_patch.json()["error"]["code"])
+                self.assertIn(
+                    "Available finishes: normal",
+                    invalid_finish_patch.json()["error"]["message"],
+                )
 
     async def test_demo_api_rejects_invalid_limit_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

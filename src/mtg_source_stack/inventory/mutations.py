@@ -24,6 +24,7 @@ from .normalize import (
     parse_tags,
     tags_to_json,
     text_or_none,
+    validate_supported_finish,
 )
 from .policies import ensure_add_card_metadata_compatible, resolve_merge_acquisition, row_matches_identity
 from .query_inventory import (
@@ -77,6 +78,7 @@ def add_card_with_connection(
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
+    resolved_card: sqlite3.Row | None = None,
     inventory_cache: dict[str, sqlite3.Row] | None = None,
     before_write: Callable[[], Any] | None = None,
     actor_type: str = "cli",
@@ -111,15 +113,18 @@ def add_card_with_connection(
         auto_create=inventory_display_name is not None,
     )
 
-    card = resolve_card_row(
-        connection,
-        scryfall_id=scryfall_id,
-        tcgplayer_product_id=normalize_external_id(tcgplayer_product_id),
-        name=name,
-        set_code=set_code,
-        collector_number=collector_number,
-        lang=lang,
-    )
+    card = resolved_card
+    if card is None:
+        card = resolve_card_row(
+            connection,
+            scryfall_id=scryfall_id,
+            tcgplayer_product_id=normalize_external_id(tcgplayer_product_id),
+            name=name,
+            set_code=set_code,
+            collector_number=collector_number,
+            lang=lang,
+        )
+    validate_supported_finish(card["finishes_json"], normalized_finish)
 
     new_tags = parse_tags(tags)
     # Re-adding the same logical row should accumulate tags instead of replacing
@@ -451,6 +456,7 @@ def set_finish_with_connection(
     item = get_inventory_item_row(connection, inventory_slug, item_id)
     before_snapshot = inventory_item_result_from_row(item)
     normalized_finish = normalize_finish(finish)
+    validate_supported_finish(item["finishes_json"], normalized_finish)
     if normalized_finish == item["finish"]:
         return SetFinishResult(
             **inventory_item_response_kwargs(before_snapshot),
@@ -827,6 +833,7 @@ def split_row(
         target_condition = normalize_condition_code(condition_code) if condition_code is not None else source_item["condition_code"]
         target_finish = normalize_finish(finish) if finish is not None else source_item["finish"]
         target_language = normalize_language_code(language_code) if language_code is not None else source_item["language_code"]
+        validate_supported_finish(source_item["finishes_json"], target_finish)
         if clear_location:
             target_location = ""
         elif location is not None:

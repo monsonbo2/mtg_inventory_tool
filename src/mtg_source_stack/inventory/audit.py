@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import sqlite3
 from pathlib import Path
@@ -13,6 +14,18 @@ from .normalize import DEFAULT_AUDIT_EVENT_LIMIT, MAX_AUDIT_EVENT_LIMIT, validat
 from .query_inventory import get_inventory_item_row, inventory_item_result_from_row
 from .query_inventory import get_inventory_row
 from .response_models import InventoryAuditEvent, serialize_response
+
+
+def format_audit_timestamp(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return value
+
+    normalized = text.replace("Z", "+00:00")
+    occurred_at = datetime.fromisoformat(normalized)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    return occurred_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def inventory_item_snapshot(payload: sqlite3.Row | dict[str, Any] | None) -> dict[str, Any] | None:
@@ -135,7 +148,7 @@ def list_inventory_audit_events(
             actor_type=row["actor_type"],
             actor_id=row["actor_id"],
             request_id=row["request_id"],
-            occurred_at=row["occurred_at"],
+            occurred_at=format_audit_timestamp(row["occurred_at"]),
             before=json.loads(row["before_json"]) if row["before_json"] else None,
             after=json.loads(row["after_json"]) if row["after_json"] else None,
             metadata=json.loads(row["metadata_json"]) if row["metadata_json"] else {},

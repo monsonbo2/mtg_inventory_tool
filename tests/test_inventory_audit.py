@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -176,7 +177,7 @@ class InventoryAuditTest(RepoSmokeTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
             initialize_database(db_path)
-            self._seed_card(db_path, finishes_json='["normal"]')
+            self._seed_card(db_path)
             self._create_personal_inventory(db_path)
 
             # Build a deliberate identity collision so `set_condition --merge`
@@ -275,7 +276,7 @@ class InventoryAuditTest(RepoSmokeTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
             initialize_database(db_path)
-            self._seed_card(db_path, finishes_json='["normal"]')
+            self._seed_card(db_path)
             self._create_personal_inventory(db_path)
 
             # First split one row into two identities, then merge them back
@@ -396,7 +397,7 @@ class InventoryAuditTest(RepoSmokeTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
             initialize_database(db_path)
-            self._seed_card(db_path, finishes_json='["normal"]')
+            self._seed_card(db_path)
             self._create_personal_inventory(db_path)
 
             added = add_card(
@@ -452,3 +453,5 @@ class InventoryAuditTest(RepoSmokeTestCase):
             )
             self.assertEqual(1, len(item_events))
             self.assertEqual("set_finish", item_events[0].action)
+            self.assertRegex(events[0].occurred_at, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+            self.assertRegex(item_events[0].occurred_at, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")

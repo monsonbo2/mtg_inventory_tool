@@ -136,6 +136,98 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     description=None,
                 )
 
+    def test_finish_changes_must_match_supported_card_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        finishes_json
+                    )
+                    VALUES ('finish-guard-1', 'finish-guard-oracle-1', 'Finish Guard Card', 'tst', 'Test Set', '18', '["normal"]')
+                    """
+                )
+                connection.commit()
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            with self.assertRaisesRegex(ValidationError, "Available finishes: normal"):
+                add_card(
+                    db_path,
+                    inventory_slug="personal",
+                    inventory_display_name=None,
+                    scryfall_id="finish-guard-1",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    quantity=1,
+                    condition_code="NM",
+                    finish="foil",
+                    language_code="en",
+                    location="Binder A",
+                    acquisition_price=None,
+                    acquisition_currency=None,
+                    notes=None,
+                    tags=None,
+                )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="finish-guard-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=2,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            with self.assertRaisesRegex(ValidationError, "Available finishes: normal"):
+                set_finish(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=added.item_id,
+                    finish="foil",
+                )
+
+            with self.assertRaisesRegex(ValidationError, "Available finishes: normal"):
+                split_row(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=added.item_id,
+                    quantity=1,
+                    condition_code=None,
+                    finish="foil",
+                    language_code=None,
+                    location="Binder B",
+                )
+
     def test_mutation_services_return_typed_results_for_direct_api_use(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -819,7 +911,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             prices_path = bundle["prices.json"]
 
             # The fixture only has a foil-priced version, which forces the
-            # reconcile flow to detect and fix the mismatched inventory finish.
+            # reconcile flow to detect and fix a historically mismatched
+            # inventory finish.
             import_output = self.run_importer(
                 "import-all",
                 "--db",
@@ -844,20 +937,27 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
             self.assertIn("Created inventory 'personal'", create_output)
 
-            add_output = self.run_cli(
-                "add-card",
-                "--db",
-                str(db_path),
-                "--inventory",
-                "personal",
-                "--scryfall-id",
-                "foil-only-1",
-                "--quantity",
-                "1",
-                "--finish",
-                "normal",
-            )
-            self.assertIn("Finish: normal", add_output)
+            with connect(db_path) as connection:
+                inventory_id = connection.execute(
+                    "SELECT id FROM inventories WHERE slug = 'personal'"
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        tags_json
+                    )
+                    VALUES (?, 'foil-only-1', 1, 'NM', 'normal', 'en', '', '[]')
+                    """,
+                    (inventory_id,),
+                )
+                connection.commit()
 
             gap_output = self.run_cli(
                 "price-gaps",
@@ -950,7 +1050,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     "released_at": "2026-01-01",
                     "colors": ["G"],
                     "color_identity": ["G"],
-                    "finishes": ["foil"],
+                    "finishes": ["nonfoil", "foil"],
                     "legalities": {"commander": "legal"},
                     "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
                     "tcgplayer_id": 222,

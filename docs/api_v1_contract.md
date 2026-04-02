@@ -17,7 +17,8 @@ preserve for the first API-backed version of the project.
 - Catalog search rows and owned inventory rows may include optional visual
   fields such as `image_uri_small` and `image_uri_normal` when card image data
   is available.
-- Dates remain ISO-8601 strings.
+- Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
+  explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
   mutation family per request: quantity, finish, location, condition, notes,
   tags, or acquisition.
