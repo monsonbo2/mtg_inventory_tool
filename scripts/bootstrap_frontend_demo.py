@@ -15,6 +15,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.importer.scryfall import import_scryfall_cards
 from mtg_source_stack.inventory.service import (
     add_card,
     create_inventory,
@@ -34,9 +35,39 @@ ACTOR_TYPE = "seed"
 ACTOR_ID = "frontend-bootstrap"
 
 
+def seed_price_snapshots(db_path: Path, rows: list[tuple[str, str, str, str, str, str, float, str]]) -> None:
+    with connect(db_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO price_snapshots (
+                scryfall_id,
+                provider,
+                price_kind,
+                finish,
+                currency,
+                snapshot_date,
+                price_value,
+                source_name
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        connection.commit()
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Bootstrap a local demo dataset for frontend work.")
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path to create.")
+    parser.add_argument(
+        "--full-catalog",
+        action="store_true",
+        help="Import a real Scryfall-backed mtg_cards catalog instead of the tiny built-in demo catalog.",
+    )
+    parser.add_argument(
+        "--scryfall-json",
+        help="Path to local Scryfall bulk JSON for --full-catalog mode.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -45,7 +76,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def seed_catalog_and_prices(db_path: Path) -> None:
+def seed_small_demo_catalog_and_prices(db_path: Path) -> None:
     with connect(db_path) as connection:
         connection.executemany(
             """
@@ -145,39 +176,24 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                 ),
             ],
         )
-        connection.executemany(
-            """
-            INSERT INTO price_snapshots (
-                scryfall_id,
-                provider,
-                price_kind,
-                finish,
-                currency,
-                snapshot_date,
-                price_value,
-                source_name
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                ("demo-bolt", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 2.50, "demo-seed"),
-                ("demo-bolt", "tcgplayer", "retail", "foil", "USD", "2026-04-01", 6.75, "demo-seed"),
-                ("demo-counterspell", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 1.25, "demo-seed"),
-                ("demo-counterspell", "tcgplayer", "retail", "foil", "USD", "2026-04-01", 4.25, "demo-seed"),
-                ("demo-forest", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 0.15, "demo-seed"),
-                ("demo-swords", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 3.50, "demo-seed"),
-                ("demo-swords-ja", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 3.50, "demo-seed"),
-                ("demo-sol-ring", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 1.75, "demo-seed"),
-                ("demo-sol-ring", "tcgplayer", "retail", "etched", "USD", "2026-04-01", 4.75, "demo-seed"),
-            ],
-        )
         connection.commit()
+    seed_price_snapshots(
+        db_path,
+        [
+            ("demo-bolt", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 2.50, "demo-seed"),
+            ("demo-bolt", "tcgplayer", "retail", "foil", "USD", "2026-04-01", 6.75, "demo-seed"),
+            ("demo-counterspell", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 1.25, "demo-seed"),
+            ("demo-counterspell", "tcgplayer", "retail", "foil", "USD", "2026-04-01", 4.25, "demo-seed"),
+            ("demo-forest", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 0.15, "demo-seed"),
+            ("demo-swords", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 3.50, "demo-seed"),
+            ("demo-swords-ja", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 3.50, "demo-seed"),
+            ("demo-sol-ring", "tcgplayer", "retail", "normal", "USD", "2026-04-01", 1.75, "demo-seed"),
+            ("demo-sol-ring", "tcgplayer", "retail", "etched", "USD", "2026-04-01", 4.75, "demo-seed"),
+        ],
+    )
 
 
-def bootstrap_demo_data(db_path: Path) -> None:
-    initialize_database(db_path)
-    seed_catalog_and_prices(db_path)
-
+def seed_demo_inventories(db_path: Path) -> None:
     create_inventory(
         db_path,
         slug="personal",
@@ -191,6 +207,8 @@ def bootstrap_demo_data(db_path: Path) -> None:
         description="Intentionally empty inventory for frontend empty states",
     )
 
+
+def seed_small_demo_inventory_items(db_path: Path) -> None:
     bolt = add_card(
         db_path,
         inventory_slug="personal",
@@ -404,10 +422,335 @@ def bootstrap_demo_data(db_path: Path) -> None:
     )
 
 
+def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
+    bolt = add_card(
+        db_path,
+        inventory_slug="personal",
+        inventory_display_name=None,
+        scryfall_id=None,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name="Lightning Bolt",
+        set_code="lea",
+        collector_number="161",
+        lang="en",
+        quantity=2,
+        condition_code="NM",
+        finish="normal",
+        language_code=None,
+        location="Red Binder",
+        acquisition_price=Decimal("2.25"),
+        acquisition_currency="USD",
+        notes=None,
+        tags="burn,trade",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-add-bolt",
+    )
+    set_finish(
+        db_path,
+        inventory_slug="personal",
+        item_id=bolt.item_id,
+        finish="foil",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-finish-bolt",
+    )
+    set_notes(
+        db_path,
+        inventory_slug="personal",
+        item_id=bolt.item_id,
+        notes="Showcase card for the demo UI.",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-notes-bolt",
+    )
+
+    counterspell = add_card(
+        db_path,
+        inventory_slug="personal",
+        inventory_display_name=None,
+        scryfall_id=None,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name="Counterspell",
+        set_code="7ed",
+        collector_number="67",
+        lang="en",
+        quantity=2,
+        condition_code="NM",
+        finish="normal",
+        language_code=None,
+        location="Blue Binder",
+        acquisition_price=Decimal("1.10"),
+        acquisition_currency="USD",
+        notes=None,
+        tags="control",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-add-counterspell",
+    )
+    set_tags(
+        db_path,
+        inventory_slug="personal",
+        item_id=counterspell.item_id,
+        tags="control,blue",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-tags-counterspell",
+    )
+    set_location(
+        db_path,
+        inventory_slug="personal",
+        item_id=counterspell.item_id,
+        location="Deck Box",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-location-counterspell",
+    )
+    set_quantity(
+        db_path,
+        inventory_slug="personal",
+        item_id=counterspell.item_id,
+        quantity=3,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-quantity-counterspell",
+    )
+
+    swords = add_card(
+        db_path,
+        inventory_slug="personal",
+        inventory_display_name=None,
+        scryfall_id=None,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name="Swords to Plowshares",
+        set_code="sta",
+        collector_number="10",
+        lang="ja",
+        quantity=1,
+        condition_code="NM",
+        finish="normal",
+        language_code=None,
+        location="Commander Case",
+        acquisition_price=Decimal("3.00"),
+        acquisition_currency="USD",
+        notes=None,
+        tags=None,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-add-swords",
+    )
+    set_condition(
+        db_path,
+        inventory_slug="personal",
+        item_id=swords.item_id,
+        condition_code="LP",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-condition-swords",
+    )
+
+    sol_ring = add_card(
+        db_path,
+        inventory_slug="personal",
+        inventory_display_name=None,
+        scryfall_id=None,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name="Sol Ring",
+        set_code="cmr",
+        collector_number="334",
+        lang="en",
+        quantity=1,
+        condition_code="NM",
+        finish="normal",
+        language_code=None,
+        location="Commander Staples",
+        acquisition_price=Decimal("5.00"),
+        acquisition_currency="USD",
+        notes=None,
+        tags="commander,trade",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-add-sol-ring",
+    )
+    set_finish(
+        db_path,
+        inventory_slug="personal",
+        item_id=sol_ring.item_id,
+        finish="etched",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-finish-sol-ring",
+    )
+    set_tags(
+        db_path,
+        inventory_slug="personal",
+        item_id=sol_ring.item_id,
+        tags=None,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-clear-tags-sol-ring",
+    )
+    set_acquisition(
+        db_path,
+        inventory_slug="personal",
+        item_id=sol_ring.item_id,
+        acquisition_price=None,
+        acquisition_currency=None,
+        clear=True,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-clear-acquisition-sol-ring",
+    )
+
+    forest = add_card(
+        db_path,
+        inventory_slug="personal",
+        inventory_display_name=None,
+        scryfall_id=None,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name="Forest",
+        set_code="m10",
+        collector_number="246",
+        lang="en",
+        quantity=10,
+        condition_code="NM",
+        finish="normal",
+        language_code=None,
+        location="Land Box",
+        acquisition_price=None,
+        acquisition_currency=None,
+        notes=None,
+        tags="bulk",
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-add-forest",
+    )
+    remove_card(
+        db_path,
+        inventory_slug="personal",
+        item_id=forest.item_id,
+        actor_type=ACTOR_TYPE,
+        actor_id=ACTOR_ID,
+        request_id="seed-remove-forest",
+    )
+
+    seed_price_snapshots(
+        db_path,
+        [
+            (bolt.scryfall_id, "tcgplayer", "retail", "normal", "USD", "2026-04-01", 2.50, "demo-seed"),
+            (bolt.scryfall_id, "tcgplayer", "retail", "foil", "USD", "2026-04-01", 6.75, "demo-seed"),
+            (
+                counterspell.scryfall_id,
+                "tcgplayer",
+                "retail",
+                "normal",
+                "USD",
+                "2026-04-01",
+                1.25,
+                "demo-seed",
+            ),
+            (
+                counterspell.scryfall_id,
+                "tcgplayer",
+                "retail",
+                "foil",
+                "USD",
+                "2026-04-01",
+                4.25,
+                "demo-seed",
+            ),
+            (
+                swords.scryfall_id,
+                "tcgplayer",
+                "retail",
+                "normal",
+                "USD",
+                "2026-04-01",
+                3.50,
+                "demo-seed",
+            ),
+            (
+                sol_ring.scryfall_id,
+                "tcgplayer",
+                "retail",
+                "normal",
+                "USD",
+                "2026-04-01",
+                1.75,
+                "demo-seed",
+            ),
+            (
+                sol_ring.scryfall_id,
+                "tcgplayer",
+                "retail",
+                "etched",
+                "USD",
+                "2026-04-01",
+                4.75,
+                "demo-seed",
+            ),
+            (
+                forest.scryfall_id,
+                "tcgplayer",
+                "retail",
+                "normal",
+                "USD",
+                "2026-04-01",
+                0.15,
+                "demo-seed",
+            ),
+        ],
+    )
+
+
+def import_full_demo_catalog(db_path: Path, *, scryfall_json: Path) -> int:
+    stats = import_scryfall_cards(db_path, scryfall_json)
+    return int(stats.rows_written)
+
+
+def bootstrap_demo_data(
+    db_path: Path,
+    *,
+    full_catalog: bool = False,
+    scryfall_json: Path | None = None,
+) -> dict[str, int | str]:
+    initialize_database(db_path)
+
+    if full_catalog:
+        if scryfall_json is None:
+            raise ValueError("scryfall_json is required when full_catalog is enabled.")
+        catalog_rows = import_full_demo_catalog(db_path, scryfall_json=scryfall_json)
+        seed_demo_inventories(db_path)
+        seed_full_catalog_demo_inventory_items(db_path)
+        return {
+            "catalog_mode": "full",
+            "catalog_rows": catalog_rows,
+        }
+
+    seed_small_demo_catalog_and_prices(db_path)
+    seed_demo_inventories(db_path)
+    seed_small_demo_inventory_items(db_path)
+    return {
+        "catalog_mode": "small",
+        "catalog_rows": 6,
+    }
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     db_path = Path(args.db)
+    scryfall_json = Path(args.scryfall_json) if args.scryfall_json is not None else None
+
+    if args.full_catalog and scryfall_json is None:
+        parser.error("--scryfall-json is required with --full-catalog.")
+    if not args.full_catalog and scryfall_json is not None:
+        parser.error("--scryfall-json is only used with --full-catalog.")
 
     if db_path.exists():
         if not args.force:
@@ -416,10 +759,19 @@ def main(argv: list[str] | None = None) -> None:
             )
         db_path.unlink()
 
-    bootstrap_demo_data(db_path)
+    summary = bootstrap_demo_data(
+        db_path,
+        full_catalog=args.full_catalog,
+        scryfall_json=scryfall_json,
+    )
     print(f"Bootstrapped frontend demo data at {db_path}")
+    print(f"Catalog mode: {summary['catalog_mode']}")
     print("Inventories seeded: personal, trade-binder")
-    print("Cards seeded for search: Lightning Bolt, Counterspell, Swords to Plowshares, Sol Ring, Forest")
+    if args.full_catalog:
+        print(f"Scryfall cards imported: {summary['catalog_rows']}")
+        print("Curated owned-item demo rows resolved from imported catalog printings.")
+    else:
+        print("Cards seeded for search: Lightning Bolt, Counterspell, Swords to Plowshares, Sol Ring, Forest")
     print("Suggested API start command:")
     print(f"  mtg-web-api --db {db_path}")
 
