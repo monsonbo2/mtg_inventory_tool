@@ -178,6 +178,10 @@ def build_duplicate_group_row(row: dict[str, Any]) -> DuplicateGroupRow:
     )
 
 
+def _preview_rows(rows: list[Any], preview_limit: int) -> list[Any]:
+    return rows[:preview_limit]
+
+
 def list_price_gaps(
     db_path: str | Path,
     *,
@@ -321,12 +325,27 @@ def inventory_health(
             stale_price_rows=int(summary["stale_price_rows"]),
             duplicate_groups=int(summary["duplicate_groups"]),
         ),
-        missing_price_rows=formatted_missing_prices,
-        missing_location_rows=[build_health_item_preview_row(row) for row in missing_location_rows],
-        missing_tag_rows=[build_health_item_preview_row(row) for row in missing_tag_rows],
-        merge_note_rows=[build_health_item_preview_row(row) for row in merge_note_rows],
-        stale_price_rows=[build_stale_price_preview_row(row) for row in stale_price_rows],
-        duplicate_groups=[build_duplicate_group_row(row) for row in duplicate_groups],
+        missing_price_rows=_preview_rows(formatted_missing_prices, preview_limit),
+        missing_location_rows=_preview_rows(
+            [build_health_item_preview_row(row) for row in missing_location_rows],
+            preview_limit,
+        ),
+        missing_tag_rows=_preview_rows(
+            [build_health_item_preview_row(row) for row in missing_tag_rows],
+            preview_limit,
+        ),
+        merge_note_rows=_preview_rows(
+            [build_health_item_preview_row(row) for row in merge_note_rows],
+            preview_limit,
+        ),
+        stale_price_rows=_preview_rows(
+            [build_stale_price_preview_row(row) for row in stale_price_rows],
+            preview_limit,
+        ),
+        duplicate_groups=_preview_rows(
+            [build_duplicate_group_row(row) for row in duplicate_groups],
+            preview_limit,
+        ),
     )
 
 

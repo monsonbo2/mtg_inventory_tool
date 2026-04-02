@@ -11,6 +11,7 @@ from pathlib import Path
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import ConflictError, NotFoundError, ValidationError
+from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER
 from mtg_source_stack.inventory.response_models import (
     AddCardResult,
     MergeRowsResult,
@@ -28,8 +29,10 @@ from mtg_source_stack.inventory.response_models import (
 from mtg_source_stack.inventory.service import (
     add_card,
     create_inventory,
+    inventory_health,
     inventory_report,
     list_card_printings_for_oracle,
+    list_inventory_audit_events,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
@@ -59,6 +62,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
         scryfall_id: str = "race-card-1",
         oracle_id: str = "race-oracle-1",
         name: str = "Race Test Card",
+        set_code: str = "tst",
+        set_name: str = "Test Set",
+        collector_number: str = "1",
         finishes_json: str = '["normal"]',
     ) -> None:
         with connect(db_path) as connection:
@@ -73,9 +79,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     collector_number,
                     finishes_json
                 )
-                VALUES (?, ?, ?, 'tst', 'Test Set', '1', ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (scryfall_id, oracle_id, name, finishes_json),
+                (scryfall_id, oracle_id, name, set_code, set_name, collector_number, finishes_json),
             )
             connection.commit()
 
@@ -90,6 +96,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
         finish: str = "normal",
         language_code: str = "en",
         location: str = "",
+        notes: str | None = None,
+        tags_json: str = "[]",
     ) -> None:
         with connect(db_path) as connection:
             inventory = connection.execute(
@@ -106,9 +114,10 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finish,
                     language_code,
                     location,
+                    notes,
                     tags_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, '[]')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -118,6 +127,49 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finish,
                     language_code,
                     location,
+                    notes,
+                    tags_json,
+                ),
+            )
+            connection.commit()
+
+    def _insert_price_snapshot(
+        self,
+        db_path: Path,
+        *,
+        scryfall_id: str,
+        provider: str = "tcgplayer",
+        price_kind: str = "retail",
+        finish: str,
+        currency: str = "USD",
+        snapshot_date: str,
+        price_value: float,
+        source_name: str = "test",
+    ) -> None:
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO price_snapshots (
+                    scryfall_id,
+                    provider,
+                    price_kind,
+                    finish,
+                    currency,
+                    snapshot_date,
+                    price_value,
+                    source_name
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scryfall_id,
+                    provider,
+                    price_kind,
+                    finish,
+                    currency,
+                    snapshot_date,
+                    price_value,
+                    source_name,
                 ),
             )
             connection.commit()
@@ -2288,6 +2340,252 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("Lightning Bolt", health_output)
             self.assertIn("Shiny Bird", health_output)
             self.assertIn("2020-01-01", health_output)
+
+    def test_inventory_health_preview_limit_truncates_each_preview_bucket_without_changing_summary_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_test_card(
+                db_path,
+                scryfall_id="preview-card-alpha",
+                oracle_id="preview-oracle-alpha",
+                name="Alpha Preview Card",
+                set_code="prv",
+                set_name="Preview Set",
+                collector_number="1",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_test_card(
+                db_path,
+                scryfall_id="preview-card-beta",
+                oracle_id="preview-oracle-beta",
+                name="Beta Preview Card",
+                set_code="prv",
+                set_name="Preview Set",
+                collector_number="2",
+                finishes_json='["normal","foil"]',
+            )
+
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-alpha",
+                quantity=1,
+                location="",
+                notes=f"{MERGED_ACQUISITION_NOTE_MARKER}91: 1.00 USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-alpha",
+                quantity=2,
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-beta",
+                quantity=1,
+                location="",
+                notes=f"{MERGED_ACQUISITION_NOTE_MARKER}92: 2.00 USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-beta",
+                quantity=2,
+                location="Binder B",
+            )
+
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-alpha",
+                finish="normal",
+                snapshot_date="2026-01-01",
+                price_value=1.25,
+            )
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-alpha",
+                finish="foil",
+                snapshot_date="2026-03-30",
+                price_value=4.50,
+            )
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-beta",
+                finish="normal",
+                snapshot_date="2026-01-02",
+                price_value=2.25,
+            )
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-beta",
+                finish="foil",
+                snapshot_date="2026-03-31",
+                price_value=5.50,
+            )
+
+            result = inventory_health(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                stale_days=30,
+                preview_limit=1,
+            )
+
+            self.assertEqual(1, result.preview_limit)
+            self.assertEqual(4, result.summary.item_rows)
+            self.assertEqual(6, result.summary.total_cards)
+            self.assertEqual(4, result.summary.missing_price_rows)
+            self.assertEqual(2, result.summary.missing_location_rows)
+            self.assertEqual(4, result.summary.missing_tag_rows)
+            self.assertEqual(2, result.summary.merge_note_rows)
+            self.assertEqual(4, result.summary.stale_price_rows)
+            self.assertEqual(2, result.summary.duplicate_groups)
+
+            self.assertEqual(1, len(result.missing_price_rows))
+            self.assertEqual(1, len(result.missing_location_rows))
+            self.assertEqual(1, len(result.missing_tag_rows))
+            self.assertEqual(1, len(result.merge_note_rows))
+            self.assertEqual(1, len(result.stale_price_rows))
+            self.assertEqual(1, len(result.duplicate_groups))
+
+    def test_blank_location_is_normalized_to_none_in_add_owned_and_audit_responses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertIsNone(added.location)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(owned_rows))
+            self.assertIsNone(owned_rows[0].location)
+
+            audit_rows = list_inventory_audit_events(
+                db_path,
+                inventory_slug="personal",
+                limit=10,
+            )
+            self.assertEqual("add_card", audit_rows[0].action)
+            self.assertIsNone(audit_rows[0].after["location"])
+
+    def test_blank_location_is_normalized_to_none_in_set_location_and_audit_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            result = set_location(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                location="",
+            )
+
+            self.assertIsNone(result.location)
+            self.assertEqual("Binder A", result.old_location)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(owned_rows))
+            self.assertIsNone(owned_rows[0].location)
+
+            audit_rows = list_inventory_audit_events(
+                db_path,
+                inventory_slug="personal",
+                limit=10,
+            )
+            self.assertEqual("set_location", audit_rows[0].action)
+            self.assertEqual("Binder A", audit_rows[0].before["location"])
+            self.assertIsNone(audit_rows[0].after["location"])
+            self.assertEqual("Binder A", audit_rows[0].metadata["old_location"])
+            self.assertIsNone(audit_rows[0].metadata["new_location"])
 
     def test_set_acquisition_split_row_and_merge_rows_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

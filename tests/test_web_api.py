@@ -596,6 +596,69 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
                 self.assertRegex(audit.json()[0]["occurred_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
+    def test_demo_api_normalizes_blank_location_to_null_in_mutation_owned_and_audit_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-add-blank"},
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertIsNone(added.json()["location"])
+                item_id = added.json()["item_id"]
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual(1, len(listed.json()))
+                self.assertIsNone(listed.json()[0]["location"])
+
+                set_location = client.patch(
+                    f"/inventories/personal/items/{item_id}",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-set-binder"},
+                    json={"location": "Binder A"},
+                )
+                self.assertEqual(200, set_location.status_code)
+                self.assertEqual("set_location", set_location.json()["operation"])
+                self.assertIsNone(set_location.json()["old_location"])
+                self.assertEqual("Binder A", set_location.json()["location"])
+
+                clear_location = client.patch(
+                    f"/inventories/personal/items/{item_id}",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-clear-binder"},
+                    json={"location": ""},
+                )
+                self.assertEqual(200, clear_location.status_code)
+                self.assertEqual("set_location", clear_location.json()["operation"])
+                self.assertEqual("Binder A", clear_location.json()["old_location"])
+                self.assertIsNone(clear_location.json()["location"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_location", audit.json()[0]["action"])
+                self.assertEqual("Binder A", audit.json()[0]["before"]["location"])
+                self.assertIsNone(audit.json()[0]["after"]["location"])
+                self.assertEqual("set_location", audit.json()[1]["action"])
+                self.assertIsNone(audit.json()[1]["before"]["location"])
+                self.assertEqual("Binder A", audit.json()[1]["after"]["location"])
+                self.assertEqual("add_card", audit.json()[2]["action"])
+                self.assertIsNone(audit.json()[2]["after"]["location"])
+
     def test_demo_api_exposes_name_search_and_oracle_printings_lookup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"

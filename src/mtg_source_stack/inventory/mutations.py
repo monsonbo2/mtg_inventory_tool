@@ -133,7 +133,7 @@ def _complete_location_merge(
         metadata={
             "merged": True,
             "target_item_id": int(result["item_id"]),
-            "new_location": normalized_location,
+            "new_location": text_or_none(normalized_location),
             "keep_acquisition": keep_acquisition,
         },
         actor_type=actor_type,
@@ -150,7 +150,7 @@ def _complete_location_merge(
         metadata={
             "merged": True,
             "source_item_id": int(source_item["item_id"]),
-            "new_location": normalized_location,
+            "new_location": text_or_none(normalized_location),
             "keep_acquisition": keep_acquisition,
         },
         actor_type=actor_type,
@@ -829,7 +829,11 @@ def set_location(
             item_id=item_id,
             before=before_snapshot,
             after=after_snapshot,
-            metadata={"merged": False, "old_location": item["location"], "new_location": normalized_location},
+            metadata={
+                "merged": False,
+                "old_location": text_or_none(item["location"]),
+                "new_location": text_or_none(normalized_location),
+            },
             actor_type=actor_type,
             actor_id=actor_id,
             request_id=request_id,
