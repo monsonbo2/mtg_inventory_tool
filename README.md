@@ -281,8 +281,12 @@ mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
 With the virtualenv active, run the full local test suite:
 
 ```bash
-python -m unittest discover -s tests -q
+./scripts/test_backend.sh
 ```
+
+That wrapper forces this checkout's `src/` tree onto `PYTHONPATH` before
+running `unittest`, which avoids accidentally importing a different editable
+checkout in multi-repo environments.
 
 ## Repo Map
 
