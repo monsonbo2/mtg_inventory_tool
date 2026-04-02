@@ -115,13 +115,78 @@ button {
   flex-direction: column;
   justify-content: space-between;
   min-height: 132px;
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.metric-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .metric-accent {
-  color: var(--accent-sunrise);
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-size: 0.72rem;
+}
+
+.metric-card-sunrise {
+  border-color: rgba(244, 171, 98, 0.3);
+  box-shadow:
+    var(--panel-shadow),
+    inset 0 0 0 1px rgba(244, 171, 98, 0.08);
+}
+
+.metric-card-sunrise::before {
+  background:
+    radial-gradient(circle at top right, rgba(244, 171, 98, 0.26), transparent 44%),
+    linear-gradient(180deg, rgba(244, 171, 98, 0.12), transparent 72%);
+}
+
+.metric-accent.metric-card-sunrise {
+  color: var(--accent-sunrise);
+}
+
+.metric-card-lagoon {
+  border-color: rgba(93, 231, 206, 0.28);
+  box-shadow:
+    var(--panel-shadow),
+    inset 0 0 0 1px rgba(93, 231, 206, 0.08);
+}
+
+.metric-card-lagoon::before {
+  background:
+    radial-gradient(circle at top left, rgba(93, 231, 206, 0.22), transparent 46%),
+    linear-gradient(180deg, rgba(93, 231, 206, 0.12), transparent 72%);
+}
+
+.metric-accent.metric-card-lagoon {
+  color: var(--accent-lagoon);
+}
+
+.metric-card-paper {
+  border-color: rgba(248, 240, 218, 0.26);
+  box-shadow:
+    var(--panel-shadow),
+    inset 0 0 0 1px rgba(248, 240, 218, 0.08);
+}
+
+.metric-card-paper::before {
+  background:
+    radial-gradient(circle at top center, rgba(248, 240, 218, 0.16), transparent 44%),
+    linear-gradient(180deg, rgba(248, 240, 218, 0.1), transparent 76%);
+}
+
+.metric-accent.metric-card-paper {
+  color: var(--accent-paper);
 }
 
 .metric-card strong {
@@ -259,6 +324,114 @@ button {
 
 .collection-grid {
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+.inventory-table-view {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+
+.table-toolbar,
+.table-selection-summary,
+.table-toolbar-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.table-toolbar {
+  justify-content: space-between;
+  align-items: start;
+  padding: 16px 18px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.42);
+  border-radius: 20px;
+}
+
+.table-selection-summary {
+  flex-direction: column;
+}
+
+.table-selection-summary strong {
+  color: var(--text-main);
+}
+
+.table-selection-summary span {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.table-toolbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.inventory-table-shell {
+  overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 20px;
+  background: rgba(8, 17, 31, 0.56);
+}
+
+.inventory-table {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: collapse;
+}
+
+.inventory-table th,
+.inventory-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  text-align: left;
+  vertical-align: top;
+}
+
+.inventory-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(8, 17, 31, 0.96);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.74rem;
+}
+
+.inventory-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.inventory-table-row:hover {
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.inventory-table-row-selected {
+  background: rgba(93, 231, 206, 0.08);
+}
+
+.inventory-table-checkbox-column,
+.inventory-table-checkbox-cell {
+  width: 52px;
+}
+
+.inventory-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.inventory-table-card-cell strong,
+.inventory-table td strong {
+  display: block;
+  color: var(--text-main);
+}
+
+.inventory-table-card-cell span,
+.inventory-table td span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .inventory-button {
@@ -1083,9 +1256,14 @@ button {
   .compact-row-left,
   .compact-row-footer,
   .activity-drawer-header,
-  .collection-header-controls {
+  .collection-header-controls,
+  .table-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .table-toolbar-actions {
+    justify-content: stretch;
   }
 
   .activity-drawer-backdrop {

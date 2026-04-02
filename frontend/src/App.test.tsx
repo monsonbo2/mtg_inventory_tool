@@ -356,6 +356,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Edit Lightning Bolt" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute("aria-pressed", "false");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
@@ -365,6 +366,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Edit Lightning Bolt" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Inline edits")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute("aria-pressed", "true");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
@@ -484,5 +486,133 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
     });
+  });
+
+  it("supports table view row selection without refetching and preserves selection across view changes", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+
+    expect(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" })).toBeInTheDocument();
+    expect(screen.getByText("No rows selected")).toBeInTheDocument();
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryAudit).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("checkbox", { name: "Select Lightning Bolt" }));
+    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Detailed" }));
+    expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryAudit).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Table" }));
+    expect(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
+    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+    expect(screen.getByText("2 rows selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByText("No rows selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).not.toBeChecked();
+  });
+
+  it("clears table selection when the selected inventory changes", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 2,
+        total_cards: 3,
+      },
+      {
+        slug: "trade-binder",
+        display_name: "Trade Binder",
+        description: "Cards available to trade",
+        item_rows: 1,
+        total_cards: 1,
+      },
+    ]);
+    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => {
+      if (inventorySlug === "trade-binder") {
+        return [
+          buildOwnedRow({
+            item_id: 101,
+            scryfall_id: "sol-ring-1",
+            name: "Sol Ring",
+            set_code: "cmm",
+            set_name: "Commander Masters",
+            collector_number: "396",
+            quantity: 1,
+            location: "Trade Tray",
+            tags: ["trade"],
+            est_value: "1.50",
+            unit_price: "1.50",
+            notes: null,
+          }),
+        ];
+      }
+
+      return [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ];
+    });
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCards).mockResolvedValue([]);
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" }));
+    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Trade Binder/i }));
+
+    expect(await screen.findByText("No rows selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).not.toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
   });
 });

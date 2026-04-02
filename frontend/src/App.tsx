@@ -68,8 +68,9 @@ export default function App() {
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
-  const [collectionView, setCollectionView] = useState<"compact" | "detailed">("compact");
+  const [collectionView, setCollectionView] = useState<"compact" | "table" | "detailed">("compact");
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
   const [finishSupportByCard, setFinishSupportByCard] = useState<Record<string, FinishSupportState>>({});
   const selectedInventoryRef = useRef<string | null>(null);
@@ -121,6 +122,7 @@ export default function App() {
       setItems([]);
       setAuditEvents([]);
       setExpandedItemId(null);
+      setSelectedItemIds([]);
       setActivityOpen(false);
       setViewError(null);
       setViewStatus("idle");
@@ -128,8 +130,14 @@ export default function App() {
     }
 
     setExpandedItemId(null);
+    setSelectedItemIds([]);
     void loadInventoryOverview(selectedInventory);
   }, [selectedInventory]);
+
+  useEffect(() => {
+    const visibleItemIds = new Set(items.map((item) => item.item_id));
+    setSelectedItemIds((current) => current.filter((itemId) => visibleItemIds.has(itemId)));
+  }, [items]);
 
   useEffect(() => {
     const trimmed = searchQuery.trim();
@@ -598,11 +606,27 @@ export default function App() {
     }
   }
 
-  function handleCollectionViewChange(nextView: "compact" | "detailed") {
+  function handleCollectionViewChange(nextView: "compact" | "table" | "detailed") {
     setCollectionView(nextView);
-    if (nextView === "detailed") {
+    if (nextView !== "compact") {
       setExpandedItemId(null);
     }
+  }
+
+  function handleToggleItemSelection(itemId: number) {
+    setSelectedItemIds((current) =>
+      current.includes(itemId)
+        ? current.filter((existingItemId) => existingItemId !== itemId)
+        : [...current, itemId],
+    );
+  }
+
+  function handleSelectAllVisibleItems() {
+    setSelectedItemIds(items.map((item) => item.item_id));
+  }
+
+  function handleClearSelectedItems() {
+    setSelectedItemIds([]);
   }
 
   const selectedInventoryRow =
@@ -678,13 +702,17 @@ export default function App() {
             expandedItemId={expandedItemId}
             finishSupportByCard={finishSupportByCard}
             items={items}
+            onClearSelectedItems={handleClearSelectedItems}
             onCollectionViewChange={handleCollectionViewChange}
             onDelete={handleDeleteItem}
             onExpandedItemChange={setExpandedItemId}
             onOpenActivity={() => setActivityOpen(true)}
             onNotice={reportNotice}
             onPatch={handlePatchItem}
+            onSelectAllVisibleItems={handleSelectAllVisibleItems}
+            onToggleItemSelection={handleToggleItemSelection}
             selectedInventoryRow={selectedInventoryRow}
+            selectedItemIds={selectedItemIds}
             viewError={viewError}
             viewStatus={viewStatus}
           />

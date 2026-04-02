@@ -2,6 +2,7 @@ import type { InventorySummary, OwnedInventoryRow, PatchInventoryItemRequest } f
 import type { AsyncStatus, FinishSupportState, ItemMutationAction, NoticeTone } from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
 import { CompactInventoryList } from "./CompactInventoryList";
+import { InventoryTableView } from "./InventoryTableView";
 import { OwnedItemCard } from "./OwnedItemCard";
 import { PanelState } from "./ui/PanelState";
 import { StatusPill } from "./ui/StatusPill";
@@ -20,11 +21,15 @@ export function OwnedCollectionPanel(props: {
   ) => Promise<void>;
   onDelete: (itemId: number, cardName: string) => Promise<void>;
   onNotice: (message: string, tone?: NoticeTone) => void;
-  collectionView: "compact" | "detailed";
-  onCollectionViewChange: (nextView: "compact" | "detailed") => void;
+  collectionView: "compact" | "table" | "detailed";
+  onCollectionViewChange: (nextView: "compact" | "table" | "detailed") => void;
   expandedItemId: number | null;
   onExpandedItemChange: (itemId: number | null) => void;
   onOpenActivity: () => void;
+  selectedItemIds: number[];
+  onToggleItemSelection: (itemId: number) => void;
+  onSelectAllVisibleItems: () => void;
+  onClearSelectedItems: () => void;
 }) {
   const totalEstimatedValue = props.items.reduce(
     (sum, row) => sum + decimalToNumber(row.est_value),
@@ -57,6 +62,18 @@ export function OwnedCollectionPanel(props: {
               type="button"
             >
               Compact
+            </button>
+            <button
+              aria-pressed={props.collectionView === "table"}
+              className={
+                props.collectionView === "table"
+                  ? "view-toggle-button view-toggle-button-active"
+                  : "view-toggle-button"
+              }
+              onClick={() => props.onCollectionViewChange("table")}
+              type="button"
+            >
+              Table
             </button>
             <button
               aria-pressed={props.collectionView === "detailed"}
@@ -133,6 +150,14 @@ export function OwnedCollectionPanel(props: {
               onExpandedItemChange={props.onExpandedItemChange}
               onNotice={props.onNotice}
               onPatch={props.onPatch}
+            />
+          ) : props.collectionView === "table" ? (
+            <InventoryTableView
+              items={props.items}
+              onClearSelection={props.onClearSelectedItems}
+              onSelectAllVisible={props.onSelectAllVisibleItems}
+              onToggleItemSelection={props.onToggleItemSelection}
+              selectedItemIds={props.selectedItemIds}
             />
           ) : (
             props.items.map((item) => (
