@@ -34,6 +34,22 @@ const TABLE_COLUMNS: InventoryTableColumnKey[] = [
   "est_value",
 ];
 
+function getColumnActionHint(column: InventoryTableColumnKey) {
+  switch (column) {
+    case "quantity":
+    case "est_value":
+      return "Sort";
+    case "name":
+    case "set":
+    case "finish":
+    case "condition_code":
+    case "language_code":
+    case "location":
+    case "tags":
+      return "Sort/filter";
+  }
+}
+
 export function InventoryTableView(props: {
   items: OwnedInventoryRow[];
   allItemsCount: number;
@@ -422,20 +438,29 @@ export function InventoryTableView(props: {
                 const filterCount = getInventoryTableColumnFilterCount(props.filters, column);
                 const isSorted = props.sortState?.key === column;
                 const isActive = activeColumn === column;
+                const columnLabel = getInventoryTableColumnLabel(column);
+                const actionHint = getColumnActionHint(column);
 
                 return (
                   <th key={column} scope="col">
                     <button
                       aria-expanded={isActive}
+                      aria-label={columnLabel}
                       className={
                         isActive
                           ? "inventory-table-header-button inventory-table-header-button-active"
                           : "inventory-table-header-button"
                       }
                       onClick={() => toggleColumn(column)}
+                      title={`${actionHint} options for ${columnLabel}`}
                       type="button"
                     >
-                      <span>{getInventoryTableColumnLabel(column)}</span>
+                      <span className="inventory-table-header-copy">
+                        <span className="inventory-table-header-label">{columnLabel}</span>
+                        <span aria-hidden="true" className="inventory-table-header-hint">
+                          {actionHint}
+                        </span>
+                      </span>
                       <span className="inventory-table-header-meta">
                         {isSorted ? (
                           <span className="inventory-table-header-pill">
@@ -447,6 +472,16 @@ export function InventoryTableView(props: {
                             {filterCount}
                           </span>
                         ) : null}
+                        <span
+                          aria-hidden="true"
+                          className={
+                            isActive
+                              ? "inventory-table-header-chevron inventory-table-header-chevron-active"
+                              : "inventory-table-header-chevron"
+                          }
+                        >
+                          ▾
+                        </span>
                       </span>
                     </button>
                   </th>
