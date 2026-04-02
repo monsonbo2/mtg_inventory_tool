@@ -30,6 +30,7 @@ backend requests.
 | `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
 | `full_catalog_demo_bootstrap_compatibility.md` | [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21) | Proposed | Unassigned | full-catalog demo bootstrap currently fails against the real current Scryfall bulk file |
 | `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Done | Steve | PATCH stays single-mutation-only and now returns an explicit `operation` discriminator |
+| `playable_card_search_scope.md` | [#22](https://github.com/monsonbo2/mtg_inventory_tool/issues/22) | Proposed | Unassigned | app-facing card search should exclude tokens, art cards, and other non-playable catalog objects by default |
 | `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Done | Steve | canonical values, defaults, and finish aliases published in API contract |
 
 Update this table when a request changes status or gets tied to a GitHub issue

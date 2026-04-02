@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "backend:demo": "bash ./scripts/run_demo_backend.sh",
     "dev": "vite",
     "build": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && vite build",
     "preview": "vite preview",
