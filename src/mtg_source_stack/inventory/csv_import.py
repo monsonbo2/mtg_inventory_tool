@@ -68,11 +68,12 @@ def build_add_card_kwargs_from_csv_row(
         raise ValueError(f"CSV row {row_number}: provide an inventory column or pass --inventory.")
 
     scryfall_id = text_or_none(row.get("scryfall_id"))
+    oracle_id = text_or_none(row.get("oracle_id"))
     tcgplayer_product_id = normalize_external_id(row.get("tcgplayer_product_id"))
     name = text_or_none(row.get("name"))
-    if scryfall_id is None and tcgplayer_product_id is None and name is None:
+    if scryfall_id is None and oracle_id is None and tcgplayer_product_id is None and name is None:
         raise ValueError(
-            f"CSV row {row_number}: provide one of scryfall_id, tcgplayer product id, or name."
+            f"CSV row {row_number}: provide one of scryfall_id, oracle_id, tcgplayer product id, or name."
         )
 
     quantity = resolve_csv_quantity(row, row_number=row_number)
@@ -85,6 +86,7 @@ def build_add_card_kwargs_from_csv_row(
         "inventory_slug": inventory_slug,
         "inventory_display_name": inventory_display_name,
         "scryfall_id": scryfall_id,
+        "oracle_id": oracle_id,
         "tcgplayer_product_id": tcgplayer_product_id,
         "name": name,
         "set_code": text_or_none(row.get("set_code")),
@@ -94,7 +96,11 @@ def build_add_card_kwargs_from_csv_row(
         "condition_code": normalize_condition_code(row.get("condition")),
         "finish": finish,
         "_finish_source": finish_source,
-        "language_code": normalize_language_code(row.get("language_code")),
+        "language_code": (
+            normalize_language_code(row.get("language_code"))
+            if text_or_none(row.get("language_code")) is not None
+            else None
+        ),
         "location": text_or_none(row.get("location")) or "",
         "acquisition_price": parse_decimal_text(
             row.get("acquisition_price"),
@@ -119,11 +125,13 @@ def _resolve_csv_finish_for_row(
     card = resolve_card_row(
         connection,
         scryfall_id=add_kwargs["scryfall_id"],
+        oracle_id=add_kwargs["oracle_id"],
         tcgplayer_product_id=normalize_external_id(add_kwargs["tcgplayer_product_id"]),
         name=add_kwargs["name"],
         set_code=add_kwargs["set_code"],
         collector_number=add_kwargs["collector_number"],
         lang=add_kwargs["lang"],
+        finish=None,
     )
     available_finishes = normalized_catalog_finish_list(card["finishes_json"])
     if len(available_finishes) == 1:

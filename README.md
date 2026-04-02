@@ -169,13 +169,17 @@ mtg-personal-inventory search-cards \
 mtg-personal-inventory add-card \
   --db "var/db/mtg_mvp.db" \
   --inventory personal \
-  --scryfall-id YOUR_PRINTING_ID \
+  --oracle-id YOUR_CARD_ORACLE_ID \
   --quantity 4 \
   --condition NM \
   --finish normal \
   --location "Red Binder" \
   --tags "burn deck,trade"
 ```
+
+`add-card` now accepts `--oracle-id` as a first-class identifier as well as
+`--scryfall-id`. Inventory rows still store the resolved printing, and if you
+omit `--language-code` the owned row inherits the resolved printing language.
 
 Preview a CSV import with the bundled sample file:
 

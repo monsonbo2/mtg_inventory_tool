@@ -52,9 +52,19 @@ preserve for the first API-backed version of the project.
 - `language_code`
   - commonly published canonical codes: `en`, `ja`, `de`, `fr`, `it`, `es`,
     `pt`, `ru`, `ko`, `zhs`, `zht`, `ph`
-  - default request value: `en`
+  - add-item requests inherit the resolved printing language when
+    `language_code` is omitted
   - language-name aliases such as `english` and `japanese` are accepted and
     normalized
+- `POST /inventories/{inventory_slug}/items`
+  - accepts `scryfall_id`, `oracle_id`, `tcgplayer_product_id`, or exact
+    `name` as identifier inputs
+  - `oracle_id` resolves to one printing by backend policy rather than storing
+    `oracle_id` directly on inventory rows
+  - when `language_code` is omitted, the stored owned language inherits the
+    resolved printing language
+  - if `language_code` is explicitly provided and does not match the resolved
+    printing language, the request returns `400 validation_error`
 - `GET /cards/search` query `lang`
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language

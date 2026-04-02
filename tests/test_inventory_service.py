@@ -35,6 +35,7 @@ from mtg_source_stack.inventory.service import (
     merge_rows,
     reconcile_prices,
     remove_card,
+    resolve_card_row,
     search_card_names,
     search_cards,
     set_acquisition,
@@ -51,6 +52,271 @@ from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryServiceTest(RepoSmokeTestCase):
+    def test_resolve_card_row_prefers_latest_english_printing_for_oracle_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json
+                    )
+                    VALUES (?, 'resolve-oracle-1', 'Resolver Card', ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            "resolve-en-new",
+                            "mkm",
+                            "Murders at Karlov Manor",
+                            "11",
+                            "en",
+                            "2024-02-09",
+                            '["nonfoil","foil"]',
+                        ),
+                        (
+                            "resolve-ja-newer",
+                            "mkm",
+                            "Murders at Karlov Manor",
+                            "12",
+                            "ja",
+                            "2024-03-01",
+                            '["nonfoil","foil"]',
+                        ),
+                        (
+                            "resolve-en-old",
+                            "woe",
+                            "Wilds of Eldraine",
+                            "13",
+                            "en",
+                            "2023-09-01",
+                            '["nonfoil"]',
+                        ),
+                    ],
+                )
+
+                resolved = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-oracle-1",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish=None,
+                )
+
+            self.assertEqual("resolve-en-new", resolved["scryfall_id"])
+
+    def test_resolve_card_row_for_oracle_id_respects_explicit_language_and_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json
+                    )
+                    VALUES (?, 'resolve-oracle-2', 'Resolver Card', ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            "resolve-two-en",
+                            "bro",
+                            "The Brothers' War",
+                            "22",
+                            "en",
+                            "2022-11-18",
+                            '["nonfoil"]',
+                        ),
+                        (
+                            "resolve-two-ja",
+                            "bro",
+                            "The Brothers' War",
+                            "23",
+                            "ja",
+                            "2022-12-01",
+                            '["nonfoil","foil"]',
+                        ),
+                    ],
+                )
+
+                resolved_japanese = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-oracle-2",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang="ja",
+                    finish=None,
+                )
+                resolved_foil = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-oracle-2",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish="foil",
+                )
+
+            self.assertEqual("resolve-two-ja", resolved_japanese["scryfall_id"])
+            self.assertEqual("resolve-two-ja", resolved_foil["scryfall_id"])
+
+    def test_resolve_card_row_for_oracle_id_falls_back_when_no_english_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json
+                    )
+                    VALUES (?, 'resolve-oracle-3', 'Resolver Card', ?, ?, ?, ?, ?, '["nonfoil"]')
+                    """,
+                    [
+                        (
+                            "resolve-three-ja",
+                            "mom",
+                            "March of the Machine",
+                            "31",
+                            "ja",
+                            "2023-04-21",
+                        ),
+                        (
+                            "resolve-three-de",
+                            "mom",
+                            "March of the Machine",
+                            "32",
+                            "de",
+                            "2023-03-21",
+                        ),
+                    ],
+                )
+
+                resolved = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-oracle-3",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish=None,
+                )
+
+            self.assertEqual("resolve-three-ja", resolved["scryfall_id"])
+
+    def test_resolve_card_row_can_use_finish_to_break_name_ties(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json
+                    )
+                    VALUES (?, ?, 'Resolver Tie Card', ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            "resolve-tie-normal",
+                            "resolve-tie-oracle-1",
+                            "neo",
+                            "Kamigawa: Neon Dynasty",
+                            "41",
+                            "en",
+                            "2022-02-18",
+                            '["nonfoil"]',
+                        ),
+                        (
+                            "resolve-tie-foil",
+                            "resolve-tie-oracle-2",
+                            "bro",
+                            "The Brothers' War",
+                            "42",
+                            "en",
+                            "2022-11-18",
+                            '["foil"]',
+                        ),
+                    ],
+                )
+
+                resolved = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id=None,
+                    tcgplayer_product_id=None,
+                    name="Resolver Tie Card",
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish="foil",
+                )
+
+                with self.assertRaisesRegex(
+                    ValidationError,
+                    "No printing found for oracle_id 'resolve-tie-oracle-2' with finish 'etched'.",
+                ):
+                    resolve_card_row(
+                        connection,
+                        scryfall_id=None,
+                        oracle_id="resolve-tie-oracle-2",
+                        tcgplayer_product_id=None,
+                        name=None,
+                        set_code=None,
+                        collector_number=None,
+                        lang=None,
+                        finish="etched",
+                    )
+
+            self.assertEqual("resolve-tie-foil", resolved["scryfall_id"])
+
     def test_search_cards_returns_list_typed_catalog_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -99,6 +365,149 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 "https://example.test/cards/search-card-1-small.jpg",
                 serialize_response(rows)[0]["image_uri_small"],
             )
+
+    def test_add_card_can_resolve_oracle_id_and_inherit_printing_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json
+                    )
+                    VALUES (?, 'add-oracle-1', 'Oracle Add Card', ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            "add-oracle-ja",
+                            "neo",
+                            "Kamigawa: Neon Dynasty",
+                            "51",
+                            "ja",
+                            "2024-02-01",
+                            '["foil"]',
+                        ),
+                        (
+                            "add-oracle-en",
+                            "neo",
+                            "Kamigawa: Neon Dynasty",
+                            "52",
+                            "en",
+                            "2024-01-01",
+                            '["nonfoil","foil"]',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id=None,
+                oracle_id="add-oracle-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang="ja",
+                quantity=1,
+                condition_code="NM",
+                finish="foil",
+                language_code=None,
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertEqual("add-oracle-ja", added.scryfall_id)
+            self.assertEqual("ja", added.language_code)
+
+    def test_add_card_rejects_explicit_language_code_that_conflicts_with_resolved_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json
+                    )
+                    VALUES (
+                        'conflict-language-ja',
+                        'conflict-language-oracle',
+                        'Language Conflict Card',
+                        'neo',
+                        'Kamigawa: Neon Dynasty',
+                        '61',
+                        'ja',
+                        '2024-02-01',
+                        '["foil"]'
+                    )
+                    """
+                )
+                connection.commit()
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "language_code must match the resolved printing language. Printing language: ja; requested language_code: en.",
+            ):
+                add_card(
+                    db_path,
+                    inventory_slug="personal",
+                    inventory_display_name=None,
+                    scryfall_id=None,
+                    oracle_id="conflict-language-oracle",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    quantity=1,
+                    condition_code="NM",
+                    finish="foil",
+                    language_code="en",
+                    location="Binder A",
+                    acquisition_price=None,
+                    acquisition_currency=None,
+                    notes=None,
+                    tags=None,
+                )
 
     def test_search_cards_rejects_blank_queries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

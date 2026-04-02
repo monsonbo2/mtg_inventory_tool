@@ -64,6 +64,7 @@ def add_card_with_connection(
     inventory_slug: str,
     inventory_display_name: str | None = None,
     scryfall_id: str | None,
+    oracle_id: str | None = None,
     tcgplayer_product_id: str | None = None,
     name: str | None,
     set_code: str | None,
@@ -72,7 +73,7 @@ def add_card_with_connection(
     quantity: int,
     condition_code: str,
     finish: str,
-    language_code: str,
+    language_code: str | None,
     location: str,
     acquisition_price: Decimal | None,
     acquisition_currency: str | None,
@@ -90,7 +91,7 @@ def add_card_with_connection(
 
     normalized_condition = normalize_condition_code(condition_code)
     normalized_finish = normalize_finish(finish)
-    normalized_language = normalize_language_code(language_code)
+    explicit_language = text_or_none(language_code)
     normalized_location = text_or_none(location) or ""
     normalized_acquisition_price = coerce_decimal(acquisition_price)
     normalized_acquisition_currency = normalize_currency_code(acquisition_currency)
@@ -118,13 +119,25 @@ def add_card_with_connection(
         card = resolve_card_row(
             connection,
             scryfall_id=scryfall_id,
+            oracle_id=oracle_id,
             tcgplayer_product_id=normalize_external_id(tcgplayer_product_id),
             name=name,
             set_code=set_code,
             collector_number=collector_number,
             lang=lang,
+            finish=normalized_finish,
         )
     validate_supported_finish(card["finishes_json"], normalized_finish)
+    resolved_language = normalize_language_code(card["lang"])
+    if explicit_language is None:
+        normalized_language = resolved_language
+    else:
+        normalized_language = normalize_language_code(explicit_language)
+        if normalized_language != resolved_language:
+            raise ValidationError(
+                "language_code must match the resolved printing language. "
+                f"Printing language: {resolved_language}; requested language_code: {normalized_language}."
+            )
 
     new_tags = parse_tags(tags)
     # Re-adding the same logical row should accumulate tags instead of replacing
@@ -275,6 +288,7 @@ def add_card(
     inventory_slug: str,
     inventory_display_name: str | None = None,
     scryfall_id: str | None,
+    oracle_id: str | None = None,
     tcgplayer_product_id: str | None = None,
     name: str | None,
     set_code: str | None,
@@ -283,7 +297,7 @@ def add_card(
     quantity: int,
     condition_code: str,
     finish: str,
-    language_code: str,
+    language_code: str | None,
     location: str,
     acquisition_price: Decimal | None,
     acquisition_currency: str | None,
@@ -300,6 +314,7 @@ def add_card(
             inventory_slug=inventory_slug,
             inventory_display_name=inventory_display_name,
             scryfall_id=scryfall_id,
+            oracle_id=oracle_id,
             tcgplayer_product_id=tcgplayer_product_id,
             name=name,
             set_code=set_code,

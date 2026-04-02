@@ -63,6 +63,9 @@ Use this as the first-pass UI-to-endpoint map:
   Defaults to English printings when available; use `lang=all` or a specific
   language code to expand the list.
 - Add card -> `POST /inventories/{inventory_slug}/items`
+  Accepts printing-level identifiers like `scryfall_id` and card-level
+  `oracle_id`. When `language_code` is omitted, the backend stores the
+  resolved printing language.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
   Returned rows include `allowed_finishes` for safe finish-edit controls.
 - Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`

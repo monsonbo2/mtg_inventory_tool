@@ -233,6 +233,14 @@ class WebApiSchemaTest(unittest.TestCase):
                 inventory_parameters["language_code"]["description"],
             )
 
+            add_request_schema = components["AddInventoryItemRequest"]
+            self.assertIn("oracle_id", add_request_schema["properties"])
+            self.assertNotIn("default", add_request_schema["properties"]["language_code"])
+            self.assertIn(
+                "inherits the resolved printing language",
+                add_request_schema["properties"]["language_code"]["description"],
+            )
+
             patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][
                 "content"
             ]["application/json"]["schema"]
@@ -415,6 +423,49 @@ class WebApiTest(unittest.TestCase):
             )
             connection.commit()
 
+    def _seed_oracle_add_candidates(self, db_path: Path) -> None:
+        with connect(db_path) as connection:
+            connection.executemany(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json
+                )
+                VALUES (?, 'api-add-oracle', 'API Oracle Add Card', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        "api-add-ja",
+                        "neo",
+                        "Kamigawa: Neon Dynasty",
+                        "71",
+                        "ja",
+                        "2024-02-01",
+                        '["foil"]',
+                        '{"small":"https://example.test/cards/api-add-ja-small.jpg","normal":"https://example.test/cards/api-add-ja-normal.jpg"}',
+                    ),
+                    (
+                        "api-add-en",
+                        "neo",
+                        "Kamigawa: Neon Dynasty",
+                        "72",
+                        "en",
+                        "2024-01-01",
+                        '["nonfoil","foil"]',
+                        '{"small":"https://example.test/cards/api-add-en-small.jpg","normal":"https://example.test/cards/api-add-en-normal.jpg"}',
+                    ),
+                ],
+            )
+            connection.commit()
+
     def _schema_name_from_ref(self, ref: str) -> str:
         return ref.rsplit("/", 1)[-1]
 
@@ -544,6 +595,47 @@ class WebApiTest(unittest.TestCase):
                 missing = client.get("/cards/oracle/missing-oracle/printings")
                 self.assertEqual(404, missing.status_code)
                 self.assertEqual("not_found", missing.json()["error"]["code"])
+
+    def test_demo_api_add_item_accepts_oracle_id_and_inherits_resolved_printing_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_oracle_add_candidates(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "oracle_id": "api-add-oracle",
+                        "lang": "ja",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "foil",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertEqual("api-add-ja", added.json()["scryfall_id"])
+                self.assertEqual("ja", added.json()["language_code"])
+
+                conflict = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "oracle_id": "api-add-oracle",
+                        "lang": "ja",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "foil",
+                        "language_code": "en",
+                    },
+                )
+                self.assertEqual(400, conflict.status_code)
+                self.assertEqual("validation_error", conflict.json()["error"]["code"])
+                self.assertIn("language_code must match the resolved printing language", conflict.json()["error"]["message"])
 
     def test_shared_service_mode_handles_a_small_concurrent_request_burst(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

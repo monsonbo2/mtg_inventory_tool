@@ -1311,6 +1311,17 @@
             ],
             "title": "Scryfall Id"
           },
+          "oracle_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Id"
+          },
           "tcgplayer_product_id": {
             "anyOf": [
               {
@@ -1391,10 +1402,16 @@
             "default": "normal"
           },
           "language_code": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Language Code",
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
-            "default": "en"
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. When omitted, the added inventory row inherits the resolved printing language. Common language-name aliases such as `english` and `japanese` are accepted and normalized."
           },
           "location": {
             "type": "string",

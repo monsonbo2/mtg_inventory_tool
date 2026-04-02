@@ -315,6 +315,7 @@ def inventory_items_add(
             inventory_slug=inventory_slug,
             inventory_display_name=None,
             scryfall_id=payload.scryfall_id,
+            oracle_id=payload.oracle_id,
             tcgplayer_product_id=payload.tcgplayer_product_id,
             name=payload.name,
             set_code=payload.set_code,

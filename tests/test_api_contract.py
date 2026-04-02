@@ -177,8 +177,9 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("Canonical response values: normal, foil, etched", add_properties["finish"]["description"])
         self.assertEqual("NM", add_properties["condition_code"]["default"])
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", add_properties["condition_code"]["description"])
-        self.assertEqual("en", add_properties["language_code"]["default"])
-        self.assertIn("Canonical language codes: en, ja, de, fr", add_properties["language_code"]["description"])
+        self.assertIsNone(add_properties["language_code"]["default"])
+        self.assertIn("inherits the resolved printing language", add_properties["language_code"]["description"])
+        self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]
