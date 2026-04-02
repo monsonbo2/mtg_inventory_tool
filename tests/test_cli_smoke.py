@@ -101,6 +101,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("0003 add inventory audit log", migrate_output)
             self.assertIn("0004 add card search fts", migrate_output)
             self.assertIn("0005 normalize price snapshot finishes", migrate_output)
+            self.assertIn("0006 add inventory memberships", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",
@@ -162,6 +163,92 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("No inventory row found", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
             self.assertFalse((tmp / "_snapshots").exists())
+
+    def test_inventory_membership_cli_can_grant_list_and_revoke_members(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            self.run_cli(
+                "create-inventory",
+                "--db",
+                str(db_path),
+                "--slug",
+                "personal",
+                "--display-name",
+                "Personal Collection",
+            )
+
+            grant_output = self.run_cli(
+                "grant-inventory-membership",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--actor-id",
+                "alice@example.com",
+                "--role",
+                "viewer",
+            )
+            self.assertIn("Granted role 'viewer' on inventory 'personal' to actor 'alice@example.com'", grant_output)
+
+            update_output = self.run_cli(
+                "grant-inventory-membership",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--actor-id",
+                "alice@example.com",
+                "--role",
+                "editor",
+            )
+            self.assertIn("Granted role 'editor' on inventory 'personal' to actor 'alice@example.com'", update_output)
+
+            self.run_cli(
+                "grant-inventory-membership",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--actor-id",
+                "bob@example.com",
+                "--role",
+                "owner",
+            )
+
+            list_output = self.run_cli(
+                "list-inventory-memberships",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+            )
+            self.assertIn("actor_id", list_output)
+            self.assertIn("alice@example.com", list_output)
+            self.assertIn("editor", list_output)
+            self.assertIn("bob@example.com", list_output)
+            self.assertIn("owner", list_output)
+
+            revoke_output = self.run_cli(
+                "revoke-inventory-membership",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--actor-id",
+                "alice@example.com",
+            )
+            self.assertIn("Revoked role 'editor' on inventory 'personal' from actor 'alice@example.com'", revoke_output)
+
+            final_list = self.run_cli(
+                "list-inventory-memberships",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+            )
+            self.assertNotIn("alice@example.com", final_list)
+            self.assertIn("bob@example.com", final_list)
 
     def test_inventory_audit_log_tracks_simple_item_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

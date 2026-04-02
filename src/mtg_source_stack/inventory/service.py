@@ -1,5 +1,17 @@
 """Public inventory domain facade used by the CLI and future app layer."""
 
+from .access import (
+    actor_inventory_role,
+    actor_inventory_role_with_connection,
+    can_read_inventory,
+    can_write_inventory,
+    grant_inventory_membership,
+    grant_inventory_membership_with_connection,
+    is_global_admin,
+    list_inventory_memberships,
+    normalize_inventory_membership_role,
+    revoke_inventory_membership,
+)
 from .audit import list_inventory_audit_events
 from .analysis import (
     build_duplicate_groups_from_owned_rows,

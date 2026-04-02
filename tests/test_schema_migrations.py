@@ -31,11 +31,15 @@ class SchemaMigrationTest(unittest.TestCase):
                 card_search_fts_exists = connection.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtg_cards_fts'"
                 ).fetchone()[0]
+                inventory_memberships_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'inventory_memberships'"
+                ).fetchone()[0]
 
-            self.assertEqual([1, 2, 3, 4, 5], versions)
-            self.assertEqual(5, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6], versions)
+            self.assertEqual(6, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
+            self.assertEqual(1, inventory_memberships_exists)
 
     def test_initialize_database_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -49,7 +53,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(5, len(rows))
+            self.assertEqual(6, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -57,6 +61,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (3, "add inventory audit log"),
                     (4, "add card search fts"),
                     (5, "normalize price snapshot finishes"),
+                    (6, "add inventory memberships"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -111,14 +116,18 @@ class SchemaMigrationTest(unittest.TestCase):
                 fts_exists = migrated.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtg_cards_fts'"
                 ).fetchone()[0]
+                memberships_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'inventory_memberships'"
+                ).fetchone()[0]
 
             self.assertIn("tags_json", columns)
             self.assertEqual("[]", tags_value)
-            self.assertEqual([1, 2, 3, 4, 5], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
             self.assertEqual(1, fts_exists)
+            self.assertEqual(1, memberships_exists)
 
     def test_initialize_database_normalizes_legacy_price_snapshot_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -193,4 +202,4 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6], versions)

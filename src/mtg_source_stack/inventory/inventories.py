@@ -8,6 +8,7 @@ from pathlib import Path
 from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import ConflictError
+from .access import grant_inventory_membership_with_connection
 from .normalize import text_or_none
 from .response_models import InventoryCreateResult, InventoryListRow
 
@@ -17,6 +18,7 @@ def create_inventory(
     slug: str,
     display_name: str,
     description: str | None,
+    actor_id: str | None = None,
 ) -> InventoryCreateResult:
     db_file = require_current_schema(db_path)
     with connect(db_file) as connection:
@@ -30,6 +32,13 @@ def create_inventory(
             )
         except sqlite3.IntegrityError as exc:
             raise ConflictError(f"Inventory '{slug}' already exists.") from exc
+        if actor_id is not None:
+            grant_inventory_membership_with_connection(
+                connection,
+                inventory_id=int(cursor.lastrowid),
+                actor_id=actor_id,
+                role="owner",
+            )
         connection.commit()
         return InventoryCreateResult(
             inventory_id=int(cursor.lastrowid),

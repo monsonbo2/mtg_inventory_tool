@@ -175,7 +175,7 @@ def inventories_list(
 def inventories_create(
     payload: InventoryCreateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
 ) -> Any:
     return _serialize(
         create_inventory(
@@ -183,6 +183,7 @@ def inventories_create(
             slug=payload.slug,
             display_name=payload.display_name,
             description=payload.description,
+            actor_id=context.actor_id,
         )
     )
 
