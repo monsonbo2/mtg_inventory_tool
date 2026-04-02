@@ -8,17 +8,10 @@ export function AuditFeed(props: {
   viewStatus: AsyncStatus;
   viewError: string | null;
   auditEvents: InventoryAuditEvent[];
+  embedded?: boolean;
 }) {
-  return (
-    <section className="panel">
-      <div className="panel-heading">
-        <div>
-          <p className="section-kicker">Recent Activity</p>
-          <h2>Audit Feed</h2>
-        </div>
-        <span className="muted-note">Latest 12 events</span>
-      </div>
-
+  const content = (
+    <>
       {props.viewError && props.auditEvents.length ? (
         <p className="panel-error">{props.viewError}</p>
       ) : null}
@@ -68,6 +61,24 @@ export function AuditFeed(props: {
           />
         )}
       </div>
+    </>
+  );
+
+  if (props.embedded) {
+    return <div className="audit-feed-embedded">{content}</div>;
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <p className="section-kicker">Recent Activity</p>
+          <h2>Audit Feed</h2>
+        </div>
+        <span className="muted-note">Latest 12 events</span>
+      </div>
+
+      {content}
     </section>
   );
 }

@@ -2,19 +2,30 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import type { AddInventoryItemRequest, CatalogSearchRow, FinishValue } from "../types";
-import type { NoticeTone } from "../uiTypes";
-import { FINISH_OPTIONS, formatFinishLabel, parseTags } from "../uiHelpers";
+import type { SearchCardGroup } from "../searchResultHelpers";
+import type { AsyncStatus, NoticeTone } from "../uiTypes";
+import {
+  formatPrintingOptionLabel,
+  summarizePreviewPrintings,
+} from "../searchResultHelpers";
+import { FINISH_OPTIONS, formatFinishLabel, parseTags, toUserMessage } from "../uiHelpers";
 import { CardThumbnail } from "./ui/CardThumbnail";
 
 export function SearchResultCard(props: {
-  result: CatalogSearchRow;
-  busy: boolean;
+  group: SearchCardGroup;
+  busyPrintingId: string | null;
   canAdd: boolean;
+  onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogSearchRow[]>;
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
+  const [printings, setPrintings] = useState<CatalogSearchRow[]>(props.group.previewPrintings);
+  const [printingStatus, setPrintingStatus] = useState<AsyncStatus>("idle");
+  const [printingError, setPrintingError] = useState<string | null>(null);
+  const [hasLoadedExactPrintings, setHasLoadedExactPrintings] = useState(false);
+  const [selectedPrintingId, setSelectedPrintingId] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [finish, setFinish] = useState<FinishValue>(props.result.finishes[0] || "normal");
+  const [finish, setFinish] = useState<FinishValue>("normal");
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState("");
@@ -34,6 +45,36 @@ export function SearchResultCard(props: {
     };
   }, [recentlyAdded]);
 
+  useEffect(() => {
+    setPrintings(props.group.previewPrintings);
+    setPrintingStatus("idle");
+    setPrintingError(null);
+    setHasLoadedExactPrintings(false);
+    setSelectedPrintingId("");
+    setQuantity("1");
+    setFinish("normal");
+    setLocation("");
+    setNotes("");
+    setTags("");
+    setRecentlyAdded(false);
+  }, [props.group.groupId, props.group.previewPrintings]);
+
+  const activePrinting =
+    printings.find((printing) => printing.scryfall_id === selectedPrintingId) || null;
+  const busy = props.busyPrintingId !== null && props.busyPrintingId === selectedPrintingId;
+
+  useEffect(() => {
+    if (!activePrinting) {
+      setFinish("normal");
+      return;
+    }
+
+    if (!activePrinting.finishes.includes(finish)) {
+      setFinish(activePrinting.finishes[0] || "normal");
+      setRecentlyAdded(false);
+    }
+  }, [activePrinting, finish]);
+
   const parsedQuantity = Number.parseInt(quantity, 10);
   const parsedTags = parseTags(tags);
   const trimmedLocation = location.trim();
@@ -45,7 +86,7 @@ export function SearchResultCard(props: {
       parsedTags.length ? `${parsedTags.length} tag${parsedTags.length === 1 ? "" : "s"}` : null,
       trimmedNotes ? "Note ready" : null,
     ].filter(Boolean).join(" · ") || "No optional details yet";
-  const addButtonLabel = props.busy
+  const addButtonLabel = busy
     ? "Adding..."
     : recentlyAdded
       ? "Added"
@@ -54,7 +95,37 @@ export function SearchResultCard(props: {
         : quantityIsValid
           ? "Add to inventory"
           : "Enter valid qty";
-  const availableFinishes = FINISH_OPTIONS.filter((option) => props.result.finishes.includes(option.value));
+  const availableFinishes = FINISH_OPTIONS.filter((option) =>
+    activePrinting?.finishes.includes(option.value),
+  );
+  const selectedPrintingSummary = activePrinting
+    ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}`
+    : "Choose a printing below, then set finish and add details.";
+
+  async function loadPrintings() {
+    if (printingStatus === "loading") {
+      return;
+    }
+
+    setPrintingStatus("loading");
+    setPrintingError(null);
+
+    try {
+      const nextPrintings = await props.onLoadPrintings(props.group);
+      setPrintings(nextPrintings);
+      setHasLoadedExactPrintings(true);
+      setPrintingStatus("ready");
+    } catch (error) {
+      setPrintingStatus("error");
+      setPrintingError(toUserMessage(error, "Could not load printings for this card."));
+    }
+  }
+
+  function ensurePrintingsLoaded() {
+    if (!hasLoadedExactPrintings) {
+      void loadPrintings();
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,13 +135,18 @@ export function SearchResultCard(props: {
       return;
     }
 
+    if (!activePrinting) {
+      props.onNotice("Choose an exact printing before adding the card.", "error");
+      return;
+    }
+
     if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
       props.onNotice("Enter a whole-number quantity greater than 0.", "error");
       return;
     }
 
     const didAdd = await props.onAdd({
-      scryfall_id: props.result.scryfall_id,
+      scryfall_id: activePrinting.scryfall_id,
       quantity: parsedQuantity,
       finish,
       location: trimmedLocation || undefined,
@@ -86,31 +162,34 @@ export function SearchResultCard(props: {
     <article className="result-card">
       <div className="card-hero">
         <CardThumbnail
-          imageUrl={props.result.image_uri_small}
-          imageUrlLarge={props.result.image_uri_normal}
-          name={props.result.name}
+          imageUrl={activePrinting?.image_uri_small || props.group.image_uri_small}
+          imageUrlLarge={activePrinting?.image_uri_normal || props.group.image_uri_normal}
+          name={props.group.name}
           variant="search"
         />
 
         <div className="card-hero-body">
           <div className="result-card-header">
             <div>
-              <h3>{props.result.name}</h3>
-              <p className="result-card-subtitle">
-                {props.result.set_name} · #{props.result.collector_number}
-              </p>
+              <h3>{props.group.name}</h3>
+              <p className="result-card-subtitle">{selectedPrintingSummary}</p>
             </div>
-            <span className="rarity-pill">{props.result.rarity || "unknown"}</span>
+            <span className="rarity-pill">{props.group.rarity || "unknown"}</span>
           </div>
 
+          <p className="search-result-summary">{summarizePreviewPrintings(props.group)}</p>
+
           <div className="tag-row">
-            <span className="tag-chip">{props.result.set_code.toUpperCase()}</span>
-            <span className="tag-chip">{props.result.lang.toUpperCase()}</span>
-            {props.result.finishes.map((value) => (
-              <span className="tag-chip subdued" key={value}>
-                {formatFinishLabel(value)}
+            {props.group.previewPrintings.slice(0, 3).map((printing) => (
+              <span className="tag-chip subdued" key={printing.scryfall_id}>
+                {printing.set_code.toUpperCase()}
               </span>
             ))}
+            {props.group.previewPrintings.length > 3 ? (
+              <span className="tag-chip subdued">
+                +{props.group.previewPrintings.length - 3} more sampled
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -120,18 +199,39 @@ export function SearchResultCard(props: {
           <div className="form-section-header">
             <strong>Quick add</strong>
             <span>
-              {quantityIsValid
-                ? `${parsedQuantity}x ${formatFinishLabel(finish)}`
-                : "Choose quantity and finish"}
+              {activePrinting
+                ? `${printings.length} printings available`
+                : "Choose a printing first"}
             </span>
           </div>
 
-          <div className="mini-grid">
+          <div className="search-result-quick-add-grid">
+            <label className="field search-printing-field">
+              <span>Printing</span>
+              <select
+                className="text-input"
+                disabled={busy}
+                onChange={(event) => {
+                  setSelectedPrintingId(event.target.value);
+                  setRecentlyAdded(false);
+                }}
+                onFocus={ensurePrintingsLoaded}
+                value={selectedPrintingId}
+              >
+                <option value="">Choose printing</option>
+                {printings.map((printing) => (
+                  <option key={printing.scryfall_id} value={printing.scryfall_id}>
+                    {formatPrintingOptionLabel(printing)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label className="field">
               <span>Qty</span>
               <input
                 className="text-input"
-                disabled={props.busy || !props.canAdd}
+                disabled={busy || !props.canAdd}
                 min="1"
                 onChange={(event) => {
                   setQuantity(event.target.value);
@@ -146,13 +246,16 @@ export function SearchResultCard(props: {
               <span>Finish</span>
               <select
                 className="text-input"
-                disabled={props.busy || !props.canAdd}
+                disabled={
+                  busy || !props.canAdd || !activePrinting || availableFinishes.length <= 1
+                }
                 onChange={(event) => {
                   setFinish(event.target.value as FinishValue);
                   setRecentlyAdded(false);
                 }}
                 value={finish}
               >
+                {!activePrinting ? <option value="normal">Choose printing first</option> : null}
                 {availableFinishes.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -161,6 +264,43 @@ export function SearchResultCard(props: {
               </select>
             </label>
           </div>
+
+          {printingStatus === "loading" ? (
+            <p className="field-hint field-hint-info">
+              Loading the full printing list for {props.group.name}...
+            </p>
+          ) : printingStatus === "error" ? (
+            <div className="search-printing-state">
+              <p className="field-hint field-hint-error">
+                {printingError || "Could not load printings for this card."}
+              </p>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  void loadPrintings();
+                }}
+                type="button"
+              >
+                Retry printing lookup
+              </button>
+            </div>
+          ) : !hasLoadedExactPrintings ? (
+            <p className="field-hint field-hint-info">
+              Open the printing list to load the full set of available printings.
+            </p>
+          ) : null}
+
+          {activePrinting ? (
+            <div className="tag-row search-printing-meta">
+              <span className="tag-chip">{activePrinting.set_code.toUpperCase()}</span>
+              <span className="tag-chip">{activePrinting.lang.toUpperCase()}</span>
+              {activePrinting.finishes.map((value) => (
+                <span className="tag-chip subdued" key={value}>
+                  {formatFinishLabel(value)}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="form-section form-section-muted">
@@ -173,7 +313,7 @@ export function SearchResultCard(props: {
             <span>Location</span>
             <input
               className="text-input"
-              disabled={props.busy || !props.canAdd}
+              disabled={busy || !props.canAdd}
               onChange={(event) => {
                 setLocation(event.target.value);
                 setRecentlyAdded(false);
@@ -187,7 +327,7 @@ export function SearchResultCard(props: {
             <span>Tags</span>
             <input
               className="text-input"
-              disabled={props.busy || !props.canAdd}
+              disabled={busy || !props.canAdd}
               onChange={(event) => {
                 setTags(event.target.value);
                 setRecentlyAdded(false);
@@ -201,7 +341,7 @@ export function SearchResultCard(props: {
             <span>Notes</span>
             <textarea
               className="text-area"
-              disabled={props.busy || !props.canAdd}
+              disabled={busy || !props.canAdd}
               onChange={(event) => {
                 setNotes(event.target.value);
                 setRecentlyAdded(false);
@@ -219,13 +359,13 @@ export function SearchResultCard(props: {
           </p>
         ) : recentlyAdded ? (
           <p className="field-hint field-hint-success">
-            Added successfully. You can adjust the form and add another copy.
+            Added successfully. You can keep this group open and add another printing.
           </p>
         ) : null}
 
         <button
           className="primary-button"
-          disabled={props.busy || !props.canAdd || !quantityIsValid}
+          disabled={busy || !props.canAdd || !quantityIsValid || !activePrinting}
           type="submit"
         >
           {addButtonLabel}

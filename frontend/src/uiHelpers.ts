@@ -7,7 +7,7 @@ import type {
   InventorySummary,
   OwnedInventoryRow,
 } from "./types";
-import type { AsyncStatus, FinishSupportState, ItemMutationAction } from "./uiTypes";
+import type { AsyncStatus, ItemMutationAction } from "./uiTypes";
 
 export const FINISH_OPTIONS: Array<{ value: FinishValue; label: string }> = [
   { value: "normal", label: "Normal" },
@@ -228,22 +228,11 @@ export function formatActorType(value: string) {
   return formatTitleCase(value);
 }
 
-export function getUniqueItemsByCardId(items: OwnedInventoryRow[]) {
-  const byCardId = new Map<string, OwnedInventoryRow>();
-  for (const item of items) {
-    if (!byCardId.has(item.scryfall_id)) {
-      byCardId.set(item.scryfall_id, item);
-    }
-  }
-  return Array.from(byCardId.values());
-}
-
 export function getAvailableFinishesForOwnedRow(
   currentFinish: FinishValue,
-  finishSupport: FinishSupportState | null,
+  allowedFinishes: FinishValue[],
 ) {
-  const finishes = finishSupport?.status === "ready" ? finishSupport.finishes : [];
-  const nextFinishes = [currentFinish, ...finishes].filter(
+  const nextFinishes = [currentFinish, ...allowedFinishes].filter(
     (value, index, values) => values.indexOf(value) === index,
   );
   return nextFinishes;

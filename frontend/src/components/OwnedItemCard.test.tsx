@@ -3,9 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import { OwnedItemCard } from "./OwnedItemCard";
 import type { OwnedInventoryRow } from "../types";
-import type { FinishSupportState } from "../uiTypes";
-
-const allowedFinishes: OwnedInventoryRow["allowed_finishes"] = ["normal", "foil"];
 
 const item: OwnedInventoryRow = {
   item_id: 7,
@@ -20,7 +17,7 @@ const item: OwnedInventoryRow = {
   quantity: 2,
   condition_code: "NM",
   finish: "normal",
-  allowed_finishes: allowedFinishes,
+  allowed_finishes: ["normal", "foil"],
   language_code: "en",
   location: "Binder",
   tags: ["burn"],
@@ -33,12 +30,11 @@ const item: OwnedInventoryRow = {
   notes: "Main deck",
 };
 
-function renderCard(finishSupport: FinishSupportState | null) {
+function renderCard(overrides: Partial<OwnedInventoryRow> = {}) {
   return render(
     <OwnedItemCard
       busyAction={null}
-      finishSupport={finishSupport}
-      item={item}
+      item={{ ...item, ...overrides }}
       onDelete={async () => {}}
       onNotice={() => {}}
       onPatch={async () => {}}
@@ -47,17 +43,17 @@ function renderCard(finishSupport: FinishSupportState | null) {
 }
 
 describe("OwnedItemCard", () => {
-  it("locks the finish editor while compatibility is still loading", () => {
-    renderCard({ status: "loading" });
+  it("locks the finish editor when the owned row only supports one finish", () => {
+    renderCard({ allowed_finishes: ["normal"] });
 
     expect(screen.getByRole("combobox")).toBeDisabled();
     expect(
-      screen.getByText("Checking which finishes this printing supports..."),
+      screen.getByText("This printing only supports Normal."),
     ).toBeInTheDocument();
   });
 
-  it("unlocks the finish editor when multiple supported finishes are known", () => {
-    renderCard({ status: "ready", finishes: ["normal", "foil"] });
+  it("unlocks the finish editor when the owned row publishes multiple finishes", () => {
+    renderCard({ allowed_finishes: ["normal", "foil"] });
 
     const finishSelect = screen.getByRole("combobox");
     expect(finishSelect).toBeEnabled();

@@ -1,6 +1,13 @@
 import type { InventorySummary, OwnedInventoryRow, PatchInventoryItemRequest } from "../types";
-import type { AsyncStatus, FinishSupportState, ItemMutationAction, NoticeTone } from "../uiTypes";
+import type { AsyncStatus, ItemMutationAction, NoticeTone } from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
+import type {
+  InventoryTableFilters,
+  InventoryTableFilterOptions,
+  InventoryTableSortState,
+} from "../tableViewHelpers";
+import { CompactInventoryList } from "./CompactInventoryList";
+import { InventoryTableView } from "./InventoryTableView";
 import { OwnedItemCard } from "./OwnedItemCard";
 import { PanelState } from "./ui/PanelState";
 import { StatusPill } from "./ui/StatusPill";
@@ -10,7 +17,6 @@ export function OwnedCollectionPanel(props: {
   viewStatus: AsyncStatus;
   viewError: string | null;
   items: OwnedInventoryRow[];
-  finishSupportByCard: Record<string, FinishSupportState>;
   busyItem: { itemId: number; action: ItemMutationAction } | null;
   onPatch: (
     itemId: number,
@@ -19,20 +25,90 @@ export function OwnedCollectionPanel(props: {
   ) => Promise<void>;
   onDelete: (itemId: number, cardName: string) => Promise<void>;
   onNotice: (message: string, tone?: NoticeTone) => void;
+  collectionView: "compact" | "table" | "detailed";
+  onCollectionViewChange: (nextView: "compact" | "table" | "detailed") => void;
+  expandedItemId: number | null;
+  onExpandedItemChange: (itemId: number | null) => void;
+  tableItems: OwnedInventoryRow[];
+  tableSort: InventoryTableSortState;
+  tableFilters: InventoryTableFilters;
+  tableFilterOptions: InventoryTableFilterOptions;
+  onTableSortChange: (nextSort: InventoryTableSortState) => void;
+  onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
+  onOpenActivity: () => void;
+  selectedItemIds: number[];
+  onToggleItemSelection: (itemId: number) => void;
+  onSelectAllVisibleItems: () => void;
+  onClearVisibleSelectedItems: () => void;
+  onClearSelectedItems: () => void;
 }) {
   const totalEstimatedValue = props.items.reduce(
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
   );
+  const totalRows = props.selectedInventoryRow?.item_rows ?? props.items.length;
+  const totalCards = props.selectedInventoryRow?.total_cards ?? 0;
 
   return (
     <section className="panel">
-      <div className="panel-heading">
-        <div>
-          <p className="section-kicker">Collection View</p>
-          <h2>Owned Rows</h2>
+      <div className="collection-panel-header">
+        <div className="panel-heading collection-panel-heading">
+          <div>
+            <p className="section-kicker">Collection View</p>
+            <h2>Owned Rows</h2>
+          </div>
+          <StatusPill status={props.viewStatus} />
         </div>
-        <StatusPill status={props.viewStatus} />
+
+        <div className="collection-header-controls">
+          <div aria-label="Collection view" className="view-toggle" role="group">
+            <button
+              aria-pressed={props.collectionView === "compact"}
+              className={
+                props.collectionView === "compact"
+                  ? "view-toggle-button view-toggle-button-active"
+                  : "view-toggle-button"
+              }
+              onClick={() => props.onCollectionViewChange("compact")}
+              type="button"
+            >
+              Compact
+            </button>
+            <button
+              aria-pressed={props.collectionView === "table"}
+              className={
+                props.collectionView === "table"
+                  ? "view-toggle-button view-toggle-button-active"
+                  : "view-toggle-button"
+              }
+              onClick={() => props.onCollectionViewChange("table")}
+              type="button"
+            >
+              Table
+            </button>
+            <button
+              aria-pressed={props.collectionView === "detailed"}
+              className={
+                props.collectionView === "detailed"
+                  ? "view-toggle-button view-toggle-button-active"
+                  : "view-toggle-button"
+              }
+              onClick={() => props.onCollectionViewChange("detailed")}
+              type="button"
+            >
+              Detailed
+            </button>
+          </div>
+
+          <button
+            className="secondary-button"
+            disabled={!props.selectedInventoryRow}
+            onClick={props.onOpenActivity}
+            type="button"
+          >
+            View Activity
+          </button>
+        </div>
       </div>
 
       <div className="inventory-summary-bar">
@@ -41,8 +117,12 @@ export function OwnedCollectionPanel(props: {
           <strong>{props.selectedInventoryRow?.display_name || "No inventory"}</strong>
         </div>
         <div className="summary-chip">
+          <span>Total rows</span>
+          <strong>{totalRows}</strong>
+        </div>
+        <div className="summary-chip">
           <span>Total cards</span>
-          <strong>{props.selectedInventoryRow?.total_cards ?? 0}</strong>
+          <strong>{totalCards}</strong>
         </div>
         <div className="summary-chip">
           <span>Estimated value</span>
@@ -71,17 +151,43 @@ export function OwnedCollectionPanel(props: {
             variant="error"
           />
         ) : props.items.length ? (
-          props.items.map((item) => (
-            <OwnedItemCard
-              busyAction={props.busyItem?.itemId === item.item_id ? props.busyItem.action : null}
-              finishSupport={props.finishSupportByCard[item.scryfall_id] || null}
-              item={item}
-              key={item.item_id}
+          props.collectionView === "compact" ? (
+            <CompactInventoryList
+              busyItem={props.busyItem}
+              expandedItemId={props.expandedItemId}
+              items={props.items}
               onDelete={props.onDelete}
+              onExpandedItemChange={props.onExpandedItemChange}
               onNotice={props.onNotice}
               onPatch={props.onPatch}
             />
-          ))
+          ) : props.collectionView === "table" ? (
+            <InventoryTableView
+              allItemsCount={props.items.length}
+              filterOptions={props.tableFilterOptions}
+              filters={props.tableFilters}
+              items={props.tableItems}
+              onClearSelection={props.onClearSelectedItems}
+              onClearVisibleSelection={props.onClearVisibleSelectedItems}
+              onFiltersChange={props.onTableFiltersChange}
+              onSelectAllVisible={props.onSelectAllVisibleItems}
+              onSortChange={props.onTableSortChange}
+              onToggleItemSelection={props.onToggleItemSelection}
+              selectedItemIds={props.selectedItemIds}
+              sortState={props.tableSort}
+            />
+          ) : (
+            props.items.map((item) => (
+              <OwnedItemCard
+                busyAction={props.busyItem?.itemId === item.item_id ? props.busyItem.action : null}
+                item={item}
+                key={item.item_id}
+                onDelete={props.onDelete}
+                onNotice={props.onNotice}
+                onPatch={props.onPatch}
+              />
+            ))
+          )
         ) : (
           <PanelState
             body={getInventoryCollectionEmptyMessage(props.selectedInventoryRow)}

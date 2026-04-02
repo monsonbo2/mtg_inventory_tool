@@ -10,12 +10,25 @@ import {
   deleteInventoryItem,
   searchCards,
 } from "./api";
+import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AuditFeed } from "./components/AuditFeed";
 import { InventorySidebar } from "./components/InventorySidebar";
 import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
+import {
+  getSearchCardGroupId,
+  groupCatalogSearchRows,
+  type SearchCardGroup,
+} from "./searchResultHelpers";
+import {
+  applyInventoryTableQuery,
+  createDefaultInventoryTableFilters,
+  getInventoryTableFilterOptions,
+  type InventoryTableFilters,
+  type InventoryTableSortState,
+} from "./tableViewHelpers";
 import type {
   AddInventoryItemRequest,
   CatalogSearchRow,
@@ -28,13 +41,11 @@ import {
   decimalToNumber,
   formatUsd,
   getPatchSuccessMessage,
-  getUniqueItemsByCardId,
   resolveSelectedInventorySlug,
   toUserMessage,
 } from "./uiHelpers";
 import type {
   AsyncStatus,
-  FinishSupportState,
   ItemMutationAction,
   ItemMutationState,
   NoticeState,
@@ -45,6 +56,9 @@ import type {
 const AUTOCOMPLETE_MIN_QUERY_LENGTH = 2;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 const AUTOCOMPLETE_LIMIT = 5;
+const SEARCH_RESULT_PRINTING_LIMIT = 100;
+const SEARCH_GROUP_LIMIT = 8;
+const PRINTING_LOOKUP_LIMIT = 100;
 
 export default function App() {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
@@ -59,7 +73,7 @@ export default function App() {
   const [viewError, setViewError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("Lightning Bolt");
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CatalogSearchRow[]>([]);
   const [suggestionResults, setSuggestionResults] = useState<CatalogSearchRow[]>([]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
@@ -67,12 +81,20 @@ export default function App() {
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
-  const [finishSupportByCard, setFinishSupportByCard] = useState<Record<string, FinishSupportState>>({});
+  const [collectionView, setCollectionView] = useState<"compact" | "table" | "detailed">("compact");
+  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [tableSort, setTableSort] = useState<InventoryTableSortState>(null);
+  const [tableFilters, setTableFilters] = useState<InventoryTableFilters>(
+    createDefaultInventoryTableFilters,
+  );
+  const [activityOpen, setActivityOpen] = useState(false);
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
-  const finishLookupRequestIdRef = useRef(0);
   const suggestionLookupRequestIdRef = useRef(0);
   const suggestionCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
+  const printingLookupCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
+  const printingLookupPromisesRef = useRef<Record<string, Promise<CatalogSearchRow[]>>>({});
   const skipSuggestionFetchQueryRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -112,17 +134,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setTableSort(null);
+    setTableFilters(createDefaultInventoryTableFilters());
+
     if (!selectedInventory) {
       inventoryViewRequestIdRef.current += 1;
       setItems([]);
       setAuditEvents([]);
+      setExpandedItemId(null);
+      setSelectedItemIds([]);
+      setActivityOpen(false);
       setViewError(null);
       setViewStatus("idle");
       return;
     }
 
+    setExpandedItemId(null);
+    setSelectedItemIds([]);
     void loadInventoryOverview(selectedInventory);
   }, [selectedInventory]);
+
+  useEffect(() => {
+    const visibleItemIds = new Set(items.map((item) => item.item_id));
+    setSelectedItemIds((current) => current.filter((itemId) => visibleItemIds.has(itemId)));
+  }, [items]);
 
   useEffect(() => {
     const trimmed = searchQuery.trim();
@@ -185,96 +220,6 @@ export default function App() {
       window.clearTimeout(timeoutId);
     };
   }, [searchQuery]);
-
-  useEffect(() => {
-    const uniqueItems = getUniqueItemsByCardId(items);
-    const itemsNeedingFinishSupport = uniqueItems.filter(
-      (item) => finishSupportByCard[item.scryfall_id] === undefined,
-    );
-
-    if (!itemsNeedingFinishSupport.length) {
-      return;
-    }
-
-    const requestId = ++finishLookupRequestIdRef.current;
-    let cancelled = false;
-
-    setFinishSupportByCard((current) => {
-      const next = { ...current };
-      for (const item of itemsNeedingFinishSupport) {
-        if (next[item.scryfall_id] === undefined) {
-          next[item.scryfall_id] = { status: "loading" };
-        }
-      }
-      return next;
-    });
-
-    void Promise.all(
-      itemsNeedingFinishSupport.map(async (item) => {
-        try {
-          const results = await searchCards({
-            query: item.name,
-            set_code: item.set_code,
-            exact: true,
-            limit: 8,
-          });
-          const match =
-            results.find((result) => result.scryfall_id === item.scryfall_id) ??
-            results.find(
-              (result) =>
-                result.set_code === item.set_code &&
-                result.collector_number === item.collector_number,
-            );
-
-          if (!match) {
-            return {
-              cardId: item.scryfall_id,
-              state: {
-                status: "error",
-                message:
-                  "Could not verify legal finishes for this printing yet. Unsupported finish changes will still be rejected by the API.",
-              } satisfies FinishSupportState,
-            };
-          }
-
-          return {
-            cardId: item.scryfall_id,
-            state: {
-              status: "ready",
-              finishes: match.finishes,
-            } satisfies FinishSupportState,
-          };
-        } catch (error) {
-          return {
-            cardId: item.scryfall_id,
-            state: {
-              status: "error",
-              message: toUserMessage(
-                error,
-                "Could not verify legal finishes for this printing yet. Unsupported finish changes will still be rejected by the API.",
-              ),
-            } satisfies FinishSupportState,
-          };
-        }
-      }),
-    ).then((results) => {
-      if (cancelled || requestId !== finishLookupRequestIdRef.current) {
-        return;
-      }
-
-      setFinishSupportByCard((current) => {
-        const next = { ...current };
-        for (const result of results) {
-          next[result.cardId] = result.state;
-        }
-        return next;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [finishSupportByCard, items]);
 
   async function reloadInventorySummaries(preferredSlug: string) {
     try {
@@ -445,7 +390,10 @@ export default function App() {
     setNotice(null);
 
     try {
-      const results = await searchCards({ query: trimmed, limit: 8 });
+      const results = await searchCards({
+        query: trimmed,
+        limit: SEARCH_RESULT_PRINTING_LIMIT,
+      });
       setSearchResults(results);
       setSearchStatus("ready");
     } catch (error) {
@@ -511,6 +459,42 @@ export default function App() {
     setSearchQuery(query);
     closeSuggestionList();
     await runCardSearch(query);
+  }
+
+  async function loadSearchGroupPrintings(group: SearchCardGroup) {
+    const cachedPrintings = printingLookupCacheRef.current[group.groupId];
+    if (cachedPrintings) {
+      return cachedPrintings;
+    }
+
+    const inFlightRequest = printingLookupPromisesRef.current[group.groupId];
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    const request = searchCards({
+      query: group.name,
+      exact: true,
+      limit: PRINTING_LOOKUP_LIMIT,
+    })
+      .then((results) => {
+        const nextPrintings = results.filter(
+          (result) => getSearchCardGroupId(result.name) === group.groupId,
+        );
+        if (!nextPrintings.length) {
+          throw new Error(`No printings are currently available for ${group.name}.`);
+        }
+        printingLookupCacheRef.current[group.groupId] = nextPrintings;
+        delete printingLookupPromisesRef.current[group.groupId];
+        return nextPrintings;
+      })
+      .catch((error) => {
+        delete printingLookupPromisesRef.current[group.groupId];
+        throw error;
+      });
+
+    printingLookupPromisesRef.current[group.groupId] = request;
+    return request;
   }
 
   async function handleAddCard(payload: AddInventoryItemRequest) {
@@ -591,12 +575,50 @@ export default function App() {
     }
   }
 
+  function handleCollectionViewChange(nextView: "compact" | "table" | "detailed") {
+    setCollectionView(nextView);
+    if (nextView !== "compact") {
+      setExpandedItemId(null);
+    }
+  }
+
+  function handleToggleItemSelection(itemId: number) {
+    setSelectedItemIds((current) =>
+      current.includes(itemId)
+        ? current.filter((existingItemId) => existingItemId !== itemId)
+        : [...current, itemId],
+    );
+  }
+
+  function handleSelectAllVisibleItems() {
+    const visibleItemIds = visibleTableItems.map((item) => item.item_id);
+    setSelectedItemIds((current) => {
+      const nextSelectedItemIds = new Set(current);
+      for (const itemId of visibleItemIds) {
+        nextSelectedItemIds.add(itemId);
+      }
+      return Array.from(nextSelectedItemIds);
+    });
+  }
+
+  function handleClearVisibleSelectedItems() {
+    const visibleItemIds = new Set(visibleTableItems.map((item) => item.item_id));
+    setSelectedItemIds((current) => current.filter((itemId) => !visibleItemIds.has(itemId)));
+  }
+
+  function handleClearSelectedItems() {
+    setSelectedItemIds([]);
+  }
+
   const selectedInventoryRow =
     inventories.find((inventory) => inventory.slug === selectedInventory) ?? null;
   const totalEstimatedValue = items.reduce(
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
   );
+  const searchGroups = groupCatalogSearchRows(searchResults).slice(0, SEARCH_GROUP_LIMIT);
+  const visibleTableItems = applyInventoryTableQuery(items, tableSort, tableFilters);
+  const tableFilterOptions = getInventoryTableFilterOptions(items);
 
   return (
     <div className="app-shell">
@@ -633,12 +655,6 @@ export default function App() {
             selectedInventory={selectedInventory}
             selectedInventoryRow={selectedInventoryRow}
           />
-          <AuditFeed
-            auditEvents={auditEvents}
-            selectedInventoryRow={selectedInventoryRow}
-            viewError={viewError}
-            viewStatus={viewStatus}
-          />
         </aside>
 
         <main className="content-column">
@@ -648,14 +664,15 @@ export default function App() {
             onNotice={reportNotice}
             onSearchFieldFocus={handleSearchFieldFocus}
             onSearchInputKeyDown={handleSearchInputKeyDown}
+            onLoadPrintings={loadSearchGroupPrintings}
             onSearchQueryChange={handleSearchQueryChange}
             onSearchSubmit={handleSearchSubmit}
             onSuggestionHighlight={setHighlightedSuggestionIndex}
             onSuggestionRequestClose={handleSuggestionRequestClose}
             onSuggestionSelect={handleSuggestionSelect}
             searchError={searchError}
+            searchGroups={searchGroups}
             searchQuery={searchQuery}
-            searchResults={searchResults}
             searchStatus={searchStatus}
             selectedInventoryRow={selectedInventoryRow}
             suggestionError={suggestionError}
@@ -666,17 +683,51 @@ export default function App() {
           />
           <OwnedCollectionPanel
             busyItem={busyItem}
-            finishSupportByCard={finishSupportByCard}
+            collectionView={collectionView}
+            expandedItemId={expandedItemId}
             items={items}
+            tableFilterOptions={tableFilterOptions}
+            tableFilters={tableFilters}
+            tableItems={visibleTableItems}
+            tableSort={tableSort}
+            onClearSelectedItems={handleClearSelectedItems}
+            onClearVisibleSelectedItems={handleClearVisibleSelectedItems}
+            onCollectionViewChange={handleCollectionViewChange}
             onDelete={handleDeleteItem}
+            onExpandedItemChange={setExpandedItemId}
+            onOpenActivity={() => setActivityOpen(true)}
             onNotice={reportNotice}
             onPatch={handlePatchItem}
+            onTableFiltersChange={setTableFilters}
+            onTableSortChange={setTableSort}
+            onSelectAllVisibleItems={handleSelectAllVisibleItems}
+            onToggleItemSelection={handleToggleItemSelection}
             selectedInventoryRow={selectedInventoryRow}
+            selectedItemIds={selectedItemIds}
             viewError={viewError}
             viewStatus={viewStatus}
           />
         </main>
       </div>
+
+      <ActivityDrawer
+        isOpen={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        subtitle={
+          selectedInventoryRow
+            ? `${selectedInventoryRow.display_name} · latest 12 events`
+            : "Choose an inventory to inspect its recent write activity."
+        }
+        title="Inventory Activity"
+      >
+        <AuditFeed
+          auditEvents={auditEvents}
+          embedded
+          selectedInventoryRow={selectedInventoryRow}
+          viewError={viewError}
+          viewStatus={viewStatus}
+        />
+      </ActivityDrawer>
     </div>
   );
 }

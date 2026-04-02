@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import type { AddInventoryItemRequest, CatalogSearchRow, InventorySummary } from "../types";
+import type { SearchCardGroup } from "../searchResultHelpers";
 import type { AsyncStatus, NoticeTone } from "../uiTypes";
 import { SearchAutocomplete } from "./SearchAutocomplete";
 import { PanelState } from "./ui/PanelState";
@@ -12,7 +13,7 @@ export function SearchPanel(props: {
   suggestionStatus: AsyncStatus;
   suggestionError: string | null;
   searchQuery: string;
-  searchResults: CatalogSearchRow[];
+  searchGroups: SearchCardGroup[];
   suggestionResults: CatalogSearchRow[];
   suggestionOpen: boolean;
   highlightedSuggestionIndex: number;
@@ -21,6 +22,7 @@ export function SearchPanel(props: {
   onSearchFieldFocus: () => void;
   onSearchInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onSearchSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogSearchRow[]>;
   onSuggestionHighlight: (index: number) => void;
   onSuggestionRequestClose: () => void;
   onSuggestionSelect: (result: CatalogSearchRow) => void;
@@ -83,7 +85,7 @@ export function SearchPanel(props: {
               onClick={props.onSearchFieldFocus}
               onFocus={props.onSearchFieldFocus}
               onKeyDown={props.onSearchInputKeyDown}
-              placeholder="Lightning Bolt"
+              placeholder="e.g. Lightning Bolt"
               role="combobox"
               value={props.searchQuery}
             />
@@ -118,7 +120,7 @@ export function SearchPanel(props: {
       ) : null}
 
       <div className="search-results-grid">
-        {props.searchStatus === "loading" && props.searchResults.length === 0 ? (
+        {props.searchStatus === "loading" && props.searchGroups.length === 0 ? (
           <PanelState
             body="Looking up matching cards in the local catalog."
             title="Searching cards"
@@ -130,15 +132,16 @@ export function SearchPanel(props: {
             title="Search unavailable"
             variant="error"
           />
-        ) : props.searchResults.length ? (
-          props.searchResults.map((result) => (
+        ) : props.searchGroups.length ? (
+          props.searchGroups.map((group) => (
             <SearchResultCard
-              busy={props.busyAddCardId === result.scryfall_id}
+              busyPrintingId={props.busyAddCardId}
               canAdd={Boolean(props.selectedInventoryRow)}
-              key={result.scryfall_id}
+              group={group}
               onAdd={props.onAdd}
+              onLoadPrintings={props.onLoadPrintings}
               onNotice={props.onNotice}
-              result={result}
+              key={group.groupId}
             />
           ))
         ) : props.searchStatus === "ready" ? (
@@ -148,7 +151,7 @@ export function SearchPanel(props: {
           />
         ) : (
           <PanelState
-            body="Search by card name to populate the add-card workflow."
+            body="Search by card name, then choose the exact printing to add."
             title="Run a search"
           />
         )}
