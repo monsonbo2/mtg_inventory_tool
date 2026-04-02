@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 import sqlite3
 import tempfile
 from pathlib import Path
+from textwrap import dedent
 
 from tests.common import RepoSmokeTestCase
+from mtg_source_stack.api.app import create_app
+from mtg_source_stack.api.dependencies import ApiSettings
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
 from mtg_source_stack.api.request_models import AddInventoryItemRequest, PatchInventoryItemRequest
 from mtg_source_stack.api.response_models import (
@@ -30,8 +34,57 @@ from mtg_source_stack.inventory.service import (
     search_cards,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+OPENAPI_SNAPSHOT_PATH = REPO_ROOT / "contracts" / "openapi.json"
+OPENAPI_SNAPSHOT_REFRESH_COMMAND = dedent(
+    """\
+    PYTHONPATH=src python3 - <<'PY'
+    import json
+    from pathlib import Path
+    from mtg_source_stack.api.app import create_app
+    from mtg_source_stack.api.dependencies import ApiSettings
+
+    app = create_app(
+        ApiSettings(
+            db_path=Path("var/db/mtg_mvp.db"),
+            runtime_mode="local_demo",
+            auto_migrate=True,
+            host="127.0.0.1",
+            port=8000,
+        )
+    )
+
+    Path("contracts/openapi.json").write_text(
+        json.dumps(app.openapi(), indent=2, sort_keys=True) + "\\n"
+    )
+    PY
+    """
+)
+
+
+def _render_live_openapi_snapshot() -> str:
+    app = create_app(
+        ApiSettings(
+            db_path=REPO_ROOT / "var/db" / "mtg_mvp.db",
+            runtime_mode="local_demo",
+            auto_migrate=True,
+            host="127.0.0.1",
+            port=8000,
+        )
+    )
+    return json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n"
+
 
 class ApiContractTest(RepoSmokeTestCase):
+    def test_openapi_snapshot_matches_live_app(self) -> None:
+        self.maxDiff = None
+        self.assertMultiLineEqual(
+            OPENAPI_SNAPSHOT_PATH.read_text(encoding="utf-8"),
+            _render_live_openapi_snapshot(),
+            "contracts/openapi.json is out of date. Regenerate the enforced OpenAPI snapshot with:\n\n"
+            f"{OPENAPI_SNAPSHOT_REFRESH_COMMAND}",
+        )
+
     def test_serialize_response_uses_decimal_strings_and_nulls(self) -> None:
         payload = {
             "price": Decimal("2.50"),

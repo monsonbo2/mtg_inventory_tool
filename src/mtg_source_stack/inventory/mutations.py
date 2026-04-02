@@ -58,6 +58,186 @@ def _prepared_db_path(db_path: str | Path) -> Path:
     return require_current_schema(db_path)
 
 
+def _add_card_concurrent_collision_error() -> ConflictError:
+    return ConflictError(
+        "Adding card would collide with an existing inventory row due to a concurrent write. Retry the request."
+    )
+
+
+def _set_location_collision_error() -> ConflictError:
+    return ConflictError(
+        "Changing location would collide with an existing inventory row. "
+        "Re-run with --merge to combine the rows, or resolve the duplicate row first."
+    )
+
+
+def _set_location_concurrent_merge_error() -> ConflictError:
+    return ConflictError(
+        "Changing location collided with another concurrent write while merging. Retry the request."
+    )
+
+
+def _set_condition_collision_error() -> ConflictError:
+    return ConflictError(
+        "Changing condition would collide with an existing inventory row. "
+        "Re-run with --merge to combine the rows, or resolve the duplicate row first."
+    )
+
+
+def _set_condition_concurrent_merge_error() -> ConflictError:
+    return ConflictError(
+        "Changing condition collided with another concurrent write while merging. Retry the request."
+    )
+
+
+def _split_row_concurrent_collision_error() -> ConflictError:
+    return ConflictError(
+        "Splitting row would collide with an existing inventory row due to a concurrent write. Retry the request."
+    )
+
+
+def _complete_location_merge(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    source_item: sqlite3.Row,
+    target_item: sqlite3.Row,
+    normalized_location: str,
+    keep_acquisition: str | None,
+    before_snapshot: dict[str, Any],
+    actor_type: str,
+    actor_id: str | None,
+    request_id: str | None,
+) -> SetLocationResult:
+    result = merge_inventory_item_rows(
+        connection,
+        inventory_slug=inventory_slug,
+        source_item=source_item,
+        target_item=target_item,
+        acquisition_preference=keep_acquisition,
+    )
+    result["old_location"] = source_item["location"]
+    result["location"] = normalized_location
+    after_snapshot = load_inventory_item_snapshot(
+        connection,
+        inventory_slug=inventory_slug,
+        item_id=int(result["item_id"]),
+    )
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_location",
+        item_id=int(source_item["item_id"]),
+        before=before_snapshot,
+        after=None,
+        metadata={
+            "merged": True,
+            "target_item_id": int(result["item_id"]),
+            "new_location": normalized_location,
+            "keep_acquisition": keep_acquisition,
+        },
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_location",
+        item_id=int(result["item_id"]),
+        before=inventory_item_result_from_row(target_item),
+        after=after_snapshot,
+        metadata={
+            "merged": True,
+            "source_item_id": int(source_item["item_id"]),
+            "new_location": normalized_location,
+            "keep_acquisition": keep_acquisition,
+        },
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    connection.commit()
+    return SetLocationResult(
+        **inventory_item_response_kwargs(result),
+        operation="set_location",
+        old_location=text_or_none(source_item["location"]),
+        merged=True,
+        merged_source_item_id=int(result["merged_source_item_id"]),
+    )
+
+
+def _complete_condition_merge(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    source_item: sqlite3.Row,
+    target_item: sqlite3.Row,
+    normalized_condition: str,
+    keep_acquisition: str | None,
+    before_snapshot: dict[str, Any],
+    actor_type: str,
+    actor_id: str | None,
+    request_id: str | None,
+) -> SetConditionResult:
+    result = merge_inventory_item_rows(
+        connection,
+        inventory_slug=inventory_slug,
+        source_item=source_item,
+        target_item=target_item,
+        acquisition_preference=keep_acquisition,
+    )
+    result["old_condition_code"] = source_item["condition_code"]
+    result["condition_code"] = normalized_condition
+    after_snapshot = load_inventory_item_snapshot(
+        connection,
+        inventory_slug=inventory_slug,
+        item_id=int(result["item_id"]),
+    )
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_condition",
+        item_id=int(source_item["item_id"]),
+        before=before_snapshot,
+        after=None,
+        metadata={
+            "merged": True,
+            "target_item_id": int(result["item_id"]),
+            "new_condition_code": normalized_condition,
+            "keep_acquisition": keep_acquisition,
+        },
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_condition",
+        item_id=int(result["item_id"]),
+        before=inventory_item_result_from_row(target_item),
+        after=after_snapshot,
+        metadata={
+            "merged": True,
+            "source_item_id": int(source_item["item_id"]),
+            "new_condition_code": normalized_condition,
+            "keep_acquisition": keep_acquisition,
+        },
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    connection.commit()
+    return SetConditionResult(
+        **inventory_item_response_kwargs(result),
+        operation="set_condition",
+        old_condition_code=str(source_item["condition_code"]),
+        merged=True,
+        merged_source_item_id=int(result["merged_source_item_id"]),
+    )
+
+
 def add_card_with_connection(
     connection: sqlite3.Connection,
     *,
@@ -226,38 +406,41 @@ def add_card_with_connection(
     else:
         if before_write is not None:
             before_write()
-        cursor = connection.execute(
-            """
-            INSERT INTO inventory_items (
-                inventory_id,
-                scryfall_id,
-                quantity,
-                condition_code,
-                finish,
-                language_code,
-                location,
-                acquisition_price,
-                acquisition_currency,
-                notes,
-                tags_json
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO inventory_items (
+                    inventory_id,
+                    scryfall_id,
+                    quantity,
+                    condition_code,
+                    finish,
+                    language_code,
+                    location,
+                    acquisition_price,
+                    acquisition_currency,
+                    notes,
+                    tags_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id, quantity
+                """,
+                (
+                    inventory["id"],
+                    card["scryfall_id"],
+                    quantity,
+                    normalized_condition,
+                    normalized_finish,
+                    normalized_language,
+                    normalized_location,
+                    normalized_acquisition_price,
+                    normalized_acquisition_currency,
+                    normalized_notes,
+                    tags_to_json(merged_tags),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id, quantity
-            """,
-            (
-                inventory["id"],
-                card["scryfall_id"],
-                quantity,
-                normalized_condition,
-                normalized_finish,
-                normalized_language,
-                normalized_location,
-                normalized_acquisition_price,
-                normalized_acquisition_currency,
-                normalized_notes,
-                tags_to_json(merged_tags),
-            ),
-        )
+        except sqlite3.IntegrityError as exc:
+            raise _add_card_concurrent_collision_error() from exc
         item_row = cursor.fetchone()
         item_id = int(item_row["id"])
         item_quantity = int(item_row["quantity"])
@@ -303,6 +486,7 @@ def add_card(
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
+    before_write: Callable[[], Any] | None = None,
     actor_type: str = "cli",
     actor_id: str | None = None,
     request_id: str | None = None,
@@ -329,6 +513,7 @@ def add_card(
             acquisition_currency=acquisition_currency,
             notes=notes,
             tags=tags,
+            before_write=before_write,
             actor_type=actor_type,
             actor_id=actor_id,
             request_id=request_id,
@@ -581,77 +766,60 @@ def set_location(
             # Changing an identity field can collapse two rows into one logical
             # bucket, so require an explicit merge opt-in before combining them.
             if not merge:
-                raise ConflictError(
-                    "Changing location would collide with an existing inventory row. "
-                    "Re-run with --merge to combine the rows, or resolve the duplicate row first."
-                )
+                raise _set_location_collision_error()
             if before_write is not None:
                 before_write()
-            result = merge_inventory_item_rows(
+            return _complete_location_merge(
                 connection,
                 inventory_slug=inventory_slug,
                 source_item=item,
                 target_item=collision,
-                acquisition_preference=keep_acquisition,
-            )
-            result["old_location"] = item["location"]
-            result["location"] = normalized_location
-            after_snapshot = load_inventory_item_snapshot(
-                connection,
-                inventory_slug=inventory_slug,
-                item_id=int(result["item_id"]),
-            )
-            write_inventory_audit_event(
-                connection,
-                inventory_slug=inventory_slug,
-                action="set_location",
-                item_id=int(item["item_id"]),
-                before=before_snapshot,
-                after=None,
-                metadata={
-                    "merged": True,
-                    "target_item_id": int(result["item_id"]),
-                    "new_location": normalized_location,
-                    "keep_acquisition": keep_acquisition,
-                },
+                normalized_location=normalized_location,
+                keep_acquisition=keep_acquisition,
+                before_snapshot=before_snapshot,
                 actor_type=actor_type,
                 actor_id=actor_id,
                 request_id=request_id,
-            )
-            write_inventory_audit_event(
-                connection,
-                inventory_slug=inventory_slug,
-                action="set_location",
-                item_id=int(result["item_id"]),
-                before=inventory_item_result_from_row(collision),
-                after=after_snapshot,
-                metadata={
-                    "merged": True,
-                    "source_item_id": int(item["item_id"]),
-                    "new_location": normalized_location,
-                    "keep_acquisition": keep_acquisition,
-                },
-                actor_type=actor_type,
-                actor_id=actor_id,
-                request_id=request_id,
-            )
-            connection.commit()
-            return SetLocationResult(
-                **inventory_item_response_kwargs(result),
-                operation="set_location",
-                old_location=text_or_none(item["location"]),
-                merged=True,
-                merged_source_item_id=int(result["merged_source_item_id"]),
             )
 
-        connection.execute(
-            """
-            UPDATE inventory_items
-            SET location = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (normalized_location, item_id),
-        )
+        if before_write is not None:
+            before_write()
+        try:
+            connection.execute(
+                """
+                UPDATE inventory_items
+                SET location = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (normalized_location, item_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            if not merge:
+                raise _set_location_collision_error() from exc
+            collision = find_inventory_item_collision(
+                connection,
+                inventory_id=item["inventory_id"],
+                scryfall_id=item["scryfall_id"],
+                condition_code=item["condition_code"],
+                finish=item["finish"],
+                language_code=item["language_code"],
+                location=normalized_location,
+                exclude_item_id=item_id,
+            )
+            if collision is None:
+                raise _set_location_concurrent_merge_error() from exc
+            return _complete_location_merge(
+                connection,
+                inventory_slug=inventory_slug,
+                source_item=item,
+                target_item=collision,
+                normalized_location=normalized_location,
+                keep_acquisition=keep_acquisition,
+                before_snapshot=before_snapshot,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
+            )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
         after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
@@ -716,77 +884,60 @@ def set_condition(
             # Condition changes can trigger the same row-collision behavior as
             # location edits, so the merge path is shared here too.
             if not merge:
-                raise ConflictError(
-                    "Changing condition would collide with an existing inventory row. "
-                    "Re-run with --merge to combine the rows, or resolve the duplicate row first."
-                )
+                raise _set_condition_collision_error()
             if before_write is not None:
                 before_write()
-            result = merge_inventory_item_rows(
+            return _complete_condition_merge(
                 connection,
                 inventory_slug=inventory_slug,
                 source_item=item,
                 target_item=collision,
-                acquisition_preference=keep_acquisition,
-            )
-            result["old_condition_code"] = item["condition_code"]
-            result["condition_code"] = normalized_condition
-            after_snapshot = load_inventory_item_snapshot(
-                connection,
-                inventory_slug=inventory_slug,
-                item_id=int(result["item_id"]),
-            )
-            write_inventory_audit_event(
-                connection,
-                inventory_slug=inventory_slug,
-                action="set_condition",
-                item_id=int(item["item_id"]),
-                before=before_snapshot,
-                after=None,
-                metadata={
-                    "merged": True,
-                    "target_item_id": int(result["item_id"]),
-                    "new_condition_code": normalized_condition,
-                    "keep_acquisition": keep_acquisition,
-                },
+                normalized_condition=normalized_condition,
+                keep_acquisition=keep_acquisition,
+                before_snapshot=before_snapshot,
                 actor_type=actor_type,
                 actor_id=actor_id,
                 request_id=request_id,
-            )
-            write_inventory_audit_event(
-                connection,
-                inventory_slug=inventory_slug,
-                action="set_condition",
-                item_id=int(result["item_id"]),
-                before=inventory_item_result_from_row(collision),
-                after=after_snapshot,
-                metadata={
-                    "merged": True,
-                    "source_item_id": int(item["item_id"]),
-                    "new_condition_code": normalized_condition,
-                    "keep_acquisition": keep_acquisition,
-                },
-                actor_type=actor_type,
-                actor_id=actor_id,
-                request_id=request_id,
-            )
-            connection.commit()
-            return SetConditionResult(
-                **inventory_item_response_kwargs(result),
-                operation="set_condition",
-                old_condition_code=str(item["condition_code"]),
-                merged=True,
-                merged_source_item_id=int(result["merged_source_item_id"]),
             )
 
-        connection.execute(
-            """
-            UPDATE inventory_items
-            SET condition_code = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (normalized_condition, item_id),
-        )
+        if before_write is not None:
+            before_write()
+        try:
+            connection.execute(
+                """
+                UPDATE inventory_items
+                SET condition_code = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (normalized_condition, item_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            if not merge:
+                raise _set_condition_collision_error() from exc
+            collision = find_inventory_item_collision(
+                connection,
+                inventory_id=item["inventory_id"],
+                scryfall_id=item["scryfall_id"],
+                condition_code=normalized_condition,
+                finish=item["finish"],
+                language_code=item["language_code"],
+                location=item["location"],
+                exclude_item_id=item_id,
+            )
+            if collision is None:
+                raise _set_condition_concurrent_merge_error() from exc
+            return _complete_condition_merge(
+                connection,
+                inventory_slug=inventory_slug,
+                source_item=item,
+                target_item=collision,
+                normalized_condition=normalized_condition,
+                keep_acquisition=keep_acquisition,
+                before_snapshot=before_snapshot,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
+            )
         after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
         after_row = get_inventory_item_row(connection, inventory_slug, item_id)
         write_inventory_audit_event(
@@ -926,38 +1077,41 @@ def split_row(
                 item_id=int(result["item_id"]),
             )
         else:
-            cursor = connection.execute(
-                """
-                INSERT INTO inventory_items (
-                    inventory_id,
-                    scryfall_id,
-                    quantity,
-                    condition_code,
-                    finish,
-                    language_code,
-                    location,
-                    acquisition_price,
-                    acquisition_currency,
-                    notes,
-                    tags_json
+            try:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO inventory_items (
+                        inventory_id,
+                        scryfall_id,
+                        quantity,
+                        condition_code,
+                        finish,
+                        language_code,
+                        location,
+                        acquisition_price,
+                        acquisition_currency,
+                        notes,
+                        tags_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id
+                    """,
+                    (
+                        source_item["inventory_id"],
+                        source_item["scryfall_id"],
+                        quantity,
+                        target_condition,
+                        target_finish,
+                        target_language,
+                        target_location,
+                        coerce_decimal(source_item["acquisition_price"]),
+                        text_or_none(source_item["acquisition_currency"]),
+                        text_or_none(source_item["notes"]),
+                        source_item["tags_json"],
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                RETURNING id
-                """,
-                (
-                    source_item["inventory_id"],
-                    source_item["scryfall_id"],
-                    quantity,
-                    target_condition,
-                    target_finish,
-                    target_language,
-                    target_location,
-                    coerce_decimal(source_item["acquisition_price"]),
-                    text_or_none(source_item["acquisition_currency"]),
-                    text_or_none(source_item["notes"]),
-                    source_item["tags_json"],
-                ),
-            )
+            except sqlite3.IntegrityError as exc:
+                raise _split_row_concurrent_collision_error() from exc
             new_item_id = cursor.fetchone()["id"]
             new_item_row = get_inventory_item_row(connection, inventory_slug, new_item_id)
             result = inventory_item_result_from_row(new_item_row)
