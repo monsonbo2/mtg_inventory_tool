@@ -1,4 +1,4 @@
-import type { FinishValue, InventoryAuditEvent, InventorySummary, OwnedInventoryRow } from "./types";
+import type { InventoryAuditEvent, InventorySummary, OwnedInventoryRow } from "./types";
 
 export type AsyncStatus = "idle" | "loading" | "ready" | "error";
 export type ViewRefreshOutcome = "applied" | "skipped";
@@ -20,11 +20,6 @@ export type NoticeState = {
   message: string;
   tone: NoticeTone;
 };
-
-export type FinishSupportState =
-  | { status: "loading" }
-  | { status: "ready"; finishes: FinishValue[] }
-  | { status: "error"; message: string };
 
 export type SearchResultNoticeHandler = (message: string, tone?: NoticeTone) => void;
 export type OwnedRowNoticeHandler = (message: string, tone?: NoticeTone) => void;
