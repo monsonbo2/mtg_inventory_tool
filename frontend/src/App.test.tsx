@@ -47,7 +47,7 @@ describe("App", () => {
       quantity: 2,
       condition_code: "NM",
       finish: "normal",
-      allowed_finishes: ["normal"],
+      allowed_finishes: ["normal", "foil"],
       language_code: "en",
       location: "Binder",
       tags: ["burn"],
@@ -59,22 +59,6 @@ describe("App", () => {
       price_date: "2026-04-01",
       notes: "Main deck",
       ...overrides,
-    };
-  }
-
-  function toCatalogSearchRow(item: OwnedInventoryRow): CatalogSearchRow {
-    return {
-      scryfall_id: item.scryfall_id,
-      name: item.name,
-      set_code: item.set_code,
-      set_name: item.set_name,
-      collector_number: item.collector_number,
-      lang: item.language_code,
-      rarity: item.rarity,
-      finishes: item.allowed_finishes,
-      tcgplayer_product_id: "123",
-      image_uri_small: item.image_uri_small,
-      image_uri_normal: item.image_uri_normal,
     };
   }
 
@@ -96,19 +80,7 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue(items);
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
-    vi.mocked(searchCards).mockImplementation(async (params) => {
-      if (params.exact) {
-        return items
-          .filter(
-            (item) =>
-              item.name === params.query &&
-              (!params.set_code || item.set_code === params.set_code),
-          )
-          .map((item) => toCatalogSearchRow(item));
-      }
-
-      return [];
-    });
+    vi.mocked(searchCards).mockResolvedValue([]);
   }
 
   function mockBaseSearchApp() {
@@ -139,7 +111,7 @@ describe("App", () => {
       quantity: 2,
       condition_code: "NM",
       finish: "normal",
-      allowed_finishes: ["normal"],
+      allowed_finishes: ["normal", "foil"],
       language_code: "en",
       location: "Binder",
       tags: ["burn"],
@@ -206,6 +178,33 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Finish 'foil' is not available for this card printing. Available finishes: normal.",
     );
+  });
+
+  it("uses allowed finishes from owned rows without exact catalog follow-up lookups", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          allowed_finishes: ["normal", "foil"],
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    const row = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest("article");
+    expect(row).not.toBeNull();
+
+    await user.click(within(row!).getByRole("button", { name: "Edit Lightning Bolt" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(searchCards).mock.calls.some(([params]) => params.query === "Lightning Bolt")).toBe(true);
+    });
+
+    expect(within(row!).getByRole("combobox")).toBeEnabled();
+    expect(within(row!).getByText("Available: Normal, Foil.")).toBeInTheDocument();
+    expect(vi.mocked(searchCards).mock.calls.some(([params]) => params.exact === true)).toBe(false);
   });
 
   it("supports keyboard selection from autocomplete suggestions", async () => {

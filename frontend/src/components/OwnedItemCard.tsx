@@ -6,7 +6,7 @@ import type {
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
-import type { FinishSupportState, ItemMutationAction, NoticeTone } from "../uiTypes";
+import type { ItemMutationAction, NoticeTone } from "../uiTypes";
 import {
   decimalToNumber,
   equalStringArrays,
@@ -25,7 +25,6 @@ import { CardThumbnail } from "./ui/CardThumbnail";
 export function OwnedItemCard(props: {
   item: OwnedInventoryRow;
   busyAction: ItemMutationAction | null;
-  finishSupport: FinishSupportState | null;
   onPatch: (
     itemId: number,
     action: ItemMutationAction,
@@ -120,16 +119,15 @@ export function OwnedItemCard(props: {
   const hasDirtyChanges =
     quantityDirty || finishDirty || locationDirty || notesDirty || tagsDirty;
   const busyMessage = props.busyAction ? getBusyMessage(props.busyAction) : null;
-  const availableFinishes = getAvailableFinishesForOwnedRow(props.item.finish, props.finishSupport);
-  const finishEditorLocked = props.finishSupport?.status !== "ready" || availableFinishes.length <= 1;
+  const availableFinishes = getAvailableFinishesForOwnedRow(
+    props.item.finish,
+    props.item.allowed_finishes,
+  );
+  const finishEditorLocked = availableFinishes.length <= 1;
   const finishHint =
-    props.finishSupport?.status === "loading"
-      ? "Checking which finishes this printing supports..."
-      : props.finishSupport?.status === "error"
-        ? props.finishSupport.message
-        : availableFinishes.length === 1
-          ? `This printing only supports ${formatFinishLabel(availableFinishes[0])}.`
-          : `Available: ${availableFinishes.map((value) => formatFinishLabel(value)).join(", ")}.`;
+    availableFinishes.length === 1
+      ? `This printing only supports ${formatFinishLabel(availableFinishes[0])}.`
+      : `Available: ${availableFinishes.map((value) => formatFinishLabel(value)).join(", ")}.`;
   const statusMessage = busyMessage
     ? busyMessage
     : quantityHasError
@@ -232,7 +230,7 @@ export function OwnedItemCard(props: {
           disabled={isBusy || !finishDirty || finishEditorLocked}
           busy={props.busyAction === "finish"}
           hint={finishHint}
-          hintTone={props.finishSupport?.status === "error" ? "error" : "info"}
+          hintTone="info"
           label="Finish"
           onSave={saveFinish}
         >

@@ -1,5 +1,5 @@
 import type { InventorySummary, OwnedInventoryRow, PatchInventoryItemRequest } from "../types";
-import type { AsyncStatus, FinishSupportState, ItemMutationAction, NoticeTone } from "../uiTypes";
+import type { AsyncStatus, ItemMutationAction, NoticeTone } from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
 import { CompactInventoryList } from "./CompactInventoryList";
 import { InventoryTableView } from "./InventoryTableView";
@@ -12,7 +12,6 @@ export function OwnedCollectionPanel(props: {
   viewStatus: AsyncStatus;
   viewError: string | null;
   items: OwnedInventoryRow[];
-  finishSupportByCard: Record<string, FinishSupportState>;
   busyItem: { itemId: number; action: ItemMutationAction } | null;
   onPatch: (
     itemId: number,
@@ -144,7 +143,6 @@ export function OwnedCollectionPanel(props: {
             <CompactInventoryList
               busyItem={props.busyItem}
               expandedItemId={props.expandedItemId}
-              finishSupportByCard={props.finishSupportByCard}
               items={props.items}
               onDelete={props.onDelete}
               onExpandedItemChange={props.onExpandedItemChange}
@@ -163,7 +161,6 @@ export function OwnedCollectionPanel(props: {
             props.items.map((item) => (
               <OwnedItemCard
                 busyAction={props.busyItem?.itemId === item.item_id ? props.busyItem.action : null}
-                finishSupport={props.finishSupportByCard[item.scryfall_id] || null}
                 item={item}
                 key={item.item_id}
                 onDelete={props.onDelete}

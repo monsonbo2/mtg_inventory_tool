@@ -29,13 +29,11 @@ import {
   decimalToNumber,
   formatUsd,
   getPatchSuccessMessage,
-  getUniqueItemsByCardId,
   resolveSelectedInventorySlug,
   toUserMessage,
 } from "./uiHelpers";
 import type {
   AsyncStatus,
-  FinishSupportState,
   ItemMutationAction,
   ItemMutationState,
   NoticeState,
@@ -72,10 +70,8 @@ export default function App() {
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
-  const [finishSupportByCard, setFinishSupportByCard] = useState<Record<string, FinishSupportState>>({});
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
-  const finishLookupRequestIdRef = useRef(0);
   const suggestionLookupRequestIdRef = useRef(0);
   const suggestionCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
   const skipSuggestionFetchQueryRef = useRef<string | null>(null);
@@ -200,96 +196,6 @@ export default function App() {
       window.clearTimeout(timeoutId);
     };
   }, [searchQuery]);
-
-  useEffect(() => {
-    const uniqueItems = getUniqueItemsByCardId(items);
-    const itemsNeedingFinishSupport = uniqueItems.filter(
-      (item) => finishSupportByCard[item.scryfall_id] === undefined,
-    );
-
-    if (!itemsNeedingFinishSupport.length) {
-      return;
-    }
-
-    const requestId = ++finishLookupRequestIdRef.current;
-    let cancelled = false;
-
-    setFinishSupportByCard((current) => {
-      const next = { ...current };
-      for (const item of itemsNeedingFinishSupport) {
-        if (next[item.scryfall_id] === undefined) {
-          next[item.scryfall_id] = { status: "loading" };
-        }
-      }
-      return next;
-    });
-
-    void Promise.all(
-      itemsNeedingFinishSupport.map(async (item) => {
-        try {
-          const results = await searchCards({
-            query: item.name,
-            set_code: item.set_code,
-            exact: true,
-            limit: 8,
-          });
-          const match =
-            results.find((result) => result.scryfall_id === item.scryfall_id) ??
-            results.find(
-              (result) =>
-                result.set_code === item.set_code &&
-                result.collector_number === item.collector_number,
-            );
-
-          if (!match) {
-            return {
-              cardId: item.scryfall_id,
-              state: {
-                status: "error",
-                message:
-                  "Could not verify legal finishes for this printing yet. Unsupported finish changes will still be rejected by the API.",
-              } satisfies FinishSupportState,
-            };
-          }
-
-          return {
-            cardId: item.scryfall_id,
-            state: {
-              status: "ready",
-              finishes: match.finishes,
-            } satisfies FinishSupportState,
-          };
-        } catch (error) {
-          return {
-            cardId: item.scryfall_id,
-            state: {
-              status: "error",
-              message: toUserMessage(
-                error,
-                "Could not verify legal finishes for this printing yet. Unsupported finish changes will still be rejected by the API.",
-              ),
-            } satisfies FinishSupportState,
-          };
-        }
-      }),
-    ).then((results) => {
-      if (cancelled || requestId !== finishLookupRequestIdRef.current) {
-        return;
-      }
-
-      setFinishSupportByCard((current) => {
-        const next = { ...current };
-        for (const result of results) {
-          next[result.cardId] = result.state;
-        }
-        return next;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [finishSupportByCard, items]);
 
   async function reloadInventorySummaries(preferredSlug: string) {
     try {
@@ -700,7 +606,6 @@ export default function App() {
             busyItem={busyItem}
             collectionView={collectionView}
             expandedItemId={expandedItemId}
-            finishSupportByCard={finishSupportByCard}
             items={items}
             onClearSelectedItems={handleClearSelectedItems}
             onCollectionViewChange={handleCollectionViewChange}
