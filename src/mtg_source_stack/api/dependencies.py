@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from ..db.connection import DEFAULT_DB_PATH
@@ -18,9 +18,14 @@ else:  # pragma: no cover - optional runtime dependency for API-only paths
         Request = Any
 
 
+RuntimeMode = Literal["local_demo", "shared_service"]
+DEFAULT_RUNTIME_MODE: RuntimeMode = "local_demo"
+
+
 @dataclass(frozen=True, slots=True)
 class ApiSettings:
     db_path: Path
+    runtime_mode: RuntimeMode
     auto_migrate: bool
     host: str
     port: int
@@ -41,17 +46,62 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _env_optional_bool(name: str) -> bool | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def auto_migrate_override_from_env() -> bool | None:
+    return _env_optional_bool("MTG_API_AUTO_MIGRATE")
+
+
+def resolve_runtime_mode(raw: str | None) -> RuntimeMode:
+    if raw is None:
+        return DEFAULT_RUNTIME_MODE
+    normalized = raw.strip().lower()
+    if normalized not in {"local_demo", "shared_service"}:
+        raise ValueError("runtime_mode must be one of: local_demo, shared_service.")
+    return normalized
+
+
+def default_auto_migrate_for_mode(runtime_mode: RuntimeMode) -> bool:
+    if runtime_mode == "shared_service":
+        return False
+    return True
+
+
+def resolve_auto_migrate(
+    *,
+    runtime_mode: RuntimeMode,
+    env_override: bool | None,
+    cli_override: bool | None,
+) -> bool:
+    if env_override is not None:
+        return env_override
+    if cli_override is not None:
+        return cli_override
+    return default_auto_migrate_for_mode(runtime_mode)
+
+
 def settings_from_env() -> ApiSettings:
+    runtime_mode = resolve_runtime_mode(os.getenv("MTG_API_RUNTIME_MODE"))
     return ApiSettings(
         db_path=Path(os.getenv("MTG_API_DB", str(DEFAULT_DB_PATH))),
-        auto_migrate=_env_bool("MTG_API_AUTO_MIGRATE", True),
+        runtime_mode=runtime_mode,
+        auto_migrate=resolve_auto_migrate(
+            runtime_mode=runtime_mode,
+            env_override=_env_optional_bool("MTG_API_AUTO_MIGRATE"),
+            cli_override=None,
+        ),
         host=os.getenv("MTG_API_HOST", "127.0.0.1"),
         port=int(os.getenv("MTG_API_PORT", "8000")),
         trust_actor_headers=_env_bool("MTG_API_TRUST_ACTOR_HEADERS", False),
     )
 
 
-async def get_settings(request: "Request") -> ApiSettings:
+def get_settings(request: "Request") -> ApiSettings:
     return request.app.state.settings
 
 
@@ -62,7 +112,7 @@ def _resolve_actor_id(request: "Request", settings: ApiSettings) -> str:
     return actor_id or "local-demo"
 
 
-async def get_request_context(request: "Request") -> RequestContext:
+def get_request_context(request: "Request") -> RequestContext:
     settings = request.app.state.settings
     request_id = getattr(request.state, "request_id", None) or str(uuid4())
     request.state.request_id = request_id

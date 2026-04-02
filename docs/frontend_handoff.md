@@ -134,9 +134,13 @@ export default {
 
 ## Known Limits
 
-- The current API shell is suitable for local/demo use, not shared deployment.
+- The current frontend sandbox should keep using the default `local_demo` API
+  posture for local work.
+- The backend now also has a `shared_service` startup mode for pre-migrated,
+  single-host deployments, but real auth and broader deployment policy are not
+  finished yet.
 - The backend still uses synchronous SQLite-backed services under the HTTP
-  layer.
+  layer, with sync HTTP route handlers aligned to that service boundary.
 - Authentication and permissions are not implemented yet.
 - Browser-based local dev is expected to use a frontend proxy unless backend
   CORS behavior is changed deliberately.

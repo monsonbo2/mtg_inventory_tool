@@ -34,9 +34,10 @@ requests.
 
 - The active runtime package lives in `src/mtg_source_stack/`.
 - The current entrypoints are `mtg-mvp-importer`, `mtg-personal-inventory`, and
-  the optional demo web shell `mtg-web-api`.
-- The demo FastAPI layer lives in `src/mtg_source_stack/api/` and is currently
-  intended for local/demo use rather than shared deployment.
+  the optional web shell `mtg-web-api`.
+- The FastAPI layer lives in `src/mtg_source_stack/api/` and now supports a
+  default `local_demo` mode plus a safer `shared_service` startup mode for
+  modest single-host shared use.
 - The runtime starts from `src/mtg_source_stack/mtg_mvp_schema.sql` and then
   applies the tracked migrations in `src/mtg_source_stack/db/migrations/`.
 - `docs/schema_full.sql` is a future normalized design, not the live runtime
@@ -46,9 +47,9 @@ requests.
 - `sync-bulk` can fetch fresh upstream bulk files, but normal read paths do not
   call live APIs.
 - Pricing imports currently keep USD retail and buylist snapshots only.
-- The current API shell intentionally keeps request handling simple and
-  SQLite-backed; shared-deployment concurrency hardening is deferred to a later
-  pass.
+- The current API shell now aligns its HTTP route boundary with the existing
+  synchronous SQLite-backed service layer. Real auth/audit attribution and
+  broader deployment policy are still deferred.
 
 ## Quick Start
 
@@ -67,14 +68,36 @@ If you want to run the demo web API shell too, install the optional web extra:
 pip install -e '.[web]'
 ```
 
-The current `mtg-web-api` shell is a local-demo layer over the existing
-inventory services. It is useful for local UI and contract work, but it is not
-yet positioned as a shared or production-ready deployment target.
+The current `mtg-web-api` shell supports two runtime modes over the existing
+inventory services:
+
+- `local_demo` is the default local-first mode for UI and contract work
+- `shared_service` uses safer startup defaults for a pre-migrated, single-host
+  SQLite deployment
+
+`shared_service` is a better fit for modest shared use, but real
+authentication, authorization, and broader deployment policy still remain
+outside this pass.
 
 By default, the API ignores caller-supplied `X-Actor-Id` headers and records
 mutating audit entries as coming from `local-demo`. For explicit local/dev
 testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust header-supplied actor
 IDs instead. `X-Request-Id` remains accepted for request tracing.
+
+Run the local-demo API:
+
+```bash
+mtg-web-api --db "var/db/mtg_mvp.db"
+```
+
+Run the safer shared-service startup mode against a pre-migrated DB:
+
+```bash
+mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
+```
+
+If you need to override startup migration behavior explicitly, use
+`--auto-migrate` or `--no-auto-migrate`, or set `MTG_API_AUTO_MIGRATE`.
 
 Initialize a local database:
 
@@ -256,8 +279,9 @@ python -m unittest discover -s tests -q
 ## Current Limitations
 
 - The repo is intentionally local-first and CLI-driven.
-- `mtg-web-api` is currently a local/demo HTTP shell, not a concurrency-hardened
-  shared service.
+- `mtg-web-api` now supports a safer `shared_service` runtime mode, but real
+  auth/audit attribution and broader deployment policy still need follow-up
+  before broader shared use.
 - The demo API exposes a minimal `/health` payload focused on status and mode,
   not filesystem path details.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and

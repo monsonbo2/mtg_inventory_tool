@@ -18,10 +18,10 @@ The installable package lives under `src/mtg_source_stack/`.
 Top-level runtime areas:
 
 - `api/`
-  Demo/local-first FastAPI shell, request lifecycle, and HTTP route wiring for
-  the current backend contract. It currently wraps synchronous inventory and
-  SQLite-backed services, so it is suitable for local/demo use but is not yet a
-  concurrency-hardened shared deployment surface.
+  FastAPI shell, request lifecycle, and HTTP route wiring for the current
+  backend contract. It supports a default `local_demo` runtime mode plus a
+  safer `shared_service` startup mode, and now aligns its route boundary with
+  the current synchronous inventory and SQLite-backed service layer.
 - `cli/`
   Thin command-line entrypoints and argument parsing.
 - `db/`
@@ -104,18 +104,25 @@ retired.
 
 ## Current API Posture
 
-The `api/` package should currently be understood as a local-demo HTTP layer,
-not a production-ready shared service.
+The `api/` package should currently be understood as a local-first web layer
+with an incremental shared-service posture, not a fully production-hardened
+shared service.
 
-- The route surface is stable enough for local/demo UI work.
-- The API currently wraps synchronous inventory services and SQLite access.
+- `local_demo` remains the default runtime mode for local UI and contract work.
+- `shared_service` is available for pre-migrated, single-host SQLite
+  deployments and disables auto-migrate by default.
+- The route surface is stable enough for local/demo UI work and modest shared
+  use.
+- The API now uses sync route handlers to match the current synchronous
+  inventory services and SQLite access.
 - The JSON and error contract is documented in `api_v1_contract.md`, but
-  concurrency guarantees are not yet part of that contract.
-- A dedicated API-hardening pass is still required before broader deployment.
+  broader deployment guarantees are still limited.
+- Dedicated follow-up passes are still required before broader deployment.
 
 The next API-hardening steps are:
 
-- execution-boundary and concurrency hardening for shared deployment
+- real auth and audit attribution for shared use
+- broader deployment policy decisions such as CORS/base-path/topology
 
 ## Frontend Collaboration Boundary
 

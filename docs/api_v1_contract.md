@@ -107,19 +107,26 @@ before the generic 500 envelope is returned.
 ## Execution Model
 
 - The JSON and error contract is the stable part of web-v1.
-- Transport/runtime concurrency guarantees are not yet part of this contract.
-- The current API shell is intended for trusted local/demo usage and currently
-  wraps synchronous inventory and SQLite-backed services.
+- The current API shell supports two runtime modes:
+  - `local_demo`, the default local-first posture for UI and contract work
+  - `shared_service`, a safer startup posture for a pre-migrated, single-host
+    SQLite deployment
+- The HTTP route boundary now uses sync route handlers to match the current
+  synchronous inventory and SQLite-backed service layer.
+- Broader transport/runtime guarantees are still intentionally modest and
+  single-host scoped in web-v1.
 - By default, the API ignores caller-supplied `X-Actor-Id` values and records
   mutating audit entries with `actor_type="api"` and `actor_id="local-demo"`.
 - For explicit local/dev testing, setting
   `MTG_API_TRUST_ACTOR_HEADERS=true` allows non-empty `X-Actor-Id` header
   values to flow into audit attribution.
+- `shared_service` disables auto-migrate by default. It should be started
+  against a pre-migrated database and a single app process for now.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
-- The demo API logs startup mode and unexpected failures, but it still needs a
-  dedicated execution-boundary / concurrency-hardening pass before broader
-  deployment.
+- The API logs startup mode and unexpected failures, but the main remaining
+  blockers before broader shared deployment are real auth/audit attribution and
+  broader deployment policy choices.
 
 ## Notes For Web V1
 

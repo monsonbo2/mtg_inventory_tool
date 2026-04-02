@@ -1,8 +1,13 @@
-"""FastAPI application factory for the local-demo web backend.
+"""FastAPI application factory for the MTG Inventory Tool web backend.
 
-This shell currently wraps the existing synchronous inventory service layer and
-SQLite-backed runtime. It is suitable for local/demo HTTP work, but it should
-not yet be described as a concurrency-hardened shared deployment surface.
+The API currently offers two runtime modes:
+
+- `local_demo`, which keeps local-first defaults for UI and contract work
+- `shared_service`, which uses safer startup defaults for modest shared use
+
+Both modes wrap the existing synchronous inventory service layer and
+SQLite-backed runtime. The route boundary is aligned to that sync service
+surface, but broader deployment policy work still lives outside this module.
 """
 
 from __future__ import annotations
@@ -18,7 +23,14 @@ from ..api_contract import api_error_payload, api_error_status
 from ..db.migrator import migrate_database
 from ..db.schema import require_current_schema
 from ..errors import MtgStackError
-from .dependencies import ApiSettings, settings_from_env
+from .dependencies import (
+    DEFAULT_RUNTIME_MODE,
+    ApiSettings,
+    auto_migrate_override_from_env,
+    resolve_auto_migrate,
+    resolve_runtime_mode,
+    settings_from_env,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from fastapi import FastAPI
@@ -71,14 +83,33 @@ def _strip_generated_validation_responses(openapi_schema: dict[str, Any]) -> Non
 def build_arg_parser() -> argparse.ArgumentParser:
     defaults = settings_from_env()
     parser = argparse.ArgumentParser(
-        description="Run the MTG Inventory Tool local-demo web API."
+        description="Run the MTG Inventory Tool web API."
     )
     parser.add_argument("--db", default=str(defaults.db_path), help="SQLite database path.")
     parser.add_argument("--host", default=defaults.host, help="Host interface to bind.")
     parser.add_argument("--port", default=defaults.port, type=int, help="TCP port to listen on.")
     parser.add_argument(
-        "--no-auto-migrate",
+        "--runtime-mode",
+        choices=("local_demo", "shared_service"),
+        default=None,
+        help=(
+            "Runtime posture to use. Defaults to MTG_API_RUNTIME_MODE or "
+            f"{DEFAULT_RUNTIME_MODE!r} when the env var is unset."
+        ),
+    )
+    migrate_group = parser.add_mutually_exclusive_group()
+    migrate_group.add_argument(
+        "--auto-migrate",
+        dest="auto_migrate",
         action="store_true",
+        default=None,
+        help="Apply pending migrations at startup.",
+    )
+    migrate_group.add_argument(
+        "--no-auto-migrate",
+        dest="auto_migrate",
+        action="store_false",
+        default=None,
         help="Require a current schema at startup instead of applying pending migrations.",
     )
     return parser
@@ -88,7 +119,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 async def lifespan(app):
     settings: ApiSettings = app.state.settings
     logger.info(
-        "Starting local-demo API with db_path=%s auto_migrate=%s trust_actor_headers=%s",
+        "Starting API runtime_mode=%s db_path=%s auto_migrate=%s trust_actor_headers=%s",
+        settings.runtime_mode,
         settings.db_path,
         settings.auto_migrate,
         settings.trust_actor_headers,
@@ -190,17 +222,27 @@ def create_app(settings: ApiSettings | None = None):
     return app
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
+def settings_from_cli_args(args: argparse.Namespace) -> ApiSettings:
     defaults = settings_from_env()
-    settings = ApiSettings(
+    runtime_mode = resolve_runtime_mode(args.runtime_mode) if args.runtime_mode else defaults.runtime_mode
+    return ApiSettings(
         db_path=Path(args.db),
-        auto_migrate=not args.no_auto_migrate,
+        runtime_mode=runtime_mode,
+        auto_migrate=resolve_auto_migrate(
+            runtime_mode=runtime_mode,
+            env_override=auto_migrate_override_from_env(),
+            cli_override=args.auto_migrate,
+        ),
         host=args.host,
         port=int(args.port),
         trust_actor_headers=defaults.trust_actor_headers,
     )
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    settings = settings_from_cli_args(args)
 
     try:
         import uvicorn

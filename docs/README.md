@@ -28,8 +28,8 @@ If you're preparing a separate frontend sandbox, also read
   How the importer turns Scryfall and MTGJSON bulk files into local runtime
   tables.
 - `api_v1_contract.md`
-  JSON serialization, error mapping, and operational contract notes for the
-  current demo API shell.
+  JSON serialization, error mapping, runtime modes, and operational contract
+  notes for the current web API shell.
 - `frontend_handoff.md`
   Frontend/backend ownership boundary and the expected demo-UI integration
   rules.
@@ -41,8 +41,8 @@ If you're preparing a separate frontend sandbox, also read
   Folder of frontend-requested backend/API changes, with
   `frontend_backend_requests/README.md` as the process guide and template.
 - `../src/mtg_source_stack/api/`
-  Demo FastAPI shell that applies the API contract to the current service
-  facade.
+  FastAPI shell that applies the API contract to the current sync service
+  facade, with `local_demo` and `shared_service` runtime modes.
 - `../contracts/`
   OpenAPI snapshot and example payloads for frontend integration.
 - `../scripts/bootstrap_frontend_demo.py`

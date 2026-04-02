@@ -129,7 +129,7 @@ def _patch_operation(payload: PatchInventoryItemRequest) -> str:
 
 
 @router.get("/health", response_model=HealthResponse, responses=_error_responses(500))
-async def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
+def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
     return {
         "status": "ok",
         "auto_migrate": settings.auto_migrate,
@@ -142,7 +142,7 @@ async def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dic
     response_model=list[InventoryListRowResponse],
     responses=_error_responses(503, 500),
 )
-async def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings)]) -> Any:
+def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings)]) -> Any:
     return _serialize(list_inventories(settings.db_path))
 
 
@@ -152,7 +152,7 @@ async def inventories_list(settings: Annotated[ApiSettings, Depends(get_settings
     response_model=InventoryCreateResponse,
     responses=_error_responses(400, 409, 503, 500),
 )
-async def inventories_create(
+def inventories_create(
     payload: InventoryCreateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
 ) -> Any:
@@ -171,7 +171,7 @@ async def inventories_create(
     response_model=list[CatalogSearchRowResponse],
     responses=_error_responses(400, 503, 500),
 )
-async def cards_search(
+def cards_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     query: str,
     set_code: str | None = None,
@@ -200,7 +200,7 @@ async def cards_search(
     response_model=list[OwnedInventoryRowResponse],
     responses=_error_responses(400, 404, 503, 500),
 )
-async def inventory_items_list(
+def inventory_items_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
     provider: str = DEFAULT_PROVIDER,
@@ -238,7 +238,7 @@ async def inventory_items_list(
     response_model=AddInventoryItemResponse,
     responses=_error_responses(400, 404, 409, 503, 500),
 )
-async def inventory_items_add(
+def inventory_items_add(
     inventory_slug: str,
     payload: AddInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
@@ -276,7 +276,7 @@ async def inventory_items_add(
     response_model=InventoryItemPatchResponse,
     responses=_error_responses(400, 404, 409, 503, 500),
 )
-async def inventory_items_patch(
+def inventory_items_patch(
     inventory_slug: str,
     item_id: int,
     payload: PatchInventoryItemRequest,
@@ -342,7 +342,7 @@ async def inventory_items_patch(
     response_model=RemoveInventoryItemResponse,
     responses=_error_responses(404, 503, 500),
 )
-async def inventory_items_delete(
+def inventory_items_delete(
     inventory_slug: str,
     item_id: int,
     settings: Annotated[ApiSettings, Depends(get_settings)],
@@ -365,7 +365,7 @@ async def inventory_items_delete(
     response_model=list[InventoryAuditEventResponse],
     responses=_error_responses(400, 404, 503, 500),
 )
-async def inventory_audit_list(
+def inventory_audit_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
     limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_EVENT_LIMIT)] = DEFAULT_AUDIT_EVENT_LIMIT,
