@@ -89,6 +89,21 @@ Use this as the first-pass UI-to-endpoint map:
    python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
    ```
 
+   Or, if you want the frontend to search a real imported catalog instead of
+   the tiny built-in demo catalog:
+
+   ```bash
+   python3 scripts/bootstrap_frontend_demo.py \
+     --db var/db/frontend_demo.db \
+     --force \
+     --full-catalog \
+     --scryfall-json /path/to/default-cards.json
+   ```
+
+   In full-catalog mode the bootstrap still creates the same curated demo
+   inventories and owned-row states, but it resolves those rows against real
+   imported printings.
+
 2. Start the backend locally:
 
    ```bash

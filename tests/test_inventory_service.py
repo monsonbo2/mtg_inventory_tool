@@ -52,6 +52,76 @@ from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryServiceTest(RepoSmokeTestCase):
+    def _insert_test_card(
+        self,
+        db_path: Path,
+        *,
+        scryfall_id: str = "race-card-1",
+        oracle_id: str = "race-oracle-1",
+        name: str = "Race Test Card",
+        finishes_json: str = '["normal"]',
+    ) -> None:
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    finishes_json
+                )
+                VALUES (?, ?, ?, 'tst', 'Test Set', '1', ?)
+                """,
+                (scryfall_id, oracle_id, name, finishes_json),
+            )
+            connection.commit()
+
+    def _insert_inventory_item(
+        self,
+        db_path: Path,
+        *,
+        inventory_slug: str,
+        scryfall_id: str,
+        quantity: int = 1,
+        condition_code: str = "NM",
+        finish: str = "normal",
+        language_code: str = "en",
+        location: str = "",
+    ) -> None:
+        with connect(db_path) as connection:
+            inventory = connection.execute(
+                "SELECT id FROM inventories WHERE slug = ?",
+                (inventory_slug,),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO inventory_items (
+                    inventory_id,
+                    scryfall_id,
+                    quantity,
+                    condition_code,
+                    finish,
+                    language_code,
+                    location,
+                    tags_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, '[]')
+                """,
+                (
+                    inventory["id"],
+                    scryfall_id,
+                    quantity,
+                    condition_code,
+                    finish,
+                    language_code,
+                    location,
+                ),
+            )
+            connection.commit()
+
     def test_resolve_card_row_prefers_latest_english_printing_for_oracle_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -1115,6 +1185,403 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     item_id=first_row.item_id,
                     location="Binder B",
                 )
+
+    def test_add_card_concurrent_identity_collision_returns_conflict_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            def insert_conflicting_row() -> None:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="race-card-1",
+                    quantity=1,
+                    location="Binder A",
+                )
+
+            with self.assertRaisesRegex(
+                ConflictError,
+                "Adding card would collide with an existing inventory row due to a concurrent write",
+            ):
+                add_card(
+                    db_path,
+                    inventory_slug="personal",
+                    inventory_display_name=None,
+                    scryfall_id="race-card-1",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    quantity=2,
+                    condition_code="NM",
+                    finish="normal",
+                    language_code="en",
+                    location="Binder A",
+                    acquisition_price=None,
+                    acquisition_currency=None,
+                    notes=None,
+                    tags=None,
+                    before_write=insert_conflicting_row,
+                )
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT quantity, location
+                    FROM inventory_items
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual(1, rows[0]["quantity"])
+            self.assertEqual("Binder A", rows[0]["location"])
+
+    def test_set_location_concurrent_identity_collision_returns_conflict_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            source = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=2,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            def insert_conflicting_row() -> None:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="race-card-1",
+                    quantity=1,
+                    location="Binder B",
+                )
+
+            with self.assertRaisesRegex(
+                ConflictError,
+                "Changing location would collide with an existing inventory row",
+            ):
+                set_location(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=source.item_id,
+                    location="Binder B",
+                    before_write=insert_conflicting_row,
+                )
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT quantity, location
+                    FROM inventory_items
+                    ORDER BY location
+                    """
+                ).fetchall()
+
+            self.assertEqual(
+                [(2, "Binder A"), (1, "Binder B")],
+                [(row["quantity"], row["location"]) for row in rows],
+            )
+
+    def test_set_location_concurrent_identity_collision_merges_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            source = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=2,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            def insert_conflicting_row() -> None:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="race-card-1",
+                    quantity=3,
+                    location="Binder B",
+                )
+
+            result = set_location(
+                db_path,
+                inventory_slug="personal",
+                item_id=source.item_id,
+                location="Binder B",
+                merge=True,
+                before_write=insert_conflicting_row,
+            )
+
+            self.assertTrue(result.merged)
+            self.assertEqual(5, result.quantity)
+            self.assertEqual("Binder B", result.location)
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT quantity, location
+                    FROM inventory_items
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+            self.assertEqual([(5, "Binder B")], [(row["quantity"], row["location"]) for row in rows])
+
+    def test_set_condition_concurrent_identity_collision_returns_conflict_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            source = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=2,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            def insert_conflicting_row() -> None:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="race-card-1",
+                    quantity=1,
+                    condition_code="LP",
+                    location="Binder A",
+                )
+
+            with self.assertRaisesRegex(
+                ConflictError,
+                "Changing condition would collide with an existing inventory row",
+            ):
+                set_condition(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=source.item_id,
+                    condition_code="LP",
+                    before_write=insert_conflicting_row,
+                )
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT quantity, condition_code
+                    FROM inventory_items
+                    ORDER BY condition_code
+                    """
+                ).fetchall()
+
+            self.assertEqual(
+                [(1, "LP"), (2, "NM")],
+                [(row["quantity"], row["condition_code"]) for row in rows],
+            )
+
+    def test_set_condition_concurrent_identity_collision_merges_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            source = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=2,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            def insert_conflicting_row() -> None:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="race-card-1",
+                    quantity=4,
+                    condition_code="LP",
+                    location="Binder A",
+                )
+
+            result = set_condition(
+                db_path,
+                inventory_slug="personal",
+                item_id=source.item_id,
+                condition_code="LP",
+                merge=True,
+                before_write=insert_conflicting_row,
+            )
+
+            self.assertTrue(result.merged)
+            self.assertEqual(6, result.quantity)
+            self.assertEqual("LP", result.condition_code)
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT quantity, condition_code
+                    FROM inventory_items
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+            self.assertEqual([(6, "LP")], [(row["quantity"], row["condition_code"]) for row in rows])
+
+    def test_split_row_concurrent_identity_collision_returns_conflict_error_and_rolls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            source = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=2,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            def insert_conflicting_row() -> None:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="race-card-1",
+                    quantity=1,
+                    location="Binder B",
+                )
+
+            with self.assertRaisesRegex(
+                ConflictError,
+                "Splitting row would collide with an existing inventory row due to a concurrent write",
+            ):
+                split_row(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=source.item_id,
+                    quantity=1,
+                    condition_code=None,
+                    finish=None,
+                    language_code=None,
+                    location="Binder B",
+                    before_write=insert_conflicting_row,
+                )
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT quantity, location
+                    FROM inventory_items
+                    ORDER BY location
+                    """
+                ).fetchall()
+
+            self.assertEqual(
+                [(2, "Binder A"), (1, "Binder B")],
+                [(row["quantity"], row["location"]) for row in rows],
+            )
 
     def test_write_services_return_typed_models_and_capture_audit_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

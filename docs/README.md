@@ -54,7 +54,8 @@ If you're preparing a separate frontend sandbox, also read
 - `../contracts/`
   OpenAPI snapshot and example payloads for frontend integration.
 - `../scripts/bootstrap_frontend_demo.py`
-  One-command demo-data bootstrap for frontend work against the local API.
+  Demo-data bootstrap for frontend work against the local API, with both the
+  default tiny demo catalog and an optional full-catalog Scryfall import mode.
 - `schema_mvp.sql`
   Docs-side copy of the base MVP schema for convenient browsing.
 - `../src/mtg_source_stack/mtg_mvp_schema.sql`

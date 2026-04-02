@@ -211,6 +211,34 @@ mtg-personal-inventory inventory-report \
   --report-out-csv "var/reports/personal_report_rows.csv"
 ```
 
+## Frontend Demo Bootstrap
+
+For local frontend work, the backend-owned demo bootstrap now supports two
+modes.
+
+Small default demo:
+
+```bash
+python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
+```
+
+This keeps the tiny built-in catalog and the curated richer demo inventory.
+
+Full searchable catalog demo:
+
+```bash
+python3 scripts/bootstrap_frontend_demo.py \
+  --db var/db/frontend_demo.db \
+  --force \
+  --full-catalog \
+  --scryfall-json /path/to/default-cards.json
+```
+
+That mode imports real Scryfall-backed `mtg_cards` rows, then resolves the same
+curated demo inventory against real printings instead of the built-in demo
+catalog. It is the better fit when the frontend should search a realistic card
+catalog while still keeping the owned demo rows intentionally curated.
+
 For the fuller maintenance surface, check `--help` on:
 
 - `set-quantity`

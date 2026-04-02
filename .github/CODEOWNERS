@@ -8,5 +8,5 @@
 /contracts/demo_payloads/ @monsonbo2
 /scripts/ @monsonbo2
 
-# Frontend owner to be added once assigned.
-# /frontend/ @frontend-expert
+# Frontend-owned surface
+/frontend/ @monsonbo2

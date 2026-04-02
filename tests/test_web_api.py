@@ -11,6 +11,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
@@ -466,6 +467,49 @@ class WebApiTest(unittest.TestCase):
             )
             connection.commit()
 
+    def _insert_inventory_item(
+        self,
+        db_path: Path,
+        *,
+        inventory_slug: str,
+        scryfall_id: str,
+        quantity: int = 1,
+        condition_code: str = "NM",
+        finish: str = "normal",
+        language_code: str = "en",
+        location: str = "",
+    ) -> None:
+        with connect(db_path) as connection:
+            inventory = connection.execute(
+                "SELECT id FROM inventories WHERE slug = ?",
+                (inventory_slug,),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO inventory_items (
+                    inventory_id,
+                    scryfall_id,
+                    quantity,
+                    condition_code,
+                    finish,
+                    language_code,
+                    location,
+                    tags_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, '[]')
+                """,
+                (
+                    inventory["id"],
+                    scryfall_id,
+                    quantity,
+                    condition_code,
+                    finish,
+                    language_code,
+                    location,
+                ),
+            )
+            connection.commit()
+
     def _schema_name_from_ref(self, ref: str) -> str:
         return ref.rsplit("/", 1)[-1]
 
@@ -636,6 +680,154 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(400, conflict.status_code)
                 self.assertEqual("validation_error", conflict.json()["error"]["code"])
                 self.assertIn("language_code must match the resolved printing language", conflict.json()["error"]["message"])
+
+    def test_demo_api_returns_409_for_concurrent_add_item_identity_collision(self) -> None:
+        from mtg_source_stack.inventory.service import add_card as service_add_card
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                def insert_conflicting_row() -> None:
+                    self._insert_inventory_item(
+                        db_path,
+                        inventory_slug="personal",
+                        scryfall_id="api-card-1",
+                        quantity=1,
+                    )
+
+                def add_card_with_collision(*args, **kwargs):
+                    return service_add_card(*args, before_write=insert_conflicting_row, **kwargs)
+
+                with patch("mtg_source_stack.api.routes.add_card", side_effect=add_card_with_collision):
+                    response = client.post(
+                        "/inventories/personal/items",
+                        json={
+                            "scryfall_id": "api-card-1",
+                            "quantity": 2,
+                            "condition_code": "NM",
+                            "finish": "normal",
+                        },
+                    )
+
+                self.assertEqual(409, response.status_code)
+                self.assertEqual("conflict", response.json()["error"]["code"])
+                self.assertEqual(
+                    "Adding card would collide with an existing inventory row due to a concurrent write. Retry the request.",
+                    response.json()["error"]["message"],
+                )
+
+    def test_demo_api_returns_409_for_concurrent_location_collision(self) -> None:
+        from mtg_source_stack.inventory.service import set_location as service_set_location
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 2,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "Binder A",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                item_id = added.json()["item_id"]
+
+                def insert_conflicting_row() -> None:
+                    self._insert_inventory_item(
+                        db_path,
+                        inventory_slug="personal",
+                        scryfall_id="api-card-1",
+                        quantity=1,
+                        location="Binder B",
+                    )
+
+                def set_location_with_collision(*args, **kwargs):
+                    return service_set_location(*args, before_write=insert_conflicting_row, **kwargs)
+
+                with patch("mtg_source_stack.api.routes.set_location", side_effect=set_location_with_collision):
+                    response = client.patch(
+                        f"/inventories/personal/items/{item_id}",
+                        json={"location": "Binder B"},
+                    )
+
+                self.assertEqual(409, response.status_code)
+                self.assertEqual("conflict", response.json()["error"]["code"])
+                self.assertEqual(
+                    "Changing location would collide with an existing inventory row. Re-run with --merge to combine the rows, or resolve the duplicate row first.",
+                    response.json()["error"]["message"],
+                )
+
+    def test_demo_api_returns_409_for_concurrent_condition_collision(self) -> None:
+        from mtg_source_stack.inventory.service import set_condition as service_set_condition
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 2,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "Binder A",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                item_id = added.json()["item_id"]
+
+                def insert_conflicting_row() -> None:
+                    self._insert_inventory_item(
+                        db_path,
+                        inventory_slug="personal",
+                        scryfall_id="api-card-1",
+                        quantity=1,
+                        condition_code="LP",
+                        location="Binder A",
+                    )
+
+                def set_condition_with_collision(*args, **kwargs):
+                    return service_set_condition(*args, before_write=insert_conflicting_row, **kwargs)
+
+                with patch("mtg_source_stack.api.routes.set_condition", side_effect=set_condition_with_collision):
+                    response = client.patch(
+                        f"/inventories/personal/items/{item_id}",
+                        json={"condition_code": "LP"},
+                    )
+
+                self.assertEqual(409, response.status_code)
+                self.assertEqual("conflict", response.json()["error"]["code"])
+                self.assertEqual(
+                    "Changing condition would collide with an existing inventory row. Re-run with --merge to combine the rows, or resolve the duplicate row first.",
+                    response.json()["error"]["message"],
+                )
 
     def test_shared_service_mode_handles_a_small_concurrent_request_burst(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
