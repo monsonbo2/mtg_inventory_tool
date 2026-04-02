@@ -121,7 +121,7 @@ shared service.
 
 The next API-hardening steps are:
 
-- real auth and audit attribution for shared use
+- authorization and permission rules for shared use
 - broader deployment policy decisions such as CORS/base-path/topology
 
 ## Frontend Collaboration Boundary

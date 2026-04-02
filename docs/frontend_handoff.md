@@ -129,18 +129,22 @@ export default {
   requests into the backend/API layer.
 - The frontend may do UX validation, but backend validation remains the source
   of truth.
-- `X-Actor-Id` is ignored by default by the API shell. Audit writes will appear
-  as `local-demo` unless trusted-header mode is deliberately enabled.
+- In `local_demo`, `X-Actor-Id` is ignored by default by the API shell. Audit
+  writes will appear as `local-demo` unless trusted-header mode is
+  deliberately enabled.
+- `shared_service` uses a verified upstream user header such as
+  `X-Authenticated-User` for mutating audit attribution; frontend code should
+  not treat `X-Actor-Id` as the shared-service auth model.
 
 ## Known Limits
 
 - The current frontend sandbox should keep using the default `local_demo` API
   posture for local work.
 - The backend now also has a `shared_service` startup mode for pre-migrated,
-  single-host deployments, but real auth and broader deployment policy are not
-  finished yet.
+  single-host deployments, with required verified-user attribution on mutating
+  requests. Broader authorization and deployment policy are not finished yet.
 - The backend still uses synchronous SQLite-backed services under the HTTP
   layer, with sync HTTP route handlers aligned to that service boundary.
-- Authentication and permissions are not implemented yet.
+- Permissions are not implemented yet.
 - Browser-based local dev is expected to use a frontend proxy unless backend
   CORS behavior is changed deliberately.

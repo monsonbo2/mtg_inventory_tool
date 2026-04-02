@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from mtg_source_stack.api.dependencies import settings_from_env
+from mtg_source_stack.api.dependencies import ApiSettings, get_mutating_request_context, get_request_context, settings_from_env
+from mtg_source_stack.errors import AuthenticationError
 
 
 class ApiDependenciesTest(unittest.TestCase):
@@ -53,3 +55,89 @@ class ApiDependenciesTest(unittest.TestCase):
                 with patch.dict(os.environ, {"MTG_API_TRUST_ACTOR_HEADERS": raw}, clear=True):
                     settings = settings_from_env()
                 self.assertFalse(settings.trust_actor_headers)
+
+    def test_settings_from_env_uses_default_authenticated_actor_header(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = settings_from_env()
+
+        self.assertEqual("X-Authenticated-User", settings.authenticated_actor_header)
+
+    def test_settings_from_env_reads_authenticated_actor_header_override(self) -> None:
+        with patch.dict(os.environ, {"MTG_API_AUTHENTICATED_ACTOR_HEADER": "X-Forwarded-User"}, clear=True):
+            settings = settings_from_env()
+
+        self.assertEqual("X-Forwarded-User", settings.authenticated_actor_header)
+
+    def test_get_request_context_defaults_to_local_demo_actor(self) -> None:
+        settings = ApiSettings(
+            db_path="test.db",
+            runtime_mode="local_demo",
+            auto_migrate=True,
+            host="127.0.0.1",
+            port=8000,
+        )
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
+            state=SimpleNamespace(),
+            headers={},
+        )
+
+        context = get_request_context(request)
+
+        self.assertEqual("api", context.actor_type)
+        self.assertEqual("local-demo", context.actor_id)
+        self.assertTrue(context.request_id)
+
+    def test_get_request_context_can_trust_actor_headers_in_local_demo_mode(self) -> None:
+        settings = ApiSettings(
+            db_path="test.db",
+            runtime_mode="local_demo",
+            auto_migrate=True,
+            host="127.0.0.1",
+            port=8000,
+            trust_actor_headers=True,
+        )
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
+            state=SimpleNamespace(),
+            headers={"X-Actor-Id": "dev-user"},
+        )
+
+        context = get_request_context(request)
+
+        self.assertEqual("dev-user", context.actor_id)
+
+    def test_shared_service_context_uses_authenticated_actor_header(self) -> None:
+        settings = ApiSettings(
+            db_path="test.db",
+            runtime_mode="shared_service",
+            auto_migrate=False,
+            host="127.0.0.1",
+            port=8000,
+        )
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
+            state=SimpleNamespace(),
+            headers={"X-Authenticated-User": "shared-user"},
+        )
+
+        context = get_mutating_request_context(request)
+
+        self.assertEqual("shared-user", context.actor_id)
+
+    def test_shared_service_mutating_context_requires_authenticated_actor_header(self) -> None:
+        settings = ApiSettings(
+            db_path="test.db",
+            runtime_mode="shared_service",
+            auto_migrate=False,
+            host="127.0.0.1",
+            port=8000,
+        )
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
+            state=SimpleNamespace(),
+            headers={"X-Actor-Id": "untrusted-user"},
+        )
+
+        with self.assertRaises(AuthenticationError):
+            get_mutating_request_context(request)

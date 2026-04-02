@@ -107,6 +107,14 @@ class WebApiSchemaTest(unittest.TestCase):
             ]:
                 self.assertNotIn("422", spec["paths"][path][method]["responses"])
 
+            for path, method in [
+                ("/inventories", "post"),
+                ("/inventories/{inventory_slug}/items", "post"),
+                ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
+                ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
+            ]:
+                self.assertIn("401", spec["paths"][path][method]["responses"])
+
             cards_schema = spec["paths"]["/cards/search"]["get"]["responses"]["200"]["content"]["application/json"][
                 "schema"
             ]
@@ -401,18 +409,21 @@ class WebApiTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
             initialize_database(db_path)
+            auth_headers = {"X-Authenticated-User": "shared-user"}
 
             with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
                 self._seed_card(db_path)
 
                 created_inventory = client.post(
                     "/inventories",
+                    headers=auth_headers,
                     json={"slug": "personal", "display_name": "Personal Collection"},
                 )
                 self.assertEqual(201, created_inventory.status_code)
 
                 added = client.post(
                     "/inventories/personal/items",
+                    headers=auth_headers,
                     json={
                         "scryfall_id": "api-card-1",
                         "quantity": 1,
@@ -436,6 +447,7 @@ class WebApiTest(unittest.TestCase):
                 def patch_notes():
                     response = client.patch(
                         f"/inventories/personal/items/{item_id}",
+                        headers=auth_headers,
                         json={"notes": "shared burst"},
                     )
                     self.assertEqual(200, response.status_code)
@@ -457,6 +469,91 @@ class WebApiTest(unittest.TestCase):
                     results = [future.result(timeout=5) for future in futures]
 
                 self.assertEqual([200, 200, 200, 200, 200], results)
+
+    def test_shared_service_mutating_requests_require_authenticated_actor_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                create_without_auth = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(401, create_without_auth.status_code)
+                self.assertEqual("authentication_required", create_without_auth.json()["error"]["code"])
+                self.assertIn("X-Authenticated-User", create_without_auth.json()["error"]["message"])
+
+                create_with_wrong_header = client.post(
+                    "/inventories",
+                    headers={"X-Actor-Id": "untrusted-user"},
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(401, create_with_wrong_header.status_code)
+                self.assertEqual("authentication_required", create_with_wrong_header.json()["error"]["code"])
+
+                created_inventory = client.post(
+                    "/inventories",
+                    headers={"X-Authenticated-User": "shared-user"},
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                add_without_auth = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(401, add_without_auth.status_code)
+                self.assertEqual("authentication_required", add_without_auth.json()["error"]["code"])
+
+    def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            auth_headers = {"X-Authenticated-User": "shared-user", "X-Request-Id": "req-shared-add"}
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    headers={"X-Authenticated-User": "shared-user"},
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers=auth_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                patched = client.patch(
+                    f"/inventories/personal/items/{added.json()['item_id']}",
+                    headers={"X-Authenticated-User": "shared-user", "X-Request-Id": "req-shared-finish"},
+                    json={"finish": "foil"},
+                )
+                self.assertEqual(200, patched.status_code)
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_finish", audit.json()[0]["action"])
+                self.assertEqual("api", audit.json()[0]["actor_type"])
+                self.assertEqual("shared-user", audit.json()[0]["actor_id"])
+                self.assertEqual("req-shared-finish", audit.json()[0]["request_id"])
 
     def test_demo_api_can_optionally_trust_actor_headers_in_dev_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

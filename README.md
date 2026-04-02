@@ -48,8 +48,9 @@ requests.
   call live APIs.
 - Pricing imports currently keep USD retail and buylist snapshots only.
 - The current API shell now aligns its HTTP route boundary with the existing
-  synchronous SQLite-backed service layer. Real auth/audit attribution and
-  broader deployment policy are still deferred.
+  synchronous SQLite-backed service layer. Shared-service identity resolution
+  now exists at the API boundary, while broader authorization and deployment
+  policy are still deferred.
 
 ## Quick Start
 
@@ -75,14 +76,19 @@ inventory services:
 - `shared_service` uses safer startup defaults for a pre-migrated, single-host
   SQLite deployment
 
-`shared_service` is a better fit for modest shared use, but real
-authentication, authorization, and broader deployment policy still remain
-outside this pass.
+`shared_service` is a better fit for modest shared use. It now requires a
+verified upstream user identity for mutating requests, while broader
+authorization and deployment policy still remain outside this pass.
 
-By default, the API ignores caller-supplied `X-Actor-Id` headers and records
-mutating audit entries as coming from `local-demo`. For explicit local/dev
-testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust header-supplied actor
-IDs instead. `X-Request-Id` remains accepted for request tracing.
+In `local_demo`, the API ignores caller-supplied `X-Actor-Id` headers and
+records mutating audit entries as coming from `local-demo`. For explicit
+local/dev testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust
+header-supplied actor IDs instead. `X-Request-Id` remains accepted for request
+tracing.
+
+In `shared_service`, mutating requests must include a verified upstream user
+header. The default header name is `X-Authenticated-User`, and you can override
+it with `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
 
 Run the local-demo API:
 
@@ -279,14 +285,17 @@ python -m unittest discover -s tests -q
 ## Current Limitations
 
 - The repo is intentionally local-first and CLI-driven.
-- `mtg-web-api` now supports a safer `shared_service` runtime mode, but real
-  auth/audit attribution and broader deployment policy still need follow-up
+- `mtg-web-api` now supports a safer `shared_service` runtime mode with
+  verified-user audit attribution, but broader authorization and deployment
+  policy still need follow-up
   before broader shared use.
 - The demo API exposes a minimal `/health` payload focused on status and mode,
   not filesystem path details.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
+- In `shared_service`, mutating writes require a verified upstream user header
+  such as `X-Authenticated-User`.
 - The API now logs startup mode and unexpected failures, but it is still a
   local/demo shell rather than a shared-service deployment target.
 - Ordinary read commands do not do automatic live Scryfall fallback.

@@ -81,6 +81,7 @@ The API layer should return errors in this shape:
 
 ## HTTP Error Mapping
 
+- `AuthenticationError` -> `401`
 - `ValidationError` -> `400`
 - `NotFoundError` -> `404`
 - `ConflictError` -> `409`
@@ -115,18 +116,24 @@ before the generic 500 envelope is returned.
   synchronous inventory and SQLite-backed service layer.
 - Broader transport/runtime guarantees are still intentionally modest and
   single-host scoped in web-v1.
-- By default, the API ignores caller-supplied `X-Actor-Id` values and records
-  mutating audit entries with `actor_type="api"` and `actor_id="local-demo"`.
-- For explicit local/dev testing, setting
+- In `local_demo`, the API ignores caller-supplied `X-Actor-Id` values and
+  records mutating audit entries with `actor_type="api"` and
+  `actor_id="local-demo"`.
+- For explicit local/dev testing in `local_demo`, setting
   `MTG_API_TRUST_ACTOR_HEADERS=true` allows non-empty `X-Actor-Id` header
   values to flow into audit attribution.
 - `shared_service` disables auto-migrate by default. It should be started
   against a pre-migrated database and a single app process for now.
+- In `shared_service`, mutating requests require a verified upstream user
+  header. The default header name is `X-Authenticated-User`, and it can be
+  overridden with `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
+- In `shared_service`, caller-controlled `X-Actor-Id` values are not part of
+  the trust boundary for audit attribution.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
-- The API logs startup mode and unexpected failures, but the main remaining
-  blockers before broader shared deployment are real auth/audit attribution and
-  broader deployment policy choices.
+- The API logs startup mode and unexpected failures. The main remaining
+  blockers before broader shared deployment are authorization/permission rules
+  and broader deployment policy choices.
 
 ## Notes For Web V1
 

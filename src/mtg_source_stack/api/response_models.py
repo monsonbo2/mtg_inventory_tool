@@ -1,4 +1,4 @@
-"""Pydantic response models for the local-demo web API."""
+"""Pydantic response models for the MTG Inventory Tool web API."""
 
 from __future__ import annotations
 

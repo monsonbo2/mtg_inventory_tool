@@ -17,6 +17,10 @@ class ValidationError(MtgStackError):
     default_error_code = "validation_error"
 
 
+class AuthenticationError(MtgStackError):
+    default_error_code = "authentication_required"
+
+
 class NotFoundError(MtgStackError):
     default_error_code = "not_found"
 

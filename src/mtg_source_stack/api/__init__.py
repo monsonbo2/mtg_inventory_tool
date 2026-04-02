@@ -6,7 +6,7 @@ The current API shell supports two runtime modes:
 - `shared_service`, a safer single-host startup posture for modest shared use
 
 Both modes wrap the existing synchronous inventory service layer and SQLite
-runtime. The route boundary now aligns with that sync service surface, but real
-auth/audit attribution and broader deployment policy still live outside this
-package.
+runtime. The route boundary now aligns with that sync service surface, shared
+service mutating writes use verified-user audit attribution, and broader
+authorization/deployment policy still lives outside this package.
 """
