@@ -4,12 +4,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from .errors import ConflictError, MtgStackError, NotFoundError, SchemaNotReadyError, ValidationError
+from .errors import (
+    AuthenticationError,
+    AuthorizationError,
+    ConflictError,
+    MtgStackError,
+    NotFoundError,
+    SchemaNotReadyError,
+    ValidationError,
+)
 
 
 def api_error_status(exc: Exception) -> int:
     if isinstance(exc, SchemaNotReadyError):
         return 503
+    if isinstance(exc, AuthenticationError):
+        return 401
+    if isinstance(exc, AuthorizationError):
+        return 403
     if isinstance(exc, NotFoundError):
         return 404
     if isinstance(exc, ConflictError):

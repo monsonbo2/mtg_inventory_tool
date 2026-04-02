@@ -1,2205 +1,203 @@
 {
-  "components": {
-    "schemas": {
-      "AddInventoryItemRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "collector_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Collector Number"
-          },
-          "condition_code": {
-            "default": "NM",
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "default": "normal",
-            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
-            "enum": [
-              "normal",
-              "nonfoil",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "lang": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes.",
-            "title": "Lang"
-          },
-          "language_code": {
-            "default": "en",
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "default": "",
-            "title": "Location",
-            "type": "string"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "quantity": {
-            "default": 1,
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scryfall Id"
-          },
-          "set_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Set Code"
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags"
-          },
-          "tcgplayer_product_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tcgplayer Product Id"
-          }
-        },
-        "title": "AddInventoryItemRequest",
-        "type": "object"
-      },
-      "AddInventoryItemResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags"
-        ],
-        "title": "AddInventoryItemResponse",
-        "type": "object"
-      },
-      "ApiErrorBody": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ],
-        "title": "ApiErrorBody",
-        "type": "object"
-      },
-      "ApiErrorResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorBody"
-          }
-        },
-        "required": [
-          "error"
-        ],
-        "title": "ApiErrorResponse",
-        "type": "object"
-      },
-      "CatalogSearchRowResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "finishes": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "items": {
-              "enum": [
-                "normal",
-                "foil",
-                "etched"
-              ],
-              "type": "string"
-            },
-            "title": "Finishes",
-            "type": "array"
-          },
-          "image_uri_normal": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Uri Normal"
-          },
-          "image_uri_small": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Uri Small"
-          },
-          "lang": {
-            "description": "Catalog language code. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph.",
-            "title": "Lang",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "rarity": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rarity"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tcgplayer_product_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tcgplayer Product Id"
-          }
-        },
-        "required": [
-          "scryfall_id",
-          "name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "lang",
-          "rarity",
-          "finishes",
-          "tcgplayer_product_id",
-          "image_uri_small",
-          "image_uri_normal"
-        ],
-        "title": "CatalogSearchRowResponse",
-        "type": "object"
-      },
-      "HealthResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "auto_migrate": {
-            "title": "Auto Migrate",
-            "type": "boolean"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "trusted_actor_headers": {
-            "title": "Trusted Actor Headers",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "status",
-          "auto_migrate",
-          "trusted_actor_headers"
-        ],
-        "title": "HealthResponse",
-        "type": "object"
-      },
-      "InventoryAuditEventResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "title": "Action",
-            "type": "string"
-          },
-          "actor_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actor Id"
-          },
-          "actor_type": {
-            "title": "Actor Type",
-            "type": "string"
-          },
-          "after": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "After"
-          },
-          "before": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Before"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Item Id"
-          },
-          "metadata": {
-            "additionalProperties": true,
-            "title": "Metadata",
-            "type": "object"
-          },
-          "occurred_at": {
-            "title": "Occurred At",
-            "type": "string"
-          },
-          "request_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Request Id"
-          }
-        },
-        "required": [
-          "id",
-          "inventory",
-          "item_id",
-          "action",
-          "actor_type",
-          "actor_id",
-          "request_id",
-          "occurred_at",
-          "before",
-          "after",
-          "metadata"
-        ],
-        "title": "InventoryAuditEventResponse",
-        "type": "object"
-      },
-      "InventoryCreateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          }
-        },
-        "required": [
-          "slug",
-          "display_name"
-        ],
-        "title": "InventoryCreateRequest",
-        "type": "object"
-      },
-      "InventoryCreateResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "inventory_id": {
-            "title": "Inventory Id",
-            "type": "integer"
-          },
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          }
-        },
-        "required": [
-          "inventory_id",
-          "slug",
-          "display_name",
-          "description"
-        ],
-        "title": "InventoryCreateResponse",
-        "type": "object"
-      },
-      "InventoryListRowResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "item_rows": {
-            "title": "Item Rows",
-            "type": "integer"
-          },
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          },
-          "total_cards": {
-            "title": "Total Cards",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "slug",
-          "display_name",
-          "description",
-          "item_rows",
-          "total_cards"
-        ],
-        "title": "InventoryListRowResponse",
-        "type": "object"
-      },
-      "OwnedInventoryRowResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency"
-          },
-          "est_value": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Est Value"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "image_uri_normal": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Uri Normal"
-          },
-          "image_uri_small": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Uri Small"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "price_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Price Date"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "rarity": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rarity"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Price"
-          }
-        },
-        "required": [
-          "item_id",
-          "scryfall_id",
-          "name",
-          "set_code",
-          "set_name",
-          "rarity",
-          "collector_number",
-          "image_uri_small",
-          "image_uri_normal",
-          "quantity",
-          "condition_code",
-          "finish",
-          "language_code",
-          "location",
-          "tags",
-          "acquisition_price",
-          "acquisition_currency",
-          "currency",
-          "unit_price",
-          "est_value",
-          "price_date",
-          "notes"
-        ],
-        "title": "OwnedInventoryRowResponse",
-        "type": "object"
-      },
-      "PatchInventoryItemRequest": {
-        "additionalProperties": false,
-        "description": "Specify exactly one mutation family per request: quantity, finish, location, condition_code, notes, tags, or acquisition. PATCH does not currently support true multi-field updates in one request.",
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "clear_acquisition": {
-            "default": false,
-            "title": "Clear Acquisition",
-            "type": "boolean"
-          },
-          "clear_location": {
-            "default": false,
-            "title": "Clear Location",
-            "type": "boolean"
-          },
-          "clear_notes": {
-            "default": false,
-            "title": "Clear Notes",
-            "type": "boolean"
-          },
-          "clear_tags": {
-            "default": false,
-            "title": "Clear Tags",
-            "type": "boolean"
-          },
-          "condition_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
-            "title": "Condition Code"
-          },
-          "finish": {
-            "anyOf": [
-              {
-                "enum": [
-                  "normal",
-                  "nonfoil",
-                  "foil",
-                  "etched"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
-            "title": "Finish"
-          },
-          "keep_acquisition": {
-            "anyOf": [
-              {
-                "enum": [
-                  "target",
-                  "source"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Only applies to merged location or condition changes. Choose whether the merged row keeps the target row or source row acquisition metadata.",
-            "title": "Keep Acquisition"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "merge": {
-            "default": false,
-            "description": "Only applies to location or condition changes. When true, a collision with an existing row is merged instead of returning a conflict.",
-            "title": "Merge",
-            "type": "boolean"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "quantity": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Quantity"
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags"
-          }
-        },
-        "title": "PatchInventoryItemRequest",
-        "type": "object"
-      },
-      "RemoveInventoryItemResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags"
-        ],
-        "title": "RemoveInventoryItemResponse",
-        "type": "object"
-      },
-      "SetAcquisitionResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "old_acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Old Acquisition Currency"
-          },
-          "old_acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Old Acquisition Price"
-          },
-          "operation": {
-            "const": "set_acquisition",
-            "title": "Operation",
-            "type": "string"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags",
-          "operation",
-          "old_acquisition_price",
-          "old_acquisition_currency"
-        ],
-        "title": "SetAcquisitionResponse",
-        "type": "object"
-      },
-      "SetConditionResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "merged": {
-            "title": "Merged",
-            "type": "boolean"
-          },
-          "merged_source_item_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Merged Source Item Id"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "old_condition_code": {
-            "title": "Old Condition Code",
-            "type": "string"
-          },
-          "operation": {
-            "const": "set_condition",
-            "title": "Operation",
-            "type": "string"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags",
-          "operation",
-          "old_condition_code",
-          "merged"
-        ],
-        "title": "SetConditionResponse",
-        "type": "object"
-      },
-      "SetFinishResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "old_finish": {
-            "title": "Old Finish",
-            "type": "string"
-          },
-          "operation": {
-            "const": "set_finish",
-            "title": "Operation",
-            "type": "string"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags",
-          "operation",
-          "old_finish"
-        ],
-        "title": "SetFinishResponse",
-        "type": "object"
-      },
-      "SetLocationResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "merged": {
-            "title": "Merged",
-            "type": "boolean"
-          },
-          "merged_source_item_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Merged Source Item Id"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "old_location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Old Location"
-          },
-          "operation": {
-            "const": "set_location",
-            "title": "Operation",
-            "type": "string"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags",
-          "operation",
-          "old_location",
-          "merged"
-        ],
-        "title": "SetLocationResponse",
-        "type": "object"
-      },
-      "SetNotesResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "old_notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Old Notes"
-          },
-          "operation": {
-            "const": "set_notes",
-            "title": "Operation",
-            "type": "string"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags",
-          "operation",
-          "old_notes"
-        ],
-        "title": "SetNotesResponse",
-        "type": "object"
-      },
-      "SetQuantityResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "old_quantity": {
-            "title": "Old Quantity",
-            "type": "integer"
-          },
-          "operation": {
-            "const": "set_quantity",
-            "title": "Operation",
-            "type": "string"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags",
-          "operation",
-          "old_quantity"
-        ],
-        "title": "SetQuantityResponse",
-        "type": "object"
-      },
-      "SetTagsResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "acquisition_currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Currency"
-          },
-          "acquisition_price": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acquisition Price"
-          },
-          "card_name": {
-            "title": "Card Name",
-            "type": "string"
-          },
-          "collector_number": {
-            "title": "Collector Number",
-            "type": "string"
-          },
-          "condition_code": {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
-            "title": "Condition Code",
-            "type": "string"
-          },
-          "finish": {
-            "description": "Canonical finish values: normal, foil, etched.",
-            "enum": [
-              "normal",
-              "foil",
-              "etched"
-            ],
-            "title": "Finish",
-            "type": "string"
-          },
-          "inventory": {
-            "title": "Inventory",
-            "type": "string"
-          },
-          "item_id": {
-            "title": "Item Id",
-            "type": "integer"
-          },
-          "language_code": {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
-            "title": "Language Code",
-            "type": "string"
-          },
-          "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "old_tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Old Tags",
-            "type": "array"
-          },
-          "operation": {
-            "const": "set_tags",
-            "title": "Operation",
-            "type": "string"
-          },
-          "quantity": {
-            "title": "Quantity",
-            "type": "integer"
-          },
-          "scryfall_id": {
-            "title": "Scryfall Id",
-            "type": "string"
-          },
-          "set_code": {
-            "title": "Set Code",
-            "type": "string"
-          },
-          "set_name": {
-            "title": "Set Name",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          }
-        },
-        "required": [
-          "inventory",
-          "card_name",
-          "set_code",
-          "set_name",
-          "collector_number",
-          "scryfall_id",
-          "item_id",
-          "quantity",
-          "finish",
-          "condition_code",
-          "language_code",
-          "location",
-          "acquisition_price",
-          "acquisition_currency",
-          "notes",
-          "tags",
-          "operation",
-          "old_tags"
-        ],
-        "title": "SetTagsResponse",
-        "type": "object"
-      }
-    }
-  },
+  "openapi": "3.1.0",
   "info": {
     "title": "MTG Inventory Tool API",
     "version": "0.1.0"
   },
-  "openapi": "3.1.0",
   "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventories": {
+      "get": {
+        "summary": "Inventories List",
+        "operationId": "inventories_list_inventories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryListRowResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Inventories List Inventories Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Schema not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Inventories Create",
+        "operationId": "inventories_create_inventories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryCreateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Schema not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cards/search": {
       "get": {
+        "summary": "Cards Search",
         "operationId": "cards_search_cards_search_get",
         "parameters": [
           {
-            "in": "query",
             "name": "query",
+            "in": "query",
             "required": true,
             "schema": {
-              "title": "Query",
-              "type": "string"
+              "type": "string",
+              "title": "Query"
             }
           },
           {
-            "in": "query",
             "name": "set_code",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2214,8 +212,8 @@
             }
           },
           {
-            "in": "query",
             "name": "rarity",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2230,9 +228,8 @@
             }
           },
           {
-            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
-            "in": "query",
             "name": "finish",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2251,12 +248,12 @@
               ],
               "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
               "title": "Finish"
-            }
+            },
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`."
           },
           {
-            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes.",
-            "in": "query",
             "name": "lang",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2269,350 +266,350 @@
               ],
               "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes.",
               "title": "Lang"
-            }
+            },
+            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes."
           },
           {
-            "in": "query",
             "name": "exact",
+            "in": "query",
             "required": false,
             "schema": {
+              "type": "boolean",
               "default": false,
-              "title": "Exact",
-              "type": "boolean"
+              "title": "Exact"
             }
           },
           {
-            "in": "query",
             "name": "limit",
+            "in": "query",
             "required": false,
             "schema": {
-              "default": 10,
+              "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "default": 10,
+              "title": "Limit"
             }
           }
         ],
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/CatalogSearchRowResponse"
                   },
-                  "title": "Response Cards Search Cards Search Get",
-                  "type": "array"
+                  "title": "Response Cards Search Cards Search Get"
                 }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Validation error"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Schema not ready"
-          }
-        },
-        "summary": "Cards Search"
-      }
-    },
-    "/health": {
-      "get": {
-        "operationId": "health_health_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
-          }
-        },
-        "summary": "Health"
-      }
-    },
-    "/inventories": {
-      "get": {
-        "operationId": "inventories_list_inventories_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/InventoryListRowResponse"
-                  },
-                  "title": "Response Inventories List Inventories Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Schema not ready"
-          }
-        },
-        "summary": "Inventories List"
-      },
-      "post": {
-        "operationId": "inventories_create_inventories_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InventoryCreateRequest"
               }
             }
           },
-          "required": true
-        },
-        "responses": {
-          "201": {
+          "401": {
+            "description": "Authentication required",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InventoryCreateResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           },
           "400": {
+            "description": "Validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Validation error"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
+            }
           },
           "503": {
+            "description": "Schema not ready",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Schema not ready"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
-        },
-        "summary": "Inventories Create"
+        }
       }
     },
-    "/inventories/{inventory_slug}/audit": {
+    "/cards/search/names": {
       "get": {
-        "operationId": "inventory_audit_list_inventories__inventory_slug__audit_get",
+        "summary": "Card Names Search",
+        "operationId": "card_names_search_cards_search_names_get",
         "parameters": [
           {
-            "in": "path",
-            "name": "inventory_slug",
+            "name": "query",
+            "in": "query",
             "required": true,
             "schema": {
-              "title": "Inventory Slug",
-              "type": "string"
+              "type": "string",
+              "title": "Query"
             }
           },
           {
+            "name": "exact",
             "in": "query",
-            "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "type": "boolean",
+              "default": false,
+              "title": "Exact"
             }
           },
           {
+            "name": "limit",
             "in": "query",
-            "name": "item_id",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogNameSearchRowResponse"
+                  },
+                  "title": "Response Card Names Search Cards Search Names Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Schema not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cards/oracle/{oracle_id}/printings": {
+      "get": {
+        "summary": "Card Printings Lookup",
+        "operationId": "card_printings_lookup_cards_oracle__oracle_id__printings_get",
+        "parameters": [
+          {
+            "name": "oracle_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oracle Id"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Item Id"
-            }
+              "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes. Omit this parameter to prefer English printings by default. Use `all` to include every available catalog language.",
+              "title": "Lang"
+            },
+            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes. Omit this parameter to prefer English printings by default. Use `all` to include every available catalog language."
           }
         ],
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/InventoryAuditEventResponse"
+                    "$ref": "#/components/schemas/CatalogSearchRowResponse"
                   },
-                  "title": "Response Inventory Audit List Inventories  Inventory Slug  Audit Get",
-                  "type": "array"
+                  "title": "Response Card Printings Lookup Cards Oracle  Oracle Id  Printings Get"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           },
           "400": {
+            "description": "Validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Validation error"
+            }
           },
           "404": {
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Not found"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
+            }
           },
           "503": {
+            "description": "Schema not ready",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Schema not ready"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
-        },
-        "summary": "Inventory Audit List"
+        }
       }
     },
     "/inventories/{inventory_slug}/items": {
       "get": {
+        "summary": "Inventory Items List",
         "operationId": "inventory_items_list_inventories__inventory_slug__items_get",
         "parameters": [
           {
-            "in": "path",
             "name": "inventory_slug",
+            "in": "path",
             "required": true,
             "schema": {
-              "title": "Inventory Slug",
-              "type": "string"
+              "type": "string",
+              "title": "Inventory Slug"
             }
           },
           {
-            "in": "query",
             "name": "provider",
+            "in": "query",
             "required": false,
             "schema": {
+              "type": "string",
               "default": "tcgplayer",
-              "title": "Provider",
-              "type": "string"
+              "title": "Provider"
             }
           },
           {
-            "in": "query",
             "name": "limit",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "type": "integer",
                   "maximum": 250,
-                  "minimum": 1,
-                  "type": "integer"
+                  "minimum": 1
                 },
                 {
                   "type": "null"
@@ -2622,8 +619,8 @@
             }
           },
           {
-            "in": "query",
             "name": "query",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2638,8 +635,8 @@
             }
           },
           {
-            "in": "query",
             "name": "set_code",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2654,8 +651,8 @@
             }
           },
           {
-            "in": "query",
             "name": "rarity",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2670,9 +667,8 @@
             }
           },
           {
-            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
-            "in": "query",
             "name": "finish",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2691,12 +687,12 @@
               ],
               "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
               "title": "Finish"
-            }
+            },
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`."
           },
           {
-            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
-            "in": "query",
             "name": "condition_code",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2709,12 +705,12 @@
               ],
               "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
               "title": "Condition Code"
-            }
+            },
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized."
           },
           {
-            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
-            "in": "query",
             "name": "language_code",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2727,11 +723,12 @@
               ],
               "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
               "title": "Language Code"
-            }
+            },
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized."
           },
           {
-            "in": "query",
             "name": "location",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2746,16 +743,16 @@
             }
           },
           {
-            "in": "query",
             "name": "tags",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "type": "array",
                   "items": {
                     "type": "string"
-                  },
-                  "type": "array"
+                  }
                 },
                 {
                   "type": "null"
@@ -2767,251 +764,226 @@
         ],
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/OwnedInventoryRowResponse"
                   },
-                  "title": "Response Inventory Items List Inventories  Inventory Slug  Items Get",
-                  "type": "array"
+                  "title": "Response Inventory Items List Inventories  Inventory Slug  Items Get"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           },
           "400": {
+            "description": "Validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Validation error"
+            }
           },
           "404": {
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Not found"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
+            }
           },
           "503": {
+            "description": "Schema not ready",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Schema not ready"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
-        },
-        "summary": "Inventory Items List"
+        }
       },
       "post": {
+        "summary": "Inventory Items Add",
         "operationId": "inventory_items_add_inventories__inventory_slug__items_post",
         "parameters": [
           {
-            "in": "path",
             "name": "inventory_slug",
+            "in": "path",
             "required": true,
             "schema": {
-              "title": "Inventory Slug",
-              "type": "string"
+              "type": "string",
+              "title": "Inventory Slug"
             }
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AddInventoryItemRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AddInventoryItemResponse"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           },
           "400": {
+            "description": "Validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Validation error"
+            }
           },
           "404": {
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Not found"
+            }
           },
           "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Conflict"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
+            }
           },
           "503": {
+            "description": "Schema not ready",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Schema not ready"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
-        },
-        "summary": "Inventory Items Add"
+        }
       }
     },
     "/inventories/{inventory_slug}/items/{item_id}": {
-      "delete": {
-        "operationId": "inventory_items_delete_inventories__inventory_slug__items__item_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "inventory_slug",
-            "required": true,
-            "schema": {
-              "title": "Inventory Slug",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "item_id",
-            "required": true,
-            "schema": {
-              "title": "Item Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RemoveInventoryItemResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Not found"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Schema not ready"
-          }
-        },
-        "summary": "Inventory Items Delete"
-      },
       "patch": {
+        "summary": "Inventory Items Patch",
         "operationId": "inventory_items_patch_inventories__inventory_slug__items__item_id__patch",
         "parameters": [
           {
-            "in": "path",
             "name": "inventory_slug",
+            "in": "path",
             "required": true,
             "schema": {
-              "title": "Inventory Slug",
-              "type": "string"
+              "type": "string",
+              "title": "Inventory Slug"
             }
           },
           {
-            "in": "path",
             "name": "item_id",
+            "in": "path",
             "required": true,
             "schema": {
-              "title": "Item Id",
-              "type": "integer"
+              "type": "integer",
+              "title": "Item Id"
             }
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PatchInventoryItemRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -3041,61 +1013,2553 @@
                   "title": "Response Inventory Items Patch Inventories  Inventory Slug  Items  Item Id  Patch"
                 }
               }
-            },
-            "description": "Successful Response"
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           },
           "400": {
+            "description": "Validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Validation error"
+            }
           },
           "404": {
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Not found"
+            }
           },
           "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Conflict"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error"
+            }
           },
           "503": {
+            "description": "Schema not ready",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            },
-            "description": "Schema not ready"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Inventory Items Delete",
+        "operationId": "inventory_items_delete_inventories__inventory_slug__items__item_id__delete",
+        "parameters": [
+          {
+            "name": "inventory_slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inventory Slug"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveInventoryItemResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Schema not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventories/{inventory_slug}/audit": {
+      "get": {
+        "summary": "Inventory Audit List",
+        "operationId": "inventory_audit_list_inventories__inventory_slug__audit_get",
+        "parameters": [
+          {
+            "name": "inventory_slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inventory Slug"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryAuditEventResponse"
+                  },
+                  "title": "Response Inventory Audit List Inventories  Inventory Slug  Audit Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Schema not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddInventoryItemRequest": {
+        "properties": {
+          "scryfall_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scryfall Id"
+          },
+          "oracle_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Id"
+          },
+          "tcgplayer_product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcgplayer Product Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "set_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Code"
+          },
+          "collector_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collector Number"
+          },
+          "lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lang",
+            "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes."
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity",
+            "default": 1
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
+            "default": "NM"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "nonfoil",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+            "default": "normal"
+          },
+          "language_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. When omitted, the added inventory row inherits the resolved printing language. Common language-name aliases such as `english` and `japanese` are accepted and normalized."
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "default": ""
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
           }
         },
-        "summary": "Inventory Items Patch"
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AddInventoryItemRequest"
+      },
+      "AddInventoryItemResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags"
+        ],
+        "title": "AddInventoryItemResponse"
+      },
+      "ApiErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiErrorBody"
+      },
+      "ApiErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ApiErrorResponse"
+      },
+      "CatalogNameSearchRowResponse": {
+        "properties": {
+          "oracle_id": {
+            "type": "string",
+            "title": "Oracle Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "printings_count": {
+            "type": "integer",
+            "title": "Printings Count"
+          },
+          "available_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Languages",
+            "description": "Catalog language codes available for the matched card. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph."
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "oracle_id",
+          "name",
+          "printings_count",
+          "available_languages",
+          "image_uri_small",
+          "image_uri_normal"
+        ],
+        "title": "CatalogNameSearchRowResponse"
+      },
+      "CatalogSearchRowResponse": {
+        "properties": {
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "lang": {
+            "type": "string",
+            "title": "Lang",
+            "description": "Catalog language code. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph."
+          },
+          "rarity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rarity"
+          },
+          "finishes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "normal",
+                "foil",
+                "etched"
+              ]
+            },
+            "type": "array",
+            "title": "Finishes",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "tcgplayer_product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcgplayer Product Id"
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scryfall_id",
+          "name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "lang",
+          "rarity",
+          "finishes",
+          "tcgplayer_product_id",
+          "image_uri_small",
+          "image_uri_normal"
+        ],
+        "title": "CatalogSearchRowResponse"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "auto_migrate": {
+            "type": "boolean",
+            "title": "Auto Migrate"
+          },
+          "trusted_actor_headers": {
+            "type": "boolean",
+            "title": "Trusted Actor Headers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "auto_migrate",
+          "trusted_actor_headers"
+        ],
+        "title": "HealthResponse"
+      },
+      "InventoryAuditEventResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "actor_type": {
+            "type": "string",
+            "title": "Actor Type"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "occurred_at": {
+            "type": "string",
+            "title": "Occurred At"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "inventory",
+          "item_id",
+          "action",
+          "actor_type",
+          "actor_id",
+          "request_id",
+          "occurred_at",
+          "before",
+          "after",
+          "metadata"
+        ],
+        "title": "InventoryAuditEventResponse"
+      },
+      "InventoryCreateRequest": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slug",
+          "display_name"
+        ],
+        "title": "InventoryCreateRequest"
+      },
+      "InventoryCreateResponse": {
+        "properties": {
+          "inventory_id": {
+            "type": "integer",
+            "title": "Inventory Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory_id",
+          "slug",
+          "display_name",
+          "description"
+        ],
+        "title": "InventoryCreateResponse"
+      },
+      "InventoryListRowResponse": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "item_rows": {
+            "type": "integer",
+            "title": "Item Rows"
+          },
+          "total_cards": {
+            "type": "integer",
+            "title": "Total Cards"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slug",
+          "display_name",
+          "description",
+          "item_rows",
+          "total_cards"
+        ],
+        "title": "InventoryListRowResponse"
+      },
+      "OwnedInventoryRowResponse": {
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "rarity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rarity"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "allowed_finishes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "normal",
+                "foil",
+                "etched"
+              ]
+            },
+            "type": "array",
+            "title": "Allowed Finishes",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "est_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Est Value"
+          },
+          "price_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Date"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "scryfall_id",
+          "name",
+          "set_code",
+          "set_name",
+          "rarity",
+          "collector_number",
+          "image_uri_small",
+          "image_uri_normal",
+          "quantity",
+          "condition_code",
+          "finish",
+          "allowed_finishes",
+          "language_code",
+          "location",
+          "tags",
+          "acquisition_price",
+          "acquisition_currency",
+          "currency",
+          "unit_price",
+          "est_value",
+          "price_date",
+          "notes"
+        ],
+        "title": "OwnedInventoryRowResponse"
+      },
+      "PatchInventoryItemRequest": {
+        "properties": {
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "finish": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "nonfoil",
+                  "foil",
+                  "etched"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish",
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "clear_location": {
+            "type": "boolean",
+            "title": "Clear Location",
+            "default": false
+          },
+          "condition_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized."
+          },
+          "merge": {
+            "type": "boolean",
+            "title": "Merge",
+            "description": "Only applies to location or condition changes. When true, a collision with an existing row is merged instead of returning a conflict.",
+            "default": false
+          },
+          "keep_acquisition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "target",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keep Acquisition",
+            "description": "Only applies to merged location or condition changes. Choose whether the merged row keeps the target row or source row acquisition metadata."
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "clear_notes": {
+            "type": "boolean",
+            "title": "Clear Notes",
+            "default": false
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "clear_tags": {
+            "type": "boolean",
+            "title": "Clear Tags",
+            "default": false
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "clear_acquisition": {
+            "type": "boolean",
+            "title": "Clear Acquisition",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PatchInventoryItemRequest",
+        "description": "Specify exactly one mutation family per request: quantity, finish, location, condition_code, notes, tags, or acquisition. PATCH does not currently support true multi-field updates in one request."
+      },
+      "RemoveInventoryItemResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags"
+        ],
+        "title": "RemoveInventoryItemResponse"
+      },
+      "SetAcquisitionResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "operation": {
+            "type": "string",
+            "const": "set_acquisition",
+            "title": "Operation"
+          },
+          "old_acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Acquisition Price"
+          },
+          "old_acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Acquisition Currency"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "operation",
+          "old_acquisition_price",
+          "old_acquisition_currency"
+        ],
+        "title": "SetAcquisitionResponse"
+      },
+      "SetConditionResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "operation": {
+            "type": "string",
+            "const": "set_condition",
+            "title": "Operation"
+          },
+          "old_condition_code": {
+            "type": "string",
+            "title": "Old Condition Code"
+          },
+          "merged": {
+            "type": "boolean",
+            "title": "Merged"
+          },
+          "merged_source_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Source Item Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "operation",
+          "old_condition_code",
+          "merged"
+        ],
+        "title": "SetConditionResponse"
+      },
+      "SetFinishResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "operation": {
+            "type": "string",
+            "const": "set_finish",
+            "title": "Operation"
+          },
+          "old_finish": {
+            "type": "string",
+            "title": "Old Finish"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "operation",
+          "old_finish"
+        ],
+        "title": "SetFinishResponse"
+      },
+      "SetLocationResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "operation": {
+            "type": "string",
+            "const": "set_location",
+            "title": "Operation"
+          },
+          "old_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Location"
+          },
+          "merged": {
+            "type": "boolean",
+            "title": "Merged"
+          },
+          "merged_source_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Source Item Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "operation",
+          "old_location",
+          "merged"
+        ],
+        "title": "SetLocationResponse"
+      },
+      "SetNotesResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "operation": {
+            "type": "string",
+            "const": "set_notes",
+            "title": "Operation"
+          },
+          "old_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "operation",
+          "old_notes"
+        ],
+        "title": "SetNotesResponse"
+      },
+      "SetQuantityResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "operation": {
+            "type": "string",
+            "const": "set_quantity",
+            "title": "Operation"
+          },
+          "old_quantity": {
+            "type": "integer",
+            "title": "Old Quantity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "operation",
+          "old_quantity"
+        ],
+        "title": "SetQuantityResponse"
+      },
+      "SetTagsResponse": {
+        "properties": {
+          "inventory": {
+            "type": "string",
+            "title": "Inventory"
+          },
+          "card_name": {
+            "type": "string",
+            "title": "Card Name"
+          },
+          "set_code": {
+            "type": "string",
+            "title": "Set Code"
+          },
+          "set_name": {
+            "type": "string",
+            "title": "Set Name"
+          },
+          "collector_number": {
+            "type": "string",
+            "title": "Collector Number"
+          },
+          "scryfall_id": {
+            "type": "string",
+            "title": "Scryfall Id"
+          },
+          "item_id": {
+            "type": "integer",
+            "title": "Item Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "finish": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "description": "Canonical finish values: normal, foil, etched."
+          },
+          "condition_code": {
+            "type": "string",
+            "title": "Condition Code",
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values."
+          },
+          "language_code": {
+            "type": "string",
+            "title": "Language Code",
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "operation": {
+            "type": "string",
+            "const": "set_tags",
+            "title": "Operation"
+          },
+          "old_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Old Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "operation",
+          "old_tags"
+        ],
+        "title": "SetTagsResponse"
       }
     }
   }

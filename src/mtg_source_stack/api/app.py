@@ -1,8 +1,13 @@
-"""FastAPI application factory for the local-demo web backend.
+"""FastAPI application factory for the MTG Inventory Tool web backend.
 
-This shell currently wraps the existing synchronous inventory service layer and
-SQLite-backed runtime. It is suitable for local/demo HTTP work, but it should
-not yet be described as a concurrency-hardened shared deployment surface.
+The API currently offers two runtime modes:
+
+- `local_demo`, which keeps local-first defaults for UI and contract work
+- `shared_service`, which uses safer startup defaults for modest shared use
+
+Both modes wrap the existing synchronous inventory service layer and
+SQLite-backed runtime. The route boundary is aligned to that sync service
+surface, but broader deployment policy work still lives outside this module.
 """
 
 from __future__ import annotations
@@ -15,16 +20,27 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ..api_contract import api_error_payload, api_error_status
+from ..db.connection import describe_sqlite_runtime_posture
 from ..db.migrator import migrate_database
 from ..db.schema import require_current_schema
 from ..errors import MtgStackError
-from .dependencies import ApiSettings, settings_from_env
+from .dependencies import (
+    DEFAULT_RUNTIME_MODE,
+    ApiSettings,
+    auto_migrate_override_from_env,
+    proxy_headers_override_from_env,
+    resolve_auto_migrate,
+    resolve_proxy_headers,
+    resolve_runtime_mode,
+    settings_from_env,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from fastapi import FastAPI
 
 
 logger = logging.getLogger(__name__)
+WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
 
 def _spec_contains_ref(node: Any, target_ref: str) -> bool:
@@ -68,18 +84,80 @@ def _strip_generated_validation_responses(openapi_schema: dict[str, Any]) -> Non
             schemas.pop(schema_name, None)
 
 
+def validate_runtime_settings(settings: ApiSettings) -> None:
+    actor_header = settings.authenticated_actor_header.strip()
+    roles_header = settings.authenticated_roles_header.strip()
+    forwarded_allow_ips = settings.forwarded_allow_ips.strip()
+
+    if settings.runtime_mode != "shared_service":
+        return
+    if settings.trust_actor_headers:
+        raise ValueError(
+            "shared_service cannot enable trust_actor_headers; use verified upstream identity headers instead."
+        )
+    if not actor_header:
+        raise ValueError("shared_service requires a non-empty authenticated actor header name.")
+    if not roles_header:
+        raise ValueError("shared_service requires a non-empty authenticated roles header name.")
+    if actor_header.casefold() == roles_header.casefold():
+        raise ValueError("shared_service authenticated actor and roles headers must be different.")
+    if actor_header.casefold() == "x-actor-id" or roles_header.casefold() == "x-actor-id":
+        raise ValueError("shared_service cannot reuse X-Actor-Id for verified identity or roles.")
+    if settings.proxy_headers and not forwarded_allow_ips:
+        raise ValueError("shared_service requires a non-empty forwarded_allow_ips value when proxy headers are enabled.")
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     defaults = settings_from_env()
     parser = argparse.ArgumentParser(
-        description="Run the MTG Inventory Tool local-demo web API."
+        description="Run the MTG Inventory Tool web API."
     )
     parser.add_argument("--db", default=str(defaults.db_path), help="SQLite database path.")
     parser.add_argument("--host", default=defaults.host, help="Host interface to bind.")
     parser.add_argument("--port", default=defaults.port, type=int, help="TCP port to listen on.")
     parser.add_argument(
-        "--no-auto-migrate",
+        "--runtime-mode",
+        choices=("local_demo", "shared_service"),
+        default=None,
+        help=(
+            "Runtime posture to use. Defaults to MTG_API_RUNTIME_MODE or "
+            f"{DEFAULT_RUNTIME_MODE!r} when the env var is unset."
+        ),
+    )
+    migrate_group = parser.add_mutually_exclusive_group()
+    migrate_group.add_argument(
+        "--auto-migrate",
+        dest="auto_migrate",
         action="store_true",
+        default=None,
+        help="Apply pending migrations at startup.",
+    )
+    migrate_group.add_argument(
+        "--no-auto-migrate",
+        dest="auto_migrate",
+        action="store_false",
+        default=None,
         help="Require a current schema at startup instead of applying pending migrations.",
+    )
+    proxy_group = parser.add_mutually_exclusive_group()
+    proxy_group.add_argument(
+        "--proxy-headers",
+        dest="proxy_headers",
+        action="store_true",
+        default=None,
+        help="Trust proxy-provided forwarding headers based on the configured allowlist.",
+    )
+    proxy_group.add_argument(
+        "--no-proxy-headers",
+        dest="proxy_headers",
+        action="store_false",
+        default=None,
+        help="Ignore proxy-provided forwarding headers.",
+    )
+    parser.add_argument(
+        "--forwarded-allow-ips",
+        default=None,
+        help="Comma-separated IPs or networks allowed to supply forwarded headers.",
     )
     return parser
 
@@ -88,17 +166,52 @@ def build_arg_parser() -> argparse.ArgumentParser:
 async def lifespan(app):
     settings: ApiSettings = app.state.settings
     logger.info(
-        "Starting local-demo API with db_path=%s auto_migrate=%s trust_actor_headers=%s",
+        "Starting API runtime_mode=%s db_path=%s auto_migrate=%s trust_actor_headers=%s proxy_headers=%s forwarded_allow_ips=%s",
+        settings.runtime_mode,
         settings.db_path,
         settings.auto_migrate,
         settings.trust_actor_headers,
+        settings.proxy_headers,
+        settings.forwarded_allow_ips,
     )
+    if settings.runtime_mode == "shared_service":
+        logger.info(
+            "Shared-service auth posture authenticated_actor_header=%s authenticated_roles_header=%s",
+            settings.authenticated_actor_header,
+            settings.authenticated_roles_header,
+        )
+        if settings.auto_migrate:
+            logger.warning(
+                "shared_service is starting with auto_migrate enabled; prefer a pre-migrated database for routine deploys."
+            )
+        if not settings.proxy_headers:
+            logger.warning(
+                "shared_service is starting with proxy header handling disabled; confirm the reverse-proxy topology intentionally does not rely on forwarded headers."
+            )
+        if settings.forwarded_allow_ips.strip() == "*":
+            logger.warning(
+                "shared_service trusts forwarded headers from all IPs; prefer a loopback or private allowlist."
+            )
+        if settings.host in WILDCARD_HOSTS:
+            logger.warning(
+                "shared_service is binding wildcard host=%s; prefer loopback or a private interface behind the reverse proxy.",
+                settings.host,
+            )
     if settings.auto_migrate:
         logger.info("Applying pending migrations at startup")
         migrate_database(settings.db_path)
     else:
         logger.info("Requiring current schema at startup without migration")
         require_current_schema(settings.db_path)
+    sqlite_posture = describe_sqlite_runtime_posture(settings.db_path)
+    logger.info(
+        "SQLite runtime posture db_path=%s journal_mode=%s synchronous=%s busy_timeout_ms=%s foreign_keys=%s",
+        settings.db_path,
+        sqlite_posture["journal_mode"],
+        sqlite_posture["synchronous"],
+        sqlite_posture["busy_timeout_ms"],
+        sqlite_posture["foreign_keys"],
+    )
     yield
 
 
@@ -111,6 +224,7 @@ def create_app(settings: ApiSettings | None = None):
     from .routes import router
 
     effective_settings = settings or settings_from_env()
+    validate_runtime_settings(effective_settings)
     app = FastAPI(
         title="MTG Inventory Tool API",
         version="0.1.0",
@@ -190,17 +304,35 @@ def create_app(settings: ApiSettings | None = None):
     return app
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
+def settings_from_cli_args(args: argparse.Namespace) -> ApiSettings:
     defaults = settings_from_env()
-    settings = ApiSettings(
+    runtime_mode = resolve_runtime_mode(args.runtime_mode) if args.runtime_mode else defaults.runtime_mode
+    return ApiSettings(
         db_path=Path(args.db),
-        auto_migrate=not args.no_auto_migrate,
+        runtime_mode=runtime_mode,
+        auto_migrate=resolve_auto_migrate(
+            runtime_mode=runtime_mode,
+            env_override=auto_migrate_override_from_env(),
+            cli_override=args.auto_migrate,
+        ),
         host=args.host,
         port=int(args.port),
         trust_actor_headers=defaults.trust_actor_headers,
+        authenticated_actor_header=defaults.authenticated_actor_header,
+        authenticated_roles_header=defaults.authenticated_roles_header,
+        proxy_headers=resolve_proxy_headers(
+            runtime_mode=runtime_mode,
+            env_override=proxy_headers_override_from_env(),
+            cli_override=args.proxy_headers,
+        ),
+        forwarded_allow_ips=args.forwarded_allow_ips or defaults.forwarded_allow_ips,
     )
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    settings = settings_from_cli_args(args)
 
     try:
         import uvicorn
@@ -210,4 +342,10 @@ def main(argv: list[str] | None = None) -> None:
             "FastAPI web dependencies are not installed. Run `pip install -e .[web]` first."
         ) from exc
 
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        proxy_headers=settings.proxy_headers,
+        forwarded_allow_ips=settings.forwarded_allow_ips,
+    )

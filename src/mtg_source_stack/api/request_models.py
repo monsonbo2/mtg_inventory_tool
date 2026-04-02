@@ -1,4 +1,4 @@
-"""Pydantic request models for the local-demo web API."""
+"""Pydantic request models for the MTG Inventory Tool web API."""
 
 from __future__ import annotations
 
@@ -39,6 +39,11 @@ LANGUAGE_CODE_DESCRIPTION = (
     f"Default: {DEFAULT_LANGUAGE_CODE}. Common language-name aliases such as "
     "`english` and `japanese` are accepted and normalized."
 )
+ADD_LANGUAGE_CODE_DESCRIPTION = (
+    f"Canonical language codes: {_CANONICAL_LANGUAGE_CODES_TEXT}. "
+    "When omitted, the added inventory row inherits the resolved printing language. "
+    "Common language-name aliases such as `english` and `japanese` are accepted and normalized."
+)
 SEARCH_LANG_DESCRIPTION = (
     f"Catalog search language filter. Recommended codes include: {_CANONICAL_LANGUAGE_CODES_TEXT}. "
     "Search currently accepts the raw stored catalog language codes."
@@ -70,6 +75,7 @@ class InventoryCreateRequest(ApiBaseModel):
 
 class AddInventoryItemRequest(ApiBaseModel):
     scryfall_id: str | None = None
+    oracle_id: str | None = None
     tcgplayer_product_id: str | None = None
     name: str | None = None
     set_code: str | None = None
@@ -78,7 +84,7 @@ class AddInventoryItemRequest(ApiBaseModel):
     quantity: int = 1
     condition_code: str = Field(default=DEFAULT_CONDITION_CODE, description=CONDITION_CODE_DESCRIPTION)
     finish: FinishInput = Field(default=DEFAULT_FINISH, description=FINISH_INPUT_DESCRIPTION)
-    language_code: str = Field(default=DEFAULT_LANGUAGE_CODE, description=LANGUAGE_CODE_DESCRIPTION)
+    language_code: str | None = Field(default=None, description=ADD_LANGUAGE_CODE_DESCRIPTION)
     location: str = ""
     acquisition_price: str | None = None
     acquisition_currency: str | None = None

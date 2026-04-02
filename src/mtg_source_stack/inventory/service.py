@@ -13,7 +13,7 @@ from .analysis import (
     valuation,
     valuation_filtered,
 )
-from .catalog import resolve_card_row, search_cards
+from .catalog import list_card_printings_for_oracle, resolve_card_row, search_card_names, search_cards
 from .inventories import create_inventory, list_inventories
 from .mutations import (
     add_card,

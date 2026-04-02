@@ -122,6 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
     add.add_argument("--inventory", required=True, help="Inventory slug.")
     add.add_argument("--scryfall-id", help="Exact Scryfall printing ID to add.")
+    add.add_argument("--oracle-id", help="Card-level Oracle ID to resolve to a default printing.")
     add.add_argument("--tcgplayer-product-id", help="Exact TCGplayer product id to add.")
     add.add_argument("--name", help="Exact card name if not using --scryfall-id.")
     add.add_argument("--set-code", help="Optional set code to disambiguate name matches.")
@@ -130,7 +131,10 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--quantity", type=int, default=1, help="Number of copies to add.")
     add.add_argument("--condition", default="NM", help="Condition code, such as NM, LP, MP.")
     add.add_argument("--finish", default="normal", help="normal, nonfoil, foil, or etched.")
-    add.add_argument("--language-code", default="en", help="Owned card language code.")
+    add.add_argument(
+        "--language-code",
+        help="Owned card language code. Defaults to the resolved printing language.",
+    )
     add.add_argument("--location", default="", help="Storage location, such as Binder 1.")
     add.add_argument("--acquisition-price", type=parse_decimal_argument, help="Optional acquisition price per copy.")
     add.add_argument("--acquisition-currency", help="Optional acquisition currency, such as USD.")
@@ -455,6 +459,7 @@ def main() -> None:
                     args.db,
                     inventory_slug=args.inventory,
                     scryfall_id=args.scryfall_id,
+                    oracle_id=args.oracle_id,
                     tcgplayer_product_id=args.tcgplayer_product_id,
                     name=args.name,
                     set_code=args.set_code,

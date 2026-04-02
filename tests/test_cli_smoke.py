@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
-from mtg_source_stack.db.schema import load_schema_sql
+from mtg_source_stack.db.schema import initialize_database, load_schema_sql
 
 
 class CliSmokeTest(RepoSmokeTestCase):
@@ -1005,6 +1005,112 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertCountEqual(["alpha", "beta"], json.loads(row[2]))
             self.assertEqual(1.25, float(row[3]))
             self.assertEqual("USD", row[4])
+
+    def test_add_card_accepts_oracle_id_and_infers_resolved_printing_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            initialize_database(db_path)
+
+            connection = sqlite3.connect(db_path)
+            connection.execute(
+                """
+                INSERT INTO inventories (slug, display_name)
+                VALUES ('personal', 'Personal Collection')
+                """
+            )
+            connection.executemany(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json
+                )
+                VALUES (?, 'cli-oracle-1', 'CLI Oracle Card', ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        "cli-oracle-ja",
+                        "neo",
+                        "Kamigawa: Neon Dynasty",
+                        "81",
+                        "ja",
+                        "2024-02-01",
+                        '["foil"]',
+                    ),
+                    (
+                        "cli-oracle-en",
+                        "neo",
+                        "Kamigawa: Neon Dynasty",
+                        "82",
+                        "en",
+                        "2024-01-01",
+                        '["nonfoil","foil"]',
+                    ),
+                ],
+            )
+            connection.commit()
+            connection.close()
+
+            add_output = self.run_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--oracle-id",
+                "cli-oracle-1",
+                "--lang",
+                "ja",
+                "--quantity",
+                "1",
+                "--condition",
+                "NM",
+                "--finish",
+                "foil",
+            )
+            self.assertIn("CLI Oracle Card", add_output)
+
+            connection = sqlite3.connect(db_path)
+            row = connection.execute(
+                """
+                SELECT scryfall_id, language_code
+                FROM inventory_items
+                """
+            ).fetchone()
+            connection.close()
+
+            self.assertEqual("cli-oracle-ja", row[0])
+            self.assertEqual("ja", row[1])
+
+            failure = self.run_failing_cli(
+                "add-card",
+                "--db",
+                str(db_path),
+                "--inventory",
+                "personal",
+                "--oracle-id",
+                "cli-oracle-1",
+                "--lang",
+                "ja",
+                "--quantity",
+                "1",
+                "--condition",
+                "NM",
+                "--finish",
+                "foil",
+                "--language-code",
+                "en",
+            )
+            self.assertNotEqual(0, failure.returncode)
+            self.assertIn("language_code must match the resolved printing language", failure.stderr)
+            self.assertNotIn("Traceback", failure.stderr)
 
     def test_add_card_rejects_acquisition_currency_without_price(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

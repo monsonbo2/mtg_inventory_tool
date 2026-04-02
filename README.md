@@ -34,9 +34,10 @@ requests.
 
 - The active runtime package lives in `src/mtg_source_stack/`.
 - The current entrypoints are `mtg-mvp-importer`, `mtg-personal-inventory`, and
-  the optional demo web shell `mtg-web-api`.
-- The demo FastAPI layer lives in `src/mtg_source_stack/api/` and is currently
-  intended for local/demo use rather than shared deployment.
+  the optional web shell `mtg-web-api`.
+- The FastAPI layer lives in `src/mtg_source_stack/api/` and now supports a
+  default `local_demo` mode plus a safer `shared_service` startup mode for
+  modest single-host shared use.
 - The runtime starts from `src/mtg_source_stack/mtg_mvp_schema.sql` and then
   applies the tracked migrations in `src/mtg_source_stack/db/migrations/`.
 - `docs/schema_full.sql` is a future normalized design, not the live runtime
@@ -46,9 +47,11 @@ requests.
 - `sync-bulk` can fetch fresh upstream bulk files, but normal read paths do not
   call live APIs.
 - Pricing imports currently keep USD retail and buylist snapshots only.
-- The current API shell intentionally keeps request handling simple and
-  SQLite-backed; shared-deployment concurrency hardening is deferred to a later
-  pass.
+- The current API shell now aligns its HTTP route boundary with the existing
+  synchronous SQLite-backed service layer. Shared-service identity resolution,
+  SQLite WAL/busy-timeout posture, and backup/restore recovery now exist in the
+  supported single-host operating model, while broader authorization and
+  deployment policy are still deferred.
 
 ## Quick Start
 
@@ -67,14 +70,65 @@ If you want to run the demo web API shell too, install the optional web extra:
 pip install -e '.[web]'
 ```
 
-The current `mtg-web-api` shell is a local-demo layer over the existing
-inventory services. It is useful for local UI and contract work, but it is not
-yet positioned as a shared or production-ready deployment target.
+The current `mtg-web-api` shell supports two runtime modes over the existing
+inventory services:
 
-By default, the API ignores caller-supplied `X-Actor-Id` headers and records
-mutating audit entries as coming from `local-demo`. For explicit local/dev
-testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust header-supplied actor
-IDs instead. `X-Request-Id` remains accepted for request tracing.
+- `local_demo` is the default local-first mode for UI and contract work
+- `shared_service` uses safer startup defaults for a pre-migrated, single-host
+  SQLite deployment with WAL and busy-timeout enabled through the shared
+  connection layer
+
+`shared_service` is a better fit for modest shared use. It now expects verified
+upstream identity for the app route surface, and the recommended first-live
+deployment shape is a same-origin reverse proxy over the current root-route API
+surface.
+
+In `local_demo`, the API ignores caller-supplied `X-Actor-Id` headers and
+records mutating audit entries as coming from `local-demo`. For explicit
+local/dev testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust
+header-supplied actor IDs instead. `X-Request-Id` remains accepted for request
+tracing.
+
+In `shared_service`, every current app route except `/health` requires an
+authenticated app user. The default verified identity header is
+`X-Authenticated-User`, and you can override it with
+`MTG_API_AUTHENTICATED_ACTOR_HEADER`.
+
+`shared_service` also supports a normalized roles header,
+`X-Authenticated-Roles` by default, with `editor` and `admin` as the current
+recognized roles. If the verified user header is present and no roles header is
+supplied, the app defaults that user to `editor`. `admin` implies `editor`.
+
+For the first live cohort, the recommended deployment shape is:
+
+- same-origin frontend and backend
+- reverse proxy publishes `/api` and strips that prefix before forwarding
+- reverse proxy injects verified `X-Authenticated-User`
+- reverse proxy optionally injects normalized `X-Authenticated-Roles`
+- backend binds loopback or a private interface behind the proxy
+
+Run the local-demo API:
+
+```bash
+mtg-web-api --db "var/db/mtg_mvp.db"
+```
+
+Run the safer shared-service startup mode against a pre-migrated DB:
+
+```bash
+mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
+```
+
+If you need to override startup migration behavior explicitly, use
+`--auto-migrate` or `--no-auto-migrate`, or set `MTG_API_AUTO_MIGRATE`.
+
+`shared_service` also supports:
+
+- `--proxy-headers` / `--no-proxy-headers`
+- `--forwarded-allow-ips`
+
+The current recommended deployment runbook lives in
+[`docs/shared_service_deploy.md`](docs/shared_service_deploy.md).
 
 Initialize a local database:
 
@@ -115,13 +169,17 @@ mtg-personal-inventory search-cards \
 mtg-personal-inventory add-card \
   --db "var/db/mtg_mvp.db" \
   --inventory personal \
-  --scryfall-id YOUR_PRINTING_ID \
+  --oracle-id YOUR_CARD_ORACLE_ID \
   --quantity 4 \
   --condition NM \
   --finish normal \
   --location "Red Binder" \
   --tags "burn deck,trade"
 ```
+
+`add-card` now accepts `--oracle-id` as a first-class identifier as well as
+`--scryfall-id`. Inventory rows still store the resolved printing, and if you
+omit `--language-code` the owned row inherits the resolved printing language.
 
 Preview a CSV import with the bundled sample file:
 
@@ -190,13 +248,49 @@ mtg-mvp-importer restore-snapshot \
   --snapshot SNAPSHOT_NAME_FROM_LIST
 ```
 
+## Shared-Service SQLite Runbook
+
+For the current shared-service phase, the intended deployment shape is:
+
+- one app process
+- one SQLite database file
+- one host
+- local disk storage
+- a pre-migrated database started with `--runtime-mode shared_service`
+
+Operational expectations:
+
+- the shared connection layer enables SQLite `WAL`, `busy_timeout`,
+  `synchronous=NORMAL`, and `foreign_keys=ON`
+- run the API behind an auth boundary that injects a verified user header such
+  as `X-Authenticated-User`
+- if you forward app roles, normalize them to `editor` and `admin` in a header
+  such as `X-Authenticated-Roles`
+- publish the API to browsers through a same-origin reverse proxy, not by
+  exposing the backend directly
+- validate snapshot backup and restore before live use
+- keep the database on local storage, not a shared/network filesystem
+- treat `sync-bulk`, `import-all`, and large import/update jobs as admin
+  operations and avoid running them during active user editing windows
+
+A typical startup flow is:
+
+```bash
+mtg-mvp-importer migrate-db --db "var/db/mtg_mvp.db"
+mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
+```
+
 ## Testing
 
 With the virtualenv active, run the full local test suite:
 
 ```bash
-python -m unittest discover -s tests -q
+./scripts/test_backend.sh
 ```
+
+That wrapper forces this checkout's `src/` tree onto `PYTHONPATH` before
+running `unittest`, which avoids accidentally importing a different editable
+checkout in multi-repo environments.
 
 ## Repo Map
 
@@ -256,15 +350,25 @@ python -m unittest discover -s tests -q
 ## Current Limitations
 
 - The repo is intentionally local-first and CLI-driven.
-- `mtg-web-api` is currently a local/demo HTTP shell, not a concurrency-hardened
-  shared service.
+- `mtg-web-api` now supports a safer `shared_service` runtime mode with
+  verified-user audit attribution, a minimal `editor` / `admin` role model, and
+  a documented first-live reverse-proxy deployment shape. Finer-grained admin
+  policy and rollout validation still need follow-up before broader shared use.
 - The demo API exposes a minimal `/health` payload focused on status and mode,
   not filesystem path details.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
-- The API now logs startup mode and unexpected failures, but it is still a
-  local/demo shell rather than a shared-service deployment target.
+- In `shared_service`, all current non-health routes require an authenticated
+  `editor` user. The default verified identity header is
+  `X-Authenticated-User`, and the default roles header is
+  `X-Authenticated-Roles`.
+- The recommended first-live deployment is same-origin and proxy-based. The
+  backend is not yet intended to be exposed directly to browsers on a separate
+  origin.
+- The current shared-service SQLite posture is single-host only and depends on
+  WAL, busy-timeout, and tested snapshot restore rather than a distributed DB
+  story.
 - Ordinary read commands do not do automatic live Scryfall fallback.
 - The runtime model is the MVP schema, not the normalized future schema.
 - Price imports currently keep USD retail and buylist snapshots only so

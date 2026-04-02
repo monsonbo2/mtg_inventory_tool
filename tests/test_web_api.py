@@ -1,82 +1,83 @@
-"""Integration-oriented smoke tests for the FastAPI demo shell."""
+"""Integration-oriented smoke tests for the FastAPI web shell."""
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import importlib.util
+import socket
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
+from mtg_source_stack.db.schema import initialize_database
 
 
 FASTAPI_TESTING_AVAILABLE = (
     importlib.util.find_spec("fastapi") is not None
     and importlib.util.find_spec("httpx") is not None
+    and importlib.util.find_spec("uvicorn") is not None
 )
 
 if FASTAPI_TESTING_AVAILABLE:
     import httpx
+    import uvicorn
 
     from mtg_source_stack.api.app import create_app
     from mtg_source_stack.api.dependencies import ApiSettings
 
 
+def _localhost_server_testing_available() -> bool:
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+    except OSError:
+        return False
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    return True
+
+
+LOCALHOST_SERVER_TESTING_AVAILABLE = _localhost_server_testing_available()
+
+
+@contextmanager
+def _live_test_server(app):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    host, port = sock.getsockname()
+    sock.close()
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    server.install_signal_handlers = lambda: None
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.time() + 5
+    while not server.started and thread.is_alive() and time.time() < deadline:
+        time.sleep(0.01)
+    if not server.started:
+        server.should_exit = True
+        thread.join(timeout=1)
+        raise RuntimeError("Timed out waiting for test server to start.")
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
 @unittest.skipUnless(
     FASTAPI_TESTING_AVAILABLE,
-    "fastapi/httpx are not installed in this environment; API shell tests are skipped.",
+    "fastapi/httpx/uvicorn are not installed in this environment; API shell tests are skipped.",
 )
-class WebApiTest(unittest.IsolatedAsyncioTestCase):
-    @asynccontextmanager
-    async def _client(self, db_path: Path, *, trust_actor_headers: bool = False):
-        app = create_app(
-            ApiSettings(
-                db_path=db_path,
-                auto_migrate=True,
-                host="127.0.0.1",
-                port=8000,
-                trust_actor_headers=trust_actor_headers,
-            )
-        )
-        lifespan = app.router.lifespan_context(app)
-        await lifespan.__aenter__()
-        try:
-            transport = httpx.ASGITransport(app=app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-                yield client
-        finally:
-            await lifespan.__aexit__(None, None, None)
-
-    def _seed_card(self, db_path: Path) -> None:
-        with connect(db_path) as connection:
-            connection.execute(
-                """
-                INSERT INTO mtg_cards (
-                    scryfall_id,
-                    oracle_id,
-                    name,
-                    set_code,
-                    set_name,
-                    collector_number,
-                    finishes_json,
-                    image_uris_json
-                )
-                VALUES (
-                    ?,
-                    ?,
-                    ?,
-                    'tst',
-                    'Test Set',
-                    '10',
-                    '["normal","foil"]',
-                    '{"small":"https://example.test/cards/api-card-1-small.jpg","normal":"https://example.test/cards/api-card-1-normal.jpg"}'
-                )
-                """,
-                ("api-card-1", "api-oracle-1", "API Test Card"),
-            )
-            connection.commit()
-
+class WebApiSchemaTest(unittest.TestCase):
     def _schema_name_from_ref(self, ref: str) -> str:
         return ref.rsplit("/", 1)[-1]
 
@@ -86,6 +87,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             app = create_app(
                 ApiSettings(
                     db_path=db_path,
+                    runtime_mode="local_demo",
                     auto_migrate=True,
                     host="127.0.0.1",
                     port=8000,
@@ -96,6 +98,8 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
 
             for path, method in [
                 ("/cards/search", "get"),
+                ("/cards/search/names", "get"),
+                ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories", "post"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
@@ -104,6 +108,21 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 ("/inventories/{inventory_slug}/audit", "get"),
             ]:
                 self.assertNotIn("422", spec["paths"][path][method]["responses"])
+
+            for path, method in [
+                ("/inventories", "get"),
+                ("/inventories", "post"),
+                ("/cards/search", "get"),
+                ("/cards/search/names", "get"),
+                ("/cards/oracle/{oracle_id}/printings", "get"),
+                ("/inventories/{inventory_slug}/items", "get"),
+                ("/inventories/{inventory_slug}/items", "post"),
+                ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
+                ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
+                ("/inventories/{inventory_slug}/audit", "get"),
+            ]:
+                self.assertIn("401", spec["paths"][path][method]["responses"])
+                self.assertIn("403", spec["paths"][path][method]["responses"])
 
             cards_schema = spec["paths"]["/cards/search"]["get"]["responses"]["200"]["content"]["application/json"][
                 "schema"
@@ -137,6 +156,35 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 search_parameters["lang"]["description"],
             )
 
+            card_names_schema = spec["paths"]["/cards/search/names"]["get"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]
+            self.assertEqual("array", card_names_schema["type"])
+            card_name_schema_name = self._schema_name_from_ref(card_names_schema["items"]["$ref"])
+            self.assertEqual("CatalogNameSearchRowResponse", card_name_schema_name)
+            self.assertEqual(
+                "array",
+                components[card_name_schema_name]["properties"]["available_languages"]["type"],
+            )
+            self.assertEqual(
+                "string",
+                components[card_name_schema_name]["properties"]["available_languages"]["items"]["type"],
+            )
+
+            printings_schema = spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertEqual("array", printings_schema["type"])
+            self.assertEqual(
+                "CatalogSearchRowResponse",
+                self._schema_name_from_ref(printings_schema["items"]["$ref"]),
+            )
+            printings_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["parameters"]
+            }
+            self.assertIn("Use `all` to include every available catalog language", printings_parameters["lang"]["description"])
+
             owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
                 "content"
             ]["application/json"]["schema"]
@@ -164,6 +212,10 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 [{"type": "string"}, {"type": "null"}],
                 owned_properties["image_uri_normal"]["anyOf"],
             )
+            self.assertEqual(
+                ["normal", "foil", "etched"],
+                owned_properties["allowed_finishes"]["items"]["enum"],
+            )
             inventory_parameters = {
                 parameter["name"]: parameter
                 for parameter in spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["parameters"]
@@ -179,6 +231,14 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn(
                 "Canonical language codes: en, ja, de, fr",
                 inventory_parameters["language_code"]["description"],
+            )
+
+            add_request_schema = components["AddInventoryItemRequest"]
+            self.assertIn("oracle_id", add_request_schema["properties"])
+            self.assertNotIn("default", add_request_schema["properties"]["language_code"])
+            self.assertIn(
+                "inherits the resolved printing language",
+                add_request_schema["properties"]["language_code"]["description"],
             )
 
             patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][
@@ -250,27 +310,186 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("HTTPValidationError", components)
             self.assertNotIn("ValidationError", components)
 
-    async def test_demo_api_exposes_inventory_item_and_audit_routes(self) -> None:
+
+@unittest.skipUnless(
+    FASTAPI_TESTING_AVAILABLE and LOCALHOST_SERVER_TESTING_AVAILABLE,
+    "fastapi/httpx/uvicorn or localhost socket access are unavailable; live API shell tests are skipped.",
+)
+class WebApiTest(unittest.TestCase):
+    @contextmanager
+    def _client(
+        self,
+        db_path: Path,
+        *,
+        trust_actor_headers: bool = False,
+        runtime_mode: str = "local_demo",
+        auto_migrate: bool = True,
+    ):
+        settings_kwargs = {
+            "db_path": db_path,
+            "runtime_mode": runtime_mode,
+            "auto_migrate": auto_migrate,
+            "host": "127.0.0.1",
+            "port": 8000,
+            "trust_actor_headers": trust_actor_headers,
+            "proxy_headers": runtime_mode == "shared_service",
+        }
+        app = create_app(
+            ApiSettings(**settings_kwargs)
+        )
+        with _live_test_server(app) as base_url:
+            with httpx.Client(base_url=base_url, timeout=5.0) as client:
+                yield client
+
+    def _seed_card(self, db_path: Path, *, finishes_json: str = '["normal","foil"]') -> None:
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    finishes_json,
+                    image_uris_json
+                )
+                VALUES (
+                    ?,
+                    ?,
+                    ?,
+                    'tst',
+                    'Test Set',
+                    '10',
+                    ?,
+                    '{"small":"https://example.test/cards/api-card-1-small.jpg","normal":"https://example.test/cards/api-card-1-normal.jpg"}'
+                )
+                """,
+                ("api-card-1", "api-oracle-1", "API Test Card", finishes_json),
+            )
+            connection.commit()
+
+    def _seed_oracle_printings(self, db_path: Path) -> None:
+        with connect(db_path) as connection:
+            connection.executemany(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json
+                )
+                VALUES (?, 'api-oracle-lookup', ?, ?, ?, ?, ?, ?, '["nonfoil","foil"]', ?)
+                """,
+                [
+                    (
+                        "api-printing-en-new",
+                        "API Lookup Card",
+                        "mkm",
+                        "Murders at Karlov Manor",
+                        "14",
+                        "en",
+                        "2024-02-09",
+                        '{"small":"https://example.test/cards/api-printing-en-new-small.jpg","normal":"https://example.test/cards/api-printing-en-new-normal.jpg"}',
+                    ),
+                    (
+                        "api-printing-ja",
+                        "API Lookup Card",
+                        "mkm",
+                        "Murders at Karlov Manor",
+                        "15",
+                        "ja",
+                        "2024-03-01",
+                        '{"small":"https://example.test/cards/api-printing-ja-small.jpg","normal":"https://example.test/cards/api-printing-ja-normal.jpg"}',
+                    ),
+                    (
+                        "api-printing-en-old",
+                        "API Lookup Card",
+                        "woe",
+                        "Wilds of Eldraine",
+                        "16",
+                        "en",
+                        "2023-09-01",
+                        '{"small":"https://example.test/cards/api-printing-en-old-small.jpg","normal":"https://example.test/cards/api-printing-en-old-normal.jpg"}',
+                    ),
+                ],
+            )
+            connection.commit()
+
+    def _seed_oracle_add_candidates(self, db_path: Path) -> None:
+        with connect(db_path) as connection:
+            connection.executemany(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json
+                )
+                VALUES (?, 'api-add-oracle', 'API Oracle Add Card', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        "api-add-ja",
+                        "neo",
+                        "Kamigawa: Neon Dynasty",
+                        "71",
+                        "ja",
+                        "2024-02-01",
+                        '["foil"]',
+                        '{"small":"https://example.test/cards/api-add-ja-small.jpg","normal":"https://example.test/cards/api-add-ja-normal.jpg"}',
+                    ),
+                    (
+                        "api-add-en",
+                        "neo",
+                        "Kamigawa: Neon Dynasty",
+                        "72",
+                        "en",
+                        "2024-01-01",
+                        '["nonfoil","foil"]',
+                        '{"small":"https://example.test/cards/api-add-en-small.jpg","normal":"https://example.test/cards/api-add-en-normal.jpg"}',
+                    ),
+                ],
+            )
+            connection.commit()
+
+    def _schema_name_from_ref(self, ref: str) -> str:
+        return ref.rsplit("/", 1)[-1]
+
+    def test_demo_api_exposes_inventory_item_and_audit_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
-            async with self._client(db_path) as client:
+            with self._client(db_path) as client:
                 self._seed_card(db_path)
 
-                health = await client.get("/health")
+                health = client.get("/health")
                 self.assertEqual(200, health.status_code)
                 self.assertEqual("ok", health.json()["status"])
                 self.assertTrue(health.json()["auto_migrate"])
                 self.assertFalse(health.json()["trusted_actor_headers"])
                 self.assertNotIn("db_path", health.json())
 
-                created_inventory = await client.post(
+                created_inventory = client.post(
                     "/inventories",
                     json={"slug": "personal", "display_name": "Personal Collection"},
                 )
                 self.assertEqual(201, created_inventory.status_code)
                 self.assertEqual("personal", created_inventory.json()["slug"])
 
-                search = await client.get("/cards/search", params={"query": "API Test"})
+                search = client.get("/cards/search", params={"query": "API Test"})
                 self.assertEqual(200, search.status_code)
                 self.assertEqual("api-card-1", search.json()[0]["scryfall_id"])
                 self.assertEqual(
@@ -282,7 +501,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                     search.json()[0]["image_uri_normal"],
                 )
 
-                added = await client.post(
+                added = client.post(
                     "/inventories/personal/items",
                     headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-add"},
                     json={
@@ -299,10 +518,11 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(["demo", "web"], added_payload["tags"])
                 self.assertEqual("req-add", added.headers["X-Request-Id"])
 
-                listed = await client.get("/inventories/personal/items")
+                listed = client.get("/inventories/personal/items")
                 self.assertEqual(200, listed.status_code)
                 self.assertEqual(1, len(listed.json()))
                 self.assertEqual(2, listed.json()[0]["quantity"])
+                self.assertEqual(["normal", "foil"], listed.json()[0]["allowed_finishes"])
                 self.assertEqual(
                     "https://example.test/cards/api-card-1-small.jpg",
                     listed.json()[0]["image_uri_small"],
@@ -312,7 +532,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                     listed.json()[0]["image_uri_normal"],
                 )
 
-                patched = await client.patch(
+                patched = client.patch(
                     f"/inventories/personal/items/{added_payload['item_id']}",
                     headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-finish"},
                     json={"finish": "foil"},
@@ -321,26 +541,344 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual("set_finish", patched.json()["operation"])
                 self.assertEqual("foil", patched.json()["finish"])
 
-                audit = await client.get("/inventories/personal/audit")
+                audit = client.get(
+                    "/inventories/personal/audit",
+                    headers={"X-Authenticated-User": "shared-user"},
+                )
                 self.assertEqual(200, audit.status_code)
                 self.assertEqual("set_finish", audit.json()[0]["action"])
                 self.assertEqual("api", audit.json()[0]["actor_type"])
                 self.assertEqual("local-demo", audit.json()[0]["actor_id"])
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
+                self.assertRegex(audit.json()[0]["occurred_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
-    async def test_demo_api_can_optionally_trust_actor_headers_in_dev_mode(self) -> None:
+    def test_demo_api_exposes_name_search_and_oracle_printings_lookup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
-            async with self._client(db_path, trust_actor_headers=True) as client:
-                self._seed_card(db_path)
+            with self._client(db_path) as client:
+                self._seed_oracle_printings(db_path)
 
-                created_inventory = await client.post(
+                name_search = client.get("/cards/search/names", params={"query": "API Lookup"})
+                self.assertEqual(200, name_search.status_code)
+                self.assertEqual(1, len(name_search.json()))
+                self.assertEqual("api-oracle-lookup", name_search.json()[0]["oracle_id"])
+                self.assertEqual(["en", "ja"], name_search.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-printing-en-new-small.jpg",
+                    name_search.json()[0]["image_uri_small"],
+                )
+
+                default_printings = client.get("/cards/oracle/api-oracle-lookup/printings")
+                self.assertEqual(200, default_printings.status_code)
+                self.assertEqual(
+                    ["api-printing-en-new", "api-printing-en-old"],
+                    [row["scryfall_id"] for row in default_printings.json()],
+                )
+
+                all_printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    params={"lang": "all"},
+                )
+                self.assertEqual(200, all_printings.status_code)
+                self.assertEqual(
+                    ["api-printing-ja", "api-printing-en-new", "api-printing-en-old"],
+                    [row["scryfall_id"] for row in all_printings.json()],
+                )
+
+                japanese_printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    params={"lang": "ja"},
+                )
+                self.assertEqual(200, japanese_printings.status_code)
+                self.assertEqual(["api-printing-ja"], [row["scryfall_id"] for row in japanese_printings.json()])
+
+                missing = client.get("/cards/oracle/missing-oracle/printings")
+                self.assertEqual(404, missing.status_code)
+                self.assertEqual("not_found", missing.json()["error"]["code"])
+
+    def test_demo_api_add_item_accepts_oracle_id_and_inherits_resolved_printing_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_oracle_add_candidates(db_path)
+
+                created_inventory = client.post(
                     "/inventories",
                     json={"slug": "personal", "display_name": "Personal Collection"},
                 )
                 self.assertEqual(201, created_inventory.status_code)
 
-                added = await client.post(
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "oracle_id": "api-add-oracle",
+                        "lang": "ja",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "foil",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertEqual("api-add-ja", added.json()["scryfall_id"])
+                self.assertEqual("ja", added.json()["language_code"])
+
+                conflict = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "oracle_id": "api-add-oracle",
+                        "lang": "ja",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "foil",
+                        "language_code": "en",
+                    },
+                )
+                self.assertEqual(400, conflict.status_code)
+                self.assertEqual("validation_error", conflict.json()["error"]["code"])
+                self.assertIn("language_code must match the resolved printing language", conflict.json()["error"]["message"])
+
+    def test_shared_service_mode_handles_a_small_concurrent_request_burst(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            auth_headers = {"X-Authenticated-User": "shared-user"}
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                self.assertEqual(401, client.get("/inventories").status_code)
+                self.assertEqual(401, client.get("/cards/search", params={"query": "API"}).status_code)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    headers=auth_headers,
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers=auth_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                item_id = added.json()["item_id"]
+
+                def get_inventories():
+                    response = client.get("/inventories", headers=auth_headers)
+                    self.assertEqual(200, response.status_code)
+                    return response.status_code
+
+                def get_items():
+                    response = client.get("/inventories/personal/items", headers=auth_headers)
+                    self.assertEqual(200, response.status_code)
+                    return response.status_code
+
+                def patch_notes():
+                    response = client.patch(
+                        f"/inventories/personal/items/{item_id}",
+                        headers=auth_headers,
+                        json={"notes": "shared burst"},
+                    )
+                    self.assertEqual(200, response.status_code)
+                    return response.status_code
+
+                def get_audit():
+                    response = client.get("/inventories/personal/audit", headers=auth_headers)
+                    self.assertEqual(200, response.status_code)
+                    return response.status_code
+
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = [
+                        executor.submit(get_inventories),
+                        executor.submit(get_items),
+                        executor.submit(patch_notes),
+                        executor.submit(get_audit),
+                        executor.submit(get_items),
+                    ]
+                    results = [future.result(timeout=5) for future in futures]
+
+                self.assertEqual([200, 200, 200, 200, 200], results)
+
+    def test_shared_service_read_routes_require_editor_role(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            editor_headers = {"X-Authenticated-User": "shared-user"}
+            unrecognized_role_headers = {
+                "X-Authenticated-User": "shared-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    headers=editor_headers,
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers=editor_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                anonymous_inventories = client.get("/inventories")
+                self.assertEqual(401, anonymous_inventories.status_code)
+                self.assertEqual("authentication_required", anonymous_inventories.json()["error"]["code"])
+
+                unauthorized_search = client.get(
+                    "/cards/search",
+                    headers=unrecognized_role_headers,
+                    params={"query": "API Test"},
+                )
+                self.assertEqual(403, unauthorized_search.status_code)
+                self.assertEqual("forbidden", unauthorized_search.json()["error"]["code"])
+
+                unauthorized_name_search = client.get(
+                    "/cards/search/names",
+                    headers=unrecognized_role_headers,
+                    params={"query": "API Test"},
+                )
+                self.assertEqual(403, unauthorized_name_search.status_code)
+                self.assertEqual("forbidden", unauthorized_name_search.json()["error"]["code"])
+
+                inventories = client.get("/inventories", headers=editor_headers)
+                self.assertEqual(200, inventories.status_code)
+
+                search = client.get("/cards/search", headers=editor_headers, params={"query": "API Test"})
+                self.assertEqual(200, search.status_code)
+
+                self._seed_oracle_printings(db_path)
+                name_search = client.get("/cards/search/names", headers=editor_headers, params={"query": "API Lookup"})
+                self.assertEqual(200, name_search.status_code)
+                printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    headers=editor_headers,
+                )
+                self.assertEqual(200, printings.status_code)
+
+                items = client.get("/inventories/personal/items", headers=editor_headers)
+                self.assertEqual(200, items.status_code)
+
+                audit = client.get("/inventories/personal/audit", headers=editor_headers)
+                self.assertEqual(200, audit.status_code)
+
+    def test_shared_service_mutating_requests_require_authenticated_actor_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                create_without_auth = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(401, create_without_auth.status_code)
+                self.assertEqual("authentication_required", create_without_auth.json()["error"]["code"])
+                self.assertIn("X-Authenticated-User", create_without_auth.json()["error"]["message"])
+
+                create_with_wrong_header = client.post(
+                    "/inventories",
+                    headers={"X-Actor-Id": "untrusted-user"},
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(401, create_with_wrong_header.status_code)
+                self.assertEqual("authentication_required", create_with_wrong_header.json()["error"]["code"])
+
+                created_inventory = client.post(
+                    "/inventories",
+                    headers={"X-Authenticated-User": "shared-user"},
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                add_without_auth = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(401, add_without_auth.status_code)
+                self.assertEqual("authentication_required", add_without_auth.json()["error"]["code"])
+
+    def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            auth_headers = {"X-Authenticated-User": "shared-user", "X-Request-Id": "req-shared-add"}
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    headers={"X-Authenticated-User": "shared-user"},
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers=auth_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                patched = client.patch(
+                    f"/inventories/personal/items/{added.json()['item_id']}",
+                    headers={"X-Authenticated-User": "shared-user", "X-Request-Id": "req-shared-finish"},
+                    json={"finish": "foil"},
+                )
+                self.assertEqual(200, patched.status_code)
+
+                audit = client.get(
+                    "/inventories/personal/audit",
+                    headers={"X-Authenticated-User": "shared-user"},
+                )
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_finish", audit.json()[0]["action"])
+                self.assertEqual("api", audit.json()[0]["actor_type"])
+                self.assertEqual("shared-user", audit.json()[0]["actor_id"])
+                self.assertEqual("req-shared-finish", audit.json()[0]["request_id"])
+
+    def test_demo_api_can_optionally_trust_actor_headers_in_dev_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path, trust_actor_headers=True) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
                     "/inventories/personal/items",
                     headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-dev-mode"},
                     json={
@@ -352,41 +890,107 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(201, added.status_code)
 
-                audit = await client.get("/inventories/personal/audit")
+                audit = client.get("/inventories/personal/audit")
                 self.assertEqual(200, audit.status_code)
                 self.assertEqual("add_card", audit.json()[0]["action"])
                 self.assertEqual("api", audit.json()[0]["actor_type"])
                 self.assertEqual("web-user", audit.json()[0]["actor_id"])
                 self.assertEqual("req-dev-mode", audit.json()[0]["request_id"])
 
-                health = await client.get("/health")
+                health = client.get("/health")
                 self.assertEqual(200, health.status_code)
                 self.assertTrue(health.json()["trusted_actor_headers"])
 
-    async def test_demo_api_returns_contract_error_envelopes(self) -> None:
+    def test_demo_api_returns_contract_error_envelopes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
-            async with self._client(db_path) as client:
-                missing_inventory = await client.get("/inventories/missing/items")
+            with self._client(db_path) as client:
+                missing_inventory = client.get("/inventories/missing/items")
                 self.assertEqual(404, missing_inventory.status_code)
                 self.assertEqual("not_found", missing_inventory.json()["error"]["code"])
 
-                invalid_patch = await client.patch(
+                invalid_patch = client.patch(
                     "/inventories/missing/items/1",
                     json={"quantity": 1, "finish": "foil"},
                 )
                 self.assertEqual(400, invalid_patch.status_code)
                 self.assertEqual("validation_error", invalid_patch.json()["error"]["code"])
 
-    async def test_demo_api_rejects_invalid_limit_values(self) -> None:
+    def test_demo_api_rejects_unsupported_finishes_for_a_printing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
-            async with self._client(db_path) as client:
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                invalid_add = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "foil",
+                    },
+                )
+                self.assertEqual(400, invalid_add.status_code)
+                self.assertEqual("validation_error", invalid_add.json()["error"]["code"])
+                self.assertIn("Available finishes: normal", invalid_add.json()["error"]["message"])
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                invalid_finish_patch = client.patch(
+                    f"/inventories/personal/items/{added.json()['item_id']}",
+                    json={"finish": "foil"},
+                )
+                self.assertEqual(400, invalid_finish_patch.status_code)
+                self.assertEqual("validation_error", invalid_finish_patch.json()["error"]["code"])
+                self.assertIn(
+                    "Available finishes: normal",
+                    invalid_finish_patch.json()["error"]["message"],
+                )
+
+    def test_demo_api_rejects_blank_search_queries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                blank = client.get("/cards/search", params={"query": ""})
+                self.assertEqual(400, blank.status_code)
+                self.assertEqual("validation_error", blank.json()["error"]["code"])
+                self.assertIn("query is required", blank.json()["error"]["message"])
+
+                whitespace = client.get("/cards/search", params={"query": "   "})
+                self.assertEqual(400, whitespace.status_code)
+                self.assertEqual("validation_error", whitespace.json()["error"]["code"])
+                self.assertIn("query is required", whitespace.json()["error"]["message"])
+
+                grouped_blank = client.get("/cards/search/names", params={"query": ""})
+                self.assertEqual(400, grouped_blank.status_code)
+                self.assertEqual("validation_error", grouped_blank.json()["error"]["code"])
+                self.assertIn("query is required", grouped_blank.json()["error"]["message"])
+
+    def test_demo_api_rejects_invalid_limit_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
                 responses = [
-                    await client.get("/cards/search", params={"query": "API", "limit": -1}),
-                    await client.get("/cards/search", params={"query": "API", "limit": 0}),
-                    await client.get("/inventories/personal/items", params={"limit": -1}),
-                    await client.get("/inventories/personal/audit", params={"limit": -1}),
+                    client.get("/cards/search", params={"query": "API", "limit": -1}),
+                    client.get("/cards/search", params={"query": "API", "limit": 0}),
+                    client.get("/inventories/personal/items", params={"limit": -1}),
+                    client.get("/inventories/personal/audit", params={"limit": -1}),
                 ]
 
                 for response in responses:

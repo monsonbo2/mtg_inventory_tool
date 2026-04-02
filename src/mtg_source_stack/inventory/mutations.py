@@ -24,6 +24,7 @@ from .normalize import (
     parse_tags,
     tags_to_json,
     text_or_none,
+    validate_supported_finish,
 )
 from .policies import ensure_add_card_metadata_compatible, resolve_merge_acquisition, row_matches_identity
 from .query_inventory import (
@@ -63,6 +64,7 @@ def add_card_with_connection(
     inventory_slug: str,
     inventory_display_name: str | None = None,
     scryfall_id: str | None,
+    oracle_id: str | None = None,
     tcgplayer_product_id: str | None = None,
     name: str | None,
     set_code: str | None,
@@ -71,12 +73,13 @@ def add_card_with_connection(
     quantity: int,
     condition_code: str,
     finish: str,
-    language_code: str,
+    language_code: str | None,
     location: str,
     acquisition_price: Decimal | None,
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
+    resolved_card: sqlite3.Row | None = None,
     inventory_cache: dict[str, sqlite3.Row] | None = None,
     before_write: Callable[[], Any] | None = None,
     actor_type: str = "cli",
@@ -88,7 +91,7 @@ def add_card_with_connection(
 
     normalized_condition = normalize_condition_code(condition_code)
     normalized_finish = normalize_finish(finish)
-    normalized_language = normalize_language_code(language_code)
+    explicit_language = text_or_none(language_code)
     normalized_location = text_or_none(location) or ""
     normalized_acquisition_price = coerce_decimal(acquisition_price)
     normalized_acquisition_currency = normalize_currency_code(acquisition_currency)
@@ -111,15 +114,30 @@ def add_card_with_connection(
         auto_create=inventory_display_name is not None,
     )
 
-    card = resolve_card_row(
-        connection,
-        scryfall_id=scryfall_id,
-        tcgplayer_product_id=normalize_external_id(tcgplayer_product_id),
-        name=name,
-        set_code=set_code,
-        collector_number=collector_number,
-        lang=lang,
-    )
+    card = resolved_card
+    if card is None:
+        card = resolve_card_row(
+            connection,
+            scryfall_id=scryfall_id,
+            oracle_id=oracle_id,
+            tcgplayer_product_id=normalize_external_id(tcgplayer_product_id),
+            name=name,
+            set_code=set_code,
+            collector_number=collector_number,
+            lang=lang,
+            finish=normalized_finish,
+        )
+    validate_supported_finish(card["finishes_json"], normalized_finish)
+    resolved_language = normalize_language_code(card["lang"])
+    if explicit_language is None:
+        normalized_language = resolved_language
+    else:
+        normalized_language = normalize_language_code(explicit_language)
+        if normalized_language != resolved_language:
+            raise ValidationError(
+                "language_code must match the resolved printing language. "
+                f"Printing language: {resolved_language}; requested language_code: {normalized_language}."
+            )
 
     new_tags = parse_tags(tags)
     # Re-adding the same logical row should accumulate tags instead of replacing
@@ -270,6 +288,7 @@ def add_card(
     inventory_slug: str,
     inventory_display_name: str | None = None,
     scryfall_id: str | None,
+    oracle_id: str | None = None,
     tcgplayer_product_id: str | None = None,
     name: str | None,
     set_code: str | None,
@@ -278,7 +297,7 @@ def add_card(
     quantity: int,
     condition_code: str,
     finish: str,
-    language_code: str,
+    language_code: str | None,
     location: str,
     acquisition_price: Decimal | None,
     acquisition_currency: str | None,
@@ -295,6 +314,7 @@ def add_card(
             inventory_slug=inventory_slug,
             inventory_display_name=inventory_display_name,
             scryfall_id=scryfall_id,
+            oracle_id=oracle_id,
             tcgplayer_product_id=tcgplayer_product_id,
             name=name,
             set_code=set_code,
@@ -451,6 +471,7 @@ def set_finish_with_connection(
     item = get_inventory_item_row(connection, inventory_slug, item_id)
     before_snapshot = inventory_item_result_from_row(item)
     normalized_finish = normalize_finish(finish)
+    validate_supported_finish(item["finishes_json"], normalized_finish)
     if normalized_finish == item["finish"]:
         return SetFinishResult(
             **inventory_item_response_kwargs(before_snapshot),
@@ -827,6 +848,7 @@ def split_row(
         target_condition = normalize_condition_code(condition_code) if condition_code is not None else source_item["condition_code"]
         target_finish = normalize_finish(finish) if finish is not None else source_item["finish"]
         target_language = normalize_language_code(language_code) if language_code is not None else source_item["language_code"]
+        validate_supported_finish(source_item["finishes_json"], target_finish)
         if clear_location:
             target_location = ""
         elif location is not None:

@@ -7,7 +7,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-remove-forest",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Forest",
@@ -39,7 +39,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-add-forest",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": null,
     "after": {
       "inventory": "personal",
@@ -73,7 +73,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-clear-acquisition-sol-ring",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Sol Ring",
@@ -122,7 +122,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-clear-tags-sol-ring",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Sol Ring",
@@ -172,7 +172,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-finish-sol-ring",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Sol Ring",
@@ -228,7 +228,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-add-sol-ring",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": null,
     "after": {
       "inventory": "personal",
@@ -263,7 +263,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-condition-swords",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Swords to Plowshares",
@@ -314,7 +314,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-add-swords",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": null,
     "after": {
       "inventory": "personal",
@@ -346,7 +346,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-quantity-counterspell",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Counterspell",
@@ -402,7 +402,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-location-counterspell",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Counterspell",
@@ -459,7 +459,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-tags-counterspell",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": {
       "inventory": "personal",
       "card_name": "Counterspell",
@@ -511,7 +511,7 @@
     "actor_type": "seed",
     "actor_id": "frontend-bootstrap",
     "request_id": "seed-add-counterspell",
-    "occurred_at": "2026-04-01 20:41:10",
+    "occurred_at": "2026-04-02T01:07:30Z",
     "before": null,
     "after": {
       "inventory": "personal",
@@ -531,6 +531,150 @@
       "notes": null,
       "tags": [
         "control"
+      ]
+    },
+    "metadata": {
+      "mode": "create"
+    }
+  },
+  {
+    "id": 3,
+    "inventory": "personal",
+    "item_id": 1,
+    "action": "set_notes",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-notes-bolt",
+    "occurred_at": "2026-04-02T01:07:30Z",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Lightning Bolt",
+      "set_code": "lea",
+      "set_name": "Limited Edition Alpha",
+      "collector_number": "161",
+      "scryfall_id": "demo-bolt",
+      "item_id": 1,
+      "quantity": 2,
+      "finish": "foil",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Red Binder",
+      "acquisition_price": "2.25",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "burn",
+        "trade"
+      ]
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Lightning Bolt",
+      "set_code": "lea",
+      "set_name": "Limited Edition Alpha",
+      "collector_number": "161",
+      "scryfall_id": "demo-bolt",
+      "item_id": 1,
+      "quantity": 2,
+      "finish": "foil",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Red Binder",
+      "acquisition_price": "2.25",
+      "acquisition_currency": "USD",
+      "notes": "Showcase card for the demo UI.",
+      "tags": [
+        "burn",
+        "trade"
+      ]
+    },
+    "metadata": {}
+  },
+  {
+    "id": 2,
+    "inventory": "personal",
+    "item_id": 1,
+    "action": "set_finish",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-finish-bolt",
+    "occurred_at": "2026-04-02T01:07:30Z",
+    "before": {
+      "inventory": "personal",
+      "card_name": "Lightning Bolt",
+      "set_code": "lea",
+      "set_name": "Limited Edition Alpha",
+      "collector_number": "161",
+      "scryfall_id": "demo-bolt",
+      "item_id": 1,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Red Binder",
+      "acquisition_price": "2.25",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "burn",
+        "trade"
+      ]
+    },
+    "after": {
+      "inventory": "personal",
+      "card_name": "Lightning Bolt",
+      "set_code": "lea",
+      "set_name": "Limited Edition Alpha",
+      "collector_number": "161",
+      "scryfall_id": "demo-bolt",
+      "item_id": 1,
+      "quantity": 2,
+      "finish": "foil",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Red Binder",
+      "acquisition_price": "2.25",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "burn",
+        "trade"
+      ]
+    },
+    "metadata": {
+      "old_finish": "normal",
+      "new_finish": "foil"
+    }
+  },
+  {
+    "id": 1,
+    "inventory": "personal",
+    "item_id": 1,
+    "action": "add_card",
+    "actor_type": "seed",
+    "actor_id": "frontend-bootstrap",
+    "request_id": "seed-add-bolt",
+    "occurred_at": "2026-04-02T01:07:30Z",
+    "before": null,
+    "after": {
+      "inventory": "personal",
+      "card_name": "Lightning Bolt",
+      "set_code": "lea",
+      "set_name": "Limited Edition Alpha",
+      "collector_number": "161",
+      "scryfall_id": "demo-bolt",
+      "item_id": 1,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Red Binder",
+      "acquisition_price": "2.25",
+      "acquisition_currency": "USD",
+      "notes": null,
+      "tags": [
+        "burn",
+        "trade"
       ]
     },
     "metadata": {

@@ -45,6 +45,7 @@ The current intended demo surface is:
 
 - inventory selector
 - card search
+- card-name search plus printing lookup
 - add card flow
 - owned rows table
 - quick edit for quantity, finish, location, notes, and tags
@@ -56,8 +57,17 @@ Use this as the first-pass UI-to-endpoint map:
 
 - Inventory selector -> `GET /inventories`
 - Card search -> `GET /cards/search`
+- Card-name search -> `GET /cards/search/names`
+  Returns one row per card/oracle and includes `available_languages`.
+- Printing lookup for a selected card -> `GET /cards/oracle/{oracle_id}/printings`
+  Defaults to English printings when available; use `lang=all` or a specific
+  language code to expand the list.
 - Add card -> `POST /inventories/{inventory_slug}/items`
+  Accepts printing-level identifiers like `scryfall_id` and card-level
+  `oracle_id`. When `language_code` is omitted, the backend stores the
+  resolved printing language.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
+  Returned rows include `allowed_finishes` for safe finish-edit controls.
 - Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"quantity": ...}`
 - Quick edit finish -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
@@ -104,6 +114,9 @@ Use this as the first-pass UI-to-endpoint map:
 - If you do not want a proxy:
   coordinate a backend change first instead of silently working around the
   current API boundary
+- For the first live shared-service deployment:
+  assume a same-origin reverse proxy that publishes `/api` publicly and strips
+  that prefix before forwarding to the backend root-route API
 
 Example Vite proxy:
 
@@ -128,14 +141,27 @@ export default {
   requests into the backend/API layer.
 - The frontend may do UX validation, but backend validation remains the source
   of truth.
-- `X-Actor-Id` is ignored by default by the API shell. Audit writes will appear
-  as `local-demo` unless trusted-header mode is deliberately enabled.
+- In `local_demo`, `X-Actor-Id` is ignored by default by the API shell. Audit
+  writes will appear as `local-demo` unless trusted-header mode is
+  deliberately enabled.
+- `shared_service` uses verified upstream identity headers such as
+  `X-Authenticated-User` and optionally `X-Authenticated-Roles`; frontend code
+  should not treat `X-Actor-Id` as the shared-service auth model.
 
 ## Known Limits
 
-- The current API shell is suitable for local/demo use, not shared deployment.
+- The current frontend sandbox should keep using the default `local_demo` API
+  posture for local work.
+- The backend now also has a `shared_service` startup mode for pre-migrated,
+  single-host deployments. In that mode, all current non-health routes require
+  an authenticated `editor` user, and `admin` is reserved for maintenance
+  surfaces. Broader deployment policy is not finished yet.
+- The recommended first-live deployment shape is same-origin and proxy-based,
+  not separate-origin CORS.
 - The backend still uses synchronous SQLite-backed services under the HTTP
-  layer.
-- Authentication and permissions are not implemented yet.
+  layer, with sync HTTP route handlers aligned to that service boundary.
+- The current backend permission model is intentionally coarse:
+  authenticated `editor` access for the app routes, with `admin` reserved for
+  maintenance surfaces.
 - Browser-based local dev is expected to use a frontend proxy unless backend
   CORS behavior is changed deliberately.

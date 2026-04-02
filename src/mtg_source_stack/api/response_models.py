@@ -1,4 +1,4 @@
-"""Pydantic response models for the local-demo web API."""
+"""Pydantic response models for the MTG Inventory Tool web API."""
 
 from __future__ import annotations
 
@@ -24,6 +24,9 @@ LANGUAGE_CODE_RESPONSE_DESCRIPTION = (
 )
 SEARCH_LANG_RESPONSE_DESCRIPTION = (
     f"Catalog language code. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
+)
+AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION = (
+    f"Catalog language codes available for the matched card. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
 )
 
 
@@ -75,6 +78,15 @@ class CatalogSearchRowResponse(ApiBaseModel):
     image_uri_normal: str | None
 
 
+class CatalogNameSearchRowResponse(ApiBaseModel):
+    oracle_id: str
+    name: str
+    printings_count: int
+    available_languages: list[str] = Field(description=AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION)
+    image_uri_small: str | None
+    image_uri_normal: str | None
+
+
 class OwnedInventoryRowResponse(ApiBaseModel):
     item_id: int
     scryfall_id: str
@@ -88,6 +100,9 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     quantity: int
     condition_code: str = Field(description=CONDITION_CODE_RESPONSE_DESCRIPTION)
     finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
+    allowed_finishes: list[Literal["normal", "foil", "etched"]] = Field(
+        description=FINISH_RESPONSE_DESCRIPTION
+    )
     language_code: str = Field(description=LANGUAGE_CODE_RESPONSE_DESCRIPTION)
     location: str | None
     tags: list[str]

@@ -1,0 +1,33 @@
+[
+  {
+    "scryfall_id": "demo-lightning-bolt-en",
+    "name": "Lightning Bolt",
+    "set_code": "lea",
+    "set_name": "Limited Edition Alpha",
+    "collector_number": "161",
+    "lang": "en",
+    "rarity": "common",
+    "finishes": [
+      "normal"
+    ],
+    "tcgplayer_product_id": null,
+    "image_uri_small": "https://example.test/cards/lightning-bolt-en-small.jpg",
+    "image_uri_normal": "https://example.test/cards/lightning-bolt-en-normal.jpg"
+  },
+  {
+    "scryfall_id": "demo-lightning-bolt-ja",
+    "name": "Lightning Bolt",
+    "set_code": "sta",
+    "set_name": "Strixhaven Mystical Archive",
+    "collector_number": "138",
+    "lang": "ja",
+    "rarity": "rare",
+    "finishes": [
+      "normal",
+      "foil"
+    ],
+    "tcgplayer_product_id": null,
+    "image_uri_small": "https://example.test/cards/lightning-bolt-ja-small.jpg",
+    "image_uri_normal": "https://example.test/cards/lightning-bolt-ja-normal.jpg"
+  }
+]

@@ -1,9 +1,9 @@
 {
-  "scryfall_id": "demo-bolt",
+  "oracle_id": "demo-bolt-oracle",
+  "lang": "ja",
   "quantity": 2,
   "condition_code": "NM",
   "finish": "normal",
-  "language_code": "en",
   "location": "Red Binder",
   "acquisition_price": "2.25",
   "acquisition_currency": "USD",

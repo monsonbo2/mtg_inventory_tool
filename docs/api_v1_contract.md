@@ -17,7 +17,13 @@ preserve for the first API-backed version of the project.
 - Catalog search rows and owned inventory rows may include optional visual
   fields such as `image_uri_small` and `image_uri_normal` when card image data
   is available.
-- Dates remain ISO-8601 strings.
+- Card-name search rows include `available_languages` so the frontend can hint
+  when alternate-language printings exist before fetching the full printing
+  list.
+- Owned inventory rows include `allowed_finishes` so edit UIs can constrain
+  finish changes without doing an extra catalog lookup.
+- Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
+  explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
   mutation family per request: quantity, finish, location, condition, notes,
   tags, or acquisition.
@@ -46,13 +52,35 @@ preserve for the first API-backed version of the project.
 - `language_code`
   - commonly published canonical codes: `en`, `ja`, `de`, `fr`, `it`, `es`,
     `pt`, `ru`, `ko`, `zhs`, `zht`, `ph`
-  - default request value: `en`
+  - add-item requests inherit the resolved printing language when
+    `language_code` is omitted
   - language-name aliases such as `english` and `japanese` are accepted and
     normalized
+- `POST /inventories/{inventory_slug}/items`
+  - accepts `scryfall_id`, `oracle_id`, `tcgplayer_product_id`, or exact
+    `name` as identifier inputs
+  - `oracle_id` resolves to one printing by backend policy rather than storing
+    `oracle_id` directly on inventory rows
+  - when `language_code` is omitted, the stored owned language inherits the
+    resolved printing language
+  - if `language_code` is explicitly provided and does not match the resolved
+    printing language, the request returns `400 validation_error`
 - `GET /cards/search` query `lang`
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language
     values rather than enforcing a strict enum at the HTTP layer
+- `GET /cards/search` query `query`
+  - must be non-empty after trimming whitespace
+  - blank or whitespace-only search queries return `400 validation_error`
+- `GET /cards/search/names`
+  - groups results by `oracle_id`
+  - prefers an English representative row and image when available
+  - includes `available_languages` for the matched card
+- `GET /cards/oracle/{oracle_id}/printings`
+  - returns printing-level rows for one `oracle_id`
+  - defaults to English printings when available
+  - accepts `lang=all` to include all available catalog languages
+  - accepts specific language codes such as `lang=ja` to request one language
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For
@@ -75,6 +103,7 @@ The API layer should return errors in this shape:
 
 ## HTTP Error Mapping
 
+- `AuthenticationError` -> `401`
 - `ValidationError` -> `400`
 - `NotFoundError` -> `404`
 - `ConflictError` -> `409`
@@ -101,19 +130,53 @@ before the generic 500 envelope is returned.
 ## Execution Model
 
 - The JSON and error contract is the stable part of web-v1.
-- Transport/runtime concurrency guarantees are not yet part of this contract.
-- The current API shell is intended for trusted local/demo usage and currently
-  wraps synchronous inventory and SQLite-backed services.
-- By default, the API ignores caller-supplied `X-Actor-Id` values and records
-  mutating audit entries with `actor_type="api"` and `actor_id="local-demo"`.
-- For explicit local/dev testing, setting
+- The current API shell supports two runtime modes:
+  - `local_demo`, the default local-first posture for UI and contract work
+  - `shared_service`, a safer startup posture for a pre-migrated, single-host
+    SQLite deployment
+- The HTTP route boundary now uses sync route handlers to match the current
+  synchronous inventory and SQLite-backed service layer.
+- Broader transport/runtime guarantees are still intentionally modest and
+  single-host scoped in web-v1.
+- `shared_service` assumes a single-host SQLite deployment with WAL and
+  busy-timeout configured by the shared connection layer.
+- The recommended first-live browser deployment is same-origin through a reverse
+  proxy that publishes `/api` publicly and strips that prefix before forwarding
+  to the backend root-route surface.
+- In `local_demo`, the API ignores caller-supplied `X-Actor-Id` values and
+  records mutating audit entries with `actor_type="api"` and
+  `actor_id="local-demo"`.
+- For explicit local/dev testing in `local_demo`, setting
   `MTG_API_TRUST_ACTOR_HEADERS=true` allows non-empty `X-Actor-Id` header
   values to flow into audit attribution.
+- `shared_service` disables auto-migrate by default. It should be started
+  against a pre-migrated database and a single app process for now.
+- In `shared_service`, every current app route except `/health` requires a
+  verified upstream user header. The default header name is
+  `X-Authenticated-User`, and it can be overridden with
+  `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
+- In `shared_service`, the API also accepts a normalized roles header. The
+  default header name is `X-Authenticated-Roles`, and it can be overridden with
+  `MTG_API_AUTHENTICATED_ROLES_HEADER`.
+- The current recognized app roles are `editor` and `admin`.
+- If the verified user header is present and the roles header is missing, the
+  API defaults that caller to `editor`.
+- `admin` implies `editor`.
+- In `shared_service`, caller-controlled `X-Actor-Id` values are not part of
+  the trust boundary for audit attribution.
+- In `shared_service`, `MTG_API_TRUST_ACTOR_HEADERS=true` is not a valid
+  startup posture.
+- In `shared_service`, blank or colliding verified-user header names are
+  rejected at startup.
+- The current deployment guidance expects the reverse proxy to strip any
+  client-supplied identity headers before injecting verified values.
+- Snapshot backup and restore are part of the supported recovery model for the
+  current shared-service SQLite posture.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
-- The demo API logs startup mode and unexpected failures, but it still needs a
-  dedicated execution-boundary / concurrency-hardening pass before broader
-  deployment.
+- The API logs startup mode and unexpected failures. The main remaining
+  blockers before broader shared deployment are finer-grained permission rules
+  for admin-only surfaces and broader deployment policy choices.
 
 ## Notes For Web V1
 

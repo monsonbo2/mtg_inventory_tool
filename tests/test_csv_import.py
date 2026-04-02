@@ -93,6 +93,27 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             )
         )
 
+    def test_build_add_card_kwargs_accepts_oracle_id_without_defaulting_owned_language(self) -> None:
+        row = normalize_csv_row(
+            {
+                "Inventory": "personal",
+                "Oracle ID": "oracle-csv-1",
+                "Quantity": "1",
+                "Finish": "foil",
+            }
+        )
+
+        add_kwargs = build_add_card_kwargs_from_csv_row(
+            row,
+            row_number=2,
+            default_inventory=None,
+        )
+
+        self.assertIsNotNone(add_kwargs)
+        assert add_kwargs is not None
+        self.assertEqual("oracle-csv-1", add_kwargs["oracle_id"])
+        self.assertIsNone(add_kwargs["language_code"])
+
     def test_import_csv_returns_serialized_rows_and_creates_inventory_from_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -180,6 +201,91 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual("USD", item_row["acquisition_currency"])
             self.assertEqual("Imported from CSV", item_row["notes"])
 
+    def test_import_csv_accepts_oracle_id_and_infers_resolved_printing_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "inventory_import.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json
+                    )
+                    VALUES (?, 'csv-oracle-add', 'CSV Oracle Card', ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            "csv-oracle-ja",
+                            "neo",
+                            "Kamigawa: Neon Dynasty",
+                            "21",
+                            "ja",
+                            "2024-02-01",
+                            '["foil"]',
+                        ),
+                        (
+                            "csv-oracle-en",
+                            "neo",
+                            "Kamigawa: Neon Dynasty",
+                            "22",
+                            "en",
+                            "2024-01-01",
+                            '["nonfoil","foil"]',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "Inventory,Oracle ID,Qty,Cond,Lang,Finish\n"
+                    "personal,csv-oracle-add,1,Near Mint,ja,foil\n"
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory=None,
+                dry_run=False,
+            )
+
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("csv-oracle-ja", report["imported_rows"][0]["scryfall_id"])
+            self.assertEqual("ja", report["imported_rows"][0]["language_code"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT scryfall_id, language_code
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual("csv-oracle-ja", item_row["scryfall_id"])
+            self.assertEqual("ja", item_row["language_code"])
+
     def test_import_csv_reports_invalid_acquisition_values_with_row_number(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -205,7 +311,7 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
 
             self.assertFalse(db_path.exists())
 
-    def test_import_csv_leaves_finish_unchanged_when_csv_omits_it(self) -> None:
+    def test_import_csv_infers_single_supported_finish_when_csv_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
             db_path = tmp / "collection.db"
@@ -248,8 +354,9 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             )
             self.assertIn("Created inventory 'personal'", create_output)
 
-            # When the CSV omits finish, the import should keep the default
-            # inventory finish instead of inferring one from the catalog.
+            # When the CSV omits finish and the printing only has one legal
+            # finish, the importer can infer it safely instead of forcing the
+            # user to restate the only available option.
             csv_import_output = self.run_cli(
                 "import-csv",
                 "--db",
@@ -260,32 +367,70 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
                 "personal",
             )
             self.assertIn("Rows imported: 1", csv_import_output)
-            self.assertIn("Shiny Bird", csv_import_output)
-            self.assertNotIn("Automatic finish adjustments", csv_import_output)
 
-            owned_output = self.run_cli(
-                "list-owned",
-                "--db",
-                str(db_path),
-                "--inventory",
-                "personal",
-                "--provider",
-                "tcgplayer",
-            )
-            self.assertIn("Shiny Bird", owned_output)
-            self.assertIn("normal", owned_output)
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT finish
+                    FROM inventory_items
+                    """
+                ).fetchone()
 
-            gap_output = self.run_cli(
-                "price-gaps",
-                "--db",
-                str(db_path),
-                "--inventory",
-                "personal",
-                "--provider",
-                "tcgplayer",
+            self.assertEqual("foil", item_row["finish"])
+
+    def test_import_csv_rejects_ambiguous_missing_finish_with_row_number(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "inventory_import.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-ambiguous',
+                        'csv-oracle-ambiguous',
+                        'Ambiguous Finish Card',
+                        'tst',
+                        'Test Set',
+                        '8',
+                        'en',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "Collection Name,Scryfall ID,Qty,Cond\n"
+                    "Trade Binder,csv-card-ambiguous,1,NM\n"
+                ),
+                encoding="utf-8",
             )
-            self.assertIn("Shiny Bird", gap_output)
-            self.assertIn("foil", gap_output)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "CSV row 2: finish is required for this printing when multiple finishes are available. "
+                "Available finishes: normal, foil.",
+            ):
+                import_csv(
+                    db_path,
+                    csv_path=csv_path,
+                    default_inventory=None,
+                    dry_run=False,
+                )
 
     def test_import_csv_dry_run_writes_report_and_leaves_db_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
