@@ -18,6 +18,11 @@ import { SearchPanel } from "./components/SearchPanel";
 import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
 import {
+  getSearchCardGroupId,
+  groupCatalogSearchRows,
+  type SearchCardGroup,
+} from "./searchResultHelpers";
+import {
   applyInventoryTableQuery,
   createDefaultInventoryTableFilters,
   getInventoryTableFilterOptions,
@@ -51,6 +56,9 @@ import type {
 const AUTOCOMPLETE_MIN_QUERY_LENGTH = 2;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 const AUTOCOMPLETE_LIMIT = 5;
+const SEARCH_RESULT_PRINTING_LIMIT = 100;
+const SEARCH_GROUP_LIMIT = 8;
+const PRINTING_LOOKUP_LIMIT = 100;
 
 export default function App() {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
@@ -85,6 +93,8 @@ export default function App() {
   const inventoryViewRequestIdRef = useRef(0);
   const suggestionLookupRequestIdRef = useRef(0);
   const suggestionCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
+  const printingLookupCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
+  const printingLookupPromisesRef = useRef<Record<string, Promise<CatalogSearchRow[]>>>({});
   const skipSuggestionFetchQueryRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -380,7 +390,10 @@ export default function App() {
     setNotice(null);
 
     try {
-      const results = await searchCards({ query: trimmed, limit: 8 });
+      const results = await searchCards({
+        query: trimmed,
+        limit: SEARCH_RESULT_PRINTING_LIMIT,
+      });
       setSearchResults(results);
       setSearchStatus("ready");
     } catch (error) {
@@ -446,6 +459,42 @@ export default function App() {
     setSearchQuery(query);
     closeSuggestionList();
     await runCardSearch(query);
+  }
+
+  async function loadSearchGroupPrintings(group: SearchCardGroup) {
+    const cachedPrintings = printingLookupCacheRef.current[group.groupId];
+    if (cachedPrintings) {
+      return cachedPrintings;
+    }
+
+    const inFlightRequest = printingLookupPromisesRef.current[group.groupId];
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    const request = searchCards({
+      query: group.name,
+      exact: true,
+      limit: PRINTING_LOOKUP_LIMIT,
+    })
+      .then((results) => {
+        const nextPrintings = results.filter(
+          (result) => getSearchCardGroupId(result.name) === group.groupId,
+        );
+        if (!nextPrintings.length) {
+          throw new Error(`No printings are currently available for ${group.name}.`);
+        }
+        printingLookupCacheRef.current[group.groupId] = nextPrintings;
+        delete printingLookupPromisesRef.current[group.groupId];
+        return nextPrintings;
+      })
+      .catch((error) => {
+        delete printingLookupPromisesRef.current[group.groupId];
+        throw error;
+      });
+
+    printingLookupPromisesRef.current[group.groupId] = request;
+    return request;
   }
 
   async function handleAddCard(payload: AddInventoryItemRequest) {
@@ -567,6 +616,7 @@ export default function App() {
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
   );
+  const searchGroups = groupCatalogSearchRows(searchResults).slice(0, SEARCH_GROUP_LIMIT);
   const visibleTableItems = applyInventoryTableQuery(items, tableSort, tableFilters);
   const tableFilterOptions = getInventoryTableFilterOptions(items);
 
@@ -614,14 +664,15 @@ export default function App() {
             onNotice={reportNotice}
             onSearchFieldFocus={handleSearchFieldFocus}
             onSearchInputKeyDown={handleSearchInputKeyDown}
+            onLoadPrintings={loadSearchGroupPrintings}
             onSearchQueryChange={handleSearchQueryChange}
             onSearchSubmit={handleSearchSubmit}
             onSuggestionHighlight={setHighlightedSuggestionIndex}
             onSuggestionRequestClose={handleSuggestionRequestClose}
             onSuggestionSelect={handleSuggestionSelect}
             searchError={searchError}
+            searchGroups={searchGroups}
             searchQuery={searchQuery}
-            searchResults={searchResults}
             searchStatus={searchStatus}
             selectedInventoryRow={selectedInventoryRow}
             suggestionError={suggestionError}

@@ -921,6 +921,38 @@ button {
   margin: 6px 0 0;
 }
 
+.search-result-summary {
+  margin: 12px 0 0;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.search-result-toggle {
+  margin-top: 16px;
+}
+
+.search-result-quick-add-grid,
+.search-printing-state {
+  display: grid;
+  gap: 12px;
+}
+
+.search-result-quick-add-grid {
+  grid-template-columns: minmax(0, 1.8fr) repeat(2, minmax(0, 1fr));
+}
+
+.search-printing-field {
+  min-width: 0;
+}
+
+.search-printing-meta {
+  margin-top: 14px;
+}
+
+.search-printing-state .secondary-button {
+  justify-self: start;
+}
+
 .row-status-label {
   margin: 10px 0 0;
   font-size: 0.82rem;
@@ -1388,6 +1420,7 @@ button {
   .editor-grid,
   .inventory-summary-bar,
   .mini-grid,
+  .search-result-quick-add-grid,
   .compact-row-stats {
     grid-template-columns: 1fr;
   }

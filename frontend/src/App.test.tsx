@@ -21,6 +21,7 @@ vi.mock("./api", async () => {
 });
 
 import {
+  addInventoryItem,
   listInventories,
   listInventoryItems,
   listInventoryAudit,
@@ -58,6 +59,23 @@ describe("App", () => {
       est_value: "4.00",
       price_date: "2026-04-01",
       notes: "Main deck",
+      ...overrides,
+    };
+  }
+
+  function buildSearchRow(overrides: Partial<CatalogSearchRow> = {}): CatalogSearchRow {
+    return {
+      scryfall_id: "bolt-1",
+      name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      lang: "en",
+      rarity: "common",
+      finishes: ["normal"],
+      tcgplayer_product_id: "1001",
+      image_uri_small: null,
+      image_uri_normal: null,
       ...overrides,
     };
   }
@@ -285,12 +303,115 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(searchCards).toHaveBeenCalledWith(
-        expect.objectContaining({ query: "Force of Will", limit: 8 }),
+        expect.objectContaining({ query: "Force of Will", limit: 100 }),
       );
     });
     expect(input).toHaveValue("Force of Will");
     expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Force of Will" })).toBeInTheDocument();
+  });
+
+  it("groups name-first search results and adds the selected printing from quick add", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCards).mockImplementation(async (params) => {
+      if (params.query === "Lightning" && !params.exact) {
+        return [
+          buildSearchRow({
+            scryfall_id: "bolt-alpha",
+            name: "Lightning Bolt",
+            set_code: "lea",
+            set_name: "Limited Edition Alpha",
+            collector_number: "161",
+            finishes: ["normal"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-m11",
+            name: "Lightning Bolt",
+            set_code: "m11",
+            set_name: "Magic 2011",
+            collector_number: "146",
+            finishes: ["normal", "foil"],
+          }),
+          buildSearchRow({
+            scryfall_id: "blast-ice",
+            name: "Lightning Blast",
+            set_code: "ice",
+            set_name: "Ice Age",
+            collector_number: "200",
+            finishes: ["normal"],
+          }),
+        ];
+      }
+
+      if (params.query === "Lightning Bolt" && params.exact) {
+        return [
+          buildSearchRow({
+            scryfall_id: "bolt-alpha",
+            name: "Lightning Bolt",
+            set_code: "lea",
+            set_name: "Limited Edition Alpha",
+            collector_number: "161",
+            finishes: ["normal"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-m11",
+            name: "Lightning Bolt",
+            set_code: "m11",
+            set_name: "Magic 2011",
+            collector_number: "146",
+            finishes: ["normal", "foil"],
+          }),
+        ];
+      }
+
+      return [];
+    });
+    vi.mocked(addInventoryItem).mockResolvedValue({ card_name: "Lightning Bolt" } as any);
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "Lightning");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest("article");
+    expect(boltCard).not.toBeNull();
+    expect(screen.getAllByRole("heading", { name: "Lightning Bolt" })).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Lightning Blast" })).toBeInTheDocument();
+
+    await user.click(within(boltCard!).getByRole("button", { name: "Choose printing" }));
+
+    await waitFor(() => {
+      expect(searchCards).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: "Lightning Bolt",
+          exact: true,
+          limit: 100,
+        }),
+      );
+    });
+
+    const printingSelect = await within(boltCard!).findByRole("combobox", { name: "Printing" });
+    await user.selectOptions(printingSelect, "bolt-m11");
+
+    const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
+    expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
+
+    await user.selectOptions(finishSelect, "foil");
+    await user.click(within(boltCard!).getByRole("button", { name: "Add to inventory" }));
+
+    await waitFor(() => {
+      expect(addInventoryItem).toHaveBeenCalledWith(
+        "personal",
+        expect.objectContaining({
+          scryfall_id: "bolt-m11",
+          quantity: 1,
+          finish: "foil",
+        }),
+      );
+    });
   });
 
   it("closes autocomplete on escape and outside click", async () => {
