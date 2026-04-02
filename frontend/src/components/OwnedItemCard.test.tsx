@@ -5,6 +5,8 @@ import { OwnedItemCard } from "./OwnedItemCard";
 import type { OwnedInventoryRow } from "../types";
 import type { FinishSupportState } from "../uiTypes";
 
+const allowedFinishes: OwnedInventoryRow["allowed_finishes"] = ["normal", "foil"];
+
 const item: OwnedInventoryRow = {
   item_id: 7,
   scryfall_id: "card-1",
@@ -18,6 +20,7 @@ const item: OwnedInventoryRow = {
   quantity: 2,
   condition_code: "NM",
   finish: "normal",
+  allowed_finishes: allowedFinishes,
   language_code: "en",
   location: "Binder",
   tags: ["burn"],

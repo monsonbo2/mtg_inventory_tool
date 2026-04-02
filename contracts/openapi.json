@@ -676,6 +676,19 @@
             ],
             "title": "Acquisition Price"
           },
+          "allowed_finishes": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "items": {
+              "enum": [
+                "normal",
+                "foil",
+                "etched"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Finishes",
+            "type": "array"
+          },
           "collector_number": {
             "title": "Collector Number",
             "type": "string"
@@ -844,6 +857,7 @@
           "quantity",
           "condition_code",
           "finish",
+          "allowed_finishes",
           "language_code",
           "location",
           "tags",

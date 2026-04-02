@@ -17,6 +17,8 @@ preserve for the first API-backed version of the project.
 - Catalog search rows and owned inventory rows may include optional visual
   fields such as `image_uri_small` and `image_uri_normal` when card image data
   is available.
+- Owned inventory rows include `allowed_finishes` so edit UIs can constrain
+  finish changes without doing an extra catalog lookup.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
   explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
@@ -54,6 +56,9 @@ preserve for the first API-backed version of the project.
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language
     values rather than enforcing a strict enum at the HTTP layer
+- `GET /cards/search` query `query`
+  - must be non-empty after trimming whitespace
+  - blank or whitespace-only search queries return `400 validation_error`
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For

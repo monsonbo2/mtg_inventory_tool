@@ -122,6 +122,7 @@ class OwnedInventoryRow(ResponseModel):
     quantity: int
     condition_code: str
     finish: str
+    allowed_finishes: list[str]
     language_code: str
     location: str | None
     tags: list[str]

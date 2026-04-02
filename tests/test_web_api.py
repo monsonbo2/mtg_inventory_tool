@@ -164,6 +164,10 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 [{"type": "string"}, {"type": "null"}],
                 owned_properties["image_uri_normal"]["anyOf"],
             )
+            self.assertEqual(
+                ["normal", "foil", "etched"],
+                owned_properties["allowed_finishes"]["items"]["enum"],
+            )
             inventory_parameters = {
                 parameter["name"]: parameter
                 for parameter in spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["parameters"]
@@ -303,6 +307,7 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(200, listed.status_code)
                 self.assertEqual(1, len(listed.json()))
                 self.assertEqual(2, listed.json()[0]["quantity"])
+                self.assertEqual(["normal", "foil"], listed.json()[0]["allowed_finishes"])
                 self.assertEqual(
                     "https://example.test/cards/api-card-1-small.jpg",
                     listed.json()[0]["image_uri_small"],
@@ -425,6 +430,20 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
                     "Available finishes: normal",
                     invalid_finish_patch.json()["error"]["message"],
                 )
+
+    async def test_demo_api_rejects_blank_search_queries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            async with self._client(db_path) as client:
+                blank = await client.get("/cards/search", params={"query": ""})
+                self.assertEqual(400, blank.status_code)
+                self.assertEqual("validation_error", blank.json()["error"]["code"])
+                self.assertIn("query is required", blank.json()["error"]["message"])
+
+                whitespace = await client.get("/cards/search", params={"query": "   "})
+                self.assertEqual(400, whitespace.status_code)
+                self.assertEqual("validation_error", whitespace.json()["error"]["code"])
+                self.assertIn("query is required", whitespace.json()["error"]["message"])
 
     async def test_demo_api_rejects_invalid_limit_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -88,6 +88,9 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     quantity: int
     condition_code: str = Field(description=CONDITION_CODE_RESPONSE_DESCRIPTION)
     finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
+    allowed_finishes: list[Literal["normal", "foil", "etched"]] = Field(
+        description=FINISH_RESPONSE_DESCRIPTION
+    )
     language_code: str = Field(description=LANGUAGE_CODE_RESPONSE_DESCRIPTION)
     location: str | None
     tags: list[str]

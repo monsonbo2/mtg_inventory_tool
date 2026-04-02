@@ -58,6 +58,7 @@ Use this as the first-pass UI-to-endpoint map:
 - Card search -> `GET /cards/search`
 - Add card -> `POST /inventories/{inventory_slug}/items`
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
+  Returned rows include `allowed_finishes` for safe finish-edit controls.
 - Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"quantity": ...}`
 - Quick edit finish -> `PATCH /inventories/{inventory_slug}/items/{item_id}`

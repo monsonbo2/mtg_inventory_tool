@@ -98,6 +98,17 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 serialize_response(rows)[0]["image_uri_small"],
             )
 
+    def test_search_cards_rejects_blank_queries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with self.assertRaisesRegex(ValidationError, "query is required"):
+                search_cards(db_path, query="", exact=False, limit=10)
+
+            with self.assertRaisesRegex(ValidationError, "query is required"):
+                search_cards(db_path, query="   ", exact=False, limit=10)
+
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -702,6 +713,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         set_code,
                         set_name,
                         collector_number,
+                        finishes_json,
                         image_uris_json
                     )
                     VALUES (
@@ -711,6 +723,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         'tst',
                         'Test Set',
                         '1',
+                        '["normal","foil"]',
                         '{"small":"https://example.test/cards/price-card-1-small.jpg","normal":"https://example.test/cards/price-card-1-normal.jpg"}'
                     )
                     """
@@ -791,6 +804,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("USD", owned_rows[0].currency)
             self.assertEqual("https://example.test/cards/price-card-1-small.jpg", owned_rows[0].image_uri_small)
             self.assertEqual("https://example.test/cards/price-card-1-normal.jpg", owned_rows[0].image_uri_normal)
+            self.assertEqual(["normal", "foil"], owned_rows[0].allowed_finishes)
             self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
             self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)
             self.assertIsNone(owned_rows[0].acquisition_price)

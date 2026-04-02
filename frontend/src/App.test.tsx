@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { ApiClientError } from "./api";
+import type { OwnedInventoryRow } from "./types";
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -29,6 +30,32 @@ import {
 
 describe("App", () => {
   it("surfaces backend patch errors as a notice", async () => {
+    const ownedRow: OwnedInventoryRow = {
+      item_id: 7,
+      scryfall_id: "bolt-1",
+      name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      rarity: "common",
+      collector_number: "161",
+      image_uri_small: null,
+      image_uri_normal: null,
+      quantity: 2,
+      condition_code: "NM",
+      finish: "normal",
+      allowed_finishes: ["normal"],
+      language_code: "en",
+      location: "Binder",
+      tags: ["burn"],
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      currency: "USD",
+      unit_price: "2.00",
+      est_value: "4.00",
+      price_date: "2026-04-01",
+      notes: "Main deck",
+    };
+
     vi.mocked(listInventories).mockResolvedValue([
       {
         slug: "personal",
@@ -38,32 +65,7 @@ describe("App", () => {
         total_cards: 2,
       },
     ]);
-    vi.mocked(listInventoryItems).mockResolvedValue([
-      {
-        item_id: 7,
-        scryfall_id: "bolt-1",
-        name: "Lightning Bolt",
-        set_code: "lea",
-        set_name: "Limited Edition Alpha",
-        rarity: "common",
-        collector_number: "161",
-        image_uri_small: null,
-        image_uri_normal: null,
-        quantity: 2,
-        condition_code: "NM",
-        finish: "normal",
-        language_code: "en",
-        location: "Binder",
-        tags: ["burn"],
-        acquisition_price: "1.00",
-        acquisition_currency: "USD",
-        currency: "USD",
-        unit_price: "2.00",
-        est_value: "4.00",
-        price_date: "2026-04-01",
-        notes: "Main deck",
-      },
-    ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([ownedRow]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCards).mockResolvedValue([
       {

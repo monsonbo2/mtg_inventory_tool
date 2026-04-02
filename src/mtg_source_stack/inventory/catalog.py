@@ -30,6 +30,8 @@ def search_cards(
     exact: bool = False,
     limit: int = DEFAULT_SEARCH_LIMIT,
 ) -> list[CatalogSearchRow]:
+    if not query.strip():
+        raise ValidationError("query is required.")
     validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
     require_current_schema(db_path)
     with connect(db_path) as connection:

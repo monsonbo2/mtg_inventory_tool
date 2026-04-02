@@ -12,6 +12,10 @@
     "quantity": 3,
     "condition_code": "NM",
     "finish": "normal",
+    "allowed_finishes": [
+      "normal",
+      "foil"
+    ],
     "language_code": "en",
     "location": "Deck Box",
     "tags": [
@@ -39,6 +43,10 @@
     "quantity": 2,
     "condition_code": "NM",
     "finish": "foil",
+    "allowed_finishes": [
+      "normal",
+      "foil"
+    ],
     "language_code": "en",
     "location": "Red Binder",
     "tags": [
@@ -66,6 +74,10 @@
     "quantity": 1,
     "condition_code": "NM",
     "finish": "etched",
+    "allowed_finishes": [
+      "normal",
+      "etched"
+    ],
     "language_code": "en",
     "location": "Commander Staples",
     "tags": [],
@@ -90,6 +102,9 @@
     "quantity": 1,
     "condition_code": "LP",
     "finish": "normal",
+    "allowed_finishes": [
+      "normal"
+    ],
     "language_code": "ja",
     "location": "Commander Case",
     "tags": [],

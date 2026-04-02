@@ -65,6 +65,7 @@ export interface OwnedInventoryRow {
   quantity: number;
   condition_code: ConditionCode;
   finish: FinishValue;
+  allowed_finishes: FinishValue[];
   language_code: LanguageCode;
   location: string | null;
   tags: string[];

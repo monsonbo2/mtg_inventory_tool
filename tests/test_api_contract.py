@@ -115,6 +115,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "quantity": 4,
                 "condition_code": "NM",
                 "finish": "normal",
+                "allowed_finishes": ["normal", "foil"],
                 "language_code": "en",
                 "location": None,
                 "tags": ["burn", "trade"],
@@ -149,6 +150,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("2.50", owned.acquisition_price)
         self.assertEqual("3.00", owned.unit_price)
         self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
+        self.assertEqual(["normal", "foil"], owned.allowed_finishes)
         self.assertIsNone(owned.price_date)
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
@@ -169,6 +171,7 @@ class ApiContractTest(RepoSmokeTestCase):
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]
         self.assertEqual(["normal", "foil", "etched"], owned_properties["finish"]["enum"])
+        self.assertEqual(["normal", "foil", "etched"], owned_properties["allowed_finishes"]["items"]["enum"])
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
         self.assertIn("Canonical language codes: en, ja, de, fr", owned_properties["language_code"]["description"])
 
@@ -252,6 +255,8 @@ class ApiContractTest(RepoSmokeTestCase):
         service_calls = [
             lambda: search_cards(Path("var/db/not-used.db"), query="bolt", limit=0),
             lambda: search_cards(Path("var/db/not-used.db"), query="bolt", limit=-1),
+            lambda: search_cards(Path("var/db/not-used.db"), query="", limit=10),
+            lambda: search_cards(Path("var/db/not-used.db"), query="   ", limit=10),
             lambda: list_owned_filtered(
                 Path("var/db/not-used.db"),
                 inventory_slug="personal",
