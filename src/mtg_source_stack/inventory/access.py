@@ -238,6 +238,48 @@ def is_global_admin(actor_roles: Iterable[str]) -> bool:
     return "admin" in set(actor_roles)
 
 
+def actor_can_read_inventory(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    actor_id: str | None,
+    actor_roles: Iterable[str],
+) -> bool:
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        inventory_role = actor_inventory_role_with_connection(
+            connection,
+            inventory_slug=inventory_slug,
+            actor_id=actor_id,
+        )
+    return can_read_inventory(inventory_role=inventory_role, actor_roles=actor_roles)
+
+
+def actor_can_read_any_inventory(
+    db_path: str | Path,
+    *,
+    actor_id: str | None,
+    actor_roles: Iterable[str],
+) -> bool:
+    if is_global_admin(actor_roles):
+        return True
+    if actor_id is None:
+        return False
+    normalized_actor_id = _normalize_actor_id(actor_id)
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM inventory_memberships
+            WHERE actor_id = ?
+            LIMIT 1
+            """,
+            (normalized_actor_id,),
+        ).fetchone()
+    return row is not None
+
+
 def can_read_inventory(*, inventory_role: str | None, actor_roles: Iterable[str]) -> bool:
     if is_global_admin(actor_roles):
         return True

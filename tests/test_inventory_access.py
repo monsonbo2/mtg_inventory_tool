@@ -9,12 +9,15 @@ from pathlib import Path
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.inventory.service import (
+    actor_can_read_any_inventory,
+    actor_can_read_inventory,
     actor_inventory_role,
     can_read_inventory,
     can_write_inventory,
     create_inventory,
     grant_inventory_membership,
     list_inventory_memberships,
+    list_visible_inventories,
     normalize_inventory_membership_role,
     revoke_inventory_membership,
 )
@@ -113,6 +116,136 @@ class InventoryAccessTest(unittest.TestCase):
 
             memberships_after = list_inventory_memberships(db_path, inventory_slug="personal")
             self.assertEqual([("bob@example.com", "owner")], [(row.actor_id, row.role) for row in memberships_after])
+
+    def test_list_visible_inventories_filters_memberships_with_admin_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner@example.com",
+            )
+            create_inventory(
+                db_path,
+                slug="team",
+                display_name="Team Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer@example.com",
+                role="viewer",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="team",
+                actor_id="viewer@example.com",
+                role="editor",
+            )
+
+            viewer_rows = list_visible_inventories(
+                db_path,
+                actor_id="viewer@example.com",
+                actor_roles=frozenset(),
+            )
+            self.assertEqual(["personal", "team"], [row.slug for row in viewer_rows])
+
+            admin_rows = list_visible_inventories(
+                db_path,
+                actor_id="admin@example.com",
+                actor_roles={"admin"},
+            )
+            self.assertEqual(["admin-only", "personal", "team"], [row.slug for row in admin_rows])
+
+            self.assertEqual(
+                [],
+                list_visible_inventories(
+                    db_path,
+                    actor_id="outsider@example.com",
+                    actor_roles=frozenset(),
+                ),
+            )
+
+    def test_actor_read_access_respects_membership_and_admin_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer@example.com",
+                role="viewer",
+            )
+
+            self.assertTrue(
+                actor_can_read_inventory(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="viewer@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertFalse(
+                actor_can_read_inventory(
+                    db_path,
+                    inventory_slug="admin-only",
+                    actor_id="viewer@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertTrue(
+                actor_can_read_inventory(
+                    db_path,
+                    inventory_slug="admin-only",
+                    actor_id="admin@example.com",
+                    actor_roles={"admin"},
+                )
+            )
+            self.assertTrue(
+                actor_can_read_any_inventory(
+                    db_path,
+                    actor_id="viewer@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertFalse(
+                actor_can_read_any_inventory(
+                    db_path,
+                    actor_id="outsider@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertTrue(
+                actor_can_read_any_inventory(
+                    db_path,
+                    actor_id="admin@example.com",
+                    actor_roles={"admin"},
+                )
+            )
 
     def test_create_inventory_grants_owner_membership_when_actor_is_provided(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

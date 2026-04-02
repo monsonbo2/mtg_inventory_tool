@@ -21,8 +21,8 @@ from ..inventory.service import (
     add_card,
     create_inventory,
     list_card_printings_for_oracle,
-    list_inventories,
     list_inventory_audit_events,
+    list_visible_inventories,
     list_owned_filtered,
     remove_card,
     search_card_names,
@@ -39,8 +39,9 @@ from .dependencies import (
     ApiSettings,
     RequestContext,
     get_editor_request_context,
-    get_mutating_request_context,
-    get_request_context,
+    get_inventory_read_request_context,
+    get_inventory_scoped_read_request_context,
+    get_authenticated_request_context,
     get_settings,
 )
 from .request_models import (
@@ -161,9 +162,15 @@ def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str,
 )
 def inventories_list(
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
-    return _serialize(list_inventories(settings.db_path))
+    return _serialize(
+        list_visible_inventories(
+            settings.db_path,
+            actor_id=context.actor_id,
+            actor_roles=context.roles,
+        )
+    )
 
 
 @router.post(
@@ -195,7 +202,7 @@ def inventories_create(
 )
 def cards_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     query: str,
     set_code: str | None = None,
     rarity: str | None = None,
@@ -225,7 +232,7 @@ def cards_search(
 )
 def card_names_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     query: str,
     exact: bool = False,
     limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
@@ -248,7 +255,7 @@ def card_names_search(
 def card_printings_lookup(
     oracle_id: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     lang: Annotated[str | None, Query(description=PRINTINGS_LANG_DESCRIPTION)] = None,
 ) -> Any:
     return _serialize(
@@ -268,7 +275,7 @@ def card_printings_lookup(
 def inventory_items_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_read_request_context)],
     provider: str = DEFAULT_PROVIDER,
     limit: Annotated[int | None, Query(ge=1, le=MAX_OWNED_ROWS_LIMIT)] = None,
     query: str | None = None,
@@ -435,7 +442,7 @@ def inventory_items_delete(
 def inventory_audit_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_read_request_context)],
     limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_EVENT_LIMIT)] = DEFAULT_AUDIT_EVENT_LIMIT,
     item_id: int | None = None,
 ) -> Any:

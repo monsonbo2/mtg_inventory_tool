@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.inventory.service import create_inventory, grant_inventory_membership
 
 
 FASTAPI_TESTING_AVAILABLE = (
@@ -960,29 +961,104 @@ class WebApiTest(unittest.TestCase):
 
                 self.assertEqual([200, 200, 200, 200, 200], results)
 
-    def test_shared_service_read_routes_require_editor_role(self) -> None:
+    def test_shared_service_inventory_list_is_filtered_by_membership(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
             initialize_database(db_path)
-            editor_headers = {"X-Authenticated-User": "shared-user"}
-            unrecognized_role_headers = {
-                "X-Authenticated-User": "shared-user",
+            viewer_headers = {
+                "X-Authenticated-User": "viewer-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            outsider_headers = {
+                "X-Authenticated-User": "outsider-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            admin_headers = {
+                "X-Authenticated-User": "shared-admin",
+                "X-Authenticated-Roles": "admin",
+            }
+
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                anonymous_inventories = client.get("/inventories")
+                self.assertEqual(401, anonymous_inventories.status_code)
+                self.assertEqual("authentication_required", anonymous_inventories.json()["error"]["code"])
+
+                viewer_inventories = client.get("/inventories", headers=viewer_headers)
+                self.assertEqual(200, viewer_inventories.status_code)
+                self.assertEqual(["personal"], [row["slug"] for row in viewer_inventories.json()])
+
+                outsider_inventories = client.get("/inventories", headers=outsider_headers)
+                self.assertEqual(200, outsider_inventories.status_code)
+                self.assertEqual([], outsider_inventories.json())
+
+                admin_inventories = client.get("/inventories", headers=admin_headers)
+                self.assertEqual(200, admin_inventories.status_code)
+                self.assertEqual(
+                    ["admin-only", "personal"],
+                    [row["slug"] for row in admin_inventories.json()],
+                )
+
+    def test_shared_service_inventory_read_routes_allow_viewers_and_reject_non_members(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            owner_headers = {"X-Authenticated-User": "owner-user"}
+            viewer_headers = {
+                "X-Authenticated-User": "viewer-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            outsider_headers = {
+                "X-Authenticated-User": "outsider-user",
                 "X-Authenticated-Roles": "viewer",
             }
 
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+
             with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
                 self._seed_card(db_path)
-
-                created_inventory = client.post(
-                    "/inventories",
-                    headers=editor_headers,
-                    json={"slug": "personal", "display_name": "Personal Collection"},
-                )
-                self.assertEqual(201, created_inventory.status_code)
+                self._seed_oracle_printings(db_path)
 
                 added = client.post(
                     "/inventories/personal/items",
-                    headers=editor_headers,
+                    headers=owner_headers,
                     json={
                         "scryfall_id": "api-card-1",
                         "quantity": 1,
@@ -992,46 +1068,54 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(201, added.status_code)
 
-                anonymous_inventories = client.get("/inventories")
-                self.assertEqual(401, anonymous_inventories.status_code)
-                self.assertEqual("authentication_required", anonymous_inventories.json()["error"]["code"])
+                viewer_items = client.get("/inventories/personal/items", headers=viewer_headers)
+                self.assertEqual(200, viewer_items.status_code)
 
-                unauthorized_search = client.get(
-                    "/cards/search",
-                    headers=unrecognized_role_headers,
-                    params={"query": "API Test"},
-                )
-                self.assertEqual(403, unauthorized_search.status_code)
-                self.assertEqual("forbidden", unauthorized_search.json()["error"]["code"])
+                viewer_audit = client.get("/inventories/personal/audit", headers=viewer_headers)
+                self.assertEqual(200, viewer_audit.status_code)
 
-                unauthorized_name_search = client.get(
+                viewer_search = client.get("/cards/search", headers=viewer_headers, params={"query": "API Test"})
+                self.assertEqual(200, viewer_search.status_code)
+
+                viewer_name_search = client.get(
                     "/cards/search/names",
-                    headers=unrecognized_role_headers,
-                    params={"query": "API Test"},
+                    headers=viewer_headers,
+                    params={"query": "API Lookup"},
                 )
-                self.assertEqual(403, unauthorized_name_search.status_code)
-                self.assertEqual("forbidden", unauthorized_name_search.json()["error"]["code"])
+                self.assertEqual(200, viewer_name_search.status_code)
 
-                inventories = client.get("/inventories", headers=editor_headers)
-                self.assertEqual(200, inventories.status_code)
-
-                search = client.get("/cards/search", headers=editor_headers, params={"query": "API Test"})
-                self.assertEqual(200, search.status_code)
-
-                self._seed_oracle_printings(db_path)
-                name_search = client.get("/cards/search/names", headers=editor_headers, params={"query": "API Lookup"})
-                self.assertEqual(200, name_search.status_code)
-                printings = client.get(
+                viewer_printings = client.get(
                     "/cards/oracle/api-oracle-lookup/printings",
-                    headers=editor_headers,
+                    headers=viewer_headers,
                 )
-                self.assertEqual(200, printings.status_code)
+                self.assertEqual(200, viewer_printings.status_code)
 
-                items = client.get("/inventories/personal/items", headers=editor_headers)
-                self.assertEqual(200, items.status_code)
+                denied_items = client.get("/inventories/admin-only/items", headers=viewer_headers)
+                self.assertEqual(403, denied_items.status_code)
+                self.assertEqual("forbidden", denied_items.json()["error"]["code"])
 
-                audit = client.get("/inventories/personal/audit", headers=editor_headers)
-                self.assertEqual(200, audit.status_code)
+                denied_audit = client.get("/inventories/admin-only/audit", headers=viewer_headers)
+                self.assertEqual(403, denied_audit.status_code)
+                self.assertEqual("forbidden", denied_audit.json()["error"]["code"])
+
+                outsider_search = client.get("/cards/search", headers=outsider_headers, params={"query": "API Test"})
+                self.assertEqual(403, outsider_search.status_code)
+                self.assertEqual("forbidden", outsider_search.json()["error"]["code"])
+
+                outsider_name_search = client.get(
+                    "/cards/search/names",
+                    headers=outsider_headers,
+                    params={"query": "API Lookup"},
+                )
+                self.assertEqual(403, outsider_name_search.status_code)
+                self.assertEqual("forbidden", outsider_name_search.json()["error"]["code"])
+
+                outsider_printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    headers=outsider_headers,
+                )
+                self.assertEqual(403, outsider_printings.status_code)
+                self.assertEqual("forbidden", outsider_printings.json()["error"]["code"])
 
     def test_shared_service_mutating_requests_require_authenticated_actor_header(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
