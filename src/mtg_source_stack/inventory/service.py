@@ -3,6 +3,7 @@
 from .access import (
     actor_can_read_any_inventory,
     actor_can_read_inventory,
+    actor_can_write_inventory,
     actor_inventory_role,
     actor_inventory_role_with_connection,
     can_read_inventory,

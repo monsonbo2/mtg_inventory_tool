@@ -11,6 +11,7 @@ from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.inventory.service import (
     actor_can_read_any_inventory,
     actor_can_read_inventory,
+    actor_can_write_inventory,
     actor_inventory_role,
     can_read_inventory,
     can_write_inventory,
@@ -242,6 +243,83 @@ class InventoryAccessTest(unittest.TestCase):
             self.assertTrue(
                 actor_can_read_any_inventory(
                     db_path,
+                    actor_id="admin@example.com",
+                    actor_roles={"admin"},
+                )
+            )
+
+    def test_actor_write_access_respects_membership_and_admin_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer@example.com",
+                role="viewer",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="editor@example.com",
+                role="editor",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="owner@example.com",
+                role="owner",
+            )
+
+            self.assertFalse(
+                actor_can_write_inventory(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="viewer@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertTrue(
+                actor_can_write_inventory(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="editor@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertTrue(
+                actor_can_write_inventory(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="owner@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertFalse(
+                actor_can_write_inventory(
+                    db_path,
+                    inventory_slug="admin-only",
+                    actor_id="editor@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertTrue(
+                actor_can_write_inventory(
+                    db_path,
+                    inventory_slug="admin-only",
                     actor_id="admin@example.com",
                     actor_roles={"admin"},
                 )

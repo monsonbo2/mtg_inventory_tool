@@ -1160,6 +1160,142 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(401, add_without_auth.status_code)
                 self.assertEqual("authentication_required", add_without_auth.json()["error"]["code"])
 
+    def test_shared_service_inventory_write_routes_allow_editors_and_owners_but_reject_viewers_and_non_members(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            owner_headers = {"X-Authenticated-User": "owner-user"}
+            viewer_headers = {
+                "X-Authenticated-User": "viewer-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            editor_headers = {
+                "X-Authenticated-User": "editor-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            outsider_headers = {
+                "X-Authenticated-User": "outsider-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            admin_headers = {
+                "X-Authenticated-User": "admin-user",
+                "X-Authenticated-Roles": "admin",
+            }
+
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="editor-user",
+                role="editor",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path, finishes_json='["normal","foil"]')
+
+                viewer_add = client.post(
+                    "/inventories/personal/items",
+                    headers=viewer_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(403, viewer_add.status_code)
+                self.assertEqual("forbidden", viewer_add.json()["error"]["code"])
+
+                outsider_add = client.post(
+                    "/inventories/personal/items",
+                    headers=outsider_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(403, outsider_add.status_code)
+                self.assertEqual("forbidden", outsider_add.json()["error"]["code"])
+
+                editor_add = client.post(
+                    "/inventories/personal/items",
+                    headers=editor_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, editor_add.status_code)
+                editor_item_id = editor_add.json()["item_id"]
+
+                owner_patch = client.patch(
+                    f"/inventories/personal/items/{editor_item_id}",
+                    headers=owner_headers,
+                    json={"notes": "owner note"},
+                )
+                self.assertEqual(200, owner_patch.status_code)
+
+                viewer_patch = client.patch(
+                    f"/inventories/personal/items/{editor_item_id}",
+                    headers=viewer_headers,
+                    json={"notes": "viewer note"},
+                )
+                self.assertEqual(403, viewer_patch.status_code)
+                self.assertEqual("forbidden", viewer_patch.json()["error"]["code"])
+
+                owner_delete = client.delete(
+                    f"/inventories/personal/items/{editor_item_id}",
+                    headers=owner_headers,
+                )
+                self.assertEqual(200, owner_delete.status_code)
+
+                admin_add = client.post(
+                    "/inventories/admin-only/items",
+                    headers=admin_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, admin_add.status_code)
+
+                editor_admin_only_add = client.post(
+                    "/inventories/admin-only/items",
+                    headers=editor_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(403, editor_admin_only_add.status_code)
+                self.assertEqual("forbidden", editor_admin_only_add.json()["error"]["code"])
+
     def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"

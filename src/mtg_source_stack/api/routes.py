@@ -40,6 +40,7 @@ from .dependencies import (
     RequestContext,
     get_editor_request_context,
     get_inventory_read_request_context,
+    get_inventory_write_request_context,
     get_inventory_scoped_read_request_context,
     get_authenticated_request_context,
     get_settings,
@@ -315,7 +316,7 @@ def inventory_items_add(
     inventory_slug: str,
     payload: AddInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
 ) -> Any:
     return _serialize(
         add_card(
@@ -355,7 +356,7 @@ def inventory_items_patch(
     item_id: int,
     payload: PatchInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
 ) -> Any:
     operation = _patch_operation(payload)
     db_path = settings.db_path
@@ -420,7 +421,7 @@ def inventory_items_delete(
     inventory_slug: str,
     item_id: int,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
 ) -> Any:
     return _serialize(
         remove_card(
