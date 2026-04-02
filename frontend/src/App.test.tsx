@@ -97,6 +97,24 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
   }
 
+  it("starts with an empty search field and keeps the example text as a placeholder only", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCards).mockResolvedValue([]);
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    expect(input).toHaveValue("");
+    expect(input).toHaveAttribute("placeholder", "e.g. Lightning Bolt");
+
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    expect(searchCards).not.toHaveBeenCalled();
+    expect(screen.getByText("Run a search")).toBeInTheDocument();
+  });
+
   it("surfaces backend patch errors as a notice", async () => {
     const ownedRow: OwnedInventoryRow = {
       item_id: 7,
@@ -198,13 +216,9 @@ describe("App", () => {
 
     await user.click(within(row!).getByRole("button", { name: "Edit Lightning Bolt" }));
 
-    await waitFor(() => {
-      expect(vi.mocked(searchCards).mock.calls.some(([params]) => params.query === "Lightning Bolt")).toBe(true);
-    });
-
     expect(within(row!).getByRole("combobox")).toBeEnabled();
     expect(within(row!).getByText("Available: Normal, Foil.")).toBeInTheDocument();
-    expect(vi.mocked(searchCards).mock.calls.some(([params]) => params.exact === true)).toBe(false);
+    expect(searchCards).not.toHaveBeenCalled();
   });
 
   it("supports keyboard selection from autocomplete suggestions", async () => {
@@ -540,6 +554,70 @@ describe("App", () => {
     expect(screen.getByText("No rows selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).not.toBeChecked();
+  });
+
+  it("supports header-driven table sorting and filtering while keeping hidden selections visible in the summary", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+
+    const table = screen.getByRole("table");
+    const getRows = () => within(table).getAllByRole("row").slice(1);
+
+    expect(getRows()[0]).toHaveTextContent("Lightning Bolt");
+    expect(getRows()[1]).toHaveTextContent("Counterspell");
+
+    await user.click(screen.getByRole("button", { name: "Qty" }));
+    await user.click(screen.getByRole("button", { name: "Lowest quantity first" }));
+
+    expect(getRows()[0]).toHaveTextContent("Counterspell");
+    expect(getRows()[1]).toHaveTextContent("Lightning Bolt");
+
+    await user.click(screen.getByRole("checkbox", { name: "Select Counterspell" }));
+    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Set" }));
+    await user.click(screen.getByLabelText("LEA · Limited Edition Alpha"));
+
+    expect(screen.getByText("Showing 1 of 2 rows.")).toBeInTheDocument();
+    expect(screen.getByText("1 selected row hidden by current filters.")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Select Counterspell" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+
+    expect(screen.getByText("2 rows selected")).toBeInTheDocument();
+    expect(screen.getByText("1 selected row hidden by current filters.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    expect(screen.getByText("Showing all 2 rows.")).toBeInTheDocument();
+    expect(screen.queryByText("1 selected row hidden by current filters.")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
   });
 
   it("clears table selection when the selected inventory changes", async () => {

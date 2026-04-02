@@ -1,6 +1,11 @@
 import type { InventorySummary, OwnedInventoryRow, PatchInventoryItemRequest } from "../types";
 import type { AsyncStatus, ItemMutationAction, NoticeTone } from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
+import type {
+  InventoryTableFilters,
+  InventoryTableFilterOptions,
+  InventoryTableSortState,
+} from "../tableViewHelpers";
 import { CompactInventoryList } from "./CompactInventoryList";
 import { InventoryTableView } from "./InventoryTableView";
 import { OwnedItemCard } from "./OwnedItemCard";
@@ -24,10 +29,17 @@ export function OwnedCollectionPanel(props: {
   onCollectionViewChange: (nextView: "compact" | "table" | "detailed") => void;
   expandedItemId: number | null;
   onExpandedItemChange: (itemId: number | null) => void;
+  tableItems: OwnedInventoryRow[];
+  tableSort: InventoryTableSortState;
+  tableFilters: InventoryTableFilters;
+  tableFilterOptions: InventoryTableFilterOptions;
+  onTableSortChange: (nextSort: InventoryTableSortState) => void;
+  onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
   onOpenActivity: () => void;
   selectedItemIds: number[];
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisibleItems: () => void;
+  onClearVisibleSelectedItems: () => void;
   onClearSelectedItems: () => void;
 }) {
   const totalEstimatedValue = props.items.reduce(
@@ -151,11 +163,18 @@ export function OwnedCollectionPanel(props: {
             />
           ) : props.collectionView === "table" ? (
             <InventoryTableView
-              items={props.items}
+              allItemsCount={props.items.length}
+              filterOptions={props.tableFilterOptions}
+              filters={props.tableFilters}
+              items={props.tableItems}
               onClearSelection={props.onClearSelectedItems}
+              onClearVisibleSelection={props.onClearVisibleSelectedItems}
+              onFiltersChange={props.onTableFiltersChange}
               onSelectAllVisible={props.onSelectAllVisibleItems}
+              onSortChange={props.onTableSortChange}
               onToggleItemSelection={props.onToggleItemSelection}
               selectedItemIds={props.selectedItemIds}
+              sortState={props.tableSort}
             />
           ) : (
             props.items.map((item) => (

@@ -83,7 +83,7 @@ export function SearchPanel(props: {
               onClick={props.onSearchFieldFocus}
               onFocus={props.onSearchFieldFocus}
               onKeyDown={props.onSearchInputKeyDown}
-              placeholder="Lightning Bolt"
+              placeholder="e.g. Lightning Bolt"
               role="combobox"
               value={props.searchQuery}
             />

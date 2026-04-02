@@ -17,6 +17,13 @@ import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
+import {
+  applyInventoryTableQuery,
+  createDefaultInventoryTableFilters,
+  getInventoryTableFilterOptions,
+  type InventoryTableFilters,
+  type InventoryTableSortState,
+} from "./tableViewHelpers";
 import type {
   AddInventoryItemRequest,
   CatalogSearchRow,
@@ -58,7 +65,7 @@ export default function App() {
   const [viewError, setViewError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("Lightning Bolt");
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CatalogSearchRow[]>([]);
   const [suggestionResults, setSuggestionResults] = useState<CatalogSearchRow[]>([]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
@@ -69,6 +76,10 @@ export default function App() {
   const [collectionView, setCollectionView] = useState<"compact" | "table" | "detailed">("compact");
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [tableSort, setTableSort] = useState<InventoryTableSortState>(null);
+  const [tableFilters, setTableFilters] = useState<InventoryTableFilters>(
+    createDefaultInventoryTableFilters,
+  );
   const [activityOpen, setActivityOpen] = useState(false);
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
@@ -113,6 +124,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setTableSort(null);
+    setTableFilters(createDefaultInventoryTableFilters());
+
     if (!selectedInventory) {
       inventoryViewRequestIdRef.current += 1;
       setItems([]);
@@ -528,7 +542,19 @@ export default function App() {
   }
 
   function handleSelectAllVisibleItems() {
-    setSelectedItemIds(items.map((item) => item.item_id));
+    const visibleItemIds = visibleTableItems.map((item) => item.item_id);
+    setSelectedItemIds((current) => {
+      const nextSelectedItemIds = new Set(current);
+      for (const itemId of visibleItemIds) {
+        nextSelectedItemIds.add(itemId);
+      }
+      return Array.from(nextSelectedItemIds);
+    });
+  }
+
+  function handleClearVisibleSelectedItems() {
+    const visibleItemIds = new Set(visibleTableItems.map((item) => item.item_id));
+    setSelectedItemIds((current) => current.filter((itemId) => !visibleItemIds.has(itemId)));
   }
 
   function handleClearSelectedItems() {
@@ -541,6 +567,8 @@ export default function App() {
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
   );
+  const visibleTableItems = applyInventoryTableQuery(items, tableSort, tableFilters);
+  const tableFilterOptions = getInventoryTableFilterOptions(items);
 
   return (
     <div className="app-shell">
@@ -607,13 +635,20 @@ export default function App() {
             collectionView={collectionView}
             expandedItemId={expandedItemId}
             items={items}
+            tableFilterOptions={tableFilterOptions}
+            tableFilters={tableFilters}
+            tableItems={visibleTableItems}
+            tableSort={tableSort}
             onClearSelectedItems={handleClearSelectedItems}
+            onClearVisibleSelectedItems={handleClearVisibleSelectedItems}
             onCollectionViewChange={handleCollectionViewChange}
             onDelete={handleDeleteItem}
             onExpandedItemChange={setExpandedItemId}
             onOpenActivity={() => setActivityOpen(true)}
             onNotice={reportNotice}
             onPatch={handlePatchItem}
+            onTableFiltersChange={setTableFilters}
+            onTableSortChange={setTableSort}
             onSelectAllVisibleItems={handleSelectAllVisibleItems}
             onToggleItemSelection={handleToggleItemSelection}
             selectedInventoryRow={selectedInventoryRow}
