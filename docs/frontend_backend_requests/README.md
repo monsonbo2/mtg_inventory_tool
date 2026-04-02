@@ -28,6 +28,7 @@ backend requests.
 | `card_name_search_and_printing_lookup.md` | [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16) | Proposed | Unassigned | needed for name-first search results plus second-step printing selection |
 | `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Done | Steve | stored image URLs exposed in search and owned-item responses |
 | `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
+| `full_catalog_demo_bootstrap_compatibility.md` | [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21) | Proposed | Unassigned | full-catalog demo bootstrap currently fails against the real current Scryfall bulk file |
 | `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Done | Steve | PATCH stays single-mutation-only and now returns an explicit `operation` discriminator |
 | `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Done | Steve | canonical values, defaults, and finish aliases published in API contract |
 
