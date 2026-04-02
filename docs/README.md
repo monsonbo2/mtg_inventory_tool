@@ -15,7 +15,8 @@ If you're building against the current demo web API shell, read
 
 If you're preparing a separate frontend sandbox, also read
 `frontend_handoff.md`, `../frontend/README.md`, `frontend_build_checklist.md`,
-`frontend_search_autocomplete_checklist.md`, `frontend_backend_requests/`, and
+`frontend_search_autocomplete_checklist.md`,
+`frontend_demo_refinement_handoff.md`, `frontend_backend_requests/`, and
 `../contracts/README.md`.
 
 ## Current Runtime Docs
@@ -37,6 +38,9 @@ If you're preparing a separate frontend sandbox, also read
   Working implementation checklist for the next frontend demo-build pass.
 - `frontend_search_autocomplete_checklist.md`
   Working implementation checklist for the polished search-autocomplete pass.
+- `frontend_demo_refinement_handoff.md`
+  Current branch/worktree handoff note for the next frontend demo-refinement
+  pass.
 - `frontend_backend_requests/`
   Folder of frontend-requested backend/API changes, with
   `frontend_backend_requests/README.md` as the process guide and template.
