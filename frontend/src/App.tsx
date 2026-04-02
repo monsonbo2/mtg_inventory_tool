@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import {
   addInventoryItem,
@@ -42,6 +42,10 @@ import type {
   ViewRefreshOutcome,
 } from "./uiTypes";
 
+const AUTOCOMPLETE_MIN_QUERY_LENGTH = 2;
+const AUTOCOMPLETE_DEBOUNCE_MS = 250;
+const AUTOCOMPLETE_LIMIT = 5;
+
 export default function App() {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
   const [selectedInventory, setSelectedInventory] = useState<string | null>(null);
@@ -50,11 +54,16 @@ export default function App() {
   const [inventoryStatus, setInventoryStatus] = useState<AsyncStatus>("loading");
   const [viewStatus, setViewStatus] = useState<AsyncStatus>("idle");
   const [searchStatus, setSearchStatus] = useState<AsyncStatus>("idle");
+  const [suggestionStatus, setSuggestionStatus] = useState<AsyncStatus>("idle");
   const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [viewError, setViewError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("Lightning Bolt");
   const [searchResults, setSearchResults] = useState<CatalogSearchRow[]>([]);
+  const [suggestionResults, setSuggestionResults] = useState<CatalogSearchRow[]>([]);
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
+  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -62,6 +71,9 @@ export default function App() {
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
   const finishLookupRequestIdRef = useRef(0);
+  const suggestionLookupRequestIdRef = useRef(0);
+  const suggestionCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
+  const skipSuggestionFetchQueryRef = useRef<string | null>(null);
 
   useEffect(() => {
     selectedInventoryRef.current = selectedInventory;
@@ -111,6 +123,68 @@ export default function App() {
 
     void loadInventoryOverview(selectedInventory);
   }, [selectedInventory]);
+
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    const normalizedQuery = trimmed.toLowerCase();
+
+    if (skipSuggestionFetchQueryRef.current === normalizedQuery) {
+      skipSuggestionFetchQueryRef.current = null;
+      return;
+    }
+
+    if (trimmed.length < AUTOCOMPLETE_MIN_QUERY_LENGTH) {
+      suggestionLookupRequestIdRef.current += 1;
+      setSuggestionStatus("idle");
+      setSuggestionError(null);
+      setSuggestionResults([]);
+      setSuggestionOpen(false);
+      setHighlightedSuggestionIndex(-1);
+      return;
+    }
+
+    const cachedResults = suggestionCacheRef.current[normalizedQuery];
+    if (cachedResults) {
+      setSuggestionStatus("ready");
+      setSuggestionError(null);
+      setSuggestionResults(cachedResults);
+      setHighlightedSuggestionIndex(cachedResults.length ? 0 : -1);
+      return;
+    }
+
+    const requestId = ++suggestionLookupRequestIdRef.current;
+    const timeoutId = window.setTimeout(() => {
+      setSuggestionStatus("loading");
+      setSuggestionError(null);
+
+      void searchCards({
+        query: trimmed,
+        limit: AUTOCOMPLETE_LIMIT,
+      })
+        .then((results) => {
+          if (requestId !== suggestionLookupRequestIdRef.current) {
+            return;
+          }
+          suggestionCacheRef.current[normalizedQuery] = results;
+          setSuggestionResults(results);
+          setSuggestionStatus("ready");
+          setHighlightedSuggestionIndex(results.length ? 0 : -1);
+        })
+        .catch((error) => {
+          if (requestId !== suggestionLookupRequestIdRef.current) {
+            return;
+          }
+          setSuggestionResults([]);
+          setSuggestionError(toUserMessage(error, "Suggestions could not load."));
+          setSuggestionStatus("error");
+          setHighlightedSuggestionIndex(-1);
+        });
+    }, AUTOCOMPLETE_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     const uniqueItems = getUniqueItemsByCardId(items);
@@ -310,16 +384,61 @@ export default function App() {
     );
   }
 
-  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function closeSuggestionList() {
+    setSuggestionOpen(false);
+    setHighlightedSuggestionIndex(-1);
+  }
 
-    const trimmed = searchQuery.trim();
+  function openSuggestionList() {
+    if (searchQuery.trim().length < AUTOCOMPLETE_MIN_QUERY_LENGTH) {
+      return;
+    }
+
+    setSuggestionOpen(true);
+    setHighlightedSuggestionIndex((current) => {
+      if (current >= 0 && current < suggestionResults.length) {
+        return current;
+      }
+      return suggestionResults.length ? 0 : -1;
+    });
+  }
+
+  function moveSuggestionHighlight(direction: 1 | -1) {
+    if (searchQuery.trim().length < AUTOCOMPLETE_MIN_QUERY_LENGTH) {
+      return;
+    }
+
+    setSuggestionOpen(true);
+    setHighlightedSuggestionIndex((current) => {
+      if (!suggestionResults.length) {
+        return -1;
+      }
+      if (current === -1) {
+        return direction > 0 ? 0 : suggestionResults.length - 1;
+      }
+
+      const nextIndex = current + direction;
+      if (nextIndex < 0) {
+        return suggestionResults.length - 1;
+      }
+      if (nextIndex >= suggestionResults.length) {
+        return 0;
+      }
+      return nextIndex;
+    });
+  }
+
+  async function runCardSearch(query: string) {
+    const trimmed = query.trim();
     if (!trimmed) {
       setSearchResults([]);
       setSearchStatus("idle");
       setSearchError(null);
       return;
     }
+
+    suggestionLookupRequestIdRef.current += 1;
+    closeSuggestionList();
 
     setSearchStatus("loading");
     setSearchError(null);
@@ -334,6 +453,64 @@ export default function App() {
       setSearchError(toUserMessage(error, "Card search failed."));
       setSearchStatus("error");
     }
+  }
+
+  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runCardSearch(searchQuery);
+  }
+
+  function handleSearchQueryChange(value: string) {
+    skipSuggestionFetchQueryRef.current = null;
+    setSearchQuery(value);
+    setSuggestionOpen(value.trim().length >= AUTOCOMPLETE_MIN_QUERY_LENGTH);
+    setHighlightedSuggestionIndex(-1);
+  }
+
+  function handleSearchFieldFocus() {
+    openSuggestionList();
+  }
+
+  function handleSuggestionRequestClose() {
+    closeSuggestionList();
+  }
+
+  function handleSearchInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        moveSuggestionHighlight(1);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        moveSuggestionHighlight(-1);
+        break;
+      case "Escape":
+        if (suggestionOpen) {
+          event.preventDefault();
+          closeSuggestionList();
+        }
+        break;
+      case "Enter": {
+        const activeSuggestion =
+          suggestionOpen && highlightedSuggestionIndex >= 0
+            ? suggestionResults[highlightedSuggestionIndex]
+            : null;
+        if (activeSuggestion) {
+          event.preventDefault();
+          void handleSuggestionSelect(activeSuggestion);
+        }
+        break;
+      }
+    }
+  }
+
+  async function handleSuggestionSelect(result: CatalogSearchRow) {
+    const query = result.name.trim();
+    skipSuggestionFetchQueryRef.current = query.toLowerCase();
+    setSearchQuery(query);
+    closeSuggestionList();
+    await runCardSearch(query);
   }
 
   async function handleAddCard(payload: AddInventoryItemRequest) {
@@ -469,13 +646,23 @@ export default function App() {
             busyAddCardId={busyAddCardId}
             onAdd={handleAddCard}
             onNotice={reportNotice}
-            onSearchQueryChange={setSearchQuery}
+            onSearchFieldFocus={handleSearchFieldFocus}
+            onSearchInputKeyDown={handleSearchInputKeyDown}
+            onSearchQueryChange={handleSearchQueryChange}
             onSearchSubmit={handleSearchSubmit}
+            onSuggestionHighlight={setHighlightedSuggestionIndex}
+            onSuggestionRequestClose={handleSuggestionRequestClose}
+            onSuggestionSelect={handleSuggestionSelect}
             searchError={searchError}
             searchQuery={searchQuery}
             searchResults={searchResults}
             searchStatus={searchStatus}
             selectedInventoryRow={selectedInventoryRow}
+            suggestionError={suggestionError}
+            suggestionOpen={suggestionOpen}
+            suggestionResults={suggestionResults}
+            suggestionStatus={suggestionStatus}
+            highlightedSuggestionIndex={highlightedSuggestionIndex}
           />
           <OwnedCollectionPanel
             busyItem={busyItem}

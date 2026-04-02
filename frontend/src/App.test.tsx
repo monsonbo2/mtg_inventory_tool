@@ -1,10 +1,10 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { ApiClientError } from "./api";
-import type { OwnedInventoryRow } from "./types";
+import type { CatalogSearchRow, OwnedInventoryRow } from "./types";
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -28,7 +28,25 @@ import {
   patchInventoryItem,
 } from "./api";
 
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("App", () => {
+  function mockBaseSearchApp() {
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 0,
+        total_cards: 0,
+      },
+    ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+  }
+
   it("surfaces backend patch errors as a notice", async () => {
     const ownedRow: OwnedInventoryRow = {
       item_id: 7,
@@ -109,5 +127,126 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Finish 'foil' is not available for this card printing. Available finishes: normal.",
     );
+  });
+
+  it("supports keyboard selection from autocomplete suggestions", async () => {
+    const user = userEvent.setup();
+    const forest: CatalogSearchRow = {
+      scryfall_id: "forest-1",
+      name: "Forest",
+      set_code: "m10",
+      set_name: "Magic 2010",
+      collector_number: "246",
+      lang: "en",
+      rarity: "common",
+      finishes: ["normal"],
+      tcgplayer_product_id: "1003",
+      image_uri_small: null,
+      image_uri_normal: null,
+    };
+    const forceOfWill: CatalogSearchRow = {
+      scryfall_id: "force-1",
+      name: "Force of Will",
+      set_code: "all",
+      set_name: "Alliances",
+      collector_number: "28",
+      lang: "en",
+      rarity: "rare",
+      finishes: ["normal"],
+      tcgplayer_product_id: "2001",
+      image_uri_small: null,
+      image_uri_normal: null,
+    };
+
+    mockBaseSearchApp();
+    vi.mocked(searchCards).mockImplementation(async (params) => {
+      if (params.query === "Fo") {
+        return [forest, forceOfWill];
+      }
+      if (params.query === "Force of Will") {
+        return [forceOfWill];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.clear(input);
+    await user.type(input, "Fo");
+
+    expect(
+      await screen.findByRole("listbox", { name: "Card suggestions" }, { timeout: 2000 }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("option", { name: /Forest/i }, { timeout: 2000 }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("option", { name: /Force of Will/i }, { timeout: 2000 }),
+    ).toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-activedescendant", expect.stringContaining("-option-0"));
+
+    await user.keyboard("{ArrowDown}");
+    expect(input).toHaveAttribute("aria-activedescendant", expect.stringContaining("-option-1"));
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(searchCards).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "Force of Will", limit: 8 }),
+      );
+    });
+    expect(input).toHaveValue("Force of Will");
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Force of Will" })).toBeInTheDocument();
+  });
+
+  it("closes autocomplete on escape and outside click", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCards).mockImplementation(async (params) => {
+      if (params.query === "Fo") {
+        return [
+          {
+            scryfall_id: "forest-1",
+            name: "Forest",
+            set_code: "m10",
+            set_name: "Magic 2010",
+            collector_number: "246",
+            lang: "en",
+            rarity: "common",
+            finishes: ["normal"],
+            tcgplayer_product_id: "1003",
+            image_uri_small: null,
+            image_uri_normal: null,
+          },
+        ];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.clear(input);
+    await user.type(input, "Fo");
+
+    expect(
+      await screen.findByRole("listbox", { name: "Card suggestions" }, { timeout: 2000 }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(input);
+    expect(await screen.findByRole("listbox", { name: "Card suggestions" })).toBeInTheDocument();
+
+    await user.click(document.body);
+    await waitFor(() => {
+      expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+    });
+    expect(input).toHaveAttribute("aria-expanded", "false");
   });
 });
