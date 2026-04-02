@@ -50,6 +50,11 @@ type NoticeState = {
   tone: NoticeTone;
 };
 
+type FinishSupportState =
+  | { status: "loading" }
+  | { status: "ready"; finishes: FinishValue[] }
+  | { status: "error"; message: string };
+
 export default function App() {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
   const [selectedInventory, setSelectedInventory] = useState<string | null>(null);
@@ -66,8 +71,10 @@ export default function App() {
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [finishSupportByCard, setFinishSupportByCard] = useState<Record<string, FinishSupportState>>({});
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
+  const finishLookupRequestIdRef = useRef(0);
 
   useEffect(() => {
     selectedInventoryRef.current = selectedInventory;
@@ -119,6 +126,96 @@ export default function App() {
 
     void loadInventoryOverview(selectedInventory);
   }, [selectedInventory]);
+
+  useEffect(() => {
+    const uniqueItems = getUniqueItemsByCardId(items);
+    const itemsNeedingFinishSupport = uniqueItems.filter(
+      (item) => finishSupportByCard[item.scryfall_id] === undefined,
+    );
+
+    if (!itemsNeedingFinishSupport.length) {
+      return;
+    }
+
+    const requestId = ++finishLookupRequestIdRef.current;
+    let cancelled = false;
+
+    setFinishSupportByCard((current) => {
+      const next = { ...current };
+      for (const item of itemsNeedingFinishSupport) {
+        if (next[item.scryfall_id] === undefined) {
+          next[item.scryfall_id] = { status: "loading" };
+        }
+      }
+      return next;
+    });
+
+    void Promise.all(
+      itemsNeedingFinishSupport.map(async (item) => {
+        try {
+          const results = await searchCards({
+            query: item.name,
+            set_code: item.set_code,
+            exact: true,
+            limit: 8,
+          });
+          const match =
+            results.find((result) => result.scryfall_id === item.scryfall_id) ??
+            results.find(
+              (result) =>
+                result.set_code === item.set_code &&
+                result.collector_number === item.collector_number,
+            );
+
+          if (!match) {
+            return {
+              cardId: item.scryfall_id,
+              state: {
+                status: "error",
+                message:
+                  "Could not verify legal finishes for this printing yet. Unsupported finish changes will still be rejected by the API.",
+              } satisfies FinishSupportState,
+            };
+          }
+
+          return {
+            cardId: item.scryfall_id,
+            state: {
+              status: "ready",
+              finishes: match.finishes,
+            } satisfies FinishSupportState,
+          };
+        } catch (error) {
+          return {
+            cardId: item.scryfall_id,
+            state: {
+              status: "error",
+              message: toUserMessage(
+                error,
+                "Could not verify legal finishes for this printing yet. Unsupported finish changes will still be rejected by the API.",
+              ),
+            } satisfies FinishSupportState,
+          };
+        }
+      }),
+    ).then((results) => {
+      if (cancelled || requestId !== finishLookupRequestIdRef.current) {
+        return;
+      }
+
+      setFinishSupportByCard((current) => {
+        const next = { ...current };
+        for (const result of results) {
+          next[result.cardId] = result.state;
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [finishSupportByCard, items]);
 
   async function reloadInventorySummaries(preferredSlug: string) {
     try {
@@ -681,6 +778,7 @@ export default function App() {
                 items.map((item) => (
                   <OwnedItemCard
                     busyAction={busyItem?.itemId === item.item_id ? busyItem.action : null}
+                    finishSupport={finishSupportByCard[item.scryfall_id] || null}
                     item={item}
                     key={item.item_id}
                     onDelete={handleDeleteItem}
@@ -956,6 +1054,7 @@ function SearchResultCard(props: {
 function OwnedItemCard(props: {
   item: OwnedInventoryRow;
   busyAction: ItemMutationAction | null;
+  finishSupport: FinishSupportState | null;
   onPatch: (
     itemId: number,
     action: ItemMutationAction,
@@ -1050,6 +1149,16 @@ function OwnedItemCard(props: {
   const hasDirtyChanges =
     quantityDirty || finishDirty || locationDirty || notesDirty || tagsDirty;
   const busyMessage = props.busyAction ? getBusyMessage(props.busyAction) : null;
+  const availableFinishes = getAvailableFinishesForOwnedRow(props.item.finish, props.finishSupport);
+  const finishEditorLocked = props.finishSupport?.status !== "ready" || availableFinishes.length <= 1;
+  const finishHint =
+    props.finishSupport?.status === "loading"
+      ? "Checking which finishes this printing supports..."
+      : props.finishSupport?.status === "error"
+        ? props.finishSupport.message
+        : availableFinishes.length === 1
+          ? `This printing only supports ${formatFinishLabel(availableFinishes[0])}.`
+          : `Available: ${availableFinishes.map((value) => formatFinishLabel(value)).join(", ")}.`;
   const statusMessage = busyMessage
     ? busyMessage
     : quantityHasError
@@ -1142,23 +1251,25 @@ function OwnedItemCard(props: {
 
         <InlineEditor
           dirty={finishDirty}
-          disabled={isBusy || !finishDirty}
+          disabled={isBusy || !finishDirty || finishEditorLocked}
           busy={props.busyAction === "finish"}
+          hint={finishHint}
+          hintTone={props.finishSupport?.status === "error" ? "error" : "info"}
           label="Finish"
           onSave={saveFinish}
         >
           <select
             className="text-input"
-            disabled={isBusy}
+            disabled={isBusy || finishEditorLocked}
             onChange={(event) => setFinish(event.target.value as FinishValue)}
             value={finish}
           >
-            {FINISH_OPTIONS.map((option) => (
+            {availableFinishes.map((value) => (
               <option
-                key={option.value}
-                value={option.value}
+                key={value}
+                value={value}
               >
-                {option.label}
+                {formatFinishLabel(value)}
               </option>
             ))}
           </select>
@@ -1252,6 +1363,8 @@ function InlineEditor(props: {
   dirty?: boolean;
   invalid?: boolean;
   disabled?: boolean;
+  hint?: string;
+  hintTone?: "info" | "error" | "success";
   wide?: boolean;
 }) {
   const className = props.wide
@@ -1284,6 +1397,11 @@ function InlineEditor(props: {
                 : "Saved"}
         </button>
       </div>
+      {props.hint ? (
+        <p className={`field-hint ${props.hintTone === "error" ? "field-hint-error" : props.hintTone === "success" ? "field-hint-success" : "field-hint-info"}`}>
+          {props.hint}
+        </p>
+      ) : null}
     </label>
   );
 }
@@ -1390,6 +1508,9 @@ function formatMaybeCurrency(value: string | null, currency: string | null) {
 
 function formatTimestamp(value: string) {
   const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -1563,4 +1684,25 @@ function formatActorType(value: string) {
     return "API";
   }
   return formatTitleCase(value);
+}
+
+function getUniqueItemsByCardId(items: OwnedInventoryRow[]) {
+  const byCardId = new Map<string, OwnedInventoryRow>();
+  for (const item of items) {
+    if (!byCardId.has(item.scryfall_id)) {
+      byCardId.set(item.scryfall_id, item);
+    }
+  }
+  return Array.from(byCardId.values());
+}
+
+function getAvailableFinishesForOwnedRow(
+  currentFinish: FinishValue,
+  finishSupport: FinishSupportState | null,
+) {
+  const finishes = finishSupport?.status === "ready" ? finishSupport.finishes : [];
+  const nextFinishes = [currentFinish, ...finishes].filter(
+    (value, index, values) => values.indexOf(value) === index,
+  );
+  return nextFinishes;
 }

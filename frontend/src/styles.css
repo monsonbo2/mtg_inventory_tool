@@ -401,6 +401,10 @@ button {
   color: var(--accent-lagoon);
 }
 
+.field-hint-info {
+  color: var(--text-muted);
+}
+
 .text-input,
 .text-area {
   width: 100%;
