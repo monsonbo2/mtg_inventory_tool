@@ -74,7 +74,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "161",
                     "common",
                     '["normal","foil"]',
-                    '{"small":"https://placehold.co/146x204/png?text=Lightning+Bolt","normal":"https://placehold.co/488x680/png?text=Lightning+Bolt"}',
+                    '{"small":"https://cards.scryfall.io/small/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645","normal":"https://cards.scryfall.io/normal/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645"}',
                     "1001",
                 ),
                 (
@@ -86,7 +86,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "67",
                     "uncommon",
                     '["normal","foil"]',
-                    '{"small":"https://placehold.co/146x204/png?text=Counterspell","normal":"https://placehold.co/488x680/png?text=Counterspell"}',
+                    '{"small":"https://cards.scryfall.io/small/front/2/9/29bb1b85-9444-4bfa-b622-092a6873631c.jpg?1562234566","normal":"https://cards.scryfall.io/normal/front/2/9/29bb1b85-9444-4bfa-b622-092a6873631c.jpg?1562234566"}',
                     "1002",
                 ),
                 (
@@ -98,7 +98,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "246",
                     "common",
                     '["normal"]',
-                    '{"small":"https://placehold.co/146x204/png?text=Forest","normal":"https://placehold.co/488x680/png?text=Forest"}',
+                    '{"small":"https://cards.scryfall.io/small/front/3/3/3394d804-c0e5-4901-a8ff-c1a765cc1e21.jpg?1561975836","normal":"https://cards.scryfall.io/normal/front/3/3/3394d804-c0e5-4901-a8ff-c1a765cc1e21.jpg?1561975836"}',
                     "1003",
                 ),
                 (
@@ -110,7 +110,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "54",
                     "uncommon",
                     '["normal"]',
-                    '{"small":"https://placehold.co/146x204/png?text=Swords+to+Plowshares","normal":"https://placehold.co/488x680/png?text=Swords+to+Plowshares"}',
+                    '{"small":"https://cards.scryfall.io/small/front/3/7/375fd2cb-443b-4be4-ad60-6d1a8e74f510.jpg?1562905275","normal":"https://cards.scryfall.io/normal/front/3/7/375fd2cb-443b-4be4-ad60-6d1a8e74f510.jpg?1562905275"}',
                     "1004",
                 ),
                 (
@@ -122,7 +122,7 @@ def seed_catalog_and_prices(db_path: Path) -> None:
                     "334",
                     "uncommon",
                     '["normal","etched"]',
-                    '{"small":"https://placehold.co/146x204/png?text=Sol+Ring","normal":"https://placehold.co/488x680/png?text=Sol+Ring"}',
+                    '{"small":"https://cards.scryfall.io/small/front/5/8/58b26011-e103-45c4-a253-900f4e6b2eeb.jpg?1627501347","normal":"https://cards.scryfall.io/normal/front/5/8/58b26011-e103-45c4-a253-900f4e6b2eeb.jpg?1627501347"}',
                     "1005",
                 ),
             ],
