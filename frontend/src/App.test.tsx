@@ -381,7 +381,12 @@ describe("App", () => {
     expect(screen.getAllByRole("heading", { name: "Lightning Bolt" })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Lightning Blast" })).toBeInTheDocument();
 
-    await user.click(within(boltCard!).getByRole("button", { name: "Choose printing" }));
+    const printingSelect = within(boltCard!).getByRole("combobox", { name: "Printing" });
+    const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
+
+    expect(finishSelect).toBeDisabled();
+
+    await user.click(printingSelect);
 
     await waitFor(() => {
       expect(searchCards).toHaveBeenCalledWith(
@@ -393,10 +398,9 @@ describe("App", () => {
       );
     });
 
-    const printingSelect = await within(boltCard!).findByRole("combobox", { name: "Printing" });
     await user.selectOptions(printingSelect, "bolt-m11");
 
-    const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
+    expect(finishSelect).toBeEnabled();
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
 
     await user.selectOptions(finishSelect, "foil");

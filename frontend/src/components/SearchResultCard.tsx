@@ -19,16 +19,13 @@ export function SearchResultCard(props: {
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [printings, setPrintings] = useState<CatalogSearchRow[]>(props.group.previewPrintings);
   const [printingStatus, setPrintingStatus] = useState<AsyncStatus>("idle");
   const [printingError, setPrintingError] = useState<string | null>(null);
   const [hasLoadedExactPrintings, setHasLoadedExactPrintings] = useState(false);
-  const [selectedPrintingId, setSelectedPrintingId] = useState<string | null>(
-    props.group.previewPrintings[0]?.scryfall_id || null,
-  );
+  const [selectedPrintingId, setSelectedPrintingId] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [finish, setFinish] = useState<FinishValue>(props.group.previewPrintings[0]?.finishes[0] || "normal");
+  const [finish, setFinish] = useState<FinishValue>("normal");
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState("");
@@ -49,28 +46,26 @@ export function SearchResultCard(props: {
   }, [recentlyAdded]);
 
   useEffect(() => {
-    setExpanded(false);
     setPrintings(props.group.previewPrintings);
     setPrintingStatus("idle");
     setPrintingError(null);
     setHasLoadedExactPrintings(false);
-    setSelectedPrintingId(props.group.previewPrintings[0]?.scryfall_id || null);
+    setSelectedPrintingId("");
     setQuantity("1");
-    setFinish(props.group.previewPrintings[0]?.finishes[0] || "normal");
+    setFinish("normal");
     setLocation("");
     setNotes("");
     setTags("");
     setRecentlyAdded(false);
-  }, [props.group.groupId]);
+  }, [props.group.groupId, props.group.previewPrintings]);
 
   const activePrinting =
-    printings.find((printing) => printing.scryfall_id === selectedPrintingId) || printings[0] || null;
-  const busy =
-    props.busyPrintingId !== null &&
-    printings.some((printing) => printing.scryfall_id === props.busyPrintingId);
+    printings.find((printing) => printing.scryfall_id === selectedPrintingId) || null;
+  const busy = props.busyPrintingId !== null && props.busyPrintingId === selectedPrintingId;
 
   useEffect(() => {
     if (!activePrinting) {
+      setFinish("normal");
       return;
     }
 
@@ -79,12 +74,6 @@ export function SearchResultCard(props: {
       setRecentlyAdded(false);
     }
   }, [activePrinting, finish]);
-
-  useEffect(() => {
-    if (!activePrinting && printings.length) {
-      setSelectedPrintingId(printings[0].scryfall_id);
-    }
-  }, [activePrinting, printings]);
 
   const parsedQuantity = Number.parseInt(quantity, 10);
   const parsedTags = parseTags(tags);
@@ -111,16 +100,19 @@ export function SearchResultCard(props: {
   );
   const selectedPrintingSummary = activePrinting
     ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}`
-    : "Choose the exact printing to enable quick add.";
+    : "Choose a printing below, then set finish and add details.";
 
   async function loadPrintings() {
+    if (printingStatus === "loading") {
+      return;
+    }
+
     setPrintingStatus("loading");
     setPrintingError(null);
 
     try {
       const nextPrintings = await props.onLoadPrintings(props.group);
       setPrintings(nextPrintings);
-      setSelectedPrintingId((current) => current || nextPrintings[0]?.scryfall_id || null);
       setHasLoadedExactPrintings(true);
       setPrintingStatus("ready");
     } catch (error) {
@@ -129,12 +121,9 @@ export function SearchResultCard(props: {
     }
   }
 
-  async function handleToggleExpanded() {
-    const nextExpanded = !expanded;
-    setExpanded(nextExpanded);
-
-    if (nextExpanded && !hasLoadedExactPrintings) {
-      await loadPrintings();
+  function ensurePrintingsLoaded() {
+    if (!hasLoadedExactPrintings) {
+      void loadPrintings();
     }
   }
 
@@ -202,196 +191,186 @@ export function SearchResultCard(props: {
               </span>
             ) : null}
           </div>
-
-          <button
-            aria-expanded={expanded}
-            className="secondary-button search-result-toggle"
-            onClick={() => {
-              void handleToggleExpanded();
-            }}
-            type="button"
-          >
-            {expanded ? "Hide printings" : "Choose printing"}
-          </button>
         </div>
       </div>
 
-      {expanded ? (
-        <form className="add-card-form" onSubmit={handleSubmit}>
-          <div className="form-section">
-            <div className="form-section-header">
-              <strong>Quick add</strong>
-              <span>
-                {activePrinting
-                  ? `${printings.length} printings available`
-                  : "Loading the available printings"}
-              </span>
-            </div>
+      <form className="add-card-form" onSubmit={handleSubmit}>
+        <div className="form-section">
+          <div className="form-section-header">
+            <strong>Quick add</strong>
+            <span>
+              {activePrinting
+                ? `${printings.length} printings available`
+                : "Choose a printing first"}
+            </span>
+          </div>
 
-            {printingStatus === "loading" ? (
-              <p className="field-hint field-hint-info">
-                Loading exact printings for {props.group.name}...
-              </p>
-            ) : printingStatus === "error" ? (
-              <div className="search-printing-state">
-                <p className="field-hint field-hint-error">
-                  {printingError || "Could not load printings for this card."}
-                </p>
-                <button
-                  className="secondary-button"
-                  onClick={() => {
-                    void loadPrintings();
-                  }}
-                  type="button"
-                >
-                  Retry printing lookup
-                </button>
-              </div>
-            ) : (
-              <div className="search-result-quick-add-grid">
-                <label className="field search-printing-field">
-                  <span>Printing</span>
-                  <select
-                    className="text-input"
-                    disabled={busy}
-                    onChange={(event) => {
-                      setSelectedPrintingId(event.target.value);
-                      setRecentlyAdded(false);
-                    }}
-                    value={activePrinting?.scryfall_id || ""}
-                  >
-                    {printings.map((printing) => (
-                      <option key={printing.scryfall_id} value={printing.scryfall_id}>
-                        {formatPrintingOptionLabel(printing)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>Qty</span>
-                  <input
-                    className="text-input"
-                    disabled={busy || !props.canAdd}
-                    min="1"
-                    onChange={(event) => {
-                      setQuantity(event.target.value);
-                      setRecentlyAdded(false);
-                    }}
-                    type="number"
-                    value={quantity}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Finish</span>
-                  <select
-                    className="text-input"
-                    disabled={busy || !props.canAdd || availableFinishes.length <= 1}
-                    onChange={(event) => {
-                      setFinish(event.target.value as FinishValue);
-                      setRecentlyAdded(false);
-                    }}
-                    value={finish}
-                  >
-                    {availableFinishes.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
-
-            {activePrinting ? (
-              <div className="tag-row search-printing-meta">
-                <span className="tag-chip">{activePrinting.set_code.toUpperCase()}</span>
-                <span className="tag-chip">{activePrinting.lang.toUpperCase()}</span>
-                {activePrinting.finishes.map((value) => (
-                  <span className="tag-chip subdued" key={value}>
-                    {formatFinishLabel(value)}
-                  </span>
+          <div className="search-result-quick-add-grid">
+            <label className="field search-printing-field">
+              <span>Printing</span>
+              <select
+                className="text-input"
+                disabled={busy}
+                onChange={(event) => {
+                  setSelectedPrintingId(event.target.value);
+                  setRecentlyAdded(false);
+                }}
+                onFocus={ensurePrintingsLoaded}
+                value={selectedPrintingId}
+              >
+                <option value="">Choose printing</option>
+                {printings.map((printing) => (
+                  <option key={printing.scryfall_id} value={printing.scryfall_id}>
+                    {formatPrintingOptionLabel(printing)}
+                  </option>
                 ))}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="form-section form-section-muted">
-            <div className="form-section-header">
-              <strong>Optional row details</strong>
-              <span>{optionalDetailSummary}</span>
-            </div>
+              </select>
+            </label>
 
             <label className="field">
-              <span>Location</span>
+              <span>Qty</span>
               <input
                 className="text-input"
-                disabled={busy || !props.canAdd || printingStatus === "loading"}
+                disabled={busy || !props.canAdd}
+                min="1"
                 onChange={(event) => {
-                  setLocation(event.target.value);
+                  setQuantity(event.target.value);
                   setRecentlyAdded(false);
                 }}
-                placeholder="Red Binder"
-                value={location}
+                type="number"
+                value={quantity}
               />
             </label>
 
             <label className="field">
-              <span>Tags</span>
-              <input
+              <span>Finish</span>
+              <select
                 className="text-input"
-                disabled={busy || !props.canAdd || printingStatus === "loading"}
+                disabled={
+                  busy || !props.canAdd || !activePrinting || availableFinishes.length <= 1
+                }
                 onChange={(event) => {
-                  setTags(event.target.value);
+                  setFinish(event.target.value as FinishValue);
                   setRecentlyAdded(false);
                 }}
-                placeholder="burn, trade"
-                value={tags}
-              />
-            </label>
-
-            <label className="field">
-              <span>Notes</span>
-              <textarea
-                className="text-area"
-                disabled={busy || !props.canAdd || printingStatus === "loading"}
-                onChange={(event) => {
-                  setNotes(event.target.value);
-                  setRecentlyAdded(false);
-                }}
-                placeholder="Optional add-note for the row"
-                rows={3}
-                value={notes}
-              />
+                value={finish}
+              >
+                {!activePrinting ? <option value="normal">Choose printing first</option> : null}
+                {availableFinishes.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 
-          {!quantityIsValid ? (
-            <p className="field-hint field-hint-error">
-              Enter a whole-number quantity greater than 0.
+          {printingStatus === "loading" ? (
+            <p className="field-hint field-hint-info">
+              Loading the full printing list for {props.group.name}...
             </p>
-          ) : recentlyAdded ? (
-            <p className="field-hint field-hint-success">
-              Added successfully. You can keep this group open and add another printing.
+          ) : printingStatus === "error" ? (
+            <div className="search-printing-state">
+              <p className="field-hint field-hint-error">
+                {printingError || "Could not load printings for this card."}
+              </p>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  void loadPrintings();
+                }}
+                type="button"
+              >
+                Retry printing lookup
+              </button>
+            </div>
+          ) : !hasLoadedExactPrintings ? (
+            <p className="field-hint field-hint-info">
+              Open the printing list to load the full set of available printings.
             </p>
           ) : null}
 
-          <button
-            className="primary-button"
-            disabled={
-              busy ||
-              !props.canAdd ||
-              !quantityIsValid ||
-              printingStatus === "loading" ||
-              !activePrinting
-            }
-            type="submit"
-          >
-            {addButtonLabel}
-          </button>
-        </form>
-      ) : null}
+          {activePrinting ? (
+            <div className="tag-row search-printing-meta">
+              <span className="tag-chip">{activePrinting.set_code.toUpperCase()}</span>
+              <span className="tag-chip">{activePrinting.lang.toUpperCase()}</span>
+              {activePrinting.finishes.map((value) => (
+                <span className="tag-chip subdued" key={value}>
+                  {formatFinishLabel(value)}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="form-section form-section-muted">
+          <div className="form-section-header">
+            <strong>Optional row details</strong>
+            <span>{optionalDetailSummary}</span>
+          </div>
+
+          <label className="field">
+            <span>Location</span>
+            <input
+              className="text-input"
+              disabled={busy || !props.canAdd}
+              onChange={(event) => {
+                setLocation(event.target.value);
+                setRecentlyAdded(false);
+              }}
+              placeholder="Red Binder"
+              value={location}
+            />
+          </label>
+
+          <label className="field">
+            <span>Tags</span>
+            <input
+              className="text-input"
+              disabled={busy || !props.canAdd}
+              onChange={(event) => {
+                setTags(event.target.value);
+                setRecentlyAdded(false);
+              }}
+              placeholder="burn, trade"
+              value={tags}
+            />
+          </label>
+
+          <label className="field">
+            <span>Notes</span>
+            <textarea
+              className="text-area"
+              disabled={busy || !props.canAdd}
+              onChange={(event) => {
+                setNotes(event.target.value);
+                setRecentlyAdded(false);
+              }}
+              placeholder="Optional add-note for the row"
+              rows={3}
+              value={notes}
+            />
+          </label>
+        </div>
+
+        {!quantityIsValid ? (
+          <p className="field-hint field-hint-error">
+            Enter a whole-number quantity greater than 0.
+          </p>
+        ) : recentlyAdded ? (
+          <p className="field-hint field-hint-success">
+            Added successfully. You can keep this group open and add another printing.
+          </p>
+        ) : null}
+
+        <button
+          className="primary-button"
+          disabled={busy || !props.canAdd || !quantityIsValid || !activePrinting}
+          type="submit"
+        >
+          {addButtonLabel}
+        </button>
+      </form>
     </article>
   );
 }
