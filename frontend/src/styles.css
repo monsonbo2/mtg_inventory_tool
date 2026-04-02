@@ -247,7 +247,8 @@ button {
 .inventory-nav,
 .audit-list,
 .search-results-grid,
-.collection-grid {
+.collection-grid,
+.compact-collection-list {
   display: grid;
   gap: 12px;
 }
@@ -700,7 +701,7 @@ button {
 }
 
 .inventory-summary-bar {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 18px;
 }
 
@@ -711,6 +712,48 @@ button {
 
 .editor-section-header {
   margin-top: 18px;
+}
+
+.collection-panel-header {
+  display: grid;
+  gap: 16px;
+}
+
+.collection-panel-heading {
+  margin-bottom: 0;
+}
+
+.collection-header-controls,
+.view-toggle {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.collection-header-controls {
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.view-toggle {
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.view-toggle-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.view-toggle-button-active {
+  background: rgba(93, 231, 206, 0.16);
+  color: var(--accent-lagoon);
 }
 
 .inline-editor {
@@ -777,6 +820,98 @@ button {
     inset 0 0 0 1px rgba(93, 231, 206, 0.14);
 }
 
+.compact-row {
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.48);
+  padding: 18px;
+}
+
+.compact-row-busy {
+  border-color: rgba(93, 231, 206, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(93, 231, 206, 0.14);
+}
+
+.compact-row-main,
+.compact-row-left,
+.compact-row-footer {
+  display: flex;
+  gap: 16px;
+}
+
+.compact-row-main {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compact-row-left {
+  min-width: 0;
+  align-items: center;
+  flex: 1 1 auto;
+}
+
+.compact-row-copy {
+  min-width: 0;
+}
+
+.compact-row-copy h3 {
+  font-size: 1.05rem;
+}
+
+.compact-row-tags {
+  margin-bottom: 0;
+}
+
+.compact-row-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(92px, 1fr));
+  gap: 10px;
+  flex: 0 1 auto;
+}
+
+.compact-row-stat {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(8, 17, 31, 0.55);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.compact-row-stat span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.compact-row-stat strong {
+  color: var(--text-main);
+  font-size: 0.92rem;
+}
+
+.compact-row-toggle {
+  flex: 0 0 auto;
+}
+
+.compact-row-editor {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.compact-row-editor-grid {
+  margin-top: 14px;
+}
+
+.compact-row-footer {
+  margin-top: 14px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.compact-row-footer-tags {
+  margin: 0;
+}
+
 .audit-card {
   border-radius: 18px;
   padding: 16px;
@@ -796,6 +931,47 @@ button {
 
 .audit-meta {
   margin: 8px 0 0;
+}
+
+.audit-feed-embedded {
+  display: grid;
+  gap: 12px;
+}
+
+.activity-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: flex-end;
+  padding: 20px;
+  background: rgba(2, 8, 23, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.activity-drawer {
+  width: min(480px, 100%);
+  height: 100%;
+  border-radius: 28px;
+  padding: 24px;
+  overflow: auto;
+  backdrop-filter: blur(18px);
+  background: rgba(8, 17, 31, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 28px 60px rgba(2, 8, 23, 0.5);
+}
+
+.activity-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.activity-drawer-subtitle {
+  margin: 8px 0 0;
+  color: var(--text-muted);
 }
 
 .empty-state,
@@ -878,7 +1054,8 @@ button {
   .item-meta-grid,
   .editor-grid,
   .inventory-summary-bar,
-  .mini-grid {
+  .mini-grid,
+  .compact-row-stats {
     grid-template-columns: 1fr;
   }
 
@@ -900,5 +1077,23 @@ button {
 
   .inline-editor-row {
     grid-template-columns: 1fr;
+  }
+
+  .compact-row-main,
+  .compact-row-left,
+  .compact-row-footer,
+  .activity-drawer-header,
+  .collection-header-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .activity-drawer-backdrop {
+    padding: 0;
+  }
+
+  .activity-drawer {
+    width: 100%;
+    border-radius: 0;
   }
 }

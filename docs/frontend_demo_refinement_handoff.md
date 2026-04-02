@@ -148,6 +148,9 @@ Rules:
 - only one row may be expanded at a time
 - opening a row closes any previously open row
 - clicking the open row’s expand control closes it
+- closing an expanded row discards any unsaved local edits in that row and
+  resets the fields to the last saved server state
+- do not add a confirm-before-close dialog in this pass
 
 Expanded content should include:
 
@@ -184,12 +187,12 @@ presentation, not to rework the detailed card UI.
 
 ### 7. Activity drawer
 
-Create a right-side drawer component and render `AuditFeed` inside it.
+Create a right-side drawer component and render audit activity inside it.
 
 Recommended split:
 
 - `ActivityDrawer`
-- existing `AuditFeed` reused inside the drawer body
+- existing `AuditFeed` reused for drawer content
 
 Drawer behavior:
 
@@ -199,6 +202,9 @@ Drawer behavior:
 - closes via `Escape`
 - overlays the page on desktop
 - becomes full-width on narrow screens
+- the drawer owns the overlay, drawer header, and close affordance
+- avoid nested panel chrome; `AuditFeed` should support an embedded/content-only
+  mode when rendered inside the drawer
 
 Data behavior:
 
@@ -250,7 +256,8 @@ Internal frontend changes expected:
   - `onExpandedItemChange`
   - `onOpenActivity`
 - `App.tsx` will need to own and pass those props
-- `AuditFeed` should remain a reusable, data-driven component
+- `AuditFeed` should remain a reusable, data-driven component and support an
+  embedded/content-only render mode for drawer usage
 - New UI components will likely be added for:
   - compact collection list/row
   - activity drawer
@@ -263,6 +270,8 @@ Add or update UI tests to cover:
 - compact mode is the default on initial render
 - `Compact` / `Detailed` toggle switches the presentation without refetching
 - one compact row expands at a time
+- closing or switching compact rows clears unsaved local draft edits in the row
+  that was closed
 - compact-row inline edits still use the existing mutation/notice flow
 - `View Activity` opens the activity drawer
 - activity drawer closes on close button
@@ -290,4 +299,5 @@ Run:
 - Detailed reuses the current richer card UI
 - Activity uses a right-side drawer
 - Only one compact row expands at a time
+- Closing a compact row discards unsaved local draft edits
 - No backend changes, URL state, or persistence in this pass

@@ -10,6 +10,7 @@ import {
   deleteInventoryItem,
   searchCards,
 } from "./api";
+import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AuditFeed } from "./components/AuditFeed";
 import { InventorySidebar } from "./components/InventorySidebar";
 import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
@@ -67,6 +68,9 @@ export default function App() {
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [collectionView, setCollectionView] = useState<"compact" | "detailed">("compact");
+  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [finishSupportByCard, setFinishSupportByCard] = useState<Record<string, FinishSupportState>>({});
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
@@ -116,11 +120,14 @@ export default function App() {
       inventoryViewRequestIdRef.current += 1;
       setItems([]);
       setAuditEvents([]);
+      setExpandedItemId(null);
+      setActivityOpen(false);
       setViewError(null);
       setViewStatus("idle");
       return;
     }
 
+    setExpandedItemId(null);
     void loadInventoryOverview(selectedInventory);
   }, [selectedInventory]);
 
@@ -591,6 +598,13 @@ export default function App() {
     }
   }
 
+  function handleCollectionViewChange(nextView: "compact" | "detailed") {
+    setCollectionView(nextView);
+    if (nextView === "detailed") {
+      setExpandedItemId(null);
+    }
+  }
+
   const selectedInventoryRow =
     inventories.find((inventory) => inventory.slug === selectedInventory) ?? null;
   const totalEstimatedValue = items.reduce(
@@ -633,12 +647,6 @@ export default function App() {
             selectedInventory={selectedInventory}
             selectedInventoryRow={selectedInventoryRow}
           />
-          <AuditFeed
-            auditEvents={auditEvents}
-            selectedInventoryRow={selectedInventoryRow}
-            viewError={viewError}
-            viewStatus={viewStatus}
-          />
         </aside>
 
         <main className="content-column">
@@ -666,9 +674,14 @@ export default function App() {
           />
           <OwnedCollectionPanel
             busyItem={busyItem}
+            collectionView={collectionView}
+            expandedItemId={expandedItemId}
             finishSupportByCard={finishSupportByCard}
             items={items}
+            onCollectionViewChange={handleCollectionViewChange}
             onDelete={handleDeleteItem}
+            onExpandedItemChange={setExpandedItemId}
+            onOpenActivity={() => setActivityOpen(true)}
             onNotice={reportNotice}
             onPatch={handlePatchItem}
             selectedInventoryRow={selectedInventoryRow}
@@ -677,6 +690,25 @@ export default function App() {
           />
         </main>
       </div>
+
+      <ActivityDrawer
+        isOpen={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        subtitle={
+          selectedInventoryRow
+            ? `${selectedInventoryRow.display_name} · latest 12 events`
+            : "Choose an inventory to inspect its recent write activity."
+        }
+        title="Inventory Activity"
+      >
+        <AuditFeed
+          auditEvents={auditEvents}
+          embedded
+          selectedInventoryRow={selectedInventoryRow}
+          viewError={viewError}
+          viewStatus={viewStatus}
+        />
+      </ActivityDrawer>
     </div>
   );
 }
