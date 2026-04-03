@@ -82,6 +82,10 @@ preserve for the first API-backed version of the project.
   - that default scope excludes auxiliary catalog objects such as tokens,
     emblems, art-series rows, planar cards, schemes, and vanguards, as well as
     digital-only, non-paper, and oversized prints
+  - rollout note: on upgraded pre-`0008` databases, operators should run a
+    fresh Scryfall bulk import after migrating so the persisted default search
+    scope matches fresh-import classification rather than best-effort legacy
+    `type_line` backfill
   - deferred follow-up: add an explicit opt-in broad catalog mode such as
     `scope=all` so callers can intentionally search auxiliary catalog objects
     like tokens, emblems, and art-series rows when needed

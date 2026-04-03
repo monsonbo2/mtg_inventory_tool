@@ -83,6 +83,25 @@ Migrate the database intentionally before starting the service:
 mtg-mvp-importer migrate-db --db "var/db/mtg_mvp.db"
 ```
 
+If this is an upgraded existing catalog rather than a fresh database, run a
+fresh Scryfall bulk import after the migration and before relying on the
+default app-facing card-search scope:
+
+```bash
+mtg-mvp-importer import-scryfall \
+  --db "var/db/mtg_mvp.db" \
+  --json /path/to/default-cards.json
+```
+
+Why this matters:
+
+- migration `0008` can only backfill the new default add-search scope
+  heuristically from older `type_line` data
+- the full runtime classification now depends on richer Scryfall fields such as
+  `layout`, `set_type`, `games`, `digital`, and `oversized`
+- without that post-upgrade reimport, some auxiliary catalog rows can remain in
+  the default search scope until the next Scryfall refresh
+
 Then run the API in `shared_service` mode behind the reverse proxy:
 
 ```bash

@@ -165,6 +165,16 @@ mtg-mvp-importer sync-bulk \
   --cache-dir "var/bulk_cache/latest"
 ```
 
+Important upgrade note:
+
+- migration `0008` adds the durable catalog-classification fields used by the
+  default app-facing card-search scope
+- existing databases can migrate in place, but legacy rows only get a
+  best-effort backfill from older `type_line` data
+- after upgrading an existing catalog, run a fresh Scryfall bulk import before
+  relying on the narrowed default add-search scope for tokens, emblems,
+  art-series rows, digital-only rows, and other auxiliary catalog objects
+
 Or import from local bulk files you already downloaded:
 
 ```bash
