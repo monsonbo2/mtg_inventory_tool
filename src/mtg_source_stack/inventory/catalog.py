@@ -14,6 +14,7 @@ from .normalize import (
     DEFAULT_SEARCH_LIMIT,
     MAX_SEARCH_LIMIT,
     extract_image_uri_fields,
+    normalize_catalog_search_scope,
     normalize_finish,
     normalize_language_code,
     normalized_catalog_finish_list,
@@ -21,7 +22,7 @@ from .normalize import (
     validate_supported_finish,
     validate_limit_value,
 )
-from .query_catalog import add_catalog_filters, add_default_add_search_scope_filter, build_catalog_search_fts_query
+from .query_catalog import add_catalog_filters, add_catalog_scope_filter, build_catalog_search_fts_query, catalog_scope_filter_sql
 from .response_models import CatalogNameSearchRow, CatalogSearchRow
 
 
@@ -128,9 +129,11 @@ def search_cards(
     lang: str | None = None,
     exact: bool = False,
     limit: int = DEFAULT_SEARCH_LIMIT,
+    scope: str | None = None,
 ) -> list[CatalogSearchRow]:
     if not query.strip():
         raise ValidationError("query is required.")
+    normalized_scope = normalize_catalog_search_scope(scope)
     validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
     require_current_schema(db_path)
     with connect(db_path) as connection:
@@ -172,7 +175,7 @@ def search_cards(
             finish=finish,
             lang=lang,
         )
-        add_default_add_search_scope_filter(where_parts)
+        add_catalog_scope_filter(where_parts, scope=normalized_scope)
 
         if not exact and fts_query is not None:
             params = [fts_query, *params]
@@ -220,9 +223,11 @@ def search_card_names(
     *,
     exact: bool = False,
     limit: int = DEFAULT_SEARCH_LIMIT,
+    scope: str | None = None,
 ) -> list[CatalogNameSearchRow]:
     if not query.strip():
         raise ValidationError("query is required.")
+    normalized_scope = normalize_catalog_search_scope(scope)
     validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
     require_current_schema(db_path)
     with connect(db_path) as connection:
@@ -256,7 +261,8 @@ def search_card_names(
                 """
                 search_join = "LEFT JOIN search_match ON search_match.scryfall_id = mtg_cards.scryfall_id"
 
-        add_default_add_search_scope_filter(where_parts)
+        scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
+        add_catalog_scope_filter(where_parts, scope=normalized_scope)
 
         if not exact and fts_query is not None:
             params = [fts_query, *params]
@@ -292,7 +298,7 @@ def search_card_names(
                     COUNT(*) AS printings_count
                 FROM mtg_cards
                 WHERE oracle_id IN (SELECT oracle_id FROM matched_groups)
-                  AND COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
+                  AND {scope_filter_sql}
                 GROUP BY oracle_id
             ),
             representative_rows AS (
@@ -319,7 +325,7 @@ def search_card_names(
                     ) AS row_number
                 FROM mtg_cards
                 INNER JOIN matched_groups ON matched_groups.oracle_id = mtg_cards.oracle_id
-                WHERE COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
+                WHERE {scope_filter_sql}
             )
             SELECT
                 representative_rows.oracle_id,
@@ -351,7 +357,7 @@ def search_card_names(
             SELECT oracle_id, lang
             FROM mtg_cards
             WHERE oracle_id IN ({placeholders})
-              AND COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
+              AND {scope_filter_sql}
             ORDER BY
                 CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
                 LOWER(lang),
@@ -386,15 +392,18 @@ def list_card_printings_for_oracle(
     oracle_id: str,
     *,
     lang: str | None = None,
+    scope: str | None = None,
 ) -> list[CatalogSearchRow]:
     oracle_id_text = text_or_none(oracle_id)
     if oracle_id_text is None:
         raise ValidationError("oracle_id is required.")
     requested_lang = text_or_none(lang)
+    normalized_scope = normalize_catalog_search_scope(scope)
+    scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = connection.execute(
-            """
+            f"""
             SELECT
                 scryfall_id,
                 name,
@@ -408,7 +417,7 @@ def list_card_printings_for_oracle(
                 image_uris_json
             FROM mtg_cards
             WHERE oracle_id = ?
-              AND COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
+              AND {scope_filter_sql}
             ORDER BY
                 COALESCE(released_at, '') DESC,
                 CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,

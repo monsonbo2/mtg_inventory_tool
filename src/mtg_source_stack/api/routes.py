@@ -81,6 +81,10 @@ PRINTINGS_LANG_DESCRIPTION = (
     f"{SEARCH_LANG_DESCRIPTION} Omit this parameter to prefer English printings by default. "
     "Use `all` to include every available catalog language."
 )
+SEARCH_SCOPE_DESCRIPTION = (
+    "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. "
+    "Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows."
+)
 
 ERROR_RESPONSE_DESCRIPTIONS = {
     401: "Authentication required",
@@ -232,6 +236,10 @@ def cards_search(
     rarity: str | None = None,
     finish: Annotated[FinishInput | None, Query(description=FINISH_INPUT_DESCRIPTION)] = None,
     lang: Annotated[str | None, Query(description=SEARCH_LANG_DESCRIPTION)] = None,
+    scope: Annotated[
+        str | None,
+        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
+    ] = None,
     exact: bool = False,
     limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
 ) -> Any:
@@ -243,6 +251,7 @@ def cards_search(
             rarity=rarity,
             finish=finish,
             lang=lang,
+            scope=scope,
             exact=exact,
             limit=limit,
         )
@@ -258,6 +267,10 @@ def card_names_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     query: str,
+    scope: Annotated[
+        str | None,
+        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
+    ] = None,
     exact: bool = False,
     limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
 ) -> Any:
@@ -265,6 +278,7 @@ def card_names_search(
         search_card_names(
             settings.db_path,
             query=query,
+            scope=scope,
             exact=exact,
             limit=limit,
         )
@@ -281,12 +295,17 @@ def card_printings_lookup(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     lang: Annotated[str | None, Query(description=PRINTINGS_LANG_DESCRIPTION)] = None,
+    scope: Annotated[
+        str | None,
+        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
+    ] = None,
 ) -> Any:
     return _serialize(
         list_card_printings_for_oracle(
             settings.db_path,
             oracle_id=oracle_id,
             lang=lang,
+            scope=scope,
         )
     )
 

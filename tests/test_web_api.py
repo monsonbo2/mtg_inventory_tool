@@ -161,6 +161,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 "Recommended codes include: en, ja, de, fr",
                 search_parameters["lang"]["description"],
             )
+            self.assertEqual(
+                ["default", "all"],
+                search_parameters["scope"]["schema"]["enum"],
+            )
 
             card_names_schema = spec["paths"]["/cards/search/names"]["get"]["responses"]["200"]["content"][
                 "application/json"
@@ -176,6 +180,14 @@ class WebApiSchemaTest(unittest.TestCase):
                 "string",
                 components[card_name_schema_name]["properties"]["available_languages"]["items"]["type"],
             )
+            name_search_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/cards/search/names"]["get"]["parameters"]
+            }
+            self.assertEqual(
+                ["default", "all"],
+                name_search_parameters["scope"]["schema"]["enum"],
+            )
 
             printings_schema = spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["responses"]["200"][
                 "content"
@@ -190,6 +202,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 for parameter in spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["parameters"]
             }
             self.assertIn("Use `all` to include every available catalog language", printings_parameters["lang"]["description"])
+            self.assertEqual(
+                ["default", "all"],
+                printings_parameters["scope"]["schema"]["enum"],
+            )
 
             owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
                 "content"
@@ -878,9 +894,59 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, all_printings.status_code)
                 self.assertEqual(["api-scoped-ja"], [row["scryfall_id"] for row in all_printings.json()])
 
+                search_all = client.get(
+                    "/cards/search",
+                    params={"query": "API Scope Probe", "scope": "all"},
+                )
+                self.assertEqual(200, search_all.status_code)
+                self.assertEqual(
+                    ["api-scope-allowed", "api-scope-excluded"],
+                    [row["scryfall_id"] for row in search_all.json()],
+                )
+
+                name_search_all = client.get(
+                    "/cards/search/names",
+                    params={"query": "API Scoped Lookup", "scope": "all"},
+                )
+                self.assertEqual(200, name_search_all.status_code)
+                self.assertEqual(1, len(name_search_all.json()))
+                self.assertEqual(2, name_search_all.json()[0]["printings_count"])
+                self.assertEqual(["en", "ja"], name_search_all.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-scoped-en-small.jpg",
+                    name_search_all.json()[0]["image_uri_small"],
+                )
+
+                default_printings_all_scope = client.get(
+                    "/cards/oracle/api-scoped-oracle/printings",
+                    params={"scope": "all"},
+                )
+                self.assertEqual(200, default_printings_all_scope.status_code)
+                self.assertEqual(
+                    ["api-scoped-en-excluded"],
+                    [row["scryfall_id"] for row in default_printings_all_scope.json()],
+                )
+
+                all_printings_all_scope = client.get(
+                    "/cards/oracle/api-scoped-oracle/printings",
+                    params={"lang": "all", "scope": "all"},
+                )
+                self.assertEqual(200, all_printings_all_scope.status_code)
+                self.assertEqual(
+                    ["api-scoped-en-excluded", "api-scoped-ja"],
+                    [row["scryfall_id"] for row in all_printings_all_scope.json()],
+                )
+
                 excluded = client.get("/cards/oracle/api-excluded-only-oracle/printings")
                 self.assertEqual(404, excluded.status_code)
                 self.assertEqual("not_found", excluded.json()["error"]["code"])
+
+                excluded_all_scope = client.get(
+                    "/cards/oracle/api-excluded-only-oracle/printings",
+                    params={"scope": "all"},
+                )
+                self.assertEqual(200, excluded_all_scope.status_code)
+                self.assertEqual(["api-excluded-only"], [row["scryfall_id"] for row in excluded_all_scope.json()])
 
     def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1885,3 +1951,18 @@ class WebApiTest(unittest.TestCase):
                 for response in responses:
                     self.assertEqual(400, response.status_code)
                     self.assertEqual("validation_error", response.json()["error"]["code"])
+
+    def test_demo_api_rejects_invalid_catalog_scope_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                responses = [
+                    client.get("/cards/search", params={"query": "API", "scope": "weird"}),
+                    client.get("/cards/search/names", params={"query": "API", "scope": "weird"}),
+                    client.get("/cards/oracle/missing-oracle/printings", params={"scope": "weird"}),
+                ]
+
+                for response in responses:
+                    self.assertEqual(400, response.status_code)
+                    self.assertEqual("validation_error", response.json()["error"]["code"])
+                    self.assertIn("scope must be one of: default, all.", response.json()["error"]["message"])

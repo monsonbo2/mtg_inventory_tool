@@ -54,8 +54,16 @@ def add_catalog_filters(
         where_parts.append("(" + " OR ".join(finish_parts) + ")")
 
 
-def add_default_add_search_scope_filter(where_parts: list[str], *, table_name: str = "mtg_cards") -> None:
-    where_parts.append(f"COALESCE({table_name}.is_default_add_searchable, 1) = 1")
+def catalog_scope_filter_sql(scope: str, *, table_name: str = "mtg_cards") -> str:
+    if scope == "default":
+        return f"COALESCE({table_name}.is_default_add_searchable, 1) = 1"
+    if scope == "all":
+        return "1 = 1"
+    raise ValueError(f"Unsupported catalog scope: {scope}")
+
+
+def add_catalog_scope_filter(where_parts: list[str], *, scope: str, table_name: str = "mtg_cards") -> None:
+    where_parts.append(catalog_scope_filter_sql(scope, table_name=table_name))
 
 
 def build_catalog_search_fts_query(query: str) -> str | None:

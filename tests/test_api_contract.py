@@ -33,6 +33,7 @@ from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReady
 from mtg_source_stack.inventory.response_models import serialize_response
 from mtg_source_stack.inventory.service import (
     create_inventory,
+    list_card_printings_for_oracle,
     list_inventory_audit_events,
     list_owned_filtered,
     reconcile_prices,
@@ -373,7 +374,10 @@ class ApiContractTest(RepoSmokeTestCase):
             lambda: search_cards(Path("var/db/not-used.db"), query="bolt", limit=-1),
             lambda: search_cards(Path("var/db/not-used.db"), query="", limit=10),
             lambda: search_cards(Path("var/db/not-used.db"), query="   ", limit=10),
+            lambda: search_cards(Path("var/db/not-used.db"), query="bolt", scope="weird", limit=10),
             lambda: search_card_names(Path("var/db/not-used.db"), query="", limit=10),
+            lambda: search_card_names(Path("var/db/not-used.db"), query="bolt", scope="weird", limit=10),
+            lambda: list_card_printings_for_oracle(Path("var/db/not-used.db"), "oracle-1", scope="weird"),
             lambda: list_owned_filtered(
                 Path("var/db/not-used.db"),
                 inventory_slug="personal",
