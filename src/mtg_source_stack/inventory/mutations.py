@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
-from ..errors import ConflictError, ValidationError
+from ..errors import ConflictError, NotFoundError, ValidationError
 from .audit import load_inventory_item_snapshot, write_inventory_audit_event
 from .catalog import resolve_card_row
 from .money import coerce_decimal
@@ -21,6 +21,7 @@ from .normalize import (
     normalize_external_id,
     normalize_finish,
     normalize_language_code,
+    normalize_tags,
     parse_tags,
     tags_to_json,
     text_or_none,
@@ -30,12 +31,14 @@ from .policies import ensure_add_card_metadata_compatible, resolve_merge_acquisi
 from .query_inventory import (
     find_inventory_item_collision,
     get_inventory_item_row,
+    get_inventory_row,
     get_or_create_inventory_row,
     inventory_item_result_from_row,
     merge_inventory_item_rows,
 )
 from .response_models import (
     AddCardResult,
+    BulkInventoryItemMutationResult,
     MergeRowsResult,
     RemoveCardResult,
     SetAcquisitionResult,
@@ -94,6 +97,94 @@ def _split_row_concurrent_collision_error() -> ConflictError:
     return ConflictError(
         "Splitting row would collide with an existing inventory row due to a concurrent write. Retry the request."
     )
+
+
+def _bulk_item_operation_error() -> ValidationError:
+    return ValidationError("bulk operation must be one of: add_tags, clear_tags, remove_tags, set_tags.")
+
+
+def _normalize_bulk_item_ids(item_ids: list[int]) -> list[int]:
+    if not item_ids:
+        raise ValidationError("item_ids must include at least one item id.")
+    if len(set(item_ids)) != len(item_ids):
+        raise ValidationError("item_ids must not contain duplicates.")
+    if len(item_ids) > 100:
+        raise ValidationError("item_ids must not contain more than 100 ids.")
+    return list(item_ids)
+
+
+def _normalized_bulk_tags(*, operation: str, tags: list[str] | None) -> list[str]:
+    if operation not in {"add_tags", "remove_tags", "set_tags", "clear_tags"}:
+        raise _bulk_item_operation_error()
+    if operation == "clear_tags":
+        if tags is not None:
+            raise ValidationError("tags must be omitted for clear_tags.")
+        return []
+
+    if tags is None:
+        raise ValidationError(f"tags are required for {operation}.")
+    normalized_tags = normalize_tags(tags)
+    if not normalized_tags:
+        raise ValidationError(f"tags must include at least one tag for {operation}.")
+    return normalized_tags
+
+
+def _load_bulk_inventory_item_rows(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    item_ids: list[int],
+) -> list[sqlite3.Row]:
+    inventory = get_inventory_row(connection, inventory_slug)
+    placeholders = ", ".join("?" for _ in item_ids)
+    rows = connection.execute(
+        f"""
+        SELECT
+            ii.id AS item_id,
+            ii.inventory_id,
+            i.slug AS inventory,
+            ii.scryfall_id,
+            c.name AS card_name,
+            c.set_code,
+            c.set_name,
+            c.collector_number,
+            c.finishes_json,
+            ii.quantity,
+            ii.condition_code,
+            ii.finish,
+            ii.language_code,
+            ii.location,
+            ii.acquisition_price,
+            ii.acquisition_currency,
+            ii.notes,
+            COALESCE(ii.tags_json, '[]') AS tags_json
+        FROM inventory_items ii
+        JOIN inventories i ON i.id = ii.inventory_id
+        JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
+        WHERE ii.inventory_id = ?
+          AND ii.id IN ({placeholders})
+        """,
+        (inventory["id"], *item_ids),
+    ).fetchall()
+    if len(rows) != len(item_ids):
+        raise NotFoundError(
+            f"One or more item_ids were not found in inventory '{inventory_slug}'."
+        )
+    rows_by_id = {int(row["item_id"]): row for row in rows}
+    return [rows_by_id[item_id] for item_id in item_ids]
+
+
+def _bulk_tags_for_operation(*, operation: str, current_tags: list[str], requested_tags: list[str]) -> list[str]:
+    if operation == "add_tags":
+        return merge_tags(current_tags, requested_tags)
+    if operation == "remove_tags":
+        requested = set(requested_tags)
+        return [tag for tag in current_tags if tag not in requested]
+    if operation == "set_tags":
+        return list(requested_tags)
+    if operation == "clear_tags":
+        return []
+    raise _bulk_item_operation_error()
 
 
 def _complete_location_merge(
@@ -1269,6 +1360,84 @@ def set_tags(
         **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
         operation="set_tags",
         old_tags=list(before_snapshot["tags"]),
+    )
+
+
+def bulk_mutate_inventory_items(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    operation: str,
+    item_ids: list[int],
+    tags: list[str] | None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> BulkInventoryItemMutationResult:
+    normalized_item_ids = _normalize_bulk_item_ids(item_ids)
+    normalized_tags = _normalized_bulk_tags(operation=operation, tags=tags)
+    db_file = _prepared_db_path(db_path)
+
+    with connect(db_file) as connection:
+        item_rows = _load_bulk_inventory_item_rows(
+            connection,
+            inventory_slug=inventory_slug,
+            item_ids=normalized_item_ids,
+        )
+        planned_updates: list[tuple[sqlite3.Row, dict[str, Any], list[str]]] = []
+
+        for row in item_rows:
+            before_snapshot = inventory_item_result_from_row(row)
+            current_tags = list(before_snapshot["tags"])
+            next_tags = _bulk_tags_for_operation(
+                operation=operation,
+                current_tags=current_tags,
+                requested_tags=normalized_tags,
+            )
+            if next_tags == current_tags:
+                continue
+            planned_updates.append((row, before_snapshot, next_tags))
+
+        updated_item_ids: list[int] = []
+        updated_count = len(planned_updates)
+        for row, before_snapshot, next_tags in planned_updates:
+            connection.execute(
+                """
+                UPDATE inventory_items
+                SET tags_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (tags_to_json(next_tags), row["item_id"]),
+            )
+            after_snapshot = dict(before_snapshot)
+            after_snapshot["tags"] = list(next_tags)
+            updated_item_ids.append(int(row["item_id"]))
+            write_inventory_audit_event(
+                connection,
+                inventory_slug=inventory_slug,
+                action=operation,
+                item_id=int(row["item_id"]),
+                before=before_snapshot,
+                after=after_snapshot,
+                metadata={
+                    "bulk_operation": True,
+                    "bulk_kind": operation,
+                    "bulk_count": len(normalized_item_ids),
+                    "updated_count": updated_count,
+                },
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
+            )
+
+        connection.commit()
+
+    return BulkInventoryItemMutationResult(
+        inventory=inventory_slug,
+        operation=operation,
+        requested_item_ids=normalized_item_ids,
+        updated_item_ids=updated_item_ids,
+        updated_count=updated_count,
     )
 
 

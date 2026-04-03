@@ -13,9 +13,14 @@ from tests.common import RepoSmokeTestCase
 from mtg_source_stack.api.app import create_app
 from mtg_source_stack.api.dependencies import ApiSettings
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
-from mtg_source_stack.api.request_models import AddInventoryItemRequest, PatchInventoryItemRequest
+from mtg_source_stack.api.request_models import (
+    AddInventoryItemRequest,
+    BulkInventoryItemMutationRequest,
+    PatchInventoryItemRequest,
+)
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
+    BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
     OwnedInventoryRowResponse,
@@ -257,6 +262,29 @@ class ApiContractTest(RepoSmokeTestCase):
             "Catalog language codes available for the matched card",
             catalog_name_properties["available_languages"]["description"],
         )
+
+        bulk_schema = BulkInventoryItemMutationRequest.model_json_schema()
+        bulk_properties = bulk_schema["properties"]
+        self.assertIn("supports only tag operations", bulk_schema["description"])
+        self.assertEqual(
+            ["add_tags", "remove_tags", "set_tags", "clear_tags"],
+            bulk_properties["operation"]["enum"],
+        )
+        self.assertEqual(1, bulk_properties["item_ids"]["minItems"])
+        self.assertEqual(100, bulk_properties["item_ids"]["maxItems"])
+        self.assertIn("Omit this field for clear_tags", bulk_properties["tags"]["description"])
+
+        bulk_response = BulkInventoryItemMutationResponse.model_validate(
+            {
+                "inventory": "personal",
+                "operation": "add_tags",
+                "requested_item_ids": [12, 27, 44],
+                "updated_item_ids": [12, 44],
+                "updated_count": 2,
+            }
+        )
+        self.assertEqual("add_tags", bulk_response.operation)
+        self.assertEqual([12, 44], bulk_response.updated_item_ids)
 
     def test_patch_contract_publishes_single_operation_rule_and_discriminator(self) -> None:
         patch_schema = PatchInventoryItemRequest.model_json_schema()

@@ -105,6 +105,15 @@ class InventoryCreateResult(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class BulkInventoryItemMutationResult(ResponseModel):
+    inventory: str
+    operation: str
+    requested_item_ids: list[int]
+    updated_item_ids: list[int]
+    updated_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class InventoryAuditEvent(ResponseModel):
     id: int
     inventory: str

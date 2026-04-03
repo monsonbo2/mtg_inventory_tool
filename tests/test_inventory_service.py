@@ -7,6 +7,7 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
@@ -14,6 +15,7 @@ from mtg_source_stack.errors import ConflictError, NotFoundError, ValidationErro
 from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER
 from mtg_source_stack.inventory.response_models import (
     AddCardResult,
+    BulkInventoryItemMutationResult,
     MergeRowsResult,
     RemoveCardResult,
     SetAcquisitionResult,
@@ -28,6 +30,7 @@ from mtg_source_stack.inventory.response_models import (
 )
 from mtg_source_stack.inventory.service import (
     add_card,
+    bulk_mutate_inventory_items,
     create_inventory,
     inventory_health,
     inventory_report,
@@ -1139,6 +1142,215 @@ class InventoryServiceTest(RepoSmokeTestCase):
             with connect(db_path) as connection:
                 remaining = connection.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0]
             self.assertEqual(0, remaining)
+
+    def test_bulk_mutate_inventory_items_applies_tag_operations_and_writes_grouped_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal","foil"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="normal",
+                location="Binder A",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="foil",
+                location="Binder B",
+                tags_json='["foil"]',
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            add_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="add_tags",
+                item_ids=item_ids,
+                tags=["trade", "deck"],
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-add",
+            )
+            self.assertIsInstance(add_result, BulkInventoryItemMutationResult)
+            self.assertEqual("add_tags", add_result.operation)
+            self.assertEqual(item_ids, add_result.requested_item_ids)
+            self.assertEqual(item_ids, add_result.updated_item_ids)
+            self.assertEqual(2, add_result.updated_count)
+
+            remove_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="remove_tags",
+                item_ids=item_ids,
+                tags=["deck"],
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-remove",
+            )
+            self.assertEqual("remove_tags", remove_result.operation)
+            self.assertEqual(item_ids, remove_result.updated_item_ids)
+
+            set_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_tags",
+                item_ids=[item_ids[0]],
+                tags=["featured"],
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-set",
+            )
+            self.assertEqual([item_ids[0]], set_result.updated_item_ids)
+            self.assertEqual(1, set_result.updated_count)
+
+            clear_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="clear_tags",
+                item_ids=[item_ids[1]],
+                tags=None,
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-clear",
+            )
+            self.assertEqual("clear_tags", clear_result.operation)
+            self.assertEqual([item_ids[1]], clear_result.updated_item_ids)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_tags = {row.item_id: row.tags for row in rows}
+            self.assertEqual(["featured"], row_tags[item_ids[0]])
+            self.assertEqual([], row_tags[item_ids[1]])
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("clear_tags", audit_rows[0].action)
+            self.assertEqual("set_tags", audit_rows[1].action)
+            self.assertEqual("remove_tags", audit_rows[2].action)
+            self.assertEqual("remove_tags", audit_rows[3].action)
+            self.assertEqual("add_tags", audit_rows[4].action)
+            self.assertEqual("add_tags", audit_rows[5].action)
+            self.assertTrue(audit_rows[0].metadata["bulk_operation"])
+            self.assertEqual("clear_tags", audit_rows[0].metadata["bulk_kind"])
+            self.assertEqual(1, audit_rows[0].metadata["bulk_count"])
+            self.assertEqual("req-bulk-clear", audit_rows[0].request_id)
+
+    def test_bulk_mutate_inventory_items_rolls_back_when_audit_write_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Binder A",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Binder B",
+                tags_json='["trade"]',
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            with patch(
+                "mtg_source_stack.inventory.mutations.write_inventory_audit_event",
+                side_effect=RuntimeError("audit write failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "audit write failed"):
+                    bulk_mutate_inventory_items(
+                        db_path,
+                        inventory_slug="personal",
+                        operation="add_tags",
+                        item_ids=item_ids,
+                        tags=["featured"],
+                    )
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_tags = {row.item_id: row.tags for row in rows}
+            self.assertEqual(["deck"], row_tags[item_ids[0]])
+            self.assertEqual(["trade"], row_tags[item_ids[1]])
+
+    def test_bulk_mutate_inventory_items_rejects_item_ids_outside_the_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="trade-binder",
+                display_name="Trade Binder",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="trade-binder",
+                scryfall_id="race-card-1",
+                location="Binder A",
+            )
+            with connect(db_path) as connection:
+                foreign_item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(NotFoundError, "One or more item_ids were not found in inventory 'personal'"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="add_tags",
+                    item_ids=[foreign_item_id],
+                    tags=["trade"],
+                )
 
     def test_service_facade_raises_domain_errors_for_not_found_validation_and_conflict_cases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

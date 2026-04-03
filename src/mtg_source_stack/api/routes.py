@@ -19,6 +19,7 @@ from ..inventory.normalize import (
 from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
+    bulk_mutate_inventory_items,
     create_inventory,
     list_card_printings_for_oracle,
     list_inventory_audit_events,
@@ -47,6 +48,7 @@ from .dependencies import (
 )
 from .request_models import (
     AddInventoryItemRequest,
+    BulkInventoryItemMutationRequest,
     CONDITION_CODE_DESCRIPTION,
     FINISH_INPUT_DESCRIPTION,
     FinishInput,
@@ -58,6 +60,7 @@ from .request_models import (
 from .response_models import (
     AddInventoryItemResponse,
     ApiErrorResponse,
+    BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
     HealthResponse,
@@ -339,6 +342,31 @@ def inventory_items_add(
             acquisition_currency=payload.acquisition_currency,
             notes=payload.notes,
             tags=_tags_to_csv(payload.tags),
+            actor_type=context.actor_type,
+            actor_id=context.actor_id,
+            request_id=context.request_id,
+        )
+    )
+
+
+@router.post(
+    "/inventories/{inventory_slug}/items/bulk",
+    response_model=BulkInventoryItemMutationResponse,
+    responses=_error_responses(401, 403, 400, 404, 503, 500),
+)
+def inventory_items_bulk_mutate(
+    inventory_slug: str,
+    payload: BulkInventoryItemMutationRequest,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
+) -> Any:
+    return _serialize(
+        bulk_mutate_inventory_items(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            operation=payload.operation,
+            item_ids=payload.item_ids,
+            tags=payload.tags,
             actor_type=context.actor_type,
             actor_id=context.actor_id,
             request_id=context.request_id,

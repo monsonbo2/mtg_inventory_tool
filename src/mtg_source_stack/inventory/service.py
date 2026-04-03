@@ -33,6 +33,7 @@ from .inventories import create_inventory, list_inventories, list_visible_invent
 from .mutations import (
     add_card,
     add_card_with_connection,
+    bulk_mutate_inventory_items,
     merge_rows,
     remove_card,
     set_acquisition,

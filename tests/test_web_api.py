@@ -105,6 +105,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories", "post"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
+                ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
@@ -119,6 +120,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
+                ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
@@ -285,6 +287,23 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertIn(
                 "Only applies to merged location or condition changes",
                 patch_request_schema["properties"]["keep_acquisition"]["description"],
+            )
+
+            bulk_request_schema = components["BulkInventoryItemMutationRequest"]
+            self.assertIn("supports only tag operations", bulk_request_schema["description"])
+            self.assertEqual(
+                ["add_tags", "remove_tags", "set_tags", "clear_tags"],
+                bulk_request_schema["properties"]["operation"]["enum"],
+            )
+            self.assertEqual(1, bulk_request_schema["properties"]["item_ids"]["minItems"])
+            self.assertEqual(100, bulk_request_schema["properties"]["item_ids"]["maxItems"])
+
+            bulk_response_schema = spec["paths"]["/inventories/{inventory_slug}/items/bulk"]["post"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertEqual(
+                "BulkInventoryItemMutationResponse",
+                self._schema_name_from_ref(bulk_response_schema["$ref"]),
             )
 
             audit_schema = spec["paths"]["/inventories/{inventory_slug}/audit"]["get"]["responses"]["200"][
@@ -703,6 +722,100 @@ class WebApiTest(unittest.TestCase):
                 missing = client.get("/cards/oracle/missing-oracle/printings")
                 self.assertEqual(404, missing.status_code)
                 self.assertEqual("not_found", missing.json()["error"]["code"])
+
+    def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal","foil"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="normal",
+                    location="Binder A",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="foil",
+                    location="Binder B",
+                    tags_json='["foil"]',
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-demo"},
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": item_ids,
+                        "tags": ["trade", "deck"],
+                    },
+                )
+                self.assertEqual(200, bulk.status_code)
+                self.assertEqual("personal", bulk.json()["inventory"])
+                self.assertEqual("add_tags", bulk.json()["operation"])
+                self.assertEqual(item_ids, bulk.json()["requested_item_ids"])
+                self.assertEqual(item_ids, bulk.json()["updated_item_ids"])
+                self.assertEqual(2, bulk.json()["updated_count"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                rows_by_id = {row["item_id"]: row for row in listed.json()}
+                self.assertEqual(["trade", "deck"], rows_by_id[item_ids[0]]["tags"])
+                self.assertEqual(["foil", "trade", "deck"], rows_by_id[item_ids[1]]["tags"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("add_tags", audit.json()[0]["action"])
+                self.assertEqual("add_tags", audit.json()[1]["action"])
+                self.assertTrue(audit.json()[0]["metadata"]["bulk_operation"])
+                self.assertEqual("add_tags", audit.json()[0]["metadata"]["bulk_kind"])
+                self.assertEqual(2, audit.json()[0]["metadata"]["bulk_count"])
+                self.assertEqual(2, audit.json()[0]["metadata"]["updated_count"])
+                self.assertEqual("req-bulk-demo", audit.json()[0]["request_id"])
+
+    def test_demo_api_bulk_tag_mutation_rejects_duplicate_item_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                duplicate = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [item_id, item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(400, duplicate.status_code)
+                self.assertEqual("validation_error", duplicate.json()["error"]["code"])
+                self.assertIn("must not contain duplicates", duplicate.json()["error"]["message"])
 
     def test_demo_api_add_item_accepts_oracle_id_and_inherits_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1160,6 +1273,25 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(401, add_without_auth.status_code)
                 self.assertEqual("authentication_required", add_without_auth.json()["error"]["code"])
 
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                bulk_without_auth = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(401, bulk_without_auth.status_code)
+                self.assertEqual("authentication_required", bulk_without_auth.json()["error"]["code"])
+
     def test_shared_service_inventory_write_routes_allow_editors_and_owners_but_reject_viewers_and_non_members(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -1250,6 +1382,41 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(201, editor_add.status_code)
                 editor_item_id = editor_add.json()["item_id"]
 
+                viewer_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers=viewer_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [editor_item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(403, viewer_bulk.status_code)
+                self.assertEqual("forbidden", viewer_bulk.json()["error"]["code"])
+
+                outsider_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers=outsider_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [editor_item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(403, outsider_bulk.status_code)
+                self.assertEqual("forbidden", outsider_bulk.json()["error"]["code"])
+
+                editor_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers=editor_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [editor_item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(200, editor_bulk.status_code)
+
                 owner_patch = client.patch(
                     f"/inventories/personal/items/{editor_item_id}",
                     headers=owner_headers,
@@ -1282,6 +1449,17 @@ class WebApiTest(unittest.TestCase):
                     },
                 )
                 self.assertEqual(201, admin_add.status_code)
+
+                admin_bulk = client.post(
+                    "/inventories/admin-only/items/bulk",
+                    headers=admin_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [admin_add.json()["item_id"]],
+                        "tags": ["admin"],
+                    },
+                )
+                self.assertEqual(200, admin_bulk.status_code)
 
                 editor_admin_only_add = client.post(
                     "/inventories/admin-only/items",

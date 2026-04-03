@@ -61,6 +61,15 @@ PATCH_KEEP_ACQUISITION_DESCRIPTION = (
     "Only applies to merged location or condition changes. Choose whether the merged row keeps "
     "the target row or source row acquisition metadata."
 )
+BULK_ITEM_MUTATION_REQUEST_DESCRIPTION = (
+    "Specify exactly one bulk mutation operation per request. "
+    "The first shipped bulk route supports only tag operations: add_tags, remove_tags, "
+    "set_tags, or clear_tags."
+)
+BULK_TAGS_DESCRIPTION = (
+    "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. "
+    "Use clear_tags instead of sending an empty tag list."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -115,3 +124,14 @@ class PatchInventoryItemRequest(ApiBaseModel):
     acquisition_price: str | None = None
     acquisition_currency: str | None = None
     clear_acquisition: bool = False
+
+
+class BulkInventoryItemMutationRequest(ApiBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": BULK_ITEM_MUTATION_REQUEST_DESCRIPTION},
+    )
+
+    operation: Literal["add_tags", "remove_tags", "set_tags", "clear_tags"]
+    item_ids: list[int] = Field(min_length=1, max_length=100)
+    tags: list[str] | None = Field(default=None, description=BULK_TAGS_DESCRIPTION)
