@@ -602,6 +602,7 @@ class WebApiTest(unittest.TestCase):
         finish: str = "normal",
         language_code: str = "en",
         location: str = "",
+        tags_json: str = "[]",
     ) -> None:
         with connect(db_path) as connection:
             inventory = connection.execute(
@@ -620,7 +621,7 @@ class WebApiTest(unittest.TestCase):
                     location,
                     tags_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, '[]')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -630,6 +631,7 @@ class WebApiTest(unittest.TestCase):
                     finish,
                     language_code,
                     location,
+                    tags_json,
                 ),
             )
             connection.commit()
