@@ -115,6 +115,7 @@
                 "type": "null"
               }
             ],
+            "description": "Card-level Oracle ID to resolve to one default printing by backend policy. When language is omitted, quick-add prefers English mainstream-paper printings in the default add scope before newer promo-like rows.",
             "title": "Oracle Id"
           },
           "quantity": {

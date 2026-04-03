@@ -252,6 +252,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIsNone(add_properties["language_code"]["default"])
         self.assertIn("inherits the resolved printing language", add_properties["language_code"]["description"])
         self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
+        self.assertIn("prefers English mainstream-paper printings", add_properties["oracle_id"]["description"])
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]

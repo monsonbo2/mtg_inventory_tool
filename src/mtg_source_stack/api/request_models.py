@@ -44,6 +44,11 @@ ADD_LANGUAGE_CODE_DESCRIPTION = (
     "When omitted, the added inventory row inherits the resolved printing language. "
     "Common language-name aliases such as `english` and `japanese` are accepted and normalized."
 )
+ORACLE_ID_ADD_DESCRIPTION = (
+    "Card-level Oracle ID to resolve to one default printing by backend policy. "
+    "When language is omitted, quick-add prefers English mainstream-paper printings "
+    "in the default add scope before newer promo-like rows."
+)
 SEARCH_LANG_DESCRIPTION = (
     f"Catalog search language filter. Recommended codes include: {_CANONICAL_LANGUAGE_CODES_TEXT}. "
     "Search currently accepts the raw stored catalog language codes."
@@ -84,7 +89,7 @@ class InventoryCreateRequest(ApiBaseModel):
 
 class AddInventoryItemRequest(ApiBaseModel):
     scryfall_id: str | None = None
-    oracle_id: str | None = None
+    oracle_id: str | None = Field(default=None, description=ORACLE_ID_ADD_DESCRIPTION)
     tcgplayer_product_id: str | None = None
     name: str | None = None
     set_code: str | None = None

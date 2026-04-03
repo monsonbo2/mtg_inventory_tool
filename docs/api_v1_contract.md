@@ -68,6 +68,15 @@ preserve for the first API-backed version of the project.
     `name` as identifier inputs
   - `oracle_id` resolves to one printing by backend policy rather than storing
     `oracle_id` directly on inventory rows
+  - for quick-add by `oracle_id`, the default resolver uses the default
+    add-flow catalog scope rather than the broad `scope=all` catalog
+  - when language is omitted, `oracle_id` quick-add prefers:
+    - English printings first when available
+    - mainstream-paper printings before promo-like printings
+    - newer `released_at` within the same preference tier
+    - then stable tie-break fields
+  - omitted `finish` still means `normal`; the backend does not silently fall
+    back to foil or etched printings for quick-add
   - when `language_code` is omitted, the stored owned language inherits the
     resolved printing language
   - if `language_code` is explicitly provided and does not match the resolved

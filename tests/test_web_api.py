@@ -273,6 +273,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 "inherits the resolved printing language",
                 add_request_schema["properties"]["language_code"]["description"],
             )
+            self.assertIn(
+                "prefers English mainstream-paper printings",
+                add_request_schema["properties"]["oracle_id"]["description"],
+            )
 
             patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][
                 "content"
@@ -435,6 +439,9 @@ class WebApiTest(unittest.TestCase):
         finishes_json: str = '["normal","foil"]',
         image_uris_json: str | None = None,
         layout: str = "normal",
+        set_type: str | None = None,
+        booster: int = 0,
+        promo_types_json: str = "[]",
         is_default_add_searchable: int = 1,
     ) -> None:
         if image_uris_json is None:
@@ -461,9 +468,12 @@ class WebApiTest(unittest.TestCase):
                     finishes_json,
                     image_uris_json,
                     layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
                     is_default_add_searchable
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scryfall_id,
@@ -477,6 +487,9 @@ class WebApiTest(unittest.TestCase):
                     finishes_json,
                     image_uris_json,
                     layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
                     is_default_add_searchable,
                 ),
             )
@@ -1082,6 +1095,73 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(400, conflict.status_code)
                 self.assertEqual("validation_error", conflict.json()["error"]["code"])
                 self.assertIn("language_code must match the resolved printing language", conflict.json()["error"]["message"])
+
+    def test_demo_api_add_item_uses_mainstream_default_printing_for_oracle_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-policy-mainstream-en",
+                    oracle_id="api-policy-oracle",
+                    name="API Oracle Policy Card",
+                    set_code="bro",
+                    set_name="The Brothers' War",
+                    collector_number="81",
+                    lang="en",
+                    released_at="2023-11-18",
+                    finishes_json='["nonfoil","foil"]',
+                    set_type="expansion",
+                    booster=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-policy-mainstream-ja",
+                    oracle_id="api-policy-oracle",
+                    name="API Oracle Policy Card",
+                    set_code="mkm",
+                    set_name="Murders at Karlov Manor",
+                    collector_number="82",
+                    lang="ja",
+                    released_at="2024-02-09",
+                    finishes_json='["nonfoil","foil"]',
+                    set_type="expansion",
+                    booster=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-policy-promo-en",
+                    oracle_id="api-policy-oracle",
+                    name="API Oracle Policy Card",
+                    set_code="pneo",
+                    set_name="Kamigawa: Neon Dynasty Promos",
+                    collector_number="83",
+                    lang="en",
+                    released_at="2024-03-01",
+                    finishes_json='["nonfoil","foil"]',
+                    set_type="expansion",
+                    booster=0,
+                    promo_types_json='["promo_pack"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "oracle_id": "api-policy-oracle",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertEqual("api-policy-mainstream-en", added.json()["scryfall_id"])
+                self.assertEqual("en", added.json()["language_code"])
 
     def test_demo_api_returns_409_for_concurrent_add_item_identity_collision(self) -> None:
         from mtg_source_stack.inventory.service import add_card as service_add_card
