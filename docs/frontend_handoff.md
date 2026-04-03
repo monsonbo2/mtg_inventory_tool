@@ -113,6 +113,18 @@ Use this as the first-pass UI-to-endpoint map:
    inventories and owned-row states, but it resolves those rows against real
    imported printings.
 
+   Refresh guidance:
+
+   - the recommended local demo workflow already recreates the demo database
+     with `--force`, so no separate refresh step is needed when you follow this
+     bootstrap flow
+   - the small built-in demo catalog only seeds mainline add-flow cards, so it
+     is already compatible with the narrowed default search scope
+   - full-catalog mode already performs a fresh Scryfall import during
+     bootstrap, so it also starts with the correct catalog classification
+   - only reused older pre-`0008` databases need an extra Scryfall refresh
+     before relying on the narrowed default search scope
+
 2. Start the backend locally:
 
    ```bash
