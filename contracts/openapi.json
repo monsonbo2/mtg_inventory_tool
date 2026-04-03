@@ -585,6 +585,635 @@
         "title": "CatalogSearchRowResponse",
         "type": "object"
       },
+      "CsvImportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "csv_filename": {
+            "title": "Csv Filename",
+            "type": "string"
+          },
+          "default_inventory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Inventory"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "imported_rows": {
+            "items": {
+              "$ref": "#/components/schemas/CsvImportRowResponse"
+            },
+            "title": "Imported Rows",
+            "type": "array"
+          },
+          "rows_seen": {
+            "title": "Rows Seen",
+            "type": "integer"
+          },
+          "rows_written": {
+            "title": "Rows Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "csv_filename",
+          "default_inventory",
+          "rows_seen",
+          "rows_written",
+          "dry_run",
+          "imported_rows"
+        ],
+        "title": "CsvImportResponse",
+        "type": "object"
+      },
+      "CsvImportRowResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "card_name": {
+            "title": "Card Name",
+            "type": "string"
+          },
+          "collector_number": {
+            "title": "Collector Number",
+            "type": "string"
+          },
+          "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
+            "title": "Condition Code",
+            "type": "string"
+          },
+          "csv_row": {
+            "title": "Csv Row",
+            "type": "integer"
+          },
+          "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "type": "string"
+          },
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "integer"
+          },
+          "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
+            "title": "Language Code",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          },
+          "set_code": {
+            "title": "Set Code",
+            "type": "string"
+          },
+          "set_name": {
+            "title": "Set Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "csv_row"
+        ],
+        "title": "CsvImportRowResponse",
+        "type": "object"
+      },
+      "DeckUrlImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "default_inventory": {
+            "description": "Target inventory slug for the remote deck URL import.",
+            "title": "Default Inventory",
+            "type": "string"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "When true, validate and resolve the import using the real add-card workflow but roll back before commit.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source_url": {
+            "description": "Public deck URL to import. V1 currently supports Archidekt, AetherHub, ManaBox, Moxfield, MTGGoldfish, MTGTop8, and TappedOut deck URLs.",
+            "title": "Source Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_url",
+          "default_inventory"
+        ],
+        "title": "DeckUrlImportRequest",
+        "type": "object"
+      },
+      "DeckUrlImportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "deck_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Name"
+          },
+          "default_inventory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Inventory"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "imported_rows": {
+            "items": {
+              "$ref": "#/components/schemas/DeckUrlImportRowResponse"
+            },
+            "title": "Imported Rows",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "rows_seen": {
+            "title": "Rows Seen",
+            "type": "integer"
+          },
+          "rows_written": {
+            "title": "Rows Written",
+            "type": "integer"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_url",
+          "provider",
+          "deck_name",
+          "default_inventory",
+          "rows_seen",
+          "rows_written",
+          "dry_run",
+          "imported_rows"
+        ],
+        "title": "DeckUrlImportResponse",
+        "type": "object"
+      },
+      "DeckUrlImportRowResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "card_name": {
+            "title": "Card Name",
+            "type": "string"
+          },
+          "collector_number": {
+            "title": "Collector Number",
+            "type": "string"
+          },
+          "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
+            "title": "Condition Code",
+            "type": "string"
+          },
+          "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "type": "string"
+          },
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "integer"
+          },
+          "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
+            "title": "Language Code",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "set_code": {
+            "title": "Set Code",
+            "type": "string"
+          },
+          "set_name": {
+            "title": "Set Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "section"
+        ],
+        "title": "DeckUrlImportRowResponse",
+        "type": "object"
+      },
+      "DecklistImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "deck_text": {
+            "description": "Pasted decklist text. Supported v1 forms include '4 Lightning Bolt', '4x Lightning Bolt', 'SB: 2 Pyroblast', exact-printing hints like '3 Verdant Catacombs (MH2) 260', and exported deck text with preambles like 'About' / 'Name <deck>' from deck sites such as Moxfield.",
+            "title": "Deck Text",
+            "type": "string"
+          },
+          "default_inventory": {
+            "description": "Target inventory slug for the pasted decklist import.",
+            "title": "Default Inventory",
+            "type": "string"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "When true, validate and resolve the import using the real add-card workflow but roll back before commit.",
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deck_text",
+          "default_inventory"
+        ],
+        "title": "DecklistImportRequest",
+        "type": "object"
+      },
+      "DecklistImportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "deck_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Name"
+          },
+          "default_inventory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Inventory"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "imported_rows": {
+            "items": {
+              "$ref": "#/components/schemas/DecklistImportRowResponse"
+            },
+            "title": "Imported Rows",
+            "type": "array"
+          },
+          "rows_seen": {
+            "title": "Rows Seen",
+            "type": "integer"
+          },
+          "rows_written": {
+            "title": "Rows Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deck_name",
+          "default_inventory",
+          "rows_seen",
+          "rows_written",
+          "dry_run",
+          "imported_rows"
+        ],
+        "title": "DecklistImportResponse",
+        "type": "object"
+      },
+      "DecklistImportRowResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "card_name": {
+            "title": "Card Name",
+            "type": "string"
+          },
+          "collector_number": {
+            "title": "Collector Number",
+            "type": "string"
+          },
+          "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
+            "title": "Condition Code",
+            "type": "string"
+          },
+          "decklist_line": {
+            "title": "Decklist Line",
+            "type": "integer"
+          },
+          "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "type": "string"
+          },
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "integer"
+          },
+          "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
+            "title": "Language Code",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "set_code": {
+            "title": "Set Code",
+            "type": "string"
+          },
+          "set_name": {
+            "title": "Set Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inventory",
+          "card_name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "decklist_line",
+          "section"
+        ],
+        "title": "DecklistImportRowResponse",
+        "type": "object"
+      },
       "DefaultInventoryBootstrapResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2872,6 +3501,319 @@
         "summary": "Health"
       }
     },
+    "/imports/csv": {
+      "post": {
+        "operationId": "imports_csv_imports_csv_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "default_inventory": {
+                    "description": "Optional default inventory slug when the CSV does not include an inventory column.",
+                    "type": "string"
+                  },
+                  "dry_run": {
+                    "default": false,
+                    "description": "When true, validate and resolve the import using the real add-card workflow but roll back before commit.",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "description": "CSV file to import.",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Imports Csv"
+      }
+    },
+    "/imports/deck-url": {
+      "post": {
+        "operationId": "imports_deck_url_imports_deck_url_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeckUrlImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckUrlImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Imports Deck Url"
+      }
+    },
+    "/imports/decklist": {
+      "post": {
+        "operationId": "imports_decklist_imports_decklist_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecklistImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecklistImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Imports Decklist"
+      }
+    },
     "/inventories": {
       "get": {
         "operationId": "inventories_list_inventories_get",
@@ -3139,6 +4081,284 @@
           }
         },
         "summary": "Inventory Audit List"
+      }
+    },
+    "/inventories/{inventory_slug}/export.csv": {
+      "get": {
+        "operationId": "inventory_export_csv_download_inventories__inventory_slug__export_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "default": "tcgplayer",
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "description": "CSV export profile. Omit this parameter or use `default` for the canonical inventory export format.",
+            "in": "query",
+            "name": "profile",
+            "required": false,
+            "schema": {
+              "default": "default",
+              "description": "CSV export profile. Omit this parameter or use `default` for the canonical inventory export format.",
+              "enum": [
+                "default"
+              ],
+              "title": "Profile",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 250,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "set_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Set Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rarity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rarity"
+            }
+          },
+          {
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+            "in": "query",
+            "name": "finish",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "normal",
+                    "nonfoil",
+                    "foil",
+                    "etched"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+              "title": "Finish"
+            }
+          },
+          {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
+            "in": "query",
+            "name": "condition_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
+              "title": "Condition Code"
+            }
+          },
+          {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
+            "in": "query",
+            "name": "language_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
+              "title": "Language Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tags"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "CSV export download"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Export Csv Download"
       }
     },
     "/inventories/{inventory_slug}/items": {

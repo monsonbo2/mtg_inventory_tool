@@ -507,6 +507,57 @@ def list_card_printings_for_oracle(
     return [_catalog_search_row_from_payload(row) for row in selected_rows]
 
 
+def resolve_default_card_row_for_name(
+    connection: sqlite3.Connection,
+    *,
+    name: str,
+    lang: str | None = None,
+    finish: str | None = None,
+) -> sqlite3.Row:
+    name_text = text_or_none(name)
+    if name_text is None:
+        raise ValidationError("name is required.")
+
+    normalized_lang = normalize_language_code(lang) if text_or_none(lang) is not None else None
+    filters = ["LOWER(name) = LOWER(?)", "COALESCE(is_default_add_searchable, 1) = 1"]
+    params: list[Any] = [name_text]
+    if normalized_lang is not None:
+        filters.append("LOWER(lang) = LOWER(?)")
+        params.append(normalized_lang)
+
+    rows = _catalog_resolution_rows(connection, filters=filters, params=params)
+    if not rows:
+        raise NotFoundError(
+            "No matching default-add card found. Try an exact printing import with set code and collector number."
+        )
+
+    rows, normalized_finish = _rows_matching_finish(rows, finish)
+    if normalized_finish is not None and not rows:
+        raise ValidationError(
+            f"No matching default-add card found for name '{name_text}' with finish '{normalized_finish}'."
+        )
+
+    oracle_ids = {str(row["oracle_id"]) for row in rows}
+    if len(oracle_ids) != 1:
+        raise ValidationError(
+            "Multiple cards matched that exact name. "
+            "Narrow it with set code and collector number. "
+            f"Candidates: {_candidate_rows_text(rows)}"
+        )
+
+    return resolve_card_row(
+        connection,
+        scryfall_id=None,
+        oracle_id=next(iter(oracle_ids)),
+        tcgplayer_product_id=None,
+        name=None,
+        set_code=None,
+        collector_number=None,
+        lang=normalized_lang,
+        finish=finish,
+    )
+
+
 def resolve_card_row(
     connection: sqlite3.Connection,
     *,

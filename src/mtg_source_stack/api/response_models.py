@@ -161,6 +161,48 @@ class InventoryItemMutationBaseResponse(ApiBaseModel):
     tags: list[str]
 
 
+class CsvImportRowResponse(InventoryItemMutationBaseResponse):
+    csv_row: int
+
+
+class CsvImportResponse(ApiBaseModel):
+    csv_filename: str
+    default_inventory: str | None
+    rows_seen: int
+    rows_written: int
+    dry_run: bool
+    imported_rows: list[CsvImportRowResponse]
+
+
+class DecklistImportRowResponse(InventoryItemMutationBaseResponse):
+    decklist_line: int
+    section: str
+
+
+class DecklistImportResponse(ApiBaseModel):
+    deck_name: str | None
+    default_inventory: str | None
+    rows_seen: int
+    rows_written: int
+    dry_run: bool
+    imported_rows: list[DecklistImportRowResponse]
+
+
+class DeckUrlImportRowResponse(InventoryItemMutationBaseResponse):
+    section: str
+
+
+class DeckUrlImportResponse(ApiBaseModel):
+    source_url: str
+    provider: str
+    deck_name: str | None
+    default_inventory: str | None
+    rows_seen: int
+    rows_written: int
+    dry_run: bool
+    imported_rows: list[DeckUrlImportRowResponse]
+
+
 class AddInventoryItemResponse(InventoryItemMutationBaseResponse):
     pass
 

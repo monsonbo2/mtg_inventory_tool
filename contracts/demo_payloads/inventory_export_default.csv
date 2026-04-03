@@ -1,0 +1,2 @@
+inventory,provider,item_id,scryfall_id,card_name,set_code,set_name,collector_number,rarity,quantity,condition_code,finish,language_code,location,tags,notes,acquisition_price,acquisition_currency,unit_price,price_currency,est_value,price_date
+personal,tcgplayer,42,demo-bolt,Lightning Bolt,lea,Limited Edition Alpha,161,common,2,NM,normal,en,Blue Binder,bulk import,CSV export row,1.25,USD,3.00,USD,6.00,2026-04-03

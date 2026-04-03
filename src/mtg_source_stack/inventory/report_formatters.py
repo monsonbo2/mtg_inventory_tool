@@ -397,6 +397,7 @@ def format_export_csv_result(result: dict[str, Any]) -> str:
         "",
         f"Inventory: {result['inventory']}",
         f"Provider: {result['provider']}",
+        f"Profile: {result['profile']}",
         f"Filters: {result['filters_text']}",
         f"Rows exported: {result['rows_exported']}",
         f"Output: {result['output_path']}",

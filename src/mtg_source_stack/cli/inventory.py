@@ -16,6 +16,7 @@ from ..inventory.normalize import (
     format_finishes,
     truncate,
 )
+from ..inventory.export_profiles import supported_csv_export_profiles
 from ..inventory.report_formatters import (
     append_snapshot_notice,
     format_add_card_result,
@@ -344,6 +345,12 @@ def build_parser() -> argparse.ArgumentParser:
     export_csv_parser.add_argument("--inventory", required=True, help="Inventory slug.")
     export_csv_parser.add_argument("--output", required=True, help="CSV file to write.")
     export_csv_parser.add_argument("--provider", default=DEFAULT_PROVIDER, help="Price provider, such as tcgplayer.")
+    export_csv_parser.add_argument(
+        "--profile",
+        default="default",
+        choices=tuple(supported_csv_export_profiles()),
+        help="CSV export profile.",
+    )
     export_csv_parser.add_argument("--query", help="Optional card name substring filter.")
     export_csv_parser.add_argument("--set-code", help="Optional set code filter.")
     export_csv_parser.add_argument("--rarity", help="Optional rarity filter, such as common or mythic.")
@@ -810,6 +817,7 @@ def main() -> None:
                 inventory_slug=args.inventory,
                 provider=args.provider,
                 output_path=args.output,
+                profile=args.profile,
                 query=args.query,
                 set_code=args.set_code,
                 rarity=args.rarity,

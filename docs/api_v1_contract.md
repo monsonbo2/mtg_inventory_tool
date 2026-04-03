@@ -37,8 +37,27 @@ preserve for the first API-backed version of the project.
   `add_tags`, `remove_tags`, `set_tags`, and `clear_tags`.
 - Bulk item mutation responses use a stable envelope with `inventory`,
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
+- `POST /imports/csv` returns a stable import-report envelope with
+  `csv_filename`, `default_inventory`, `rows_seen`, `rows_written`, `dry_run`,
+  and `imported_rows`.
+- `POST /imports/decklist` returns a stable import-report envelope with
+  `default_inventory`, `rows_seen`, `rows_written`, `dry_run`, and
+  `imported_rows`.
+- `POST /imports/deck-url` returns a stable import-report envelope with
+  `source_url`, `provider`, `deck_name`, `default_inventory`, `rows_seen`,
+  `rows_written`, `dry_run`, and `imported_rows`.
+- `GET /inventories/{inventory_slug}/export.csv` returns `text/csv` rather
+  than JSON and uses `Content-Disposition` for download semantics.
 - The current bulk tag implementation is transactional and all-or-nothing: if
   validation or item lookup fails, no rows in the batch are updated.
+- `POST /imports/csv` is also transactional and all-or-nothing: if one row
+  fails validation or lookup, no rows from that upload are committed.
+- `POST /imports/decklist` is also transactional and all-or-nothing: if one
+  parsed line fails validation or lookup, no rows from that request are
+  committed.
+- `POST /imports/deck-url` is also transactional and all-or-nothing: if one
+  fetched deck card fails validation or lookup, no rows from that request are
+  committed.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,
@@ -122,6 +141,90 @@ preserve for the first API-backed version of the project.
   - `tags` is required for `add_tags`, `remove_tags`, and `set_tags`
   - `tags` must be omitted for `clear_tags`
   - use `clear_tags` instead of sending an empty tag list
+- `POST /imports/csv`
+  - request body is `multipart/form-data`, not JSON
+  - multipart field `file` is required
+  - multipart field `default_inventory` is optional
+  - multipart field `dry_run` is optional and defaults to `false`
+  - `dry_run=true` uses the real add-card workflow but rolls the transaction
+    back before commit
+  - the route reuses the existing CSV normalization, identifier resolution,
+    finish inference, and row-number-specific validation behavior from the CLI
+    import path
+  - unlike the CLI import flow, the HTTP route does not implicitly create new
+    inventories from CSV display names; referenced inventories must already
+    exist
+- `POST /imports/decklist`
+  - request body is JSON
+  - `deck_text` is required
+  - `default_inventory` is required
+  - `dry_run` is optional and defaults to `false`
+  - `dry_run=true` uses the real add-card workflow but rolls the transaction
+    back before commit
+  - supported v1 pasted-list forms include:
+    - `4 Lightning Bolt`
+    - `4x Lightning Bolt`
+    - `4 x Lightning Bolt`
+    - section headers such as `Commander` or `Sideboard (15)`
+    - inline section prefixes such as `SB: 2 Pyroblast`
+    - exact-printing hints such as `3 Verdant Catacombs (MH2) 260`
+    - exported deck text with `About` / `Name <deck>` preambles from deck
+      sites such as Moxfield
+  - when a line includes set code and collector number, the backend resolves
+    that exact printing
+  - when a line includes only an exact card name, the backend resolves that
+    name to one Oracle group and then applies the existing default-printing
+    policy used by the add-card flow
+  - if an exact name matches multiple Oracle groups, the request returns
+    `400 validation_error` instead of guessing
+  - v1 decklist import does not persist section semantics on inventory rows;
+    section information is returned in the import report only
+  - referenced inventories must already exist
+- `POST /imports/deck-url`
+  - request body is JSON
+  - `source_url` is required
+  - `default_inventory` is required
+  - `dry_run` is optional and defaults to `false`
+  - `dry_run=true` uses the real add-card workflow but rolls the transaction
+    back before commit
+  - v1 currently supports public Archidekt, AetherHub, ManaBox, Moxfield,
+    MTGGoldfish, MTGTop8, and TappedOut deck URLs
+  - the backend fetches the public deck payload, keeps importable deck
+    sections such as mainboard, commander, companion, and sideboard, and skips
+    cards that are only in excluded or non-deck groups such as Maybeboard or
+    token helper lists
+  - AetherHub imports parse the visible public deck page and resolve name-only
+    rows through the backend's default-add printing policy because AetherHub's
+    public deck pages do not consistently expose exact printing identifiers
+  - ManaBox imports parse the structured deck payload embedded in the public
+    shared deck page, preserving supported sections and exact-printing hints
+    such as set code and collector number
+  - Archidekt and Moxfield card printings are imported by exact printing
+    identifier rather than by name-only fallback
+  - if Moxfield blocks automated URL fetches, the recommended fallback is to
+    export the deck text from Moxfield and paste it into `POST /imports/decklist`
+  - MTGGoldfish imports use its public deck downloads: section information
+    comes from the Arena export, while set code, collector-number hints, and
+    finish markers come from the Exact Card Versions text export
+  - MTGTop8 imports use the site's public `.dec` export, which supplies deck
+    name, sideboard markers, and set-code hints but not collector numbers
+  - TappedOut imports use the public `MTG Arena` export block embedded in the
+    deck page; those lines already include set code and collector number, so
+    the backend can resolve exact printings through the same decklist importer
+  - v1 deck URL import does not persist section semantics on inventory rows;
+    section information is returned in the import report only
+  - referenced inventories must already exist
+- `GET /inventories/{inventory_slug}/export.csv`
+  - query `profile` selects the CSV export profile
+  - the first shipped value is `default`
+  - omitting `profile` is the same as `profile=default`
+  - export profiles are intended to be first-class so future website-specific
+    CSV formats can reuse the same route boundary
+  - current filters align with the existing inventory read/export surface:
+    `provider`, `query`, `set_code`, `rarity`, `finish`, `condition_code`,
+    `language_code`, `location`, repeated `tag`, and `limit`
+  - the current `default` profile matches the existing canonical inventory CSV
+    export column set used by the CLI
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For
@@ -175,8 +278,9 @@ before the generic 500 envelope is returned.
   - `local_demo`, the default local-first posture for UI and contract work
   - `shared_service`, a safer startup posture for a pre-migrated, single-host
     SQLite deployment
-- The HTTP route boundary now uses sync route handlers to match the current
-  synchronous inventory and SQLite-backed service layer.
+- The HTTP route boundary is still aligned to the current synchronous
+  inventory and SQLite-backed service layer, though upload endpoints may use
+  async request-body parsing before delegating into that sync service layer.
 - Broader transport/runtime guarantees are still intentionally modest and
   single-host scoped in web-v1.
 - `shared_service` assumes a single-host SQLite deployment with WAL and
@@ -215,11 +319,17 @@ before the generic 500 envelope is returned.
   `GET /cards/oracle/{oracle_id}/printings` require a caller who can read at
   least one inventory, or a global `admin`.
 - `GET /inventories/{inventory_slug}/items` and
-  `GET /inventories/{inventory_slug}/audit` require inventory read access.
+  `GET /inventories/{inventory_slug}/audit`, and
+  `GET /inventories/{inventory_slug}/export.csv` require inventory read access.
 - `POST /inventories/{inventory_slug}/items`,
-  `PATCH /inventories/{inventory_slug}/items/{item_id}`, and
-  `DELETE /inventories/{inventory_slug}/items/{item_id}` require inventory
-  write access.
+  `PATCH /inventories/{inventory_slug}/items/{item_id}`,
+  `DELETE /inventories/{inventory_slug}/items/{item_id}`, and
+  `POST /imports/csv`, `POST /imports/decklist`, and
+  `POST /imports/deck-url` require inventory write access.
+- In `shared_service`, `POST /imports/csv`, `POST /imports/decklist`, and
+  `POST /imports/deck-url` validate write access against every referenced
+  inventory before committing any rows. For `POST /imports/deck-url`, the
+  target inventory is validated before the backend fetches the remote deck.
 - `POST /inventories` still requires a global `editor` or `admin`, and the
   creator is automatically granted `owner` membership on the new inventory.
 - `POST /me/bootstrap` requires a global `editor` or `admin`, creates one

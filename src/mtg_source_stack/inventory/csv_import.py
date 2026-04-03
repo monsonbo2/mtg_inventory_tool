@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
 import sqlite3
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TextIO
 
 from ..db.connection import connect
 from ..db.schema import initialize_database
@@ -26,6 +27,17 @@ from .normalize import (
 from .money import parse_decimal_text
 from .mutations import add_card_with_connection
 from .response_models import serialize_response
+
+InventoryValidator = Callable[[sqlite3.Connection, str], Any]
+
+
+@dataclass(frozen=True, slots=True)
+class PendingImportRow:
+    row_number: int
+    add_kwargs: dict[str, Any]
+    response_metadata: dict[str, Any]
+    error_label: str
+    finish_source: str = "finish"
 
 
 def normalize_csv_header(header: str) -> str:
@@ -145,6 +157,183 @@ def _resolve_csv_finish_for_row(
     return card
 
 
+def _load_pending_csv_rows(
+    handle: TextIO,
+    *,
+    source_name: str,
+    default_inventory: str | None,
+) -> tuple[int, list[PendingImportRow]]:
+    pending_rows: list[PendingImportRow] = []
+    rows_seen = 0
+
+    try:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            raise ValueError("CSV file must include a header row.")
+
+        for row_number, raw_row in enumerate(reader, start=2):
+            row = normalize_csv_row(raw_row)
+            if is_blank_csv_row(row):
+                continue
+
+            rows_seen += 1
+            add_kwargs = build_add_card_kwargs_from_csv_row(
+                row,
+                row_number=row_number,
+                default_inventory=default_inventory,
+            )
+            if add_kwargs is None:
+                continue
+            pending_rows.append(
+                PendingImportRow(
+                    row_number=row_number,
+                    add_kwargs=add_kwargs,
+                    response_metadata={"csv_row": row_number},
+                    error_label="CSV row",
+                    finish_source=str(add_kwargs.get("_finish_source", "finish")),
+                )
+            )
+    except csv.Error as exc:
+        raise ValueError(f"Could not parse CSV file '{source_name}': {exc}") from exc
+    except UnicodeError as exc:
+        raise ValueError(f"Could not decode CSV file '{source_name}' as UTF-8.") from exc
+
+    return rows_seen, pending_rows
+
+
+def _import_pending_rows(
+    db_path: str | Path,
+    *,
+    pending_rows: list[PendingImportRow],
+    dry_run: bool = False,
+    before_write: Callable[[], Any] | None = None,
+    allow_inventory_auto_create: bool = True,
+    inventory_validator: InventoryValidator | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> list[dict[str, Any]]:
+    imported_rows: list[dict[str, Any]] = []
+    inventory_cache: dict[str, sqlite3.Row] = {}
+
+    initialize_database(db_path)
+    with connect(db_path) as connection:
+        validated_inventories: set[str] = set()
+        for pending_row in pending_rows:
+            inventory_slug = str(pending_row.add_kwargs["inventory_slug"])
+            if inventory_slug in validated_inventories:
+                continue
+            if inventory_validator is not None:
+                inventory_validator(connection, inventory_slug)
+            validated_inventories.add(inventory_slug)
+
+        for pending_row in pending_rows:
+            row_add_kwargs = dict(pending_row.add_kwargs)
+            if not allow_inventory_auto_create:
+                row_add_kwargs["inventory_display_name"] = None
+
+            finish_source = pending_row.finish_source
+            row_add_kwargs.pop("_finish_source", None)
+            try:
+                resolved_card = _resolve_csv_finish_for_row(
+                    connection,
+                    add_kwargs=row_add_kwargs,
+                    finish_source=finish_source,
+                )
+                result = add_card_with_connection(
+                    connection,
+                    inventory_cache=inventory_cache,
+                    before_write=None if dry_run else before_write,
+                    resolved_card=resolved_card,
+                    actor_type=actor_type,
+                    actor_id=actor_id,
+                    request_id=request_id,
+                    **row_add_kwargs,
+                )
+            except MtgStackError as exc:
+                raise type(exc)(
+                    f"{pending_row.error_label} {pending_row.row_number}: {exc}",
+                    error_code=exc.error_code,
+                ) from exc
+            except ValueError as exc:
+                raise ValueError(f"{pending_row.error_label} {pending_row.row_number}: {exc}") from exc
+            imported_rows.append({**pending_row.response_metadata, **serialize_response(result)})
+
+        if dry_run:
+            # Preview mode reuses the real add-card workflow, then rolls
+            # back at the end so validation and reporting stay identical.
+            connection.rollback()
+        else:
+            connection.commit()
+
+    return imported_rows
+
+
+def import_csv_stream(
+    db_path: str | Path,
+    *,
+    csv_handle: TextIO,
+    csv_filename: str,
+    default_inventory: str | None,
+    dry_run: bool = False,
+    before_write: Callable[[], Any] | None = None,
+    allow_inventory_auto_create: bool = True,
+    inventory_validator: InventoryValidator | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    rows_seen, pending_rows = _load_pending_csv_rows(
+        csv_handle,
+        source_name=csv_filename,
+        default_inventory=default_inventory,
+    )
+    imported_rows = _import_pending_csv_rows(
+        db_path,
+        pending_rows=pending_rows,
+        dry_run=dry_run,
+        before_write=before_write,
+        allow_inventory_auto_create=allow_inventory_auto_create,
+        inventory_validator=inventory_validator,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    return {
+        "csv_filename": csv_filename,
+        "default_inventory": default_inventory,
+        "rows_seen": rows_seen,
+        "rows_written": len(imported_rows),
+        "imported_rows": imported_rows,
+        "dry_run": dry_run,
+    }
+
+
+def _import_pending_csv_rows(
+    db_path: str | Path,
+    *,
+    pending_rows: list[PendingImportRow],
+    dry_run: bool = False,
+    before_write: Callable[[], Any] | None = None,
+    allow_inventory_auto_create: bool = True,
+    inventory_validator: InventoryValidator | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> list[dict[str, Any]]:
+    return _import_pending_rows(
+        db_path,
+        pending_rows=pending_rows,
+        dry_run=dry_run,
+        before_write=before_write,
+        allow_inventory_auto_create=allow_inventory_auto_create,
+        inventory_validator=inventory_validator,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+
+
 def import_csv(
     db_path: str | Path,
     *,
@@ -153,65 +342,21 @@ def import_csv(
     dry_run: bool = False,
     before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
-    imported_rows: list[dict[str, Any]] = []
-    pending_rows: list[tuple[int, dict[str, Any]]] = []
-    rows_seen = 0
-    inventory_cache: dict[str, sqlite3.Row] = {}
-
     try:
         with Path(csv_path).open(mode="r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            if reader.fieldnames is None:
-                raise ValueError("CSV file must include a header row.")
-
-            for row_number, raw_row in enumerate(reader, start=2):
-                row = normalize_csv_row(raw_row)
-                if is_blank_csv_row(row):
-                    continue
-
-                rows_seen += 1
-                add_kwargs = build_add_card_kwargs_from_csv_row(
-                    row,
-                    row_number=row_number,
-                    default_inventory=default_inventory,
-                )
-                if add_kwargs is None:
-                    continue
-                pending_rows.append((row_number, add_kwargs))
+            rows_seen, pending_rows = _load_pending_csv_rows(
+                handle,
+                source_name=str(csv_path),
+                default_inventory=default_inventory,
+            )
     except OSError as exc:
         raise ValueError(f"Could not read CSV file '{csv_path}'.") from exc
-    except csv.Error as exc:
-        raise ValueError(f"Could not parse CSV file '{csv_path}': {exc}") from exc
-
-    initialize_database(db_path)
-    with connect(db_path) as connection:
-        for row_number, add_kwargs in pending_rows:
-            finish_source = str(add_kwargs.pop("_finish_source", "finish"))
-            try:
-                resolved_card = _resolve_csv_finish_for_row(
-                    connection,
-                    add_kwargs=add_kwargs,
-                    finish_source=finish_source,
-                )
-                result = add_card_with_connection(
-                    connection,
-                    inventory_cache=inventory_cache,
-                    before_write=None if dry_run else before_write,
-                    resolved_card=resolved_card,
-                    **add_kwargs,
-                )
-            except MtgStackError as exc:
-                raise type(exc)(f"CSV row {row_number}: {exc}", error_code=exc.error_code) from exc
-            except ValueError as exc:
-                raise ValueError(f"CSV row {row_number}: {exc}") from exc
-            imported_rows.append({"csv_row": row_number, **serialize_response(result)})
-
-        if dry_run:
-            # Preview mode reuses the real add-card workflow, then rolls
-            # back at the end so validation and reporting stay identical.
-            connection.rollback()
-        else:
-            connection.commit()
+    imported_rows = _import_pending_csv_rows(
+        db_path,
+        pending_rows=pending_rows,
+        dry_run=dry_run,
+        before_write=before_write,
+    )
 
     return {
         "csv_path": str(csv_path),

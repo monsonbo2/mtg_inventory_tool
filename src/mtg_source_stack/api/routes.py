@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from email.parser import BytesParser
+from email.policy import default as default_email_policy
+from io import StringIO
+import sqlite3
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from starlette.concurrency import run_in_threadpool
 
-from ..errors import ValidationError
+from ..errors import AuthorizationError, ValidationError
+from ..inventory.access import actor_inventory_role_with_connection, can_write_inventory
+from ..inventory.export_profiles import supported_csv_export_profiles
 from ..inventory.money import coerce_decimal
 from ..inventory.normalize import (
     DEFAULT_AUDIT_EVENT_LIMIT,
@@ -22,11 +29,15 @@ from ..inventory.service import (
     bulk_mutate_inventory_items,
     create_inventory,
     ensure_default_inventory,
+    import_csv_stream,
+    import_decklist_text,
+    import_deck_url,
     list_card_printings_for_oracle,
     list_inventory_audit_events,
     list_visible_inventories,
     list_owned_filtered,
     remove_card,
+    render_inventory_csv_export,
     search_card_names,
     search_cards,
     set_acquisition,
@@ -51,6 +62,8 @@ from .request_models import (
     AddInventoryItemRequest,
     BulkInventoryItemMutationRequest,
     CONDITION_CODE_DESCRIPTION,
+    DecklistImportRequest,
+    DeckUrlImportRequest,
     FINISH_INPUT_DESCRIPTION,
     FinishInput,
     InventoryCreateRequest,
@@ -64,6 +77,9 @@ from .response_models import (
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
+    CsvImportResponse,
+    DecklistImportResponse,
+    DeckUrlImportResponse,
     DefaultInventoryBootstrapResponse,
     HealthResponse,
     InventoryAuditEventResponse,
@@ -84,6 +100,16 @@ PRINTINGS_LANG_DESCRIPTION = (
 SEARCH_SCOPE_DESCRIPTION = (
     "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. "
     "Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows."
+)
+CSV_IMPORT_FILE_DESCRIPTION = "CSV file to import."
+CSV_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = (
+    "Optional default inventory slug when the CSV does not include an inventory column."
+)
+CSV_IMPORT_DRY_RUN_DESCRIPTION = (
+    "When true, validate and resolve the import using the real add-card workflow but roll back before commit."
+)
+CSV_EXPORT_PROFILE_DESCRIPTION = (
+    "CSV export profile. Omit this parameter or use `default` for the canonical inventory export format."
 )
 
 ERROR_RESPONSE_DESCRIPTIONS = {
@@ -107,8 +133,31 @@ def _error_responses(*status_codes: int) -> dict[int, dict[str, Any]]:
     }
 
 
+def _csv_success_response(description: str = "Successful Response") -> dict[int, dict[str, Any]]:
+    return {
+        200: {
+            "description": description,
+            "content": {
+                "text/csv": {
+                    "schema": {
+                        "type": "string",
+                    }
+                }
+            },
+        }
+    }
+
+
 def _serialize(payload: Any) -> Any:
     return serialize_response(payload)
+
+
+def _csv_download_response(csv_text: str, filename: str) -> Response:
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _tags_to_csv(tags: list[str] | None) -> str | None:
@@ -154,6 +203,137 @@ def _patch_operation(payload: PatchInventoryItemRequest) -> str:
     if operation not in {"location", "condition"} and (payload.merge or payload.keep_acquisition is not None):
         raise ValidationError("merge and keep_acquisition only apply to location or condition changes.")
     return operation
+
+
+CSV_IMPORT_REQUEST_BODY = {
+    "required": True,
+    "content": {
+        "multipart/form-data": {
+            "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "format": "binary",
+                        "description": CSV_IMPORT_FILE_DESCRIPTION,
+                    },
+                    "default_inventory": {
+                        "type": "string",
+                        "description": CSV_IMPORT_DEFAULT_INVENTORY_DESCRIPTION,
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": CSV_IMPORT_DRY_RUN_DESCRIPTION,
+                    },
+                },
+            }
+        }
+    },
+}
+
+
+def _parse_form_bool(field_name: str, raw_value: str) -> bool:
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    raise ValidationError(f"Multipart field '{field_name}' must be a boolean form value.")
+
+
+def _decode_text_part(part, *, field_name: str) -> str:
+    payload = part.get_payload(decode=True) or b""
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset)
+    except UnicodeError as exc:
+        raise ValidationError(
+            f"Multipart field '{field_name}' could not be decoded as {charset}."
+        ) from exc
+
+
+def _parse_csv_import_form(content_type: str | None, body: bytes) -> tuple[str, str | None, bool, StringIO]:
+    if not content_type:
+        raise ValidationError("Content-Type must be multipart/form-data.")
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    if media_type != "multipart/form-data":
+        raise ValidationError("Content-Type must be multipart/form-data.")
+
+    message = BytesParser(policy=default_email_policy).parsebytes(
+        f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + body
+    )
+    if not message.is_multipart():
+        raise ValidationError("Content-Type must be multipart/form-data with a valid boundary.")
+
+    csv_filename = "upload.csv"
+    csv_bytes: bytes | None = None
+    default_inventory: str | None = None
+    dry_run = False
+    seen_fields: set[str] = set()
+
+    for part in message.iter_parts():
+        field_name = part.get_param("name", header="content-disposition")
+        if not field_name:
+            raise ValidationError("Each multipart field must include a name.")
+        if field_name not in {"file", "default_inventory", "dry_run"}:
+            raise ValidationError(f"Unexpected multipart field '{field_name}'.")
+        if field_name in seen_fields:
+            raise ValidationError(f"Multipart field '{field_name}' must not be repeated.")
+        seen_fields.add(field_name)
+
+        if field_name == "file":
+            csv_filename = (
+                part.get_param("filename", header="content-disposition") or "upload.csv"
+            ).strip() or "upload.csv"
+            csv_bytes = part.get_payload(decode=True) or b""
+        elif field_name == "default_inventory":
+            default_inventory_text = _decode_text_part(part, field_name=field_name).strip()
+            default_inventory = default_inventory_text or None
+        else:
+            dry_run = _parse_form_bool(field_name, _decode_text_part(part, field_name=field_name))
+
+    if csv_bytes is None:
+        raise ValidationError("Multipart field 'file' is required.")
+
+    try:
+        csv_text = csv_bytes.decode("utf-8-sig")
+    except UnicodeError as exc:
+        raise ValidationError("Uploaded CSV file must be UTF-8 encoded.") from exc
+
+    return csv_filename, default_inventory, dry_run, StringIO(csv_text, newline="")
+
+
+def _require_import_inventory_write_access(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    context: RequestContext,
+) -> None:
+    inventory_role = actor_inventory_role_with_connection(
+        connection,
+        inventory_slug=inventory_slug,
+        actor_id=context.actor_id,
+    )
+    if can_write_inventory(inventory_role=inventory_role, actor_roles=context.roles):
+        return
+    raise AuthorizationError(
+        f"Write access to inventory '{inventory_slug}' is required for this shared_service request."
+    )
+
+
+def _require_csv_import_inventory_write_access(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    context: RequestContext,
+) -> None:
+    _require_import_inventory_write_access(
+        connection,
+        inventory_slug=inventory_slug,
+        context=context,
+    )
 
 
 @router.get("/health", response_model=HealthResponse, responses=_error_responses(500))
@@ -221,6 +401,115 @@ def bootstrap_default_inventory(
             actor_roles=context.roles,
         )
     )
+
+
+@router.post(
+    "/imports/csv",
+    response_model=CsvImportResponse,
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
+    openapi_extra={"requestBody": CSV_IMPORT_REQUEST_BODY},
+)
+async def imports_csv(
+    request: Request,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    csv_filename, default_inventory, dry_run, csv_handle = _parse_csv_import_form(
+        request.headers.get("Content-Type"),
+        await request.body(),
+    )
+    try:
+        inventory_validator = None
+        if settings.runtime_mode == "shared_service":
+            def inventory_validator(connection: sqlite3.Connection, inventory_slug: str) -> None:
+                _require_csv_import_inventory_write_access(
+                    connection,
+                    inventory_slug=inventory_slug,
+                    context=context,
+                )
+
+        result = await run_in_threadpool(
+            import_csv_stream,
+            settings.db_path,
+            csv_handle=csv_handle,
+            csv_filename=csv_filename,
+            default_inventory=default_inventory,
+            dry_run=dry_run,
+            allow_inventory_auto_create=False,
+            inventory_validator=inventory_validator,
+            actor_type=context.actor_type,
+            actor_id=context.actor_id,
+            request_id=context.request_id,
+        )
+    finally:
+        csv_handle.close()
+    return _serialize(result)
+
+
+@router.post(
+    "/imports/decklist",
+    response_model=DecklistImportResponse,
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
+)
+async def imports_decklist(
+    payload: DecklistImportRequest,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    inventory_validator = None
+    if settings.runtime_mode == "shared_service":
+        def inventory_validator(connection: sqlite3.Connection, inventory_slug: str) -> None:
+            _require_import_inventory_write_access(
+                connection,
+                inventory_slug=inventory_slug,
+                context=context,
+            )
+
+    result = await run_in_threadpool(
+        import_decklist_text,
+        settings.db_path,
+        deck_text=payload.deck_text,
+        default_inventory=payload.default_inventory,
+        dry_run=payload.dry_run,
+        inventory_validator=inventory_validator,
+        actor_type=context.actor_type,
+        actor_id=context.actor_id,
+        request_id=context.request_id,
+    )
+    return _serialize(result)
+
+
+@router.post(
+    "/imports/deck-url",
+    response_model=DeckUrlImportResponse,
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
+)
+async def imports_deck_url(
+    payload: DeckUrlImportRequest,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    inventory_validator = None
+    if settings.runtime_mode == "shared_service":
+        def inventory_validator(connection: sqlite3.Connection, inventory_slug: str) -> None:
+            _require_import_inventory_write_access(
+                connection,
+                inventory_slug=inventory_slug,
+                context=context,
+            )
+
+    result = await run_in_threadpool(
+        import_deck_url,
+        settings.db_path,
+        source_url=payload.source_url,
+        default_inventory=payload.default_inventory,
+        dry_run=payload.dry_run,
+        inventory_validator=inventory_validator,
+        actor_type=context.actor_type,
+        actor_id=context.actor_id,
+        request_id=context.request_id,
+    )
+    return _serialize(result)
 
 
 @router.get(
@@ -346,6 +635,51 @@ def inventory_items_list(
             tags=tags,
         )
     )
+
+
+@router.get(
+    "/inventories/{inventory_slug}/export.csv",
+    responses={**_csv_success_response("CSV export download"), **_error_responses(401, 403, 400, 404, 503, 500)},
+)
+async def inventory_export_csv_download(
+    inventory_slug: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_inventory_read_request_context)],
+    provider: str = DEFAULT_PROVIDER,
+    profile: Annotated[
+        str,
+        Query(
+            description=CSV_EXPORT_PROFILE_DESCRIPTION,
+            json_schema_extra={"enum": supported_csv_export_profiles()},
+        ),
+    ] = "default",
+    limit: Annotated[int | None, Query(ge=1, le=MAX_OWNED_ROWS_LIMIT)] = None,
+    query: str | None = None,
+    set_code: str | None = None,
+    rarity: str | None = None,
+    finish: Annotated[FinishInput | None, Query(description=FINISH_INPUT_DESCRIPTION)] = None,
+    condition_code: Annotated[str | None, Query(description=CONDITION_CODE_DESCRIPTION)] = None,
+    language_code: Annotated[str | None, Query(description=LANGUAGE_CODE_DESCRIPTION)] = None,
+    location: str | None = None,
+    tags: Annotated[list[str] | None, Query()] = None,
+) -> Response:
+    rendered = await run_in_threadpool(
+        render_inventory_csv_export,
+        settings.db_path,
+        inventory_slug=inventory_slug,
+        provider=provider,
+        profile=profile,
+        limit=limit,
+        query=query,
+        set_code=set_code,
+        rarity=rarity,
+        finish=finish,
+        condition_code=condition_code,
+        language_code=language_code,
+        location=location,
+        tags=tags,
+    )
+    return _csv_download_response(rendered.csv_text, rendered.filename)
 
 
 @router.post(

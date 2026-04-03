@@ -75,6 +75,21 @@ BULK_TAGS_DESCRIPTION = (
     "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. "
     "Use clear_tags instead of sending an empty tag list."
 )
+DECKLIST_IMPORT_TEXT_DESCRIPTION = (
+    "Pasted decklist text. Supported v1 forms include '4 Lightning Bolt', '4x Lightning Bolt', "
+    "'SB: 2 Pyroblast', exact-printing hints like '3 Verdant Catacombs (MH2) 260', "
+    "and exported deck text with preambles like 'About' / 'Name <deck>' from deck sites such as Moxfield."
+)
+DECKLIST_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = "Target inventory slug for the pasted decklist import."
+DECKLIST_IMPORT_DRY_RUN_DESCRIPTION = (
+    "When true, validate and resolve the import using the real add-card workflow but roll back before commit."
+)
+DECK_URL_IMPORT_SOURCE_URL_DESCRIPTION = (
+    "Public deck URL to import. V1 currently supports Archidekt, AetherHub, ManaBox, "
+    "Moxfield, MTGGoldfish, MTGTop8, and TappedOut deck URLs."
+)
+DECK_URL_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = "Target inventory slug for the remote deck URL import."
+DECK_URL_IMPORT_DRY_RUN_DESCRIPTION = DECKLIST_IMPORT_DRY_RUN_DESCRIPTION
 
 
 class ApiBaseModel(BaseModel):
@@ -85,6 +100,18 @@ class InventoryCreateRequest(ApiBaseModel):
     slug: str
     display_name: str
     description: str | None = None
+
+
+class DecklistImportRequest(ApiBaseModel):
+    deck_text: str = Field(description=DECKLIST_IMPORT_TEXT_DESCRIPTION)
+    default_inventory: str = Field(description=DECKLIST_IMPORT_DEFAULT_INVENTORY_DESCRIPTION)
+    dry_run: bool = Field(default=False, description=DECKLIST_IMPORT_DRY_RUN_DESCRIPTION)
+
+
+class DeckUrlImportRequest(ApiBaseModel):
+    source_url: str = Field(description=DECK_URL_IMPORT_SOURCE_URL_DESCRIPTION)
+    default_inventory: str = Field(description=DECK_URL_IMPORT_DEFAULT_INVENTORY_DESCRIPTION)
+    dry_run: bool = Field(default=False, description=DECK_URL_IMPORT_DRY_RUN_DESCRIPTION)
 
 
 class AddInventoryItemRequest(ApiBaseModel):

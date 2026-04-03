@@ -1,0 +1,49 @@
+{
+  "source_url": "https://archidekt.com/decks/123/example_deck",
+  "provider": "archidekt",
+  "deck_name": "Example Deck",
+  "default_inventory": "personal",
+  "rows_seen": 2,
+  "rows_written": 2,
+  "dry_run": true,
+  "imported_rows": [
+    {
+      "section": "commander",
+      "inventory": "personal",
+      "card_name": "Atraxa, Praetors' Voice",
+      "set_code": "2xm",
+      "set_name": "Double Masters",
+      "collector_number": "190",
+      "scryfall_id": "demo-atraxa",
+      "item_id": 201,
+      "quantity": 1,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": null,
+      "acquisition_price": null,
+      "acquisition_currency": null,
+      "notes": null,
+      "tags": []
+    },
+    {
+      "section": "mainboard",
+      "inventory": "personal",
+      "card_name": "Sol Ring",
+      "set_code": "cmm",
+      "set_name": "Commander Masters",
+      "collector_number": "403",
+      "scryfall_id": "demo-sol-ring",
+      "item_id": 202,
+      "quantity": 1,
+      "finish": "foil",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": null,
+      "acquisition_price": null,
+      "acquisition_currency": null,
+      "notes": null,
+      "tags": []
+    }
+  ]
+}

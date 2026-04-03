@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from io import StringIO
 import json
 import tempfile
 from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.errors import NotFoundError
 from mtg_source_stack.inventory.csv_import import (
     build_add_card_kwargs_from_csv_row,
     import_csv,
+    import_csv_stream,
     normalize_csv_row,
 )
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
@@ -200,6 +203,53 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual("1.25", str(item_row["acquisition_price"]))
             self.assertEqual("USD", item_row["acquisition_currency"])
             self.assertEqual("Imported from CSV", item_row["notes"])
+
+    def test_import_csv_stream_can_disable_inventory_auto_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-1',
+                        'csv-oracle-1',
+                        'CSV Test Card',
+                        'tst',
+                        'Test Set',
+                        '5',
+                        'en',
+                        '["normal"]'
+                    )
+                    """
+                )
+                connection.commit()
+
+            csv_handle = StringIO(
+                "Collection Name,Scryfall ID,Qty,Cond\n"
+                "Trade Binder,csv-card-1,2,NM\n"
+            )
+
+            with self.assertRaises(NotFoundError):
+                import_csv_stream(
+                    db_path,
+                    csv_handle=csv_handle,
+                    csv_filename="inventory_import.csv",
+                    default_inventory=None,
+                    allow_inventory_auto_create=False,
+                )
 
     def test_import_csv_accepts_oracle_id_and_infers_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
