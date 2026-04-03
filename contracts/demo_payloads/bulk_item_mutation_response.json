@@ -1,0 +1,7 @@
+{
+  "inventory": "personal",
+  "operation": "add_tags",
+  "requested_item_ids": [12, 27, 44],
+  "updated_item_ids": [12, 27, 44],
+  "updated_count": 3
+}

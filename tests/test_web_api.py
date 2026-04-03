@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.inventory.service import create_inventory, grant_inventory_membership
 
 
 FASTAPI_TESTING_AVAILABLE = (
@@ -98,12 +99,14 @@ class WebApiSchemaTest(unittest.TestCase):
             components = spec["components"]["schemas"]
 
             for path, method in [
+                ("/me/bootstrap", "post"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories", "post"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
+                ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
@@ -113,11 +116,13 @@ class WebApiSchemaTest(unittest.TestCase):
             for path, method in [
                 ("/inventories", "get"),
                 ("/inventories", "post"),
+                ("/me/bootstrap", "post"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
+                ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
@@ -156,6 +161,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 "Recommended codes include: en, ja, de, fr",
                 search_parameters["lang"]["description"],
             )
+            self.assertEqual(
+                ["default", "all"],
+                search_parameters["scope"]["schema"]["enum"],
+            )
 
             card_names_schema = spec["paths"]["/cards/search/names"]["get"]["responses"]["200"]["content"][
                 "application/json"
@@ -171,6 +180,14 @@ class WebApiSchemaTest(unittest.TestCase):
                 "string",
                 components[card_name_schema_name]["properties"]["available_languages"]["items"]["type"],
             )
+            name_search_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/cards/search/names"]["get"]["parameters"]
+            }
+            self.assertEqual(
+                ["default", "all"],
+                name_search_parameters["scope"]["schema"]["enum"],
+            )
 
             printings_schema = spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["responses"]["200"][
                 "content"
@@ -185,6 +202,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 for parameter in spec["paths"]["/cards/oracle/{oracle_id}/printings"]["get"]["parameters"]
             }
             self.assertIn("Use `all` to include every available catalog language", printings_parameters["lang"]["description"])
+            self.assertEqual(
+                ["default", "all"],
+                printings_parameters["scope"]["schema"]["enum"],
+            )
 
             owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
                 "content"
@@ -217,6 +238,17 @@ class WebApiSchemaTest(unittest.TestCase):
                 ["normal", "foil", "etched"],
                 owned_properties["allowed_finishes"]["items"]["enum"],
             )
+
+            bootstrap_schema = spec["paths"]["/me/bootstrap"]["post"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]
+            bootstrap_schema_name = self._schema_name_from_ref(bootstrap_schema["$ref"])
+            self.assertEqual("DefaultInventoryBootstrapResponse", bootstrap_schema_name)
+            self.assertEqual("boolean", components[bootstrap_schema_name]["properties"]["created"]["type"])
+            self.assertEqual(
+                "InventoryCreateResponse",
+                self._schema_name_from_ref(components[bootstrap_schema_name]["properties"]["inventory"]["$ref"]),
+            )
             inventory_parameters = {
                 parameter["name"]: parameter
                 for parameter in spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["parameters"]
@@ -240,6 +272,10 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertIn(
                 "inherits the resolved printing language",
                 add_request_schema["properties"]["language_code"]["description"],
+            )
+            self.assertIn(
+                "prefers English mainstream-paper printings",
+                add_request_schema["properties"]["oracle_id"]["description"],
             )
 
             patch_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}"]["patch"]["responses"]["200"][
@@ -284,6 +320,23 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertIn(
                 "Only applies to merged location or condition changes",
                 patch_request_schema["properties"]["keep_acquisition"]["description"],
+            )
+
+            bulk_request_schema = components["BulkInventoryItemMutationRequest"]
+            self.assertIn("supports only tag operations", bulk_request_schema["description"])
+            self.assertEqual(
+                ["add_tags", "remove_tags", "set_tags", "clear_tags"],
+                bulk_request_schema["properties"]["operation"]["enum"],
+            )
+            self.assertEqual(1, bulk_request_schema["properties"]["item_ids"]["minItems"])
+            self.assertEqual(100, bulk_request_schema["properties"]["item_ids"]["maxItems"])
+
+            bulk_response_schema = spec["paths"]["/inventories/{inventory_slug}/items/bulk"]["post"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertEqual(
+                "BulkInventoryItemMutationResponse",
+                self._schema_name_from_ref(bulk_response_schema["$ref"]),
             )
 
             audit_schema = spec["paths"]["/inventories/{inventory_slug}/audit"]["get"]["responses"]["200"][
@@ -368,6 +421,77 @@ class WebApiTest(unittest.TestCase):
                 )
                 """,
                 ("api-card-1", "api-oracle-1", "API Test Card", finishes_json),
+            )
+            connection.commit()
+
+    def _insert_catalog_card(
+        self,
+        db_path: Path,
+        *,
+        scryfall_id: str,
+        oracle_id: str,
+        name: str,
+        set_code: str = "tst",
+        set_name: str = "Test Set",
+        collector_number: str = "10",
+        lang: str = "en",
+        released_at: str = "2026-04-01",
+        finishes_json: str = '["normal","foil"]',
+        image_uris_json: str | None = None,
+        layout: str = "normal",
+        set_type: str | None = None,
+        booster: int = 0,
+        promo_types_json: str = "[]",
+        is_default_add_searchable: int = 1,
+    ) -> None:
+        if image_uris_json is None:
+            image_uris_json = (
+                '{"small":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-small.jpg","normal":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-normal.jpg"}'
+            )
+
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
+                    is_default_add_searchable
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
+                    is_default_add_searchable,
+                ),
             )
             connection.commit()
 
@@ -478,6 +602,7 @@ class WebApiTest(unittest.TestCase):
         finish: str = "normal",
         language_code: str = "en",
         location: str = "",
+        tags_json: str = "[]",
     ) -> None:
         with connect(db_path) as connection:
             inventory = connection.execute(
@@ -496,7 +621,7 @@ class WebApiTest(unittest.TestCase):
                     location,
                     tags_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, '[]')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -506,6 +631,7 @@ class WebApiTest(unittest.TestCase):
                     finish,
                     language_code,
                     location,
+                    tags_json,
                 ),
             )
             connection.commit()
@@ -596,6 +722,69 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
                 self.assertRegex(audit.json()[0]["occurred_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
+    def test_demo_api_normalizes_blank_location_to_null_in_mutation_owned_and_audit_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-add-blank"},
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertIsNone(added.json()["location"])
+                item_id = added.json()["item_id"]
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual(1, len(listed.json()))
+                self.assertIsNone(listed.json()[0]["location"])
+
+                set_location = client.patch(
+                    f"/inventories/personal/items/{item_id}",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-set-binder"},
+                    json={"location": "Binder A"},
+                )
+                self.assertEqual(200, set_location.status_code)
+                self.assertEqual("set_location", set_location.json()["operation"])
+                self.assertIsNone(set_location.json()["old_location"])
+                self.assertEqual("Binder A", set_location.json()["location"])
+
+                clear_location = client.patch(
+                    f"/inventories/personal/items/{item_id}",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-clear-binder"},
+                    json={"location": ""},
+                )
+                self.assertEqual(200, clear_location.status_code)
+                self.assertEqual("set_location", clear_location.json()["operation"])
+                self.assertEqual("Binder A", clear_location.json()["old_location"])
+                self.assertIsNone(clear_location.json()["location"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_location", audit.json()[0]["action"])
+                self.assertEqual("Binder A", audit.json()[0]["before"]["location"])
+                self.assertIsNone(audit.json()[0]["after"]["location"])
+                self.assertEqual("set_location", audit.json()[1]["action"])
+                self.assertIsNone(audit.json()[1]["before"]["location"])
+                self.assertEqual("Binder A", audit.json()[1]["after"]["location"])
+                self.assertEqual("add_card", audit.json()[2]["action"])
+                self.assertIsNone(audit.json()[2]["after"]["location"])
+
     def test_demo_api_exposes_name_search_and_oracle_printings_lookup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -640,6 +829,293 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(404, missing.status_code)
                 self.assertEqual("not_found", missing.json()["error"]["code"])
 
+    def test_demo_api_filters_default_add_scope_for_catalog_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scope-allowed",
+                    oracle_id="api-scope-allowed-oracle",
+                    name="API Scope Probe Card",
+                    collector_number="21",
+                    layout="reversible_card",
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scope-excluded",
+                    oracle_id="api-scope-excluded-oracle",
+                    name="API Scope Probe Token",
+                    collector_number="22",
+                    layout="token",
+                    is_default_add_searchable=0,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scoped-ja",
+                    oracle_id="api-scoped-oracle",
+                    name="API Scoped Lookup Card",
+                    collector_number="31",
+                    lang="ja",
+                    released_at="2026-04-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-scoped-ja-small.jpg","normal":"https://example.test/cards/api-scoped-ja-normal.jpg"}',
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scoped-en-excluded",
+                    oracle_id="api-scoped-oracle",
+                    name="API Scoped Lookup Card",
+                    collector_number="32",
+                    lang="en",
+                    released_at="2026-05-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-scoped-en-small.jpg","normal":"https://example.test/cards/api-scoped-en-normal.jpg"}',
+                    is_default_add_searchable=0,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-excluded-only",
+                    oracle_id="api-excluded-only-oracle",
+                    name="API Excluded Only Card",
+                    collector_number="41",
+                    layout="emblem",
+                    is_default_add_searchable=0,
+                )
+
+                search = client.get("/cards/search", params={"query": "API Scope Probe"})
+                self.assertEqual(200, search.status_code)
+                self.assertEqual(["api-scope-allowed"], [row["scryfall_id"] for row in search.json()])
+
+                name_search = client.get("/cards/search/names", params={"query": "API Scoped Lookup"})
+                self.assertEqual(200, name_search.status_code)
+                self.assertEqual(1, len(name_search.json()))
+                self.assertEqual("api-scoped-oracle", name_search.json()[0]["oracle_id"])
+                self.assertEqual(1, name_search.json()[0]["printings_count"])
+                self.assertEqual(["ja"], name_search.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-scoped-ja-small.jpg",
+                    name_search.json()[0]["image_uri_small"],
+                )
+
+                default_printings = client.get("/cards/oracle/api-scoped-oracle/printings")
+                self.assertEqual(200, default_printings.status_code)
+                self.assertEqual(["api-scoped-ja"], [row["scryfall_id"] for row in default_printings.json()])
+
+                all_printings = client.get(
+                    "/cards/oracle/api-scoped-oracle/printings",
+                    params={"lang": "all"},
+                )
+                self.assertEqual(200, all_printings.status_code)
+                self.assertEqual(["api-scoped-ja"], [row["scryfall_id"] for row in all_printings.json()])
+
+                search_all = client.get(
+                    "/cards/search",
+                    params={"query": "API Scope Probe", "scope": "all"},
+                )
+                self.assertEqual(200, search_all.status_code)
+                self.assertEqual(
+                    ["api-scope-allowed", "api-scope-excluded"],
+                    [row["scryfall_id"] for row in search_all.json()],
+                )
+
+                name_search_all = client.get(
+                    "/cards/search/names",
+                    params={"query": "API Scoped Lookup", "scope": "all"},
+                )
+                self.assertEqual(200, name_search_all.status_code)
+                self.assertEqual(1, len(name_search_all.json()))
+                self.assertEqual(2, name_search_all.json()[0]["printings_count"])
+                self.assertEqual(["en", "ja"], name_search_all.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-scoped-en-small.jpg",
+                    name_search_all.json()[0]["image_uri_small"],
+                )
+
+                default_printings_all_scope = client.get(
+                    "/cards/oracle/api-scoped-oracle/printings",
+                    params={"scope": "all"},
+                )
+                self.assertEqual(200, default_printings_all_scope.status_code)
+                self.assertEqual(
+                    ["api-scoped-en-excluded"],
+                    [row["scryfall_id"] for row in default_printings_all_scope.json()],
+                )
+
+                all_printings_all_scope = client.get(
+                    "/cards/oracle/api-scoped-oracle/printings",
+                    params={"lang": "all", "scope": "all"},
+                )
+                self.assertEqual(200, all_printings_all_scope.status_code)
+                self.assertEqual(
+                    ["api-scoped-en-excluded", "api-scoped-ja"],
+                    [row["scryfall_id"] for row in all_printings_all_scope.json()],
+                )
+
+                excluded = client.get("/cards/oracle/api-excluded-only-oracle/printings")
+                self.assertEqual(404, excluded.status_code)
+                self.assertEqual("not_found", excluded.json()["error"]["code"])
+
+                excluded_all_scope = client.get(
+                    "/cards/oracle/api-excluded-only-oracle/printings",
+                    params={"scope": "all"},
+                )
+                self.assertEqual(200, excluded_all_scope.status_code)
+                self.assertEqual(["api-excluded-only"], [row["scryfall_id"] for row in excluded_all_scope.json()])
+
+    def test_demo_api_grouped_name_search_supports_exact_and_substring_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-exact-group-en",
+                    oracle_id="api-exact-group-oracle",
+                    name="Exact API Group Card",
+                    collector_number="51",
+                    lang="en",
+                    released_at="2026-04-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-exact-group-en-small.jpg","normal":"https://example.test/cards/api-exact-group-en-normal.jpg"}',
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-exact-group-ja",
+                    oracle_id="api-exact-group-oracle",
+                    name="Exact API Group Card",
+                    collector_number="52",
+                    lang="ja",
+                    released_at="2026-05-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-exact-group-ja-small.jpg","normal":"https://example.test/cards/api-exact-group-ja-normal.jpg"}',
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-lightning-bolt-en",
+                    oracle_id="api-lightning-bolt-oracle",
+                    name="Lightning Bolt",
+                    collector_number="61",
+                    lang="en",
+                    released_at="2026-04-01",
+                    is_default_add_searchable=1,
+                )
+
+                exact = client.get(
+                    "/cards/search/names",
+                    params={"query": "Exact API Group Card", "exact": "true"},
+                )
+                self.assertEqual(200, exact.status_code)
+                self.assertEqual(1, len(exact.json()))
+                self.assertEqual("api-exact-group-oracle", exact.json()[0]["oracle_id"])
+                self.assertEqual(["en", "ja"], exact.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-exact-group-en-small.jpg",
+                    exact.json()[0]["image_uri_small"],
+                )
+
+                substring = client.get(
+                    "/cards/search/names",
+                    params={"query": "ning"},
+                )
+                self.assertEqual(200, substring.status_code)
+                self.assertEqual(1, len(substring.json()))
+                self.assertEqual("api-lightning-bolt-oracle", substring.json()[0]["oracle_id"])
+                self.assertEqual("Lightning Bolt", substring.json()[0]["name"])
+
+    def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal","foil"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="normal",
+                    location="Binder A",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="foil",
+                    location="Binder B",
+                    tags_json='["foil"]',
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-demo"},
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": item_ids,
+                        "tags": ["trade", "deck"],
+                    },
+                )
+                self.assertEqual(200, bulk.status_code)
+                self.assertEqual("personal", bulk.json()["inventory"])
+                self.assertEqual("add_tags", bulk.json()["operation"])
+                self.assertEqual(item_ids, bulk.json()["requested_item_ids"])
+                self.assertEqual(item_ids, bulk.json()["updated_item_ids"])
+                self.assertEqual(2, bulk.json()["updated_count"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                rows_by_id = {row["item_id"]: row for row in listed.json()}
+                self.assertEqual(["trade", "deck"], rows_by_id[item_ids[0]]["tags"])
+                self.assertEqual(["foil", "trade", "deck"], rows_by_id[item_ids[1]]["tags"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("add_tags", audit.json()[0]["action"])
+                self.assertEqual("add_tags", audit.json()[1]["action"])
+                self.assertTrue(audit.json()[0]["metadata"]["bulk_operation"])
+                self.assertEqual("add_tags", audit.json()[0]["metadata"]["bulk_kind"])
+                self.assertEqual(2, audit.json()[0]["metadata"]["bulk_count"])
+                self.assertEqual(2, audit.json()[0]["metadata"]["updated_count"])
+                self.assertEqual("req-bulk-demo", audit.json()[0]["request_id"])
+
+    def test_demo_api_bulk_tag_mutation_rejects_duplicate_item_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                duplicate = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [item_id, item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(400, duplicate.status_code)
+                self.assertEqual("validation_error", duplicate.json()["error"]["code"])
+                self.assertIn("must not contain duplicates", duplicate.json()["error"]["message"])
+
     def test_demo_api_add_item_accepts_oracle_id_and_inherits_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -680,6 +1156,73 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(400, conflict.status_code)
                 self.assertEqual("validation_error", conflict.json()["error"]["code"])
                 self.assertIn("language_code must match the resolved printing language", conflict.json()["error"]["message"])
+
+    def test_demo_api_add_item_uses_mainstream_default_printing_for_oracle_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-policy-mainstream-en",
+                    oracle_id="api-policy-oracle",
+                    name="API Oracle Policy Card",
+                    set_code="bro",
+                    set_name="The Brothers' War",
+                    collector_number="81",
+                    lang="en",
+                    released_at="2023-11-18",
+                    finishes_json='["nonfoil","foil"]',
+                    set_type="expansion",
+                    booster=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-policy-mainstream-ja",
+                    oracle_id="api-policy-oracle",
+                    name="API Oracle Policy Card",
+                    set_code="mkm",
+                    set_name="Murders at Karlov Manor",
+                    collector_number="82",
+                    lang="ja",
+                    released_at="2024-02-09",
+                    finishes_json='["nonfoil","foil"]',
+                    set_type="expansion",
+                    booster=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-policy-promo-en",
+                    oracle_id="api-policy-oracle",
+                    name="API Oracle Policy Card",
+                    set_code="pneo",
+                    set_name="Kamigawa: Neon Dynasty Promos",
+                    collector_number="83",
+                    lang="en",
+                    released_at="2024-03-01",
+                    finishes_json='["nonfoil","foil"]',
+                    set_type="expansion",
+                    booster=0,
+                    promo_types_json='["promo_pack"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "oracle_id": "api-policy-oracle",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertEqual("api-policy-mainstream-en", added.json()["scryfall_id"])
+                self.assertEqual("en", added.json()["language_code"])
 
     def test_demo_api_returns_409_for_concurrent_add_item_identity_collision(self) -> None:
         from mtg_source_stack.inventory.service import add_card as service_add_card
@@ -897,29 +1440,104 @@ class WebApiTest(unittest.TestCase):
 
                 self.assertEqual([200, 200, 200, 200, 200], results)
 
-    def test_shared_service_read_routes_require_editor_role(self) -> None:
+    def test_shared_service_inventory_list_is_filtered_by_membership(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
             initialize_database(db_path)
-            editor_headers = {"X-Authenticated-User": "shared-user"}
-            unrecognized_role_headers = {
-                "X-Authenticated-User": "shared-user",
+            viewer_headers = {
+                "X-Authenticated-User": "viewer-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            outsider_headers = {
+                "X-Authenticated-User": "outsider-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            admin_headers = {
+                "X-Authenticated-User": "shared-admin",
+                "X-Authenticated-Roles": "admin",
+            }
+
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                anonymous_inventories = client.get("/inventories")
+                self.assertEqual(401, anonymous_inventories.status_code)
+                self.assertEqual("authentication_required", anonymous_inventories.json()["error"]["code"])
+
+                viewer_inventories = client.get("/inventories", headers=viewer_headers)
+                self.assertEqual(200, viewer_inventories.status_code)
+                self.assertEqual(["personal"], [row["slug"] for row in viewer_inventories.json()])
+
+                outsider_inventories = client.get("/inventories", headers=outsider_headers)
+                self.assertEqual(200, outsider_inventories.status_code)
+                self.assertEqual([], outsider_inventories.json())
+
+                admin_inventories = client.get("/inventories", headers=admin_headers)
+                self.assertEqual(200, admin_inventories.status_code)
+                self.assertEqual(
+                    ["admin-only", "personal"],
+                    [row["slug"] for row in admin_inventories.json()],
+                )
+
+    def test_shared_service_inventory_read_routes_allow_viewers_and_reject_non_members(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            owner_headers = {"X-Authenticated-User": "owner-user"}
+            viewer_headers = {
+                "X-Authenticated-User": "viewer-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            outsider_headers = {
+                "X-Authenticated-User": "outsider-user",
                 "X-Authenticated-Roles": "viewer",
             }
 
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+
             with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
                 self._seed_card(db_path)
-
-                created_inventory = client.post(
-                    "/inventories",
-                    headers=editor_headers,
-                    json={"slug": "personal", "display_name": "Personal Collection"},
-                )
-                self.assertEqual(201, created_inventory.status_code)
+                self._seed_oracle_printings(db_path)
 
                 added = client.post(
                     "/inventories/personal/items",
-                    headers=editor_headers,
+                    headers=owner_headers,
                     json={
                         "scryfall_id": "api-card-1",
                         "quantity": 1,
@@ -929,46 +1547,54 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(201, added.status_code)
 
-                anonymous_inventories = client.get("/inventories")
-                self.assertEqual(401, anonymous_inventories.status_code)
-                self.assertEqual("authentication_required", anonymous_inventories.json()["error"]["code"])
+                viewer_items = client.get("/inventories/personal/items", headers=viewer_headers)
+                self.assertEqual(200, viewer_items.status_code)
 
-                unauthorized_search = client.get(
-                    "/cards/search",
-                    headers=unrecognized_role_headers,
-                    params={"query": "API Test"},
-                )
-                self.assertEqual(403, unauthorized_search.status_code)
-                self.assertEqual("forbidden", unauthorized_search.json()["error"]["code"])
+                viewer_audit = client.get("/inventories/personal/audit", headers=viewer_headers)
+                self.assertEqual(200, viewer_audit.status_code)
 
-                unauthorized_name_search = client.get(
+                viewer_search = client.get("/cards/search", headers=viewer_headers, params={"query": "API Test"})
+                self.assertEqual(200, viewer_search.status_code)
+
+                viewer_name_search = client.get(
                     "/cards/search/names",
-                    headers=unrecognized_role_headers,
-                    params={"query": "API Test"},
+                    headers=viewer_headers,
+                    params={"query": "API Lookup"},
                 )
-                self.assertEqual(403, unauthorized_name_search.status_code)
-                self.assertEqual("forbidden", unauthorized_name_search.json()["error"]["code"])
+                self.assertEqual(200, viewer_name_search.status_code)
 
-                inventories = client.get("/inventories", headers=editor_headers)
-                self.assertEqual(200, inventories.status_code)
-
-                search = client.get("/cards/search", headers=editor_headers, params={"query": "API Test"})
-                self.assertEqual(200, search.status_code)
-
-                self._seed_oracle_printings(db_path)
-                name_search = client.get("/cards/search/names", headers=editor_headers, params={"query": "API Lookup"})
-                self.assertEqual(200, name_search.status_code)
-                printings = client.get(
+                viewer_printings = client.get(
                     "/cards/oracle/api-oracle-lookup/printings",
-                    headers=editor_headers,
+                    headers=viewer_headers,
                 )
-                self.assertEqual(200, printings.status_code)
+                self.assertEqual(200, viewer_printings.status_code)
 
-                items = client.get("/inventories/personal/items", headers=editor_headers)
-                self.assertEqual(200, items.status_code)
+                denied_items = client.get("/inventories/admin-only/items", headers=viewer_headers)
+                self.assertEqual(403, denied_items.status_code)
+                self.assertEqual("forbidden", denied_items.json()["error"]["code"])
 
-                audit = client.get("/inventories/personal/audit", headers=editor_headers)
-                self.assertEqual(200, audit.status_code)
+                denied_audit = client.get("/inventories/admin-only/audit", headers=viewer_headers)
+                self.assertEqual(403, denied_audit.status_code)
+                self.assertEqual("forbidden", denied_audit.json()["error"]["code"])
+
+                outsider_search = client.get("/cards/search", headers=outsider_headers, params={"query": "API Test"})
+                self.assertEqual(403, outsider_search.status_code)
+                self.assertEqual("forbidden", outsider_search.json()["error"]["code"])
+
+                outsider_name_search = client.get(
+                    "/cards/search/names",
+                    headers=outsider_headers,
+                    params={"query": "API Lookup"},
+                )
+                self.assertEqual(403, outsider_name_search.status_code)
+                self.assertEqual("forbidden", outsider_name_search.json()["error"]["code"])
+
+                outsider_printings = client.get(
+                    "/cards/oracle/api-oracle-lookup/printings",
+                    headers=outsider_headers,
+                )
+                self.assertEqual(403, outsider_printings.status_code)
+                self.assertEqual("forbidden", outsider_printings.json()["error"]["code"])
 
     def test_shared_service_mutating_requests_require_authenticated_actor_header(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -977,6 +1603,10 @@ class WebApiTest(unittest.TestCase):
 
             with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
                 self._seed_card(db_path)
+
+                bootstrap_without_auth = client.post("/me/bootstrap")
+                self.assertEqual(401, bootstrap_without_auth.status_code)
+                self.assertEqual("authentication_required", bootstrap_without_auth.json()["error"]["code"])
 
                 create_without_auth = client.post(
                     "/inventories",
@@ -993,6 +1623,16 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(401, create_with_wrong_header.status_code)
                 self.assertEqual("authentication_required", create_with_wrong_header.json()["error"]["code"])
+
+                bootstrap_with_viewer_role = client.post(
+                    "/me/bootstrap",
+                    headers={
+                        "X-Authenticated-User": "shared-viewer",
+                        "X-Authenticated-Roles": "viewer",
+                    },
+                )
+                self.assertEqual(403, bootstrap_with_viewer_role.status_code)
+                self.assertEqual("forbidden", bootstrap_with_viewer_role.json()["error"]["code"])
 
                 created_inventory = client.post(
                     "/inventories",
@@ -1012,6 +1652,270 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(401, add_without_auth.status_code)
                 self.assertEqual("authentication_required", add_without_auth.json()["error"]["code"])
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                bulk_without_auth = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(401, bulk_without_auth.status_code)
+                self.assertEqual("authentication_required", bulk_without_auth.json()["error"]["code"])
+
+    def test_shared_service_bootstrap_creates_one_default_inventory_and_unlocks_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            user_headers = {"X-Authenticated-User": "shared-user@example.com"}
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                pre_bootstrap_search = client.get("/cards/search", headers=user_headers, params={"query": "API Test"})
+                self.assertEqual(403, pre_bootstrap_search.status_code)
+                self.assertEqual("forbidden", pre_bootstrap_search.json()["error"]["code"])
+
+                created = client.post("/me/bootstrap", headers=user_headers)
+                self.assertEqual(200, created.status_code)
+                self.assertTrue(created.json()["created"])
+                self.assertEqual("Collection", created.json()["inventory"]["display_name"])
+                self.assertEqual("shared-user-collection", created.json()["inventory"]["slug"])
+
+                inventories = client.get("/inventories", headers=user_headers)
+                self.assertEqual(200, inventories.status_code)
+                self.assertEqual(["shared-user-collection"], [row["slug"] for row in inventories.json()])
+
+                repeated = client.post("/me/bootstrap", headers=user_headers)
+                self.assertEqual(200, repeated.status_code)
+                self.assertFalse(repeated.json()["created"])
+                self.assertEqual(created.json()["inventory"], repeated.json()["inventory"])
+
+                post_bootstrap_search = client.get("/cards/search", headers=user_headers, params={"query": "API Test"})
+                self.assertEqual(200, post_bootstrap_search.status_code)
+
+    def test_shared_service_bootstrap_creates_personal_default_even_when_user_has_shared_membership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            user_headers = {"X-Authenticated-User": "viewer-user@example.com"}
+
+            create_inventory(
+                db_path,
+                slug="team",
+                display_name="Team Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="team",
+                actor_id="viewer-user@example.com",
+                role="viewer",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                created = client.post("/me/bootstrap", headers=user_headers)
+                self.assertEqual(200, created.status_code)
+                self.assertTrue(created.json()["created"])
+                self.assertEqual("viewer-user-collection", created.json()["inventory"]["slug"])
+
+                inventories = client.get("/inventories", headers=user_headers)
+                self.assertEqual(200, inventories.status_code)
+                self.assertEqual(
+                    ["team", "viewer-user-collection"],
+                    [row["slug"] for row in inventories.json()],
+                )
+
+    def test_shared_service_inventory_write_routes_allow_editors_and_owners_but_reject_viewers_and_non_members(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            owner_headers = {"X-Authenticated-User": "owner-user"}
+            viewer_headers = {
+                "X-Authenticated-User": "viewer-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            editor_headers = {
+                "X-Authenticated-User": "editor-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            outsider_headers = {
+                "X-Authenticated-User": "outsider-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            admin_headers = {
+                "X-Authenticated-User": "admin-user",
+                "X-Authenticated-Roles": "admin",
+            }
+
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="editor-user",
+                role="editor",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path, finishes_json='["normal","foil"]')
+
+                viewer_add = client.post(
+                    "/inventories/personal/items",
+                    headers=viewer_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(403, viewer_add.status_code)
+                self.assertEqual("forbidden", viewer_add.json()["error"]["code"])
+
+                outsider_add = client.post(
+                    "/inventories/personal/items",
+                    headers=outsider_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(403, outsider_add.status_code)
+                self.assertEqual("forbidden", outsider_add.json()["error"]["code"])
+
+                editor_add = client.post(
+                    "/inventories/personal/items",
+                    headers=editor_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, editor_add.status_code)
+                editor_item_id = editor_add.json()["item_id"]
+
+                viewer_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers=viewer_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [editor_item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(403, viewer_bulk.status_code)
+                self.assertEqual("forbidden", viewer_bulk.json()["error"]["code"])
+
+                outsider_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers=outsider_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [editor_item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(403, outsider_bulk.status_code)
+                self.assertEqual("forbidden", outsider_bulk.json()["error"]["code"])
+
+                editor_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers=editor_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [editor_item_id],
+                        "tags": ["trade"],
+                    },
+                )
+                self.assertEqual(200, editor_bulk.status_code)
+
+                owner_patch = client.patch(
+                    f"/inventories/personal/items/{editor_item_id}",
+                    headers=owner_headers,
+                    json={"notes": "owner note"},
+                )
+                self.assertEqual(200, owner_patch.status_code)
+
+                viewer_patch = client.patch(
+                    f"/inventories/personal/items/{editor_item_id}",
+                    headers=viewer_headers,
+                    json={"notes": "viewer note"},
+                )
+                self.assertEqual(403, viewer_patch.status_code)
+                self.assertEqual("forbidden", viewer_patch.json()["error"]["code"])
+
+                owner_delete = client.delete(
+                    f"/inventories/personal/items/{editor_item_id}",
+                    headers=owner_headers,
+                )
+                self.assertEqual(200, owner_delete.status_code)
+
+                admin_add = client.post(
+                    "/inventories/admin-only/items",
+                    headers=admin_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, admin_add.status_code)
+
+                admin_bulk = client.post(
+                    "/inventories/admin-only/items/bulk",
+                    headers=admin_headers,
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [admin_add.json()["item_id"]],
+                        "tags": ["admin"],
+                    },
+                )
+                self.assertEqual(200, admin_bulk.status_code)
+
+                editor_admin_only_add = client.post(
+                    "/inventories/admin-only/items",
+                    headers=editor_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(403, editor_admin_only_add.status_code)
+                self.assertEqual("forbidden", editor_admin_only_add.json()["error"]["code"])
 
     def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1188,3 +2092,18 @@ class WebApiTest(unittest.TestCase):
                 for response in responses:
                     self.assertEqual(400, response.status_code)
                     self.assertEqual("validation_error", response.json()["error"]["code"])
+
+    def test_demo_api_rejects_invalid_catalog_scope_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                responses = [
+                    client.get("/cards/search", params={"query": "API", "scope": "weird"}),
+                    client.get("/cards/search/names", params={"query": "API", "scope": "weird"}),
+                    client.get("/cards/oracle/missing-oracle/printings", params={"scope": "weird"}),
+                ]
+
+                for response in responses:
+                    self.assertEqual(400, response.status_code)
+                    self.assertEqual("validation_error", response.json()["error"]["code"])
+                    self.assertIn("scope must be one of: default, all.", response.json()["error"]["message"])

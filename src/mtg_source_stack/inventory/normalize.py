@@ -11,6 +11,8 @@ from .money import format_decimal
 DEFAULT_PROVIDER = "tcgplayer"
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 100
+DEFAULT_CATALOG_SEARCH_SCOPE = "default"
+CATALOG_SEARCH_SCOPES = ("default", "all")
 CSV_PREVIEW_LIMIT = 25
 DEFAULT_HEALTH_STALE_DAYS = 30
 HEALTH_PREVIEW_LIMIT = 10
@@ -88,6 +90,17 @@ def validate_limit_value(
     if value > maximum:
         raise ValidationError(f"{field_name} cannot exceed {maximum}.")
     return value
+
+
+def normalize_catalog_search_scope(value: str | None) -> str:
+    text = text_or_none(value)
+    if text is None:
+        return DEFAULT_CATALOG_SEARCH_SCOPE
+    normalized = text.lower()
+    if normalized not in CATALOG_SEARCH_SCOPES:
+        allowed = ", ".join(CATALOG_SEARCH_SCOPES)
+        raise ValidationError(f"scope must be one of: {allowed}.")
+    return normalized
 
 
 def first_non_empty(*values: Any) -> str | None:

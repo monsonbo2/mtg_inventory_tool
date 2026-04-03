@@ -64,6 +64,19 @@ class InventoryCreateResponse(ApiBaseModel):
     description: str | None
 
 
+class DefaultInventoryBootstrapResponse(ApiBaseModel):
+    created: bool
+    inventory: InventoryCreateResponse
+
+
+class BulkInventoryItemMutationResponse(ApiBaseModel):
+    inventory: str
+    operation: Literal["add_tags", "remove_tags", "set_tags", "clear_tags"]
+    requested_item_ids: list[int]
+    updated_item_ids: list[int]
+    updated_count: int
+
+
 class CatalogSearchRowResponse(ApiBaseModel):
     scryfall_id: str
     name: str

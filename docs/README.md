@@ -49,8 +49,9 @@ If you're preparing a separate frontend sandbox, also read
   posture.
 - `../src/mtg_source_stack/api/`
   FastAPI shell that applies the API contract to the current sync service
-  facade, with `local_demo` and `shared_service` runtime modes plus a minimal
-  shared-service `editor` / `admin` role model.
+  facade, with `local_demo` and `shared_service` runtime modes plus the current
+  shared-service split between global app roles and local inventory
+  memberships.
 - `../contracts/`
   OpenAPI snapshot and example payloads for frontend integration.
 - `../scripts/bootstrap_frontend_demo.py`

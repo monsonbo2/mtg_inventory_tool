@@ -13,6 +13,48 @@ from mtg_source_stack.db.schema import initialize_database
 
 
 class SchemaMigrationTest(unittest.TestCase):
+    def _build_legacy_card_scope_db(self, *, type_line: str | None) -> Path:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        db_path = Path(temp_dir.name) / "legacy-cards.db"
+
+        connection = sqlite3.connect(db_path)
+        connection.executescript(
+            """
+            CREATE TABLE mtg_cards (
+                scryfall_id TEXT PRIMARY KEY,
+                type_line TEXT
+            );
+
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            INSERT INTO schema_migrations (version, name)
+            VALUES
+                (1, 'mvp base'),
+                (2, 'add tags json'),
+                (3, 'add inventory audit log'),
+                (4, 'add card search fts'),
+                (5, 'normalize price snapshot finishes'),
+                (6, 'add inventory memberships'),
+                (7, 'add actor default inventories');
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO mtg_cards (scryfall_id, type_line)
+            VALUES ('legacy-card-1', ?)
+            """,
+            (type_line,),
+        )
+        connection.commit()
+        connection.close()
+
+        return db_path
+
     def test_initialize_database_records_all_current_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -31,11 +73,35 @@ class SchemaMigrationTest(unittest.TestCase):
                 card_search_fts_exists = connection.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtg_cards_fts'"
                 ).fetchone()[0]
+                inventory_memberships_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'inventory_memberships'"
+                ).fetchone()[0]
+                actor_default_inventories_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'actor_default_inventories'"
+                ).fetchone()[0]
+                mtg_card_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(mtg_cards)").fetchall()
+                }
 
-            self.assertEqual([1, 2, 3, 4, 5], versions)
-            self.assertEqual(5, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8], versions)
+            self.assertEqual(8, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
+            self.assertEqual(1, inventory_memberships_exists)
+            self.assertEqual(1, actor_default_inventories_exists)
+            self.assertTrue(
+                {
+                    "layout",
+                    "set_type",
+                    "games_json",
+                    "digital",
+                    "oversized",
+                    "booster",
+                    "promo_types_json",
+                    "is_default_add_searchable",
+                }.issubset(mtg_card_columns)
+            )
 
     def test_initialize_database_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -49,7 +115,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(5, len(rows))
+            self.assertEqual(8, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -57,6 +123,9 @@ class SchemaMigrationTest(unittest.TestCase):
                     (3, "add inventory audit log"),
                     (4, "add card search fts"),
                     (5, "normalize price snapshot finishes"),
+                    (6, "add inventory memberships"),
+                    (7, "add actor default inventories"),
+                    (8, "add catalog classification fields"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -111,14 +180,22 @@ class SchemaMigrationTest(unittest.TestCase):
                 fts_exists = migrated.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtg_cards_fts'"
                 ).fetchone()[0]
+                memberships_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'inventory_memberships'"
+                ).fetchone()[0]
+                actor_default_inventories_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'actor_default_inventories'"
+                ).fetchone()[0]
 
             self.assertIn("tags_json", columns)
             self.assertEqual("[]", tags_value)
-            self.assertEqual([1, 2, 3, 4, 5], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
             self.assertEqual(1, fts_exists)
+            self.assertEqual(1, memberships_exists)
+            self.assertEqual(1, actor_default_inventories_exists)
 
     def test_initialize_database_normalizes_legacy_price_snapshot_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -128,7 +205,8 @@ class SchemaMigrationTest(unittest.TestCase):
             connection.executescript(
                 """
                 CREATE TABLE mtg_cards (
-                    scryfall_id TEXT PRIMARY KEY
+                    scryfall_id TEXT PRIMARY KEY,
+                    type_line TEXT
                 );
 
                 CREATE TABLE price_snapshots (
@@ -149,8 +227,8 @@ class SchemaMigrationTest(unittest.TestCase):
                     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
 
-                INSERT INTO mtg_cards (scryfall_id)
-                VALUES ('card-1');
+                INSERT INTO mtg_cards (scryfall_id, type_line)
+                VALUES ('card-1', 'Instant');
 
                 INSERT INTO price_snapshots (
                     scryfall_id,
@@ -193,4 +271,45 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8], versions)
+
+    def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
+        for type_line, expected in (
+            ("Token Artifact — Food", 0),
+            ("Emblem — Ajani", 0),
+            ("Card", 0),
+            ("Card // Card", 0),
+            ("Instant", 1),
+            ("Creature — Wizard", 1),
+            (None, 1),
+        ):
+            with self.subTest(type_line=type_line):
+                db_path = self._build_legacy_card_scope_db(type_line=type_line)
+
+                initialize_database(db_path)
+
+                with connect(db_path) as migrated:
+                    row = migrated.execute(
+                        """
+                        SELECT
+                            layout,
+                            set_type,
+                            games_json,
+                            digital,
+                            oversized,
+                            booster,
+                            promo_types_json,
+                            is_default_add_searchable
+                        FROM mtg_cards
+                        WHERE scryfall_id = 'legacy-card-1'
+                        """
+                    ).fetchone()
+
+                self.assertIsNone(row["layout"])
+                self.assertIsNone(row["set_type"])
+                self.assertEqual("[]", row["games_json"])
+                self.assertEqual(0, row["digital"])
+                self.assertEqual(0, row["oversized"])
+                self.assertEqual(0, row["booster"])
+                self.assertEqual("[]", row["promo_types_json"])
+                self.assertEqual(expected, row["is_default_add_searchable"])

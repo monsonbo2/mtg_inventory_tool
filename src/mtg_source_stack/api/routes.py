@@ -19,10 +19,12 @@ from ..inventory.normalize import (
 from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
+    bulk_mutate_inventory_items,
     create_inventory,
+    ensure_default_inventory,
     list_card_printings_for_oracle,
-    list_inventories,
     list_inventory_audit_events,
+    list_visible_inventories,
     list_owned_filtered,
     remove_card,
     search_card_names,
@@ -39,12 +41,15 @@ from .dependencies import (
     ApiSettings,
     RequestContext,
     get_editor_request_context,
-    get_mutating_request_context,
-    get_request_context,
+    get_inventory_read_request_context,
+    get_inventory_write_request_context,
+    get_inventory_scoped_read_request_context,
+    get_authenticated_request_context,
     get_settings,
 )
 from .request_models import (
     AddInventoryItemRequest,
+    BulkInventoryItemMutationRequest,
     CONDITION_CODE_DESCRIPTION,
     FINISH_INPUT_DESCRIPTION,
     FinishInput,
@@ -56,8 +61,10 @@ from .request_models import (
 from .response_models import (
     AddInventoryItemResponse,
     ApiErrorResponse,
+    BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
+    DefaultInventoryBootstrapResponse,
     HealthResponse,
     InventoryAuditEventResponse,
     InventoryCreateResponse,
@@ -73,6 +80,10 @@ router = APIRouter()
 PRINTINGS_LANG_DESCRIPTION = (
     f"{SEARCH_LANG_DESCRIPTION} Omit this parameter to prefer English printings by default. "
     "Use `all` to include every available catalog language."
+)
+SEARCH_SCOPE_DESCRIPTION = (
+    "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. "
+    "Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows."
 )
 
 ERROR_RESPONSE_DESCRIPTIONS = {
@@ -161,9 +172,15 @@ def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str,
 )
 def inventories_list(
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
-    return _serialize(list_inventories(settings.db_path))
+    return _serialize(
+        list_visible_inventories(
+            settings.db_path,
+            actor_id=context.actor_id,
+            actor_roles=context.roles,
+        )
+    )
 
 
 @router.post(
@@ -175,7 +192,7 @@ def inventories_list(
 def inventories_create(
     payload: InventoryCreateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
 ) -> Any:
     return _serialize(
         create_inventory(
@@ -183,6 +200,25 @@ def inventories_create(
             slug=payload.slug,
             display_name=payload.display_name,
             description=payload.description,
+            actor_id=context.actor_id,
+        )
+    )
+
+
+@router.post(
+    "/me/bootstrap",
+    response_model=DefaultInventoryBootstrapResponse,
+    responses=_error_responses(401, 403, 409, 503, 500),
+)
+def bootstrap_default_inventory(
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+) -> Any:
+    return _serialize(
+        ensure_default_inventory(
+            settings.db_path,
+            actor_id=context.actor_id,
+            actor_roles=context.roles,
         )
     )
 
@@ -194,12 +230,16 @@ def inventories_create(
 )
 def cards_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     query: str,
     set_code: str | None = None,
     rarity: str | None = None,
     finish: Annotated[FinishInput | None, Query(description=FINISH_INPUT_DESCRIPTION)] = None,
     lang: Annotated[str | None, Query(description=SEARCH_LANG_DESCRIPTION)] = None,
+    scope: Annotated[
+        str | None,
+        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
+    ] = None,
     exact: bool = False,
     limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
 ) -> Any:
@@ -211,6 +251,7 @@ def cards_search(
             rarity=rarity,
             finish=finish,
             lang=lang,
+            scope=scope,
             exact=exact,
             limit=limit,
         )
@@ -224,8 +265,12 @@ def cards_search(
 )
 def card_names_search(
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     query: str,
+    scope: Annotated[
+        str | None,
+        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
+    ] = None,
     exact: bool = False,
     limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
 ) -> Any:
@@ -233,6 +278,7 @@ def card_names_search(
         search_card_names(
             settings.db_path,
             query=query,
+            scope=scope,
             exact=exact,
             limit=limit,
         )
@@ -247,14 +293,19 @@ def card_names_search(
 def card_printings_lookup(
     oracle_id: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
     lang: Annotated[str | None, Query(description=PRINTINGS_LANG_DESCRIPTION)] = None,
+    scope: Annotated[
+        str | None,
+        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
+    ] = None,
 ) -> Any:
     return _serialize(
         list_card_printings_for_oracle(
             settings.db_path,
             oracle_id=oracle_id,
             lang=lang,
+            scope=scope,
         )
     )
 
@@ -267,7 +318,7 @@ def card_printings_lookup(
 def inventory_items_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_read_request_context)],
     provider: str = DEFAULT_PROVIDER,
     limit: Annotated[int | None, Query(ge=1, le=MAX_OWNED_ROWS_LIMIT)] = None,
     query: str | None = None,
@@ -307,7 +358,7 @@ def inventory_items_add(
     inventory_slug: str,
     payload: AddInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
 ) -> Any:
     return _serialize(
         add_card(
@@ -337,6 +388,31 @@ def inventory_items_add(
     )
 
 
+@router.post(
+    "/inventories/{inventory_slug}/items/bulk",
+    response_model=BulkInventoryItemMutationResponse,
+    responses=_error_responses(401, 403, 400, 404, 503, 500),
+)
+def inventory_items_bulk_mutate(
+    inventory_slug: str,
+    payload: BulkInventoryItemMutationRequest,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
+) -> Any:
+    return _serialize(
+        bulk_mutate_inventory_items(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            operation=payload.operation,
+            item_ids=payload.item_ids,
+            tags=payload.tags,
+            actor_type=context.actor_type,
+            actor_id=context.actor_id,
+            request_id=context.request_id,
+        )
+    )
+
+
 @router.patch(
     "/inventories/{inventory_slug}/items/{item_id}",
     response_model=InventoryItemPatchResponse,
@@ -347,7 +423,7 @@ def inventory_items_patch(
     item_id: int,
     payload: PatchInventoryItemRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
 ) -> Any:
     operation = _patch_operation(payload)
     db_path = settings.db_path
@@ -412,7 +488,7 @@ def inventory_items_delete(
     inventory_slug: str,
     item_id: int,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
 ) -> Any:
     return _serialize(
         remove_card(
@@ -434,7 +510,7 @@ def inventory_items_delete(
 def inventory_audit_list(
     inventory_slug: str,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    _context: Annotated[RequestContext, Depends(get_inventory_read_request_context)],
     limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_EVENT_LIMIT)] = DEFAULT_AUDIT_EVENT_LIMIT,
     item_id: int | None = None,
 ) -> Any:

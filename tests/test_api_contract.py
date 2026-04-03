@@ -13,11 +13,17 @@ from tests.common import RepoSmokeTestCase
 from mtg_source_stack.api.app import create_app
 from mtg_source_stack.api.dependencies import ApiSettings
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
-from mtg_source_stack.api.request_models import AddInventoryItemRequest, PatchInventoryItemRequest
+from mtg_source_stack.api.request_models import (
+    AddInventoryItemRequest,
+    BulkInventoryItemMutationRequest,
+    PatchInventoryItemRequest,
+)
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
+    BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
+    DefaultInventoryBootstrapResponse,
     OwnedInventoryRowResponse,
     SetAcquisitionResponse,
     SetFinishResponse,
@@ -27,6 +33,7 @@ from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReady
 from mtg_source_stack.inventory.response_models import serialize_response
 from mtg_source_stack.inventory.service import (
     create_inventory,
+    list_card_printings_for_oracle,
     list_inventory_audit_events,
     list_owned_filtered,
     reconcile_prices,
@@ -204,11 +211,21 @@ class ApiContractTest(RepoSmokeTestCase):
             "image_uri_small": "https://example.test/cards/card-1-small.jpg",
             "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
         }
+        bootstrap_payload = {
+            "created": True,
+            "inventory": {
+                "inventory_id": 7,
+                "slug": "alice-collection",
+                "display_name": "Collection",
+                "description": None,
+            },
+        }
         error_payload = api_error_payload(ValidationError("Bad request."))
 
         owned = OwnedInventoryRowResponse.model_validate(owned_payload)
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
         catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
+        bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
         error = ApiErrorResponse.model_validate(error_payload)
 
         self.assertEqual("2.50", owned.acquisition_price)
@@ -219,6 +236,8 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
+        self.assertTrue(bootstrap.created)
+        self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("validation_error", error.error.code)
 
     def test_api_models_publish_defaults_and_canonical_value_guidance(self) -> None:
@@ -233,6 +252,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIsNone(add_properties["language_code"]["default"])
         self.assertIn("inherits the resolved printing language", add_properties["language_code"]["description"])
         self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
+        self.assertIn("prefers English mainstream-paper printings", add_properties["oracle_id"]["description"])
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]
@@ -257,6 +277,29 @@ class ApiContractTest(RepoSmokeTestCase):
             "Catalog language codes available for the matched card",
             catalog_name_properties["available_languages"]["description"],
         )
+
+        bulk_schema = BulkInventoryItemMutationRequest.model_json_schema()
+        bulk_properties = bulk_schema["properties"]
+        self.assertIn("supports only tag operations", bulk_schema["description"])
+        self.assertEqual(
+            ["add_tags", "remove_tags", "set_tags", "clear_tags"],
+            bulk_properties["operation"]["enum"],
+        )
+        self.assertEqual(1, bulk_properties["item_ids"]["minItems"])
+        self.assertEqual(100, bulk_properties["item_ids"]["maxItems"])
+        self.assertIn("Omit this field for clear_tags", bulk_properties["tags"]["description"])
+
+        bulk_response = BulkInventoryItemMutationResponse.model_validate(
+            {
+                "inventory": "personal",
+                "operation": "add_tags",
+                "requested_item_ids": [12, 27, 44],
+                "updated_item_ids": [12, 44],
+                "updated_count": 2,
+            }
+        )
+        self.assertEqual("add_tags", bulk_response.operation)
+        self.assertEqual([12, 44], bulk_response.updated_item_ids)
 
     def test_patch_contract_publishes_single_operation_rule_and_discriminator(self) -> None:
         patch_schema = PatchInventoryItemRequest.model_json_schema()
@@ -332,7 +375,10 @@ class ApiContractTest(RepoSmokeTestCase):
             lambda: search_cards(Path("var/db/not-used.db"), query="bolt", limit=-1),
             lambda: search_cards(Path("var/db/not-used.db"), query="", limit=10),
             lambda: search_cards(Path("var/db/not-used.db"), query="   ", limit=10),
+            lambda: search_cards(Path("var/db/not-used.db"), query="bolt", scope="weird", limit=10),
             lambda: search_card_names(Path("var/db/not-used.db"), query="", limit=10),
+            lambda: search_card_names(Path("var/db/not-used.db"), query="bolt", scope="weird", limit=10),
+            lambda: list_card_printings_for_oracle(Path("var/db/not-used.db"), "oracle-1", scope="weird"),
             lambda: list_owned_filtered(
                 Path("var/db/not-used.db"),
                 inventory_slug="personal",

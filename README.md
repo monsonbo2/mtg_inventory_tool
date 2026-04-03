@@ -49,9 +49,10 @@ requests.
 - Pricing imports currently keep USD retail and buylist snapshots only.
 - The current API shell now aligns its HTTP route boundary with the existing
   synchronous SQLite-backed service layer. Shared-service identity resolution,
-  SQLite WAL/busy-timeout posture, and backup/restore recovery now exist in the
-  supported single-host operating model, while broader authorization and
-  deployment policy are still deferred.
+  SQLite WAL/busy-timeout posture, inventory-scoped memberships, and
+  backup/restore recovery now exist in the supported single-host operating
+  model, while rollout validation and broader admin-surface policy are still
+  follow-up work.
 
 ## Quick Start
 
@@ -96,8 +97,28 @@ authenticated app user. The default verified identity header is
 
 `shared_service` also supports a normalized roles header,
 `X-Authenticated-Roles` by default, with `editor` and `admin` as the current
-recognized roles. If the verified user header is present and no roles header is
-supplied, the app defaults that user to `editor`. `admin` implies `editor`.
+recognized global app roles. If the verified user header is present and no
+roles header is supplied, the app defaults that user to `editor`. `admin`
+implies `editor`.
+
+Inventory access is now controlled by local inventory memberships:
+
+- `viewer` can read a specific inventory
+- `editor` can read and write a specific inventory
+- `owner` can read and write a specific inventory
+- global `admin` bypasses inventory membership checks
+
+The current shared-service behavior is:
+
+- `GET /inventories` returns only the inventories visible to the current user
+- card search routes require a user who can read at least one inventory
+- inventory item/audit reads require membership on that inventory
+- inventory writes require `editor` or `owner` membership on that inventory
+- `POST /inventories` still requires a global `editor` or `admin` user, and the
+  creator is automatically granted `owner`
+- `POST /me/bootstrap` creates one personal default inventory named
+  `Collection` for a first-time global `editor` or `admin`, grants `owner`,
+  and returns the same inventory on repeated calls
 
 For the first live cohort, the recommended deployment shape is:
 
@@ -144,6 +165,16 @@ mtg-mvp-importer sync-bulk \
   --cache-dir "var/bulk_cache/latest"
 ```
 
+Important upgrade note:
+
+- migration `0008` adds the durable catalog-classification fields used by the
+  default app-facing card-search scope
+- existing databases can migrate in place, but legacy rows only get a
+  best-effort backfill from older `type_line` data
+- after upgrading an existing catalog, run a fresh Scryfall bulk import before
+  relying on the narrowed default add-search scope for tokens, emblems,
+  art-series rows, digital-only rows, and other auxiliary catalog objects
+
 Or import from local bulk files you already downloaded:
 
 ```bash
@@ -180,6 +211,39 @@ mtg-personal-inventory add-card \
 `add-card` now accepts `--oracle-id` as a first-class identifier as well as
 `--scryfall-id`. Inventory rows still store the resolved printing, and if you
 omit `--language-code` the owned row inherits the resolved printing language.
+
+For shared-service rollout and ongoing membership management, the inventory CLI
+now also provides:
+
+```bash
+mtg-personal-inventory grant-inventory-membership \
+  --db "var/db/mtg_mvp.db" \
+  --inventory personal \
+  --actor-id alice@example.com \
+  --role viewer
+
+mtg-personal-inventory list-inventory-memberships \
+  --db "var/db/mtg_mvp.db" \
+  --inventory personal
+
+mtg-personal-inventory revoke-inventory-membership \
+  --db "var/db/mtg_mvp.db" \
+  --inventory personal \
+  --actor-id alice@example.com
+```
+
+For greenfield shared-service onboarding, the API can also create a personal
+default inventory exactly once per user:
+
+```bash
+curl -X POST \
+  -H "X-Authenticated-User: alice@example.com" \
+  http://127.0.0.1:8000/me/bootstrap
+```
+
+That creates a `Collection` inventory for the actor if they do not already have
+one and immediately unlocks card search under the current membership-gated
+shared-service model.
 
 Preview a CSV import with the bundled sample file:
 
@@ -236,8 +300,11 @@ python3 scripts/bootstrap_frontend_demo.py \
 
 That mode imports real Scryfall-backed `mtg_cards` rows, then resolves the same
 curated demo inventory against real printings instead of the built-in demo
-catalog. It is the better fit when the frontend should search a realistic card
-catalog while still keeping the owned demo rows intentionally curated.
+catalog. The curated rows now flow through the same `oracle_id` default
+printing policy used by the app, so upstream catalog drift fails early with a
+clear bootstrap error instead of a later finish-mismatch surprise. It is the
+better fit when the frontend should search a realistic card catalog while still
+keeping the owned demo rows intentionally curated.
 
 For the fuller maintenance surface, check `--help` on:
 
@@ -292,14 +359,27 @@ Operational expectations:
   `synchronous=NORMAL`, and `foreign_keys=ON`
 - run the API behind an auth boundary that injects a verified user header such
   as `X-Authenticated-User`
-- if you forward app roles, normalize them to `editor` and `admin` in a header
-  such as `X-Authenticated-Roles`
+- if you forward app roles, normalize them to global app roles `editor` and
+  `admin` in a header such as `X-Authenticated-Roles`
 - publish the API to browsers through a same-origin reverse proxy, not by
   exposing the backend directly
 - validate snapshot backup and restore before live use
 - keep the database on local storage, not a shared/network filesystem
 - treat `sync-bulk`, `import-all`, and large import/update jobs as admin
   operations and avoid running them during active user editing windows
+- grant inventory memberships intentionally before shared use; inventories with
+  no memberships are effectively admin-only
+
+Recommended rollout sequence:
+
+1. Migrate the DB intentionally.
+2. Start the API in `shared_service`.
+3. If you are starting from a blank system, let each first user call
+   `POST /me/bootstrap` once so they get an owned `Collection`. Otherwise,
+   create inventories through the API so creators become `owner`, or use the
+   CLI membership commands to assign owners on existing inventories.
+4. Grant `viewer` / `editor` memberships to the first cohort.
+5. Verify real user sessions against those memberships before launch.
 
 A typical startup flow is:
 
@@ -379,18 +459,19 @@ checkout in multi-repo environments.
 
 - The repo is intentionally local-first and CLI-driven.
 - `mtg-web-api` now supports a safer `shared_service` runtime mode with
-  verified-user audit attribution, a minimal `editor` / `admin` role model, and
-  a documented first-live reverse-proxy deployment shape. Finer-grained admin
+  verified-user audit attribution, inventory-scoped memberships, and a
+  documented first-live reverse-proxy deployment shape. Admin-only surface
   policy and rollout validation still need follow-up before broader shared use.
 - The demo API exposes a minimal `/health` payload focused on status and mode,
   not filesystem path details.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
-- In `shared_service`, all current non-health routes require an authenticated
-  `editor` user. The default verified identity header is
-  `X-Authenticated-User`, and the default roles header is
-  `X-Authenticated-Roles`.
+- In `shared_service`, non-health routes require an authenticated app user.
+  Inventory reads and writes are scoped by local memberships, while inventory
+  creation still requires a global `editor` or `admin` role. The default
+  verified identity header is `X-Authenticated-User`, and the default roles
+  header is `X-Authenticated-Roles`.
 - The recommended first-live deployment is same-origin and proxy-based. The
   backend is not yet intended to be exposed directly to browsers on a separate
   origin.
@@ -408,4 +489,5 @@ checkout in multi-repo environments.
 Before treating the API shell as more than a local/demo surface, the next
 planned hardening steps are:
 
-- execution-boundary and concurrency hardening for shared deployment
+- rollout rehearsal against the real proxy/header/membership setup
+- clearer admin-only policy for maintenance surfaces

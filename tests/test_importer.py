@@ -14,6 +14,47 @@ from mtg_source_stack.mvp_importer import import_scryfall_cards, initialize_data
 
 
 class ImporterTest(RepoSmokeTestCase):
+    def _build_scryfall_card_payload(self, **overrides):
+        payload = {
+            "id": "import-card-1",
+            "oracle_id": "import-oracle-1",
+            "name": "Import Test Card",
+            "set": "tst",
+            "set_name": "Test Set",
+            "collector_number": "1",
+            "lang": "en",
+            "layout": "normal",
+            "set_type": "expansion",
+            "games": ["paper", "mtgo"],
+            "digital": False,
+            "oversized": False,
+            "booster": True,
+            "promo_types": ["promo-pack"],
+            "rarity": "rare",
+            "released_at": "2026-04-01",
+            "type_line": "Instant",
+            "colors": ["U"],
+            "color_identity": ["U"],
+            "finishes": ["nonfoil", "foil"],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _import_single_scryfall_card(self, payload):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            scryfall_path = tmp / "card.json"
+            scryfall_path.write_text(json.dumps([payload]), encoding="utf-8")
+
+            initialize_database(db_path)
+            stats = import_scryfall_cards(db_path, scryfall_path)
+
+            with connect(db_path) as connection:
+                row = connection.execute("SELECT * FROM mtg_cards").fetchone()
+
+            return stats, dict(row)
+
     def test_import_all_missing_file_fails_cleanly_without_creating_db_or_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -226,6 +267,8 @@ class ImporterTest(RepoSmokeTestCase):
                     "collector_number": "351",
                     "lang": "en",
                     "layout": "reversible_card",
+                    "set_type": "expansion",
+                    "games": ["paper"],
                     "rarity": "rare",
                     "colors": [],
                     "color_identity": ["G", "W"],
@@ -245,7 +288,19 @@ class ImporterTest(RepoSmokeTestCase):
 
             connection = sqlite3.connect(db_path)
             row = connection.execute(
-                "SELECT scryfall_id, oracle_id, name, set_code, collector_number FROM mtg_cards"
+                """
+                SELECT
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    collector_number,
+                    layout,
+                    set_type,
+                    games_json,
+                    is_default_add_searchable
+                FROM mtg_cards
+                """
             ).fetchone()
             connection.close()
 
@@ -253,9 +308,119 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(1, stats.rows_written)
             self.assertEqual(0, stats.rows_skipped)
             self.assertEqual(
-                ("reversible-1", "face-oracle-1", "Temple Garden // Temple Garden", "ecl", "351"),
+                (
+                    "reversible-1",
+                    "face-oracle-1",
+                    "Temple Garden // Temple Garden",
+                    "ecl",
+                    "351",
+                    "reversible_card",
+                    "expansion",
+                    '["paper"]',
+                    1,
+                ),
                 row,
             )
+
+    def test_import_scryfall_stores_catalog_classification_fields_for_normal_paper_card(self) -> None:
+        stats, row = self._import_single_scryfall_card(self._build_scryfall_card_payload())
+
+        self.assertEqual(1, stats.rows_seen)
+        self.assertEqual(1, stats.rows_written)
+        self.assertEqual(0, stats.rows_skipped)
+        self.assertEqual("normal", row["layout"])
+        self.assertEqual("expansion", row["set_type"])
+        self.assertEqual('["paper","mtgo"]', row["games_json"])
+        self.assertEqual(0, row["digital"])
+        self.assertEqual(0, row["oversized"])
+        self.assertEqual(1, row["booster"])
+        self.assertEqual('["promo-pack"]', row["promo_types_json"])
+        self.assertEqual(1, row["is_default_add_searchable"])
+
+    def test_import_scryfall_marks_token_like_layouts_as_not_default_add_searchable(self) -> None:
+        for layout, type_line, set_type in (
+            ("token", "Token Artifact — Food", "token"),
+            ("emblem", "Emblem — Ajani", "token"),
+            ("art_series", "Card // Card", "memorabilia"),
+        ):
+            with self.subTest(layout=layout):
+                stats, row = self._import_single_scryfall_card(
+                    self._build_scryfall_card_payload(
+                        id=f"import-{layout}-1",
+                        oracle_id=f"import-{layout}-oracle-1",
+                        name=f"Import {layout.title()} Card",
+                        layout=layout,
+                        set_type=set_type,
+                        type_line=type_line,
+                    )
+                )
+
+                self.assertEqual(1, stats.rows_written)
+                self.assertEqual(layout, row["layout"])
+                self.assertEqual(set_type, row["set_type"])
+                self.assertEqual(0, row["is_default_add_searchable"])
+
+    def test_import_scryfall_marks_digital_only_rows_as_not_default_add_searchable(self) -> None:
+        stats, row = self._import_single_scryfall_card(
+            self._build_scryfall_card_payload(
+                id="import-digital-1",
+                oracle_id="import-digital-oracle-1",
+                name="Import Digital Card",
+                games=["arena"],
+                digital=True,
+            )
+        )
+
+        self.assertEqual(1, stats.rows_written)
+        self.assertEqual('["arena"]', row["games_json"])
+        self.assertEqual(1, row["digital"])
+        self.assertEqual(0, row["is_default_add_searchable"])
+
+    def test_import_scryfall_marks_non_paper_rows_as_not_default_add_searchable(self) -> None:
+        stats, row = self._import_single_scryfall_card(
+            self._build_scryfall_card_payload(
+                id="import-mtgo-1",
+                oracle_id="import-mtgo-oracle-1",
+                name="Import MTGO Card",
+                games=["mtgo"],
+            )
+        )
+
+        self.assertEqual(1, stats.rows_written)
+        self.assertEqual('["mtgo"]', row["games_json"])
+        self.assertEqual(0, row["is_default_add_searchable"])
+
+    def test_import_scryfall_marks_oversized_rows_as_not_default_add_searchable(self) -> None:
+        stats, row = self._import_single_scryfall_card(
+            self._build_scryfall_card_payload(
+                id="import-oversized-1",
+                oracle_id="import-oversized-oracle-1",
+                name="Import Oversized Card",
+                oversized=True,
+            )
+        )
+
+        self.assertEqual(1, stats.rows_written)
+        self.assertEqual(1, row["oversized"])
+        self.assertEqual(0, row["is_default_add_searchable"])
+
+    def test_import_scryfall_treats_augment_and_host_layouts_as_default_add_searchable(self) -> None:
+        for layout in ("augment", "host"):
+            with self.subTest(layout=layout):
+                stats, row = self._import_single_scryfall_card(
+                    self._build_scryfall_card_payload(
+                        id=f"import-{layout}-mainline-1",
+                        oracle_id=f"import-{layout}-mainline-oracle-1",
+                        name=f"Import {layout.title()} Mainline Card",
+                        layout=layout,
+                        set_type="funny",
+                        type_line="Creature — Cyborg Guest",
+                    )
+                )
+
+                self.assertEqual(1, stats.rows_written)
+                self.assertEqual(layout, row["layout"])
+                self.assertEqual(1, row["is_default_add_searchable"])
 
     def test_import_mtgjson_prices_skips_non_usd_provider_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

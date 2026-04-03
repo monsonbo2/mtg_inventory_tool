@@ -49,6 +49,13 @@ There is currently no `source_sync_runs` bookkeeping table in the live schema.
 - The CLI and notebook workflows do not perform automatic live Scryfall fallback
   during ordinary search commands.
 - `sync-bulk` can fetch fresh bulk files, but read paths query SQLite only.
+- The default app-facing card-search scope now depends on stored Scryfall
+  classification fields such as `layout`, `set_type`, `games`, `digital`, and
+  `oversized`.
+- On upgraded legacy databases, migration `0008` can only backfill that scope
+  best-effort from older `type_line` data. Operators should run a fresh
+  Scryfall bulk import after upgrading if they want the narrowed default
+  add-search scope to match fresh-import behavior.
 
 ## Price Refresh Strategy
 
@@ -138,3 +145,10 @@ Inventory app actions to local tables:
 9. User creates or increments an `inventory_items` row for the owned printing.
 10. Valuation and health queries join `inventory_items` to the latest matching
     `price_snapshots` rows.
+
+For upgraded existing catalogs, insert one more operator step after the schema
+migration and before normal search use:
+
+1. Run a fresh Scryfall bulk import so legacy rows pick up the newer catalog
+   classification fields and a fully refreshed `is_default_add_searchable`
+   value.

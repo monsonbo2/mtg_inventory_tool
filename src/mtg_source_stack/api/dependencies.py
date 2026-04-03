@@ -199,7 +199,7 @@ def _build_request_context(request: "Request", *, require_authenticated_actor: b
         actor_id = _resolve_shared_service_actor_id(request, settings)
         if require_authenticated_actor and not actor_id:
             raise AuthenticationError(
-                f"Authenticated user header '{settings.authenticated_actor_header}' is required for shared_service writes."
+                f"Authenticated user header '{settings.authenticated_actor_header}' is required for this shared_service request."
             )
         roles = _resolve_shared_service_roles(request, settings, actor_id)
     else:
@@ -238,3 +238,59 @@ def get_editor_request_context(request: "Request") -> RequestContext:
 
 def get_admin_request_context(request: "Request") -> RequestContext:
     return _require_role(get_authenticated_request_context(request), role="admin")
+
+
+def get_inventory_scoped_read_request_context(request: "Request") -> RequestContext:
+    context = get_authenticated_request_context(request)
+    settings = get_settings(request)
+    if settings.runtime_mode != "shared_service":
+        return context
+    from ..inventory.service import actor_can_read_any_inventory
+
+    if actor_can_read_any_inventory(
+        settings.db_path,
+        actor_id=context.actor_id,
+        actor_roles=context.roles,
+    ):
+        return context
+    raise AuthorizationError("Inventory read access is required for this shared_service request.")
+
+
+def get_inventory_read_request_context(
+    inventory_slug: str,
+    request: "Request",
+) -> RequestContext:
+    context = get_authenticated_request_context(request)
+    settings = get_settings(request)
+    if settings.runtime_mode != "shared_service":
+        return context
+    from ..inventory.service import actor_can_read_inventory
+
+    if actor_can_read_inventory(
+        settings.db_path,
+        inventory_slug=inventory_slug,
+        actor_id=context.actor_id,
+        actor_roles=context.roles,
+    ):
+        return context
+    raise AuthorizationError(f"Read access to inventory '{inventory_slug}' is required for this shared_service request.")
+
+
+def get_inventory_write_request_context(
+    inventory_slug: str,
+    request: "Request",
+) -> RequestContext:
+    context = get_authenticated_request_context(request)
+    settings = get_settings(request)
+    if settings.runtime_mode != "shared_service":
+        return context
+    from ..inventory.service import actor_can_write_inventory
+
+    if actor_can_write_inventory(
+        settings.db_path,
+        inventory_slug=inventory_slug,
+        actor_id=context.actor_id,
+        actor_roles=context.roles,
+    ):
+        return context
+    raise AuthorizationError(f"Write access to inventory '{inventory_slug}' is required for this shared_service request.")

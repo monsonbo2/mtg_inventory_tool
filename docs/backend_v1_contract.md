@@ -40,6 +40,8 @@ The live backend contract consists of five primary tables:
   Stores provider/finish/price-kind/currency/date snapshots for a printing.
 - `inventories`
   Stores named inventory containers.
+- `inventory_memberships`
+  Stores local inventory-scoped access assignments for authenticated users.
 - `inventory_items`
   Stores owned printings keyed by inventory + printing + condition + finish +
   language + location.
@@ -51,6 +53,8 @@ The live backend contract consists of five primary tables:
 
 - Inventory ownership is modeled as current positions, not as a movement
   ledger.
+- Shared-service access is inventory-scoped through local memberships:
+  `viewer`, `editor`, and `owner`.
 - Quantity edits mutate `inventory_items` in place.
 - Per-edit inventory mutations are recorded in `inventory_audit_log`.
 - Operator safety comes from explicit commands, per-edit audit history, and

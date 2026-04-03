@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .money import format_decimal
+from .normalize import text_or_none
 
 
 class ResponseModel:
@@ -53,7 +54,7 @@ def inventory_item_response_kwargs(payload: Mapping[str, Any]) -> dict[str, Any]
         "finish": payload["finish"],
         "condition_code": payload["condition_code"],
         "language_code": payload["language_code"],
-        "location": payload["location"],
+        "location": text_or_none(payload["location"]),
         "acquisition_price": payload["acquisition_price"],
         "acquisition_currency": payload["acquisition_currency"],
         "notes": payload["notes"],
@@ -101,6 +102,21 @@ class InventoryCreateResult(ResponseModel):
     slug: str
     display_name: str
     description: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DefaultInventoryBootstrapResult(ResponseModel):
+    created: bool
+    inventory: InventoryCreateResult
+
+
+@dataclass(frozen=True, slots=True)
+class BulkInventoryItemMutationResult(ResponseModel):
+    inventory: str
+    operation: str
+    requested_item_ids: list[int]
+    updated_item_ids: list[int]
+    updated_count: int
 
 
 @dataclass(frozen=True, slots=True)

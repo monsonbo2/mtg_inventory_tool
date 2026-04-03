@@ -1,101 +1,115 @@
 # Frontend Backend Request: Playable Card Search Scope
 
-Status: Proposed
-Owner: Unassigned
+Status: Done
+Owner: Boyd
 GitHub issue: [#22](https://github.com/monsonbo2/mtg_inventory_tool/issues/22)
-Implementation PR: Not linked yet
+Implementation PR: Commits `b58f089`, `c1a5976`, `49f333e`
 Last updated: 2026-04-02
 
 ## Frontend Backend Request
 
 Feature / screen:
 
-Card search and add flow
+Search and add flow for the default inventory add experience
 
 Current blocker:
 
-The current search endpoints operate over the imported Scryfall catalog too
-broadly for the app’s add-card workflow. In practice, users expect search to
-return playable cards they can add to an inventory, not tokens, art cards,
-front-card helpers, stickers, or other non-playable catalog objects.
+The original catalog search routes treated the full local catalog as one broad
+search space. That meant the default add flow could surface auxiliary catalog
+objects such as tokens, emblems, art-series rows, and other non-mainline
+results.
 
-That mismatch makes the search UI feel noisy and misleading. The frontend can
-show grouped card names and printing pickers, but it should not have to guess
-which catalog rows are “real cards” from incomplete response data.
+That behavior was noisy for the normal add-card experience, but the frontend
+also still needed a way to intentionally search the broader local catalog when
+the user actually wants those auxiliary objects.
 
 Endpoint involved:
 
 - `GET /cards/search`
 - `GET /cards/search/names`
+- `GET /cards/oracle/{oracle_id}/printings`
 
 Current behavior:
 
-The search responses expose only a narrow card summary shape and do not include
-enough classification data for the frontend to reliably filter non-playable
-objects on its own.
+The backend now supports two explicit catalog scopes:
 
-The backend search logic currently searches `mtg_cards` broadly without a
-playable-card filter in `src/mtg_source_stack/inventory/catalog.py`.
-
-Examples from the current imported full catalog show that non-playable objects
-sit in the same search corpus as playable cards:
-
-- search term `food` matches rows like `Food` with type line `Token Artifact —
-  Food`
-- search term `treasure` matches rows like `Dinosaur // Treasure`, `Merfolk //
-  Treasure`, and `Pirate // Treasure` with token-oriented type lines
-
-The database does already store `type_line`, but the current search responses
-do not expose it and the current search endpoints do not filter on it.
+- default behavior: mainline card-add flow
+- additive opt-in: `scope=all`
 
 Requested change:
 
-Please make the default app-facing card search behavior playable-card-first.
-
-Preferred behavior for v1:
-
-1. `GET /cards/search` should exclude non-playable catalog objects by default.
-2. `GET /cards/search/names` should also exclude non-playable catalog objects
-   by default.
-3. If backend wants to preserve broader catalog access for future tooling,
-   expose that through an explicit opt-in query flag later rather than the
-   default app behavior.
-
-Examples of rows that should not appear by default in the app search flow:
-
-- tokens
-- art cards
-- front-card helper rows
-- stickers
-- emblems
-- other non-playable catalog objects that are not intended to be inventory
-  additions in the normal card-add flow
-
-Implementation note:
-
-The short-term backend fix could use currently stored fields such as
-`type_line`. A stronger long-term fix would store and use richer upstream
-classification fields from Scryfall so the filter is explicit and durable.
+1. Narrow the default app-facing search behavior to the mainline add flow.
+2. Keep broad local-catalog search available as an explicit opt-in.
+3. Keep grouped name search and oracle printings lookup internally consistent
+   with the chosen scope.
 
 Example request JSON:
 
 `GET` endpoints have no request body.
 
-Example response JSON:
+Example request URLs:
 
-The response shape does not need to change for the frontend to benefit from the
-default filtering. The main requested behavior change is that the returned rows
-represent playable cards by default.
+```text
+GET /cards/search?query=ajani
+GET /cards/search?query=ajani&scope=all
+GET /cards/search/names?query=ajani&scope=all
+GET /cards/oracle/<oracle_id>/printings?scope=all
+```
 
 Expected error cases:
 
-- no new error envelope is required for the default filter behavior
-- if backend later adds an opt-in broad-search flag, invalid flag values should
-  follow the existing `400 validation_error` contract
+- `400 validation_error` for blank search input
+- `400 validation_error` for unsupported `scope` values
+- `404 not_found` if oracle printing lookup finds no matching rows in the
+  requested scope
 
 Compatibility note:
 
-Behavior-changing for default search results. To reduce compatibility risk,
-backend may optionally preserve the current broader catalog search behind an
-explicit opt-in query parameter while making the app-default behavior return
-playable cards only.
+Mixed:
+
+- behavior-changing for the default app-facing search behavior
+- additive for the new explicit `scope=all` opt-in
+
+## Resolution
+
+The backend now:
+
+- stores durable Scryfall classification fields on `mtg_cards`
+- derives and persists `is_default_add_searchable`
+- defaults app-facing search routes to the mainline add-flow scope
+- exposes `scope=all` on:
+  - `GET /cards/search`
+  - `GET /cards/search/names`
+  - `GET /cards/oracle/{oracle_id}/printings`
+- keeps grouped name search metadata aligned with the selected scope:
+  - `printings_count`
+  - `available_languages`
+  - representative row/image selection
+
+The published contract lives in:
+
+- `docs/api_v1_contract.md`
+- `contracts/openapi.json`
+
+## Frontend Follow-Up Still Needed
+
+Backend support is done, but frontend integration still needs product/UI
+choices.
+
+Recommended frontend follow-up:
+
+1. Keep ordinary typeahead and primary add-flow search on the default scope.
+2. Add an explicit advanced or fallback affordance before calling
+   `scope=all`.
+3. When the UI opts into `scope=all`, keep that scope consistent across:
+   - printing-first search
+   - grouped card-name search
+   - oracle printings lookup
+4. Do not silently switch the normal add flow to `scope=all`, or the original
+   auxiliary-row noise problem returns.
+
+## Operational Note
+
+On upgraded pre-`0008` databases, operators should run a fresh Scryfall bulk
+import after migrating so the persisted default search scope matches fresh
+import classification rather than older `type_line` backfill heuristics.

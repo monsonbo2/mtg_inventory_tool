@@ -7,12 +7,15 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import ConflictError, NotFoundError, ValidationError
+from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER
 from mtg_source_stack.inventory.response_models import (
     AddCardResult,
+    BulkInventoryItemMutationResult,
     MergeRowsResult,
     RemoveCardResult,
     SetAcquisitionResult,
@@ -27,9 +30,12 @@ from mtg_source_stack.inventory.response_models import (
 )
 from mtg_source_stack.inventory.service import (
     add_card,
+    bulk_mutate_inventory_items,
     create_inventory,
+    inventory_health,
     inventory_report,
     list_card_printings_for_oracle,
+    list_inventory_audit_events,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
@@ -59,6 +65,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
         scryfall_id: str = "race-card-1",
         oracle_id: str = "race-oracle-1",
         name: str = "Race Test Card",
+        set_code: str = "tst",
+        set_name: str = "Test Set",
+        collector_number: str = "1",
         finishes_json: str = '["normal"]',
     ) -> None:
         with connect(db_path) as connection:
@@ -73,9 +82,80 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     collector_number,
                     finishes_json
                 )
-                VALUES (?, ?, ?, 'tst', 'Test Set', '1', ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (scryfall_id, oracle_id, name, finishes_json),
+                (scryfall_id, oracle_id, name, set_code, set_name, collector_number, finishes_json),
+            )
+            connection.commit()
+
+    def _insert_catalog_card(
+        self,
+        db_path: Path,
+        *,
+        scryfall_id: str,
+        oracle_id: str,
+        name: str,
+        set_code: str = "tst",
+        set_name: str = "Test Set",
+        collector_number: str = "1",
+        lang: str = "en",
+        released_at: str = "2026-04-01",
+        finishes_json: str = '["nonfoil","foil"]',
+        image_uris_json: str | None = None,
+        layout: str = "normal",
+        set_type: str | None = None,
+        booster: int = 0,
+        promo_types_json: str = "[]",
+        is_default_add_searchable: int = 1,
+    ) -> None:
+        if image_uris_json is None:
+            image_uris_json = (
+                '{"small":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-small.jpg","normal":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-normal.jpg"}'
+            )
+
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
+                    is_default_add_searchable
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
+                    is_default_add_searchable,
+                ),
             )
             connection.commit()
 
@@ -90,6 +170,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
         finish: str = "normal",
         language_code: str = "en",
         location: str = "",
+        notes: str | None = None,
+        tags_json: str = "[]",
     ) -> None:
         with connect(db_path) as connection:
             inventory = connection.execute(
@@ -106,9 +188,10 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finish,
                     language_code,
                     location,
+                    notes,
                     tags_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, '[]')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -118,6 +201,49 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finish,
                     language_code,
                     location,
+                    notes,
+                    tags_json,
+                ),
+            )
+            connection.commit()
+
+    def _insert_price_snapshot(
+        self,
+        db_path: Path,
+        *,
+        scryfall_id: str,
+        provider: str = "tcgplayer",
+        price_kind: str = "retail",
+        finish: str,
+        currency: str = "USD",
+        snapshot_date: str,
+        price_value: float,
+        source_name: str = "test",
+    ) -> None:
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO price_snapshots (
+                    scryfall_id,
+                    provider,
+                    price_kind,
+                    finish,
+                    currency,
+                    snapshot_date,
+                    price_value,
+                    source_name
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scryfall_id,
+                    provider,
+                    price_kind,
+                    finish,
+                    currency,
+                    snapshot_date,
+                    price_value,
+                    source_name,
                 ),
             )
             connection.commit()
@@ -311,6 +437,124 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 )
 
             self.assertEqual("resolve-three-ja", resolved["scryfall_id"])
+
+    def test_resolve_card_row_for_oracle_id_prefers_mainstream_english_over_newer_promo_and_newer_non_english(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-policy-mainstream-en",
+                oracle_id="resolve-policy-oracle",
+                name="Resolver Policy Card",
+                set_code="bro",
+                set_name="The Brothers' War",
+                collector_number="101",
+                lang="en",
+                released_at="2023-11-18",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-policy-mainstream-ja",
+                oracle_id="resolve-policy-oracle",
+                name="Resolver Policy Card",
+                set_code="mkm",
+                set_name="Murders at Karlov Manor",
+                collector_number="102",
+                lang="ja",
+                released_at="2024-02-09",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-policy-promo-en",
+                oracle_id="resolve-policy-oracle",
+                name="Resolver Policy Card",
+                set_code="pneo",
+                set_name="Kamigawa: Neon Dynasty Promos",
+                collector_number="103",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=0,
+                promo_types_json='["promo_pack"]',
+            )
+
+            with connect(db_path) as connection:
+                resolved = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-policy-oracle",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish=None,
+                )
+
+            self.assertEqual("resolve-policy-mainstream-en", resolved["scryfall_id"])
+
+    def test_resolve_card_row_for_oracle_id_uses_default_add_scope_before_ranking(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-scope-mainstream-ja",
+                oracle_id="resolve-scope-oracle",
+                name="Resolver Scope Card",
+                set_code="mkm",
+                set_name="Murders at Karlov Manor",
+                collector_number="111",
+                lang="ja",
+                released_at="2024-02-09",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=1,
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-scope-token-en",
+                oracle_id="resolve-scope-oracle",
+                name="Resolver Scope Card",
+                set_code="tmkm",
+                set_name="Murders at Karlov Manor Tokens",
+                collector_number="112",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil"]',
+                layout="token",
+                set_type="token",
+                booster=0,
+                is_default_add_searchable=0,
+            )
+
+            with connect(db_path) as connection:
+                resolved = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-scope-oracle",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish=None,
+                )
+
+            self.assertEqual("resolve-scope-mainstream-ja", resolved["scryfall_id"])
 
     def test_resolve_card_row_can_use_finish_to_break_name_ties(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -512,6 +756,140 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("add-oracle-ja", added.scryfall_id)
             self.assertEqual("ja", added.language_code)
 
+    def test_add_card_with_oracle_id_prefers_mainstream_default_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-policy-mainstream-en",
+                oracle_id="add-policy-oracle",
+                name="Oracle Policy Add Card",
+                set_code="bro",
+                set_name="The Brothers' War",
+                collector_number="121",
+                lang="en",
+                released_at="2023-11-18",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-policy-mainstream-ja",
+                oracle_id="add-policy-oracle",
+                name="Oracle Policy Add Card",
+                set_code="mkm",
+                set_name="Murders at Karlov Manor",
+                collector_number="122",
+                lang="ja",
+                released_at="2024-02-09",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-policy-promo-en",
+                oracle_id="add-policy-oracle",
+                name="Oracle Policy Add Card",
+                set_code="pneo",
+                set_name="Kamigawa: Neon Dynasty Promos",
+                collector_number="123",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=0,
+                promo_types_json='["promo_pack"]',
+            )
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id=None,
+                oracle_id="add-policy-oracle",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code=None,
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertEqual("add-policy-mainstream-en", added.scryfall_id)
+            self.assertEqual("en", added.language_code)
+
+    def test_add_card_with_oracle_id_rejects_default_normal_when_only_foil_candidates_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-foil-only",
+                oracle_id="add-foil-only-oracle",
+                name="Oracle Foil Only Card",
+                set_code="neo",
+                set_name="Kamigawa: Neon Dynasty",
+                collector_number="131",
+                lang="en",
+                released_at="2024-02-01",
+                finishes_json='["foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "No printing found for oracle_id 'add-foil-only-oracle' with finish 'normal'.",
+            ):
+                add_card(
+                    db_path,
+                    inventory_slug="personal",
+                    inventory_display_name=None,
+                    scryfall_id=None,
+                    oracle_id="add-foil-only-oracle",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    quantity=1,
+                    condition_code="NM",
+                    finish="normal",
+                    language_code=None,
+                    location="Binder A",
+                    acquisition_price=None,
+                    acquisition_currency=None,
+                    notes=None,
+                    tags=None,
+                )
+
     def test_add_card_rejects_explicit_language_code_that_conflicts_with_resolved_printing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -590,6 +968,73 @@ class InventoryServiceTest(RepoSmokeTestCase):
             with self.assertRaisesRegex(ValidationError, "query is required"):
                 search_cards(db_path, query="   ", exact=False, limit=10)
 
+    def test_search_cards_filters_to_default_add_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            for scryfall_id, layout, allowed in (
+                ("scope-augment", "augment", 1),
+                ("scope-host", "host", 1),
+                ("scope-reversible", "reversible_card", 1),
+                ("scope-token", "token", 0),
+                ("scope-emblem", "emblem", 0),
+                ("scope-art", "art_series", 0),
+            ):
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id=scryfall_id,
+                    oracle_id=f"{scryfall_id}-oracle",
+                    name=f"Scope Probe {layout}",
+                    collector_number=scryfall_id,
+                    layout=layout,
+                    is_default_add_searchable=allowed,
+                )
+
+            rows = search_cards(db_path, query="Scope Probe", exact=False, limit=20)
+
+            self.assertEqual(
+                ["scope-augment", "scope-host", "scope-reversible"],
+                [row.scryfall_id for row in rows],
+            )
+
+    def test_search_cards_scope_all_includes_auxiliary_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            for scryfall_id, layout, allowed in (
+                ("scope-augment", "augment", 1),
+                ("scope-host", "host", 1),
+                ("scope-reversible", "reversible_card", 1),
+                ("scope-token", "token", 0),
+                ("scope-emblem", "emblem", 0),
+                ("scope-art", "art_series", 0),
+            ):
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id=scryfall_id,
+                    oracle_id=f"{scryfall_id}-oracle",
+                    name=f"Scope Probe {layout}",
+                    collector_number=scryfall_id,
+                    layout=layout,
+                    is_default_add_searchable=allowed,
+                )
+
+            rows = search_cards(db_path, query="Scope Probe", exact=False, limit=20, scope="all")
+
+            self.assertCountEqual(
+                [
+                    "scope-augment",
+                    "scope-art",
+                    "scope-emblem",
+                    "scope-host",
+                    "scope-reversible",
+                    "scope-token",
+                ],
+                [row.scryfall_id for row in rows],
+            )
+
     def test_search_card_names_groups_by_oracle_id_and_surfaces_languages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -663,6 +1108,155 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
             self.assertEqual(
                 "https://example.test/cards/grouped-search-en-normal.jpg",
+                rows[0].image_uri_normal,
+            )
+
+    def test_search_card_names_filters_group_counts_languages_and_representative_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="scoped-group-ja",
+                oracle_id="scoped-group-oracle",
+                name="Scoped Group Card",
+                collector_number="21",
+                lang="ja",
+                released_at="2026-04-01",
+                image_uris_json='{"small":"https://example.test/cards/scoped-group-ja-small.jpg","normal":"https://example.test/cards/scoped-group-ja-normal.jpg"}',
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="scoped-group-en-excluded",
+                oracle_id="scoped-group-oracle",
+                name="Scoped Group Card",
+                collector_number="22",
+                lang="en",
+                released_at="2026-05-01",
+                image_uris_json='{"small":"https://example.test/cards/scoped-group-en-small.jpg","normal":"https://example.test/cards/scoped-group-en-normal.jpg"}',
+                is_default_add_searchable=0,
+            )
+
+            rows = search_card_names(db_path, query="Scoped Group", exact=False, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("scoped-group-oracle", rows[0].oracle_id)
+            self.assertEqual("Scoped Group Card", rows[0].name)
+            self.assertEqual(1, rows[0].printings_count)
+            self.assertEqual(["ja"], rows[0].available_languages)
+            self.assertEqual(
+                "https://example.test/cards/scoped-group-ja-small.jpg",
+                rows[0].image_uri_small,
+            )
+            self.assertEqual(
+                "https://example.test/cards/scoped-group-ja-normal.jpg",
+                rows[0].image_uri_normal,
+            )
+
+    def test_search_card_names_exact_query_returns_grouped_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="exact-group-en",
+                oracle_id="exact-group-oracle",
+                name="Exact Group Card",
+                collector_number="31",
+                lang="en",
+                released_at="2026-04-01",
+                image_uris_json='{"small":"https://example.test/cards/exact-group-en-small.jpg","normal":"https://example.test/cards/exact-group-en-normal.jpg"}',
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="exact-group-ja",
+                oracle_id="exact-group-oracle",
+                name="Exact Group Card",
+                collector_number="32",
+                lang="ja",
+                released_at="2026-05-01",
+                image_uris_json='{"small":"https://example.test/cards/exact-group-ja-small.jpg","normal":"https://example.test/cards/exact-group-ja-normal.jpg"}',
+                is_default_add_searchable=1,
+            )
+
+            rows = search_card_names(db_path, query="Exact Group Card", exact=True, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("exact-group-oracle", rows[0].oracle_id)
+            self.assertEqual("Exact Group Card", rows[0].name)
+            self.assertEqual(2, rows[0].printings_count)
+            self.assertEqual(["en", "ja"], rows[0].available_languages)
+            self.assertEqual(
+                "https://example.test/cards/exact-group-en-small.jpg",
+                rows[0].image_uri_small,
+            )
+
+    def test_search_card_names_substring_query_falls_back_to_like_matching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="substring-group-en",
+                oracle_id="substring-group-oracle",
+                name="Lightning Bolt",
+                collector_number="41",
+                lang="en",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+
+            rows = search_card_names(db_path, query="ning", exact=False, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("substring-group-oracle", rows[0].oracle_id)
+            self.assertEqual("Lightning Bolt", rows[0].name)
+
+    def test_search_card_names_scope_all_includes_auxiliary_group_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="scoped-group-ja",
+                oracle_id="scoped-group-oracle",
+                name="Scoped Group Card",
+                collector_number="21",
+                lang="ja",
+                released_at="2026-04-01",
+                image_uris_json='{"small":"https://example.test/cards/scoped-group-ja-small.jpg","normal":"https://example.test/cards/scoped-group-ja-normal.jpg"}',
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="scoped-group-en-excluded",
+                oracle_id="scoped-group-oracle",
+                name="Scoped Group Card",
+                collector_number="22",
+                lang="en",
+                released_at="2026-05-01",
+                image_uris_json='{"small":"https://example.test/cards/scoped-group-en-small.jpg","normal":"https://example.test/cards/scoped-group-en-normal.jpg"}',
+                is_default_add_searchable=0,
+            )
+
+            rows = search_card_names(db_path, query="Scoped Group", exact=False, limit=10, scope="all")
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("scoped-group-oracle", rows[0].oracle_id)
+            self.assertEqual(2, rows[0].printings_count)
+            self.assertEqual(["en", "ja"], rows[0].available_languages)
+            self.assertEqual(
+                "https://example.test/cards/scoped-group-en-small.jpg",
+                rows[0].image_uri_small,
+            )
+            self.assertEqual(
+                "https://example.test/cards/scoped-group-en-normal.jpg",
                 rows[0].image_uri_normal,
             )
 
@@ -776,6 +1370,114 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'missing-oracle'"):
                 list_card_printings_for_oracle(db_path, "missing-oracle")
+
+    def test_list_card_printings_for_oracle_filters_to_default_add_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-scope-ja",
+                oracle_id="lookup-scope-oracle",
+                name="Scoped Lookup Card",
+                collector_number="31",
+                lang="ja",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-scope-en-excluded",
+                oracle_id="lookup-scope-oracle",
+                name="Scoped Lookup Card",
+                collector_number="32",
+                lang="en",
+                released_at="2026-05-01",
+                is_default_add_searchable=0,
+            )
+
+            default_rows = list_card_printings_for_oracle(db_path, "lookup-scope-oracle")
+            self.assertEqual(["lookup-scope-ja"], [row.scryfall_id for row in default_rows])
+
+            all_rows = list_card_printings_for_oracle(db_path, "lookup-scope-oracle", lang="all")
+            self.assertEqual(["lookup-scope-ja"], [row.scryfall_id for row in all_rows])
+
+            english_rows = list_card_printings_for_oracle(db_path, "lookup-scope-oracle", lang="en")
+            self.assertEqual([], [row.scryfall_id for row in english_rows])
+
+    def test_list_card_printings_for_oracle_scope_all_includes_auxiliary_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-scope-ja",
+                oracle_id="lookup-scope-oracle",
+                name="Scoped Lookup Card",
+                collector_number="31",
+                lang="ja",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-scope-en-excluded",
+                oracle_id="lookup-scope-oracle",
+                name="Scoped Lookup Card",
+                collector_number="32",
+                lang="en",
+                released_at="2026-05-01",
+                is_default_add_searchable=0,
+            )
+
+            default_rows = list_card_printings_for_oracle(db_path, "lookup-scope-oracle", scope="all")
+            self.assertEqual(["lookup-scope-en-excluded"], [row.scryfall_id for row in default_rows])
+
+            all_rows = list_card_printings_for_oracle(
+                db_path,
+                "lookup-scope-oracle",
+                lang="all",
+                scope="all",
+            )
+            self.assertEqual(
+                ["lookup-scope-en-excluded", "lookup-scope-ja"],
+                [row.scryfall_id for row in all_rows],
+            )
+
+            english_rows = list_card_printings_for_oracle(
+                db_path,
+                "lookup-scope-oracle",
+                lang="en",
+                scope="all",
+            )
+            self.assertEqual(["lookup-scope-en-excluded"], [row.scryfall_id for row in english_rows])
+
+    def test_list_card_printings_for_oracle_raises_not_found_when_all_rows_are_out_of_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-excluded-token",
+                oracle_id="lookup-excluded-oracle",
+                name="Excluded Lookup Card",
+                collector_number="41",
+                layout="token",
+                is_default_add_searchable=0,
+            )
+
+            with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'lookup-excluded-oracle'"):
+                list_card_printings_for_oracle(db_path, "lookup-excluded-oracle")
+
+            all_rows = list_card_printings_for_oracle(
+                db_path,
+                "lookup-excluded-oracle",
+                scope="all",
+            )
+            self.assertEqual(["lookup-excluded-token"], [row.scryfall_id for row in all_rows])
 
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1087,6 +1789,215 @@ class InventoryServiceTest(RepoSmokeTestCase):
             with connect(db_path) as connection:
                 remaining = connection.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0]
             self.assertEqual(0, remaining)
+
+    def test_bulk_mutate_inventory_items_applies_tag_operations_and_writes_grouped_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal","foil"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="normal",
+                location="Binder A",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="foil",
+                location="Binder B",
+                tags_json='["foil"]',
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            add_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="add_tags",
+                item_ids=item_ids,
+                tags=["trade", "deck"],
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-add",
+            )
+            self.assertIsInstance(add_result, BulkInventoryItemMutationResult)
+            self.assertEqual("add_tags", add_result.operation)
+            self.assertEqual(item_ids, add_result.requested_item_ids)
+            self.assertEqual(item_ids, add_result.updated_item_ids)
+            self.assertEqual(2, add_result.updated_count)
+
+            remove_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="remove_tags",
+                item_ids=item_ids,
+                tags=["deck"],
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-remove",
+            )
+            self.assertEqual("remove_tags", remove_result.operation)
+            self.assertEqual(item_ids, remove_result.updated_item_ids)
+
+            set_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_tags",
+                item_ids=[item_ids[0]],
+                tags=["featured"],
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-set",
+            )
+            self.assertEqual([item_ids[0]], set_result.updated_item_ids)
+            self.assertEqual(1, set_result.updated_count)
+
+            clear_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="clear_tags",
+                item_ids=[item_ids[1]],
+                tags=None,
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-clear",
+            )
+            self.assertEqual("clear_tags", clear_result.operation)
+            self.assertEqual([item_ids[1]], clear_result.updated_item_ids)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_tags = {row.item_id: row.tags for row in rows}
+            self.assertEqual(["featured"], row_tags[item_ids[0]])
+            self.assertEqual([], row_tags[item_ids[1]])
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("clear_tags", audit_rows[0].action)
+            self.assertEqual("set_tags", audit_rows[1].action)
+            self.assertEqual("remove_tags", audit_rows[2].action)
+            self.assertEqual("remove_tags", audit_rows[3].action)
+            self.assertEqual("add_tags", audit_rows[4].action)
+            self.assertEqual("add_tags", audit_rows[5].action)
+            self.assertTrue(audit_rows[0].metadata["bulk_operation"])
+            self.assertEqual("clear_tags", audit_rows[0].metadata["bulk_kind"])
+            self.assertEqual(1, audit_rows[0].metadata["bulk_count"])
+            self.assertEqual("req-bulk-clear", audit_rows[0].request_id)
+
+    def test_bulk_mutate_inventory_items_rolls_back_when_audit_write_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Binder A",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Binder B",
+                tags_json='["trade"]',
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            with patch(
+                "mtg_source_stack.inventory.mutations.write_inventory_audit_event",
+                side_effect=RuntimeError("audit write failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "audit write failed"):
+                    bulk_mutate_inventory_items(
+                        db_path,
+                        inventory_slug="personal",
+                        operation="add_tags",
+                        item_ids=item_ids,
+                        tags=["featured"],
+                    )
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_tags = {row.item_id: row.tags for row in rows}
+            self.assertEqual(["deck"], row_tags[item_ids[0]])
+            self.assertEqual(["trade"], row_tags[item_ids[1]])
+
+    def test_bulk_mutate_inventory_items_rejects_item_ids_outside_the_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            create_inventory(
+                db_path,
+                slug="trade-binder",
+                display_name="Trade Binder",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="trade-binder",
+                scryfall_id="race-card-1",
+                location="Binder A",
+            )
+            with connect(db_path) as connection:
+                foreign_item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(NotFoundError, "One or more item_ids were not found in inventory 'personal'"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="add_tags",
+                    item_ids=[foreign_item_id],
+                    tags=["trade"],
+                )
 
     def test_service_facade_raises_domain_errors_for_not_found_validation_and_conflict_cases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2288,6 +3199,252 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("Lightning Bolt", health_output)
             self.assertIn("Shiny Bird", health_output)
             self.assertIn("2020-01-01", health_output)
+
+    def test_inventory_health_preview_limit_truncates_each_preview_bucket_without_changing_summary_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_test_card(
+                db_path,
+                scryfall_id="preview-card-alpha",
+                oracle_id="preview-oracle-alpha",
+                name="Alpha Preview Card",
+                set_code="prv",
+                set_name="Preview Set",
+                collector_number="1",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_test_card(
+                db_path,
+                scryfall_id="preview-card-beta",
+                oracle_id="preview-oracle-beta",
+                name="Beta Preview Card",
+                set_code="prv",
+                set_name="Preview Set",
+                collector_number="2",
+                finishes_json='["normal","foil"]',
+            )
+
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-alpha",
+                quantity=1,
+                location="",
+                notes=f"{MERGED_ACQUISITION_NOTE_MARKER}91: 1.00 USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-alpha",
+                quantity=2,
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-beta",
+                quantity=1,
+                location="",
+                notes=f"{MERGED_ACQUISITION_NOTE_MARKER}92: 2.00 USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="preview-card-beta",
+                quantity=2,
+                location="Binder B",
+            )
+
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-alpha",
+                finish="normal",
+                snapshot_date="2026-01-01",
+                price_value=1.25,
+            )
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-alpha",
+                finish="foil",
+                snapshot_date="2026-03-30",
+                price_value=4.50,
+            )
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-beta",
+                finish="normal",
+                snapshot_date="2026-01-02",
+                price_value=2.25,
+            )
+            self._insert_price_snapshot(
+                db_path,
+                scryfall_id="preview-card-beta",
+                finish="foil",
+                snapshot_date="2026-03-31",
+                price_value=5.50,
+            )
+
+            result = inventory_health(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                stale_days=30,
+                preview_limit=1,
+            )
+
+            self.assertEqual(1, result.preview_limit)
+            self.assertEqual(4, result.summary.item_rows)
+            self.assertEqual(6, result.summary.total_cards)
+            self.assertEqual(4, result.summary.missing_price_rows)
+            self.assertEqual(2, result.summary.missing_location_rows)
+            self.assertEqual(4, result.summary.missing_tag_rows)
+            self.assertEqual(2, result.summary.merge_note_rows)
+            self.assertEqual(4, result.summary.stale_price_rows)
+            self.assertEqual(2, result.summary.duplicate_groups)
+
+            self.assertEqual(1, len(result.missing_price_rows))
+            self.assertEqual(1, len(result.missing_location_rows))
+            self.assertEqual(1, len(result.missing_tag_rows))
+            self.assertEqual(1, len(result.merge_note_rows))
+            self.assertEqual(1, len(result.stale_price_rows))
+            self.assertEqual(1, len(result.duplicate_groups))
+
+    def test_blank_location_is_normalized_to_none_in_add_owned_and_audit_responses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertIsNone(added.location)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(owned_rows))
+            self.assertIsNone(owned_rows[0].location)
+
+            audit_rows = list_inventory_audit_events(
+                db_path,
+                inventory_slug="personal",
+                limit=10,
+            )
+            self.assertEqual("add_card", audit_rows[0].action)
+            self.assertIsNone(audit_rows[0].after["location"])
+
+    def test_blank_location_is_normalized_to_none_in_set_location_and_audit_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            result = set_location(
+                db_path,
+                inventory_slug="personal",
+                item_id=added.item_id,
+                location="",
+            )
+
+            self.assertIsNone(result.location)
+            self.assertEqual("Binder A", result.old_location)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(owned_rows))
+            self.assertIsNone(owned_rows[0].location)
+
+            audit_rows = list_inventory_audit_events(
+                db_path,
+                inventory_slug="personal",
+                limit=10,
+            )
+            self.assertEqual("set_location", audit_rows[0].action)
+            self.assertEqual("Binder A", audit_rows[0].before["location"])
+            self.assertIsNone(audit_rows[0].after["location"])
+            self.assertEqual("Binder A", audit_rows[0].metadata["old_location"])
+            self.assertIsNone(audit_rows[0].metadata["new_location"])
 
     def test_set_acquisition_split_row_and_merge_rows_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
