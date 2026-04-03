@@ -26,6 +26,7 @@ backend requests.
 | `api_base_path_compatibility.md` | [#7](https://github.com/monsonbo2/mtg_inventory_tool/issues/7) | Superseded | Steve | handled by frontend proxy rewrite strategy |
 | `bulk_inventory_item_mutations.md` | Not linked yet | Proposed | Unassigned | needed for table-view multi-select bulk actions without PATCH fan-out |
 | `card_name_search_and_printing_lookup.md` | [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16) | Proposed | Unassigned | needed for name-first search results plus second-step printing selection |
+| `csv_import_http_api.md` | [#25](https://github.com/monsonbo2/mtg_inventory_tool/issues/25) | Proposed | Unassigned | frontend needs an HTTP import surface instead of reimplementing backend CSV import logic in the browser |
 | `default_printing_resolution_policy.md` | [#23](https://github.com/monsonbo2/mtg_inventory_tool/issues/23) | Proposed | Unassigned | frontend wants to simplify add flow around `oracle_id`, but default printing selection policy needs to be intentional and documented |
 | `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Done | Steve | stored image URLs exposed in search and owned-item responses |
 | `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
