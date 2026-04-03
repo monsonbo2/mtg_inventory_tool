@@ -1155,6 +1155,68 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 rows[0].image_uri_normal,
             )
 
+    def test_search_card_names_exact_query_returns_grouped_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="exact-group-en",
+                oracle_id="exact-group-oracle",
+                name="Exact Group Card",
+                collector_number="31",
+                lang="en",
+                released_at="2026-04-01",
+                image_uris_json='{"small":"https://example.test/cards/exact-group-en-small.jpg","normal":"https://example.test/cards/exact-group-en-normal.jpg"}',
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="exact-group-ja",
+                oracle_id="exact-group-oracle",
+                name="Exact Group Card",
+                collector_number="32",
+                lang="ja",
+                released_at="2026-05-01",
+                image_uris_json='{"small":"https://example.test/cards/exact-group-ja-small.jpg","normal":"https://example.test/cards/exact-group-ja-normal.jpg"}',
+                is_default_add_searchable=1,
+            )
+
+            rows = search_card_names(db_path, query="Exact Group Card", exact=True, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("exact-group-oracle", rows[0].oracle_id)
+            self.assertEqual("Exact Group Card", rows[0].name)
+            self.assertEqual(2, rows[0].printings_count)
+            self.assertEqual(["en", "ja"], rows[0].available_languages)
+            self.assertEqual(
+                "https://example.test/cards/exact-group-en-small.jpg",
+                rows[0].image_uri_small,
+            )
+
+    def test_search_card_names_substring_query_falls_back_to_like_matching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="substring-group-en",
+                oracle_id="substring-group-oracle",
+                name="Lightning Bolt",
+                collector_number="41",
+                lang="en",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+
+            rows = search_card_names(db_path, query="ning", exact=False, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("substring-group-oracle", rows[0].oracle_id)
+            self.assertEqual("Lightning Bolt", rows[0].name)
+
     def test_search_card_names_scope_all_includes_auxiliary_group_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"

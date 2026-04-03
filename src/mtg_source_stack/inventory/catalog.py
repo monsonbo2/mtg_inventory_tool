@@ -303,14 +303,14 @@ def search_card_names(
         """
         search_join = "LEFT JOIN search_match ON 1 = 0"
         where_parts: list[str] = []
-        params: list[Any] = []
+        where_params: list[Any] = []
         fts_query = build_catalog_search_fts_query(query) if not exact else None
         if exact:
             where_parts.append("LOWER(mtg_cards.name) = LOWER(?)")
-            params.append(query)
+            where_params.append(query)
         else:
             where_parts.append("(search_match.scryfall_id IS NOT NULL OR LOWER(mtg_cards.name) LIKE LOWER(?))")
-            params.append(f"%{query}%")
+            where_params.append(f"%{query}%")
             if fts_query is not None:
                 search_cte = """
                 WITH search_match AS (
@@ -326,9 +326,12 @@ def search_card_names(
         scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
         add_catalog_scope_filter(where_parts, scope=normalized_scope)
 
+        params: list[Any] = []
         if not exact and fts_query is not None:
-            params = [fts_query, *params]
-        params.extend([query, f"{query}%", limit])
+            params.append(fts_query)
+        params.extend([query, f"{query}%"])
+        params.extend(where_params)
+        params.append(limit)
         rows = connection.execute(
             f"""
             {search_cte},

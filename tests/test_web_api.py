@@ -961,6 +961,65 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, excluded_all_scope.status_code)
                 self.assertEqual(["api-excluded-only"], [row["scryfall_id"] for row in excluded_all_scope.json()])
 
+    def test_demo_api_grouped_name_search_supports_exact_and_substring_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-exact-group-en",
+                    oracle_id="api-exact-group-oracle",
+                    name="Exact API Group Card",
+                    collector_number="51",
+                    lang="en",
+                    released_at="2026-04-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-exact-group-en-small.jpg","normal":"https://example.test/cards/api-exact-group-en-normal.jpg"}',
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-exact-group-ja",
+                    oracle_id="api-exact-group-oracle",
+                    name="Exact API Group Card",
+                    collector_number="52",
+                    lang="ja",
+                    released_at="2026-05-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-exact-group-ja-small.jpg","normal":"https://example.test/cards/api-exact-group-ja-normal.jpg"}',
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-lightning-bolt-en",
+                    oracle_id="api-lightning-bolt-oracle",
+                    name="Lightning Bolt",
+                    collector_number="61",
+                    lang="en",
+                    released_at="2026-04-01",
+                    is_default_add_searchable=1,
+                )
+
+                exact = client.get(
+                    "/cards/search/names",
+                    params={"query": "Exact API Group Card", "exact": "true"},
+                )
+                self.assertEqual(200, exact.status_code)
+                self.assertEqual(1, len(exact.json()))
+                self.assertEqual("api-exact-group-oracle", exact.json()[0]["oracle_id"])
+                self.assertEqual(["en", "ja"], exact.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-exact-group-en-small.jpg",
+                    exact.json()[0]["image_uri_small"],
+                )
+
+                substring = client.get(
+                    "/cards/search/names",
+                    params={"query": "ning"},
+                )
+                self.assertEqual(200, substring.status_code)
+                self.assertEqual(1, len(substring.json()))
+                self.assertEqual("api-lightning-bolt-oracle", substring.json()[0]["oracle_id"])
+                self.assertEqual("Lightning Bolt", substring.json()[0]["name"])
+
     def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
