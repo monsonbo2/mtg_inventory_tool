@@ -115,6 +115,7 @@
                 "type": "null"
               }
             ],
+            "description": "Card-level Oracle ID to resolve to one default printing by backend policy. When language is omitted, quick-add prefers English mainstream-paper printings in the default add scope before newer promo-like rows.",
             "title": "Oracle Id"
           },
           "quantity": {
@@ -333,6 +334,98 @@
         "title": "ApiErrorResponse",
         "type": "object"
       },
+      "BulkInventoryItemMutationRequest": {
+        "additionalProperties": false,
+        "description": "Specify exactly one bulk mutation operation per request. The first shipped bulk route supports only tag operations: add_tags, remove_tags, set_tags, or clear_tags.",
+        "properties": {
+          "item_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Item Ids",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "add_tags",
+              "remove_tags",
+              "set_tags",
+              "clear_tags"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. Use clear_tags instead of sending an empty tag list.",
+            "title": "Tags"
+          }
+        },
+        "required": [
+          "operation",
+          "item_ids"
+        ],
+        "title": "BulkInventoryItemMutationRequest",
+        "type": "object"
+      },
+      "BulkInventoryItemMutationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "add_tags",
+              "remove_tags",
+              "set_tags",
+              "clear_tags"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "requested_item_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Requested Item Ids",
+            "type": "array"
+          },
+          "updated_count": {
+            "title": "Updated Count",
+            "type": "integer"
+          },
+          "updated_item_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Updated Item Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inventory",
+          "operation",
+          "requested_item_ids",
+          "updated_item_ids",
+          "updated_count"
+        ],
+        "title": "BulkInventoryItemMutationResponse",
+        "type": "object"
+      },
       "CatalogNameSearchRowResponse": {
         "additionalProperties": false,
         "properties": {
@@ -490,6 +583,24 @@
           "image_uri_normal"
         ],
         "title": "CatalogSearchRowResponse",
+        "type": "object"
+      },
+      "DefaultInventoryBootstrapResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "inventory": {
+            "$ref": "#/components/schemas/InventoryCreateResponse"
+          }
+        },
+        "required": [
+          "created",
+          "inventory"
+        ],
+        "title": "DefaultInventoryBootstrapResponse",
         "type": "object"
       },
       "HealthResponse": {
@@ -2302,6 +2413,28 @@
               "description": "Catalog search language filter. Recommended codes include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Search currently accepts the raw stored catalog language codes. Omit this parameter to prefer English printings by default. Use `all` to include every available catalog language.",
               "title": "Lang"
             }
+          },
+          {
+            "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+              "enum": [
+                "default",
+                "all"
+              ],
+              "title": "Scope"
+            }
           }
         ],
         "responses": {
@@ -2471,6 +2604,28 @@
             }
           },
           {
+            "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+              "enum": [
+                "default",
+                "all"
+              ],
+              "title": "Scope"
+            }
+          },
+          {
             "in": "query",
             "name": "exact",
             "required": false,
@@ -2573,6 +2728,28 @@
             "schema": {
               "title": "Query",
               "type": "string"
+            }
+          },
+          {
+            "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+              "enum": [
+                "default",
+                "all"
+              ],
+              "title": "Scope"
             }
           },
           {
@@ -3335,6 +3512,105 @@
         "summary": "Inventory Items Add"
       }
     },
+    "/inventories/{inventory_slug}/items/bulk": {
+      "post": {
+        "operationId": "inventory_items_bulk_mutate_inventories__inventory_slug__items_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkInventoryItemMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkInventoryItemMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Items Bulk Mutate"
+      }
+    },
     "/inventories/{inventory_slug}/items/{item_id}": {
       "delete": {
         "operationId": "inventory_items_delete_inventories__inventory_slug__items__item_id__delete",
@@ -3560,6 +3836,74 @@
           }
         },
         "summary": "Inventory Items Patch"
+      }
+    },
+    "/me/bootstrap": {
+      "post": {
+        "operationId": "bootstrap_default_inventory_me_bootstrap_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultInventoryBootstrapResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Bootstrap Default Inventory"
       }
     }
   }

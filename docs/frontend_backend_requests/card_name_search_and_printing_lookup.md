@@ -1,9 +1,9 @@
 # Frontend Backend Request: Card-Name Search And Printing Lookup
 
-Status: Proposed
-Owner: Unassigned
+Status: Done
+Owner: Boyd
 GitHub issue: [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16)
-Implementation PR: Not linked yet
+Implementation PR: Commit `b409f56`
 Last updated: 2026-04-02
 
 ## Frontend Backend Request
@@ -191,3 +191,14 @@ Compatibility note:
 Additive. The frontend is asking for additional name-grouped search and
 printing-lookup support without removing the current printing-level search
 contract.
+
+Resolution:
+
+- `GET /cards/search/names` now provides grouped card-name results keyed by
+  `oracle_id`
+- `GET /cards/oracle/{oracle_id}/printings` now returns printing rows for a
+  selected card-level identity
+- the original printing-first `GET /cards/search` route remains available for
+  existing clients
+- the contract and examples were published in `docs/api_v1_contract.md`,
+  `contracts/openapi.json`, and `contracts/demo_payloads/`

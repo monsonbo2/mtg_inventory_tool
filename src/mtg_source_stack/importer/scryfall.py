@@ -8,6 +8,21 @@ from ..db.schema import initialize_database
 from .service import ImportStats, compact_json, first_non_empty, load_json, text_or_none
 
 
+_DEFAULT_ADD_SEARCH_EXCLUDED_LAYOUTS = {
+    "art_series",
+    "double_faced_token",
+    "emblem",
+    "planar",
+    "scheme",
+    "token",
+    "vanguard",
+}
+_DEFAULT_ADD_SEARCH_EXCLUDED_SET_TYPES = {
+    "memorabilia",
+    "token",
+}
+
+
 def pick_image_uris(card: dict[str, Any]) -> dict[str, Any] | None:
     image_uris = card.get("image_uris")
     if isinstance(image_uris, dict):
@@ -44,6 +59,42 @@ def iter_scryfall_cards(payload: Any) -> list[dict[str, Any]]:
     raise ValueError("Expected Scryfall bulk data to be a JSON list or an object with a data list.")
 
 
+def _json_list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _normalized_text(value: Any) -> str | None:
+    text = text_or_none(value)
+    return text.lower() if text is not None else None
+
+
+def _bool_to_int(value: Any) -> int:
+    return 1 if bool(value) else 0
+
+
+def default_add_searchable_from_scryfall_card(card: dict[str, Any]) -> bool:
+    layout = _normalized_text(card.get("layout"))
+    set_type = _normalized_text(card.get("set_type"))
+    games_payload = _json_list_or_empty(card.get("games"))
+    games = {
+        normalized
+        for normalized in (_normalized_text(value) for value in games_payload)
+        if normalized is not None
+    }
+
+    if bool(card.get("digital")):
+        return False
+    if games and "paper" not in games:
+        return False
+    if bool(card.get("oversized")):
+        return False
+    if layout in _DEFAULT_ADD_SEARCH_EXCLUDED_LAYOUTS:
+        return False
+    if set_type in _DEFAULT_ADD_SEARCH_EXCLUDED_SET_TYPES:
+        return False
+    return True
+
+
 def import_scryfall_cards(
     db_path: str | Path,
     json_path: str | Path,
@@ -78,18 +129,26 @@ def import_scryfall_cards(
         mana_cost,
         type_line,
         oracle_text,
+        layout,
         colors_json,
         color_identity_json,
         finishes_json,
         image_uris_json,
         legalities_json,
         purchase_uris_json,
+        set_type,
+        games_json,
+        digital,
+        oversized,
+        booster,
+        promo_types_json,
+        is_default_add_searchable,
         tcgplayer_product_id,
         cardkingdom_id,
         cardmarket_id,
         cardsphere_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(scryfall_id) DO UPDATE SET
         oracle_id = excluded.oracle_id,
         name = excluded.name,
@@ -102,12 +161,20 @@ def import_scryfall_cards(
         mana_cost = excluded.mana_cost,
         type_line = excluded.type_line,
         oracle_text = excluded.oracle_text,
+        layout = excluded.layout,
         colors_json = excluded.colors_json,
         color_identity_json = excluded.color_identity_json,
         finishes_json = excluded.finishes_json,
         image_uris_json = excluded.image_uris_json,
         legalities_json = excluded.legalities_json,
         purchase_uris_json = excluded.purchase_uris_json,
+        set_type = excluded.set_type,
+        games_json = excluded.games_json,
+        digital = excluded.digital,
+        oversized = excluded.oversized,
+        booster = excluded.booster,
+        promo_types_json = excluded.promo_types_json,
+        is_default_add_searchable = excluded.is_default_add_searchable,
         mtgjson_uuid = COALESCE(excluded.mtgjson_uuid, mtg_cards.mtgjson_uuid),
         tcgplayer_product_id = COALESCE(excluded.tcgplayer_product_id, mtg_cards.tcgplayer_product_id),
         cardkingdom_id = COALESCE(excluded.cardkingdom_id, mtg_cards.cardkingdom_id),
@@ -150,12 +217,20 @@ def import_scryfall_cards(
                     text_or_none(card.get("mana_cost")),
                     text_or_none(card.get("type_line")),
                     text_or_none(card.get("oracle_text")),
+                    text_or_none(card.get("layout")),
                     compact_json(card.get("colors") or []),
                     compact_json(card.get("color_identity") or []),
                     compact_json(card.get("finishes") or []),
                     compact_json(pick_image_uris(card)),
                     compact_json(card.get("legalities") or {}),
                     compact_json(card.get("purchase_uris") or {}),
+                    text_or_none(card.get("set_type")),
+                    compact_json(_json_list_or_empty(card.get("games"))),
+                    _bool_to_int(card.get("digital")),
+                    _bool_to_int(card.get("oversized")),
+                    _bool_to_int(card.get("booster")),
+                    compact_json(_json_list_or_empty(card.get("promo_types"))),
+                    _bool_to_int(default_add_searchable_from_scryfall_card(card)),
                     text_or_none(card.get("tcgplayer_id")),
                     None,
                     text_or_none(card.get("cardmarket_id")),

@@ -7,8 +7,8 @@ The current API shell supports two runtime modes:
 
 Both modes wrap the existing synchronous inventory service layer and SQLite
 runtime. The route boundary now aligns with that sync service surface,
-`shared_service` now requires authenticated `editor` access for the current
-app routes, and the first-live deployment shape is a same-origin reverse proxy
-over the current root-route API surface. Finer-grained admin policy still lives
-outside this package.
+`shared_service` now combines verified upstream identity with local
+inventory-scoped memberships, and the first-live deployment shape is a
+same-origin reverse proxy over the current root-route API surface. Broader
+admin-surface policy still lives outside this package.
 """

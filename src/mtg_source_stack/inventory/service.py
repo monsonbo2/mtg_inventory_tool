@@ -1,5 +1,20 @@
 """Public inventory domain facade used by the CLI and future app layer."""
 
+from .access import (
+    actor_can_read_any_inventory,
+    actor_can_read_inventory,
+    actor_can_write_inventory,
+    actor_inventory_role,
+    actor_inventory_role_with_connection,
+    can_read_inventory,
+    can_write_inventory,
+    grant_inventory_membership,
+    grant_inventory_membership_with_connection,
+    is_global_admin,
+    list_inventory_memberships,
+    normalize_inventory_membership_role,
+    revoke_inventory_membership,
+)
 from .audit import list_inventory_audit_events
 from .analysis import (
     build_duplicate_groups_from_owned_rows,
@@ -14,10 +29,11 @@ from .analysis import (
     valuation_filtered,
 )
 from .catalog import list_card_printings_for_oracle, resolve_card_row, search_card_names, search_cards
-from .inventories import create_inventory, list_inventories
+from .inventories import create_inventory, ensure_default_inventory, list_inventories, list_visible_inventories
 from .mutations import (
     add_card,
     add_card_with_connection,
+    bulk_mutate_inventory_items,
     merge_rows,
     remove_card,
     set_acquisition,

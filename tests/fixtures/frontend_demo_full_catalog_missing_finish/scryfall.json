@@ -1,0 +1,20 @@
+[
+  {
+    "id": "missing-finish-bolt-en",
+    "oracle_id": "missing-finish-oracle-bolt",
+    "name": "Lightning Bolt",
+    "set": "lea",
+    "set_name": "Limited Edition Alpha",
+    "set_type": "expansion",
+    "booster": true,
+    "collector_number": "161",
+    "lang": "en",
+    "rarity": "common",
+    "released_at": "1993-08-05",
+    "finishes": ["normal"],
+    "image_uris": {
+      "small": "https://example.test/cards/missing-finish-bolt-en-small.jpg",
+      "normal": "https://example.test/cards/missing-finish-bolt-en-normal.jpg"
+    }
+  }
+]

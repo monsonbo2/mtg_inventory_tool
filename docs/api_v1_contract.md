@@ -32,6 +32,13 @@ preserve for the first API-backed version of the project.
 - PATCH responses include an explicit `operation` discriminator such as
   `set_finish` or `set_quantity`; clients should branch on `operation` instead
   of inferring the result type from optional fields alone.
+- `POST /inventories/{inventory_slug}/items/bulk` accepts exactly one bulk
+  mutation operation per request and currently supports tag operations only:
+  `add_tags`, `remove_tags`, `set_tags`, and `clear_tags`.
+- Bulk item mutation responses use a stable envelope with `inventory`,
+  `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
+- The current bulk tag implementation is transactional and all-or-nothing: if
+  validation or item lookup fails, no rows in the batch are updated.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,
@@ -61,6 +68,15 @@ preserve for the first API-backed version of the project.
     `name` as identifier inputs
   - `oracle_id` resolves to one printing by backend policy rather than storing
     `oracle_id` directly on inventory rows
+  - for quick-add by `oracle_id`, the default resolver uses the default
+    add-flow catalog scope rather than the broad `scope=all` catalog
+  - when language is omitted, `oracle_id` quick-add prefers:
+    - English printings first when available
+    - mainstream-paper printings before promo-like printings
+    - newer `released_at` within the same preference tier
+    - then stable tie-break fields
+  - omitted `finish` still means `normal`; the backend does not silently fall
+    back to foil or etched printings for quick-add
   - when `language_code` is omitted, the stored owned language inherits the
     resolved printing language
   - if `language_code` is explicitly provided and does not match the resolved
@@ -69,6 +85,20 @@ preserve for the first API-backed version of the project.
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language
     values rather than enforcing a strict enum at the HTTP layer
+- `GET /cards/search` and `GET /cards/search/names`
+  - app-facing search is intended to default to the mainline card-add flow
+    scope rather than the full raw catalog
+  - query `scope` accepts `default` or `all`
+  - omitting `scope` is the same as `scope=default`
+  - that default scope excludes auxiliary catalog objects such as tokens,
+    emblems, art-series rows, planar cards, schemes, and vanguards, as well as
+    digital-only, non-paper, and oversized prints
+  - `scope=all` intentionally broadens search back to the full local catalog,
+    including auxiliary catalog objects
+  - rollout note: on upgraded pre-`0008` databases, operators should run a
+    fresh Scryfall bulk import after migrating so the persisted default search
+    scope matches fresh-import classification rather than best-effort legacy
+    `type_line` backfill
 - `GET /cards/search` query `query`
   - must be non-empty after trimming whitespace
   - blank or whitespace-only search queries return `400 validation_error`
@@ -78,9 +108,20 @@ preserve for the first API-backed version of the project.
   - includes `available_languages` for the matched card
 - `GET /cards/oracle/{oracle_id}/printings`
   - returns printing-level rows for one `oracle_id`
+  - uses the same default mainline add-flow scope as the app-facing search
+    routes before language filtering is applied
+  - query `scope` accepts `default` or `all`
+  - omitting `scope` is the same as `scope=default`
   - defaults to English printings when available
   - accepts `lang=all` to include all available catalog languages
   - accepts specific language codes such as `lang=ja` to request one language
+- `POST /inventories/{inventory_slug}/items/bulk`
+  - current supported operations: `add_tags`, `remove_tags`, `set_tags`,
+    `clear_tags`
+  - `item_ids` must be non-empty and unique
+  - `tags` is required for `add_tags`, `remove_tags`, and `set_tags`
+  - `tags` must be omitted for `clear_tags`
+  - use `clear_tags` instead of sending an empty tag list
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For
@@ -158,10 +199,34 @@ before the generic 500 envelope is returned.
 - In `shared_service`, the API also accepts a normalized roles header. The
   default header name is `X-Authenticated-Roles`, and it can be overridden with
   `MTG_API_AUTHENTICATED_ROLES_HEADER`.
-- The current recognized app roles are `editor` and `admin`.
+- The current recognized global app roles are `editor` and `admin`.
 - If the verified user header is present and the roles header is missing, the
   API defaults that caller to `editor`.
 - `admin` implies `editor`.
+- Shared-service inventory access is also scoped by local inventory
+  memberships:
+  - `viewer` can read a specific inventory
+  - `editor` can read and write a specific inventory
+  - `owner` can read and write a specific inventory
+  - global `admin` bypasses inventory membership checks
+- `GET /inventories` returns only the inventories visible to the caller, while
+  global `admin` can see all inventories.
+- `GET /cards/search`, `GET /cards/search/names`, and
+  `GET /cards/oracle/{oracle_id}/printings` require a caller who can read at
+  least one inventory, or a global `admin`.
+- `GET /inventories/{inventory_slug}/items` and
+  `GET /inventories/{inventory_slug}/audit` require inventory read access.
+- `POST /inventories/{inventory_slug}/items`,
+  `PATCH /inventories/{inventory_slug}/items/{item_id}`, and
+  `DELETE /inventories/{inventory_slug}/items/{item_id}` require inventory
+  write access.
+- `POST /inventories` still requires a global `editor` or `admin`, and the
+  creator is automatically granted `owner` membership on the new inventory.
+- `POST /me/bootstrap` requires a global `editor` or `admin`, creates one
+  personal default inventory named `Collection` for that actor, grants
+  `owner`, and returns the same inventory on repeated calls.
+- Existing inventories with no memberships are effectively admin-only until
+  memberships are granted intentionally.
 - In `shared_service`, caller-controlled `X-Actor-Id` values are not part of
   the trust boundary for audit attribution.
 - In `shared_service`, `MTG_API_TRUST_ACTOR_HEADERS=true` is not a valid
@@ -175,8 +240,8 @@ before the generic 500 envelope is returned.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
 - The API logs startup mode and unexpected failures. The main remaining
-  blockers before broader shared deployment are finer-grained permission rules
-  for admin-only surfaces and broader deployment policy choices.
+  blockers before broader shared deployment are rollout validation against the
+  real membership model and clearer admin-only surface policy.
 
 ## Notes For Web V1
 

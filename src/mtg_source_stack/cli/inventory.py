@@ -51,16 +51,19 @@ from ..inventory.report_io import (
 from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
+    grant_inventory_membership,
     create_inventory,
     export_inventory_csv,
     inventory_health,
     inventory_report,
+    list_inventory_memberships,
     list_inventories,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
     reconcile_prices,
     remove_card,
+    revoke_inventory_membership,
     search_cards,
     set_acquisition,
     set_condition,
@@ -107,6 +110,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_inv = subparsers.add_parser("list-inventories", help="List inventories and their row counts.")
     list_inv.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+
+    grant_membership = subparsers.add_parser(
+        "grant-inventory-membership",
+        help="Grant or update an inventory membership role for an actor.",
+    )
+    grant_membership.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    grant_membership.add_argument("--inventory", required=True, help="Inventory slug.")
+    grant_membership.add_argument("--actor-id", required=True, help="Authenticated actor id, such as an email.")
+    grant_membership.add_argument(
+        "--role",
+        required=True,
+        choices=("viewer", "editor", "owner"),
+        help="Inventory membership role to grant.",
+    )
+
+    list_memberships = subparsers.add_parser(
+        "list-inventory-memberships",
+        help="List the current membership assignments for an inventory.",
+    )
+    list_memberships.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    list_memberships.add_argument("--inventory", required=True, help="Inventory slug.")
+
+    revoke_membership = subparsers.add_parser(
+        "revoke-inventory-membership",
+        help="Remove an actor's inventory membership.",
+    )
+    revoke_membership.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    revoke_membership.add_argument("--inventory", required=True, help="Inventory slug.")
+    revoke_membership.add_argument("--actor-id", required=True, help="Authenticated actor id to remove.")
 
     search = subparsers.add_parser("search-cards", help="Search imported MTG printings.")
     search.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
@@ -410,6 +442,53 @@ def main() -> None:
                     ("total_cards", "total_cards"),
                     ("description", "description"),
                 ],
+            )
+            return
+
+        if args.command == "grant-inventory-membership":
+            result = serialize_response(
+                grant_inventory_membership(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    actor_id=args.actor_id,
+                    role=args.role,
+                )
+            )
+            print(
+                f"Granted role '{result['role']}' on inventory '{result['inventory']}' "
+                f"to actor '{result['actor_id']}'"
+            )
+            return
+
+        if args.command == "list-inventory-memberships":
+            rows = serialize_response(
+                list_inventory_memberships(
+                    args.db,
+                    inventory_slug=args.inventory,
+                )
+            )
+            print_table(
+                rows,
+                [
+                    ("actor_id", "actor_id"),
+                    ("role", "role"),
+                    ("created_at", "created_at"),
+                    ("updated_at", "updated_at"),
+                ],
+            )
+            return
+
+        if args.command == "revoke-inventory-membership":
+            result = serialize_response(
+                revoke_inventory_membership(
+                    args.db,
+                    inventory_slug=args.inventory,
+                    actor_id=args.actor_id,
+                )
+            )
+            print(
+                f"Revoked role '{result['role']}' on inventory '{result['inventory']}' "
+                f"from actor '{result['actor_id']}'"
             )
             return
 

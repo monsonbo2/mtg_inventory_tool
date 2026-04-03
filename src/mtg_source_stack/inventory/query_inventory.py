@@ -166,7 +166,7 @@ def inventory_item_result_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "finish": row["finish"],
         "condition_code": row["condition_code"],
         "language_code": row["language_code"],
-        "location": row["location"],
+        "location": text_or_none(row["location"]),
         "acquisition_price": coerce_decimal(row["acquisition_price"]),
         "acquisition_currency": text_or_none(row["acquisition_currency"]),
         "notes": text_or_none(row["notes"]),

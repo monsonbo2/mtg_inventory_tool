@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -14,6 +16,7 @@ from .normalize import (
     DEFAULT_SEARCH_LIMIT,
     MAX_SEARCH_LIMIT,
     extract_image_uri_fields,
+    normalize_catalog_search_scope,
     normalize_finish,
     normalize_language_code,
     normalized_catalog_finish_list,
@@ -21,11 +24,19 @@ from .normalize import (
     validate_supported_finish,
     validate_limit_value,
 )
-from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
+from .query_catalog import add_catalog_filters, add_catalog_scope_filter, build_catalog_search_fts_query, catalog_scope_filter_sql
 from .response_models import CatalogNameSearchRow, CatalogSearchRow
 
 
 _LANGUAGE_ORDER = {code: index for index, code in enumerate(CANONICAL_LANGUAGE_CODES)}
+_PREFERRED_ORACLE_DEFAULT_SET_TYPES = {
+    "commander",
+    "core",
+    "draft_innovation",
+    "expansion",
+    "masters",
+    "starter",
+}
 
 
 def _catalog_search_row_from_payload(payload: Mapping[str, Any]) -> CatalogSearchRow:
@@ -87,7 +98,11 @@ def _catalog_resolution_rows(
             lang,
             finishes_json,
             released_at,
-            tcgplayer_product_id
+            tcgplayer_product_id,
+            set_type,
+            booster,
+            promo_types_json,
+            is_default_add_searchable
         FROM mtg_cards
         WHERE {' AND '.join(filters)}
         ORDER BY
@@ -119,6 +134,54 @@ def _rows_matching_finish(rows: list[sqlite3.Row], requested_finish: str | None)
     return matched_rows, normalized_finish
 
 
+def _row_json_text_list(row: sqlite3.Row, field_name: str) -> list[str]:
+    payload = text_or_none(row[field_name])
+    if payload is None:
+        return []
+    try:
+        value = json.loads(payload)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(value, list):
+        return []
+    return [normalized for normalized in (text_or_none(item) for item in value) if normalized is not None]
+
+
+def _oracle_default_printing_tier(row: sqlite3.Row) -> int:
+    promo_types = _row_json_text_list(row, "promo_types_json")
+    set_type = text_or_none(row["set_type"])
+    normalized_set_type = set_type.lower() if set_type is not None else None
+    booster = bool(row["booster"])
+
+    if not promo_types and (booster or normalized_set_type in _PREFERRED_ORACLE_DEFAULT_SET_TYPES):
+        return 0
+    if not promo_types:
+        return 1
+    return 2
+
+
+def _released_at_sort_key(value: Any) -> tuple[int, int]:
+    released_at = text_or_none(value)
+    if released_at is None:
+        return (1, 0)
+    try:
+        return (0, -date.fromisoformat(released_at).toordinal())
+    except ValueError:
+        return (0, 0)
+
+
+def _oracle_default_printing_sort_key(row: sqlite3.Row, *, prefer_english: bool) -> tuple[Any, ...]:
+    normalized_lang = normalize_language_code(row["lang"])
+    return (
+        0 if prefer_english and normalized_lang == "en" else 1,
+        _oracle_default_printing_tier(row),
+        *_released_at_sort_key(row["released_at"]),
+        text_or_none(row["set_code"]) or "",
+        text_or_none(row["collector_number"]) or "",
+        str(row["scryfall_id"]),
+    )
+
+
 def search_cards(
     db_path: str | Path,
     query: str,
@@ -128,9 +191,11 @@ def search_cards(
     lang: str | None = None,
     exact: bool = False,
     limit: int = DEFAULT_SEARCH_LIMIT,
+    scope: str | None = None,
 ) -> list[CatalogSearchRow]:
     if not query.strip():
         raise ValidationError("query is required.")
+    normalized_scope = normalize_catalog_search_scope(scope)
     validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
     require_current_schema(db_path)
     with connect(db_path) as connection:
@@ -172,6 +237,7 @@ def search_cards(
             finish=finish,
             lang=lang,
         )
+        add_catalog_scope_filter(where_parts, scope=normalized_scope)
 
         if not exact and fts_query is not None:
             params = [fts_query, *params]
@@ -219,9 +285,11 @@ def search_card_names(
     *,
     exact: bool = False,
     limit: int = DEFAULT_SEARCH_LIMIT,
+    scope: str | None = None,
 ) -> list[CatalogNameSearchRow]:
     if not query.strip():
         raise ValidationError("query is required.")
+    normalized_scope = normalize_catalog_search_scope(scope)
     validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
     require_current_schema(db_path)
     with connect(db_path) as connection:
@@ -235,14 +303,14 @@ def search_card_names(
         """
         search_join = "LEFT JOIN search_match ON 1 = 0"
         where_parts: list[str] = []
-        params: list[Any] = []
+        where_params: list[Any] = []
         fts_query = build_catalog_search_fts_query(query) if not exact else None
         if exact:
             where_parts.append("LOWER(mtg_cards.name) = LOWER(?)")
-            params.append(query)
+            where_params.append(query)
         else:
             where_parts.append("(search_match.scryfall_id IS NOT NULL OR LOWER(mtg_cards.name) LIKE LOWER(?))")
-            params.append(f"%{query}%")
+            where_params.append(f"%{query}%")
             if fts_query is not None:
                 search_cte = """
                 WITH search_match AS (
@@ -255,9 +323,15 @@ def search_card_names(
                 """
                 search_join = "LEFT JOIN search_match ON search_match.scryfall_id = mtg_cards.scryfall_id"
 
+        scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
+        add_catalog_scope_filter(where_parts, scope=normalized_scope)
+
+        params: list[Any] = []
         if not exact and fts_query is not None:
-            params = [fts_query, *params]
-        params.extend([query, f"{query}%", limit])
+            params.append(fts_query)
+        params.extend([query, f"{query}%"])
+        params.extend(where_params)
+        params.append(limit)
         rows = connection.execute(
             f"""
             {search_cte},
@@ -289,6 +363,7 @@ def search_card_names(
                     COUNT(*) AS printings_count
                 FROM mtg_cards
                 WHERE oracle_id IN (SELECT oracle_id FROM matched_groups)
+                  AND {scope_filter_sql}
                 GROUP BY oracle_id
             ),
             representative_rows AS (
@@ -315,6 +390,7 @@ def search_card_names(
                     ) AS row_number
                 FROM mtg_cards
                 INNER JOIN matched_groups ON matched_groups.oracle_id = mtg_cards.oracle_id
+                WHERE {scope_filter_sql}
             )
             SELECT
                 representative_rows.oracle_id,
@@ -346,6 +422,7 @@ def search_card_names(
             SELECT oracle_id, lang
             FROM mtg_cards
             WHERE oracle_id IN ({placeholders})
+              AND {scope_filter_sql}
             ORDER BY
                 CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
                 LOWER(lang),
@@ -380,15 +457,18 @@ def list_card_printings_for_oracle(
     oracle_id: str,
     *,
     lang: str | None = None,
+    scope: str | None = None,
 ) -> list[CatalogSearchRow]:
     oracle_id_text = text_or_none(oracle_id)
     if oracle_id_text is None:
         raise ValidationError("oracle_id is required.")
     requested_lang = text_or_none(lang)
+    normalized_scope = normalize_catalog_search_scope(scope)
+    scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = connection.execute(
-            """
+            f"""
             SELECT
                 scryfall_id,
                 name,
@@ -402,6 +482,7 @@ def list_card_printings_for_oracle(
                 image_uris_json
             FROM mtg_cards
             WHERE oracle_id = ?
+              AND {scope_filter_sql}
             ORDER BY
                 COALESCE(released_at, '') DESC,
                 CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
@@ -480,6 +561,7 @@ def resolve_card_row(
     if oracle_id:
         filters = ["oracle_id = ?"]
         params: list[Any] = [oracle_id]
+        filters.append("COALESCE(is_default_add_searchable, 1) = 1")
         if set_code:
             filters.append("LOWER(set_code) = LOWER(?)")
             params.append(set_code)
@@ -500,7 +582,14 @@ def resolve_card_row(
             raise ValidationError(
                 f"No printing found for oracle_id '{oracle_id}' with finish '{normalized_finish}'."
             )
-        return rows[0]
+        ranked_rows = sorted(
+            rows,
+            key=lambda row: _oracle_default_printing_sort_key(
+                row,
+                prefer_english=normalized_lang is None,
+            ),
+        )
+        return ranked_rows[0]
 
     if not name:
         raise ValidationError("Provide either --scryfall-id, --oracle-id, --tcgplayer-product-id, or --name.")
