@@ -415,6 +415,7 @@ def inventory_items_bulk_mutate(
             finish=payload.finish,
             location=payload.location,
             clear_location=payload.clear_location,
+            condition_code=payload.condition_code,
             merge=payload.merge,
             keep_acquisition=payload.keep_acquisition,
             actor_type=context.actor_type,

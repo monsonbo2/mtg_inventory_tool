@@ -281,7 +281,7 @@ class ApiContractTest(RepoSmokeTestCase):
         bulk_schema = BulkInventoryItemMutationRequest.model_json_schema()
         bulk_properties = bulk_schema["properties"]
         self.assertIn(
-            "supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, and set_location",
+            "supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, set_location, and set_condition",
             bulk_schema["description"],
         )
         self.assertEqual(
@@ -295,6 +295,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "set_acquisition",
                 "set_finish",
                 "set_location",
+                "set_condition",
             ],
             bulk_properties["operation"]["enum"],
         )
@@ -310,9 +311,10 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("Used by set_finish", bulk_properties["finish"]["description"])
         self.assertIn("Used by set_location", bulk_properties["location"]["description"])
         self.assertIn("Only applies to set_location", bulk_properties["clear_location"]["description"])
-        self.assertIn("Only applies to set_location", bulk_properties["merge"]["description"])
+        self.assertIn("Used by set_condition", bulk_properties["condition_code"]["description"])
+        self.assertIn("Only applies to set_location or set_condition", bulk_properties["merge"]["description"])
         self.assertIn(
-            "Only applies to merged set_location changes",
+            "Only applies to merged set_location or set_condition changes",
             bulk_properties["keep_acquisition"]["description"],
         )
 

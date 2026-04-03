@@ -2517,6 +2517,261 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     keep_acquisition="target",
                 )
 
+    def test_bulk_mutate_inventory_items_applies_condition_and_skips_noop_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal","foil"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                finish="normal",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="LP",
+                finish="foil",
+                location="Binder B",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_condition",
+                item_ids=item_ids,
+                tags=None,
+                condition_code="LP",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-condition",
+            )
+            self.assertEqual("set_condition", result.operation)
+            self.assertEqual([item_ids[0]], result.updated_item_ids)
+            self.assertEqual(1, result.updated_count)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("LP", row_by_id[item_ids[0]].condition_code)
+            self.assertEqual("LP", row_by_id[item_ids[1]].condition_code)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("set_condition", audit_rows[0].action)
+            self.assertEqual("NM", audit_rows[0].metadata["old_condition_code"])
+            self.assertEqual("LP", audit_rows[0].metadata["new_condition_code"])
+            self.assertEqual("req-bulk-condition", audit_rows[0].request_id)
+
+    def test_bulk_mutate_inventory_items_set_condition_conflict_rolls_back_without_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="LP",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                location="Binder B",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            with self.assertRaisesRegex(ConflictError, "Changing condition would collide with an existing inventory row"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_condition",
+                    item_ids=[item_ids[2], item_ids[0]],
+                    tags=None,
+                    condition_code="LP",
+                )
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("NM", row_by_id[item_ids[0]].condition_code)
+            self.assertEqual("LP", row_by_id[item_ids[1]].condition_code)
+            self.assertEqual("NM", row_by_id[item_ids[2]].condition_code)
+
+    def test_bulk_mutate_inventory_items_set_condition_merge_succeeds_and_keeps_source_acquisition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=2,
+                condition_code="NM",
+                location="Binder A",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=3,
+                condition_code="LP",
+                location="Binder A",
+                acquisition_price="2.50",
+                acquisition_currency="USD",
+                tags_json='["trade"]',
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_condition",
+                item_ids=[item_ids[0]],
+                tags=None,
+                condition_code="LP",
+                merge=True,
+                keep_acquisition="source",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-condition-merge",
+            )
+            self.assertEqual("set_condition", result.operation)
+            self.assertEqual([item_ids[0]], result.updated_item_ids)
+            self.assertEqual(1, result.updated_count)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(rows))
+            self.assertEqual(5, rows[0].quantity)
+            self.assertEqual("LP", rows[0].condition_code)
+            self.assertEqual(Decimal("1.25"), rows[0].acquisition_price)
+            self.assertEqual("USD", rows[0].acquisition_currency)
+            self.assertCountEqual(["deck", "trade"], rows[0].tags)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            condition_audits = [row for row in audit_rows if row.action == "set_condition"]
+            self.assertEqual(2, len(condition_audits))
+            self.assertTrue(all(row.metadata["merged"] for row in condition_audits))
+            self.assertTrue(all(row.metadata["keep_acquisition"] == "source" for row in condition_audits))
+
+    def test_bulk_mutate_inventory_items_set_condition_rejects_invalid_field_combinations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(ValidationError, "condition_code is required for set_condition"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_condition",
+                    item_ids=[item_id],
+                    tags=None,
+                )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "keep_acquisition only applies when merge is true for set_condition",
+            ):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_condition",
+                    item_ids=[item_id],
+                    tags=None,
+                    condition_code="LP",
+                    keep_acquisition="target",
+                )
+
     def test_bulk_mutate_inventory_items_rolls_back_when_audit_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"

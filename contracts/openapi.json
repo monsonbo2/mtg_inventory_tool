@@ -336,7 +336,7 @@
       },
       "BulkInventoryItemMutationRequest": {
         "additionalProperties": false,
-        "description": "Specify exactly one bulk mutation operation per request. The current runtime supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, and set_location.",
+        "description": "Specify exactly one bulk mutation operation per request. The current runtime supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, set_location, and set_condition.",
         "properties": {
           "acquisition_currency": {
             "anyOf": [
@@ -380,6 +380,18 @@
             "title": "Clear Notes",
             "type": "boolean"
           },
+          "condition_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Used by set_condition. Canonical condition codes: M, NM, LP, MP, HP, DMG. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized. Omit this field for every other bulk operation.",
+            "title": "Condition Code"
+          },
           "finish": {
             "anyOf": [
               {
@@ -420,7 +432,7 @@
                 "type": "null"
               }
             ],
-            "description": "Only applies to merged set_location changes. Choose whether the merged row keeps the target row or source row acquisition metadata.",
+            "description": "Only applies to merged set_location or set_condition changes. Choose whether the merged row keeps the target row or source row acquisition metadata.",
             "title": "Keep Acquisition"
           },
           "location": {
@@ -437,7 +449,7 @@
           },
           "merge": {
             "default": false,
-            "description": "Only applies to set_location. When true, a collision with an existing row is merged instead of returning a conflict.",
+            "description": "Only applies to set_location or set_condition. When true, a collision with an existing row is merged instead of returning a conflict.",
             "title": "Merge",
             "type": "boolean"
           },
@@ -463,7 +475,8 @@
               "set_notes",
               "set_acquisition",
               "set_finish",
-              "set_location"
+              "set_location",
+              "set_condition"
             ],
             "title": "Operation",
             "type": "string"
@@ -520,7 +533,8 @@
               "set_notes",
               "set_acquisition",
               "set_finish",
-              "set_location"
+              "set_location",
+              "set_condition"
             ],
             "title": "Operation",
             "type": "string"

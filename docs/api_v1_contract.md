@@ -35,7 +35,8 @@ preserve for the first API-backed version of the project.
 - `POST /inventories/{inventory_slug}/items/bulk` accepts exactly one bulk
   mutation operation per request and currently supports:
   `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
-  `set_notes`, `set_acquisition`, `set_finish`, and `set_location`.
+  `set_notes`, `set_acquisition`, `set_finish`, `set_location`, and
+  `set_condition`.
 - Bulk item mutation responses use a stable envelope with `inventory`,
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
 - The current bulk implementation is transactional and all-or-nothing: if
@@ -119,7 +120,8 @@ preserve for the first API-backed version of the project.
 - `POST /inventories/{inventory_slug}/items/bulk`
   - current supported operations:
     `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
-    `set_notes`, `set_acquisition`, `set_finish`, `set_location`
+    `set_notes`, `set_acquisition`, `set_finish`, `set_location`,
+    `set_condition`
   - `item_ids` must be non-empty and unique
   - `tags` is required for `add_tags`, `remove_tags`, and `set_tags`
   - `tags` must be omitted for `clear_tags`
@@ -145,6 +147,14 @@ preserve for the first API-backed version of the project.
   - `set_location` uses the same location normalization and merge rules as the
     single-item patch route
   - if any requested location change would collide with an existing inventory
+    row, the batch returns `409 conflict` unless `merge=true`; on conflict, no
+    rows in the batch are updated
+  - `condition_code` is required for `set_condition`
+  - `merge=true` also applies to `set_condition`
+  - `keep_acquisition` also applies to merged `set_condition` changes
+  - `set_condition` uses the same condition normalization and merge rules as
+    the single-item patch route
+  - if any requested condition change would collide with an existing inventory
     row, the batch returns `409 conflict` unless `merge=true`; on conflict, no
     rows in the batch are updated
 
