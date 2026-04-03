@@ -251,6 +251,11 @@ button {
     var(--panel-bg);
 }
 
+.search-panel {
+  position: relative;
+  z-index: 4;
+}
+
 .panel-heading {
   display: flex;
   justify-content: space-between;
@@ -320,6 +325,8 @@ button {
 
 .search-results-grid {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  position: relative;
+  z-index: 1;
 }
 
 .collection-grid {
@@ -754,14 +761,19 @@ button {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   margin-bottom: 18px;
+  position: relative;
+  z-index: 3;
 }
 
 .search-field {
   position: relative;
+  z-index: 4;
 }
 
 .search-input-stack {
   position: relative;
+  isolation: isolate;
+  z-index: 5;
 }
 
 .search-autocomplete {
@@ -769,7 +781,7 @@ button {
   top: calc(100% + 8px);
   left: 0;
   right: 0;
-  z-index: 12;
+  z-index: 20;
   display: grid;
   gap: 8px;
   border-radius: 18px;
@@ -853,6 +865,10 @@ button {
   gap: 8px;
   color: var(--text-soft);
   font-size: 0.92rem;
+}
+
+.field > label {
+  color: inherit;
 }
 
 .field-hint {
@@ -980,14 +996,40 @@ button {
 
 .search-result-quick-add-grid {
   grid-template-columns: minmax(0, 1.8fr) repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
 .search-printing-field {
   min-width: 0;
 }
 
-.search-printing-meta {
-  margin-top: 14px;
+.search-printing-helper {
+  grid-column: 1 / 2;
+  display: grid;
+  gap: 8px;
+  align-self: start;
+  margin-top: -4px;
+}
+
+.field-link-button {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-lagoon);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.field-link-button:hover {
+  transform: none;
+  color: #8df0dd;
+}
+
+.search-language-picker {
+  display: grid;
+  gap: 8px;
 }
 
 .search-printing-state .secondary-button {
