@@ -1,7 +1,3 @@
-# AGENTS.md
-
-Then read:
-
 - `README.md` for the project summary, setup, and top-level architecture links.
 - `DEV_README.md` for the current repo/runtime model, workflows, file map, and developer guardrails.
 - `ROADMAP.md` for recent milestones, active planning context, and likely next workstreams.
