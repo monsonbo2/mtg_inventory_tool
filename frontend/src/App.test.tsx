@@ -21,6 +21,7 @@ vi.mock("./api", async () => {
     searchCardNames: vi.fn(),
     listCardPrintings: vi.fn(),
     addInventoryItem: vi.fn(),
+    bulkMutateInventoryItems: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
   };
@@ -28,6 +29,7 @@ vi.mock("./api", async () => {
 
 import {
   addInventoryItem,
+  bulkMutateInventoryItems,
   listCardPrintings,
   listInventories,
   listInventoryItems,
@@ -121,6 +123,13 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
     vi.mocked(searchCardNames).mockResolvedValue([]);
     vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
   }
 
   function mockBaseSearchApp() {
@@ -137,6 +146,13 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue([]);
     vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
   }
 
   it("starts with an empty search field and keeps the example text as a placeholder only", async () => {
@@ -801,6 +817,66 @@ describe("App", () => {
     expect(screen.queryByText("1 selected row hidden by current filters.")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
+  });
+
+  it("applies bulk tag actions to selected table rows and clears the selection after success", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [7, 8],
+      updated_item_ids: [7, 8],
+      updated_count: 2,
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+
+    expect(screen.getByText("2 rows selected")).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Bulk tags" }), "burn, staples");
+    await user.click(screen.getByRole("button", { name: "Add tags" }));
+
+    await waitFor(() => {
+      expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
+        operation: "add_tags",
+        item_ids: [7, 8],
+        tags: ["burn", "staples"],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("No rows selected")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).not.toBeChecked();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Added tags on 2 rows in Personal Collection.",
+    );
+    expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    expect(listInventoryAudit).toHaveBeenCalledTimes(2);
   });
 
   it("clears table selection when the selected inventory changes", async () => {

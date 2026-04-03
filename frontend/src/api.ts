@@ -1,6 +1,8 @@
 import type {
   AddInventoryItemRequest,
   ApiErrorEnvelope,
+  BulkInventoryItemMutationRequest,
+  BulkInventoryItemMutationResponse,
   CatalogNameSearchRow,
   CatalogSearchRow,
   InventoryAuditEvent,
@@ -146,6 +148,19 @@ export async function listInventoryAudit(inventorySlug: string) {
     `/inventories/${encodeURIComponent(inventorySlug)}/audit`,
     {},
     { limit: 12 },
+  );
+}
+
+export async function bulkMutateInventoryItems(
+  inventorySlug: string,
+  payload: BulkInventoryItemMutationRequest,
+) {
+  return request<BulkInventoryItemMutationResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/items/bulk`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
   );
 }
 

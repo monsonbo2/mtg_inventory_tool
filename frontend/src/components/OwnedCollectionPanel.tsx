@@ -1,4 +1,9 @@
-import type { InventorySummary, OwnedInventoryRow, PatchInventoryItemRequest } from "../types";
+import type {
+  BulkInventoryItemOperation,
+  InventorySummary,
+  OwnedInventoryRow,
+  PatchInventoryItemRequest,
+} from "../types";
 import type { AsyncStatus, ItemMutationAction, NoticeTone } from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
 import type {
@@ -33,8 +38,13 @@ export function OwnedCollectionPanel(props: {
   tableSort: InventoryTableSortState;
   tableFilters: InventoryTableFilters;
   tableFilterOptions: InventoryTableFilterOptions;
+  bulkTagsBusy: boolean;
   onTableSortChange: (nextSort: InventoryTableSortState) => void;
   onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
+  onBulkTagsSubmit: (
+    operation: BulkInventoryItemOperation,
+    tags: string[],
+  ) => Promise<boolean>;
   onOpenActivity: () => void;
   selectedItemIds: number[];
   onToggleItemSelection: (itemId: number) => void;
@@ -164,9 +174,11 @@ export function OwnedCollectionPanel(props: {
           ) : props.collectionView === "table" ? (
             <InventoryTableView
               allItemsCount={props.items.length}
+              bulkTagsBusy={props.bulkTagsBusy}
               filterOptions={props.tableFilterOptions}
               filters={props.tableFilters}
               items={props.tableItems}
+              onBulkTagsSubmit={props.onBulkTagsSubmit}
               onClearSelection={props.onClearSelectedItems}
               onClearVisibleSelection={props.onClearVisibleSelectedItems}
               onFiltersChange={props.onTableFiltersChange}

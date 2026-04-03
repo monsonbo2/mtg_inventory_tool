@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ConditionCode, FinishValue, LanguageCode, OwnedInventoryRow } from "../types";
+import type {
+  BulkInventoryItemOperation,
+  ConditionCode,
+  FinishValue,
+  LanguageCode,
+  OwnedInventoryRow,
+} from "../types";
 import type {
   InventoryTableColumnKey,
   InventoryTableFilterOptions,
@@ -19,6 +25,7 @@ import {
   formatFinishLabel,
   formatLanguageCode,
   formatUsd,
+  parseTags,
   summarizeInlineText,
 } from "../uiHelpers";
 
@@ -54,18 +61,25 @@ export function InventoryTableView(props: {
   items: OwnedInventoryRow[];
   allItemsCount: number;
   selectedItemIds: number[];
+  bulkTagsBusy: boolean;
   sortState: InventoryTableSortState;
   filters: InventoryTableFilters;
   filterOptions: InventoryTableFilterOptions;
   onSortChange: (nextSort: InventoryTableSortState) => void;
   onFiltersChange: (nextFilters: InventoryTableFilters) => void;
+  onBulkTagsSubmit: (
+    operation: BulkInventoryItemOperation,
+    tags: string[],
+  ) => Promise<boolean>;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisible: () => void;
   onClearVisibleSelection: () => void;
   onClearSelection: () => void;
 }) {
   const [activeColumn, setActiveColumn] = useState<InventoryTableColumnKey | null>(null);
+  const [bulkTagsInput, setBulkTagsInput] = useState("");
   const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const bulkTagsHintId = "table-bulk-tags-hint";
   const selectedItemIdSet = new Set(props.selectedItemIds);
   const selectedVisibleCount = props.items.filter((item) =>
     selectedItemIdSet.has(item.item_id),
@@ -75,6 +89,8 @@ export function InventoryTableView(props: {
   const allVisibleSelected = props.items.length > 0 && selectedVisibleCount === props.items.length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
   const activeFilterCount = getActiveInventoryTableFilterCount(props.filters);
+  const parsedBulkTags = parseTags(bulkTagsInput);
+  const exceedsBulkSelectionLimit = totalSelectedCount > 100;
   const selectedCountLabel =
     totalSelectedCount === 0
       ? "No rows selected"
@@ -105,6 +121,13 @@ export function InventoryTableView(props: {
 
   function toggleColumn(column: InventoryTableColumnKey) {
     setActiveColumn((current) => (current === column ? null : column));
+  }
+
+  async function handleBulkAction(operation: BulkInventoryItemOperation) {
+    const didApply = await props.onBulkTagsSubmit(operation, parsedBulkTags);
+    if (didApply) {
+      setBulkTagsInput("");
+    }
   }
 
   function clearColumnFilters(column: InventoryTableColumnKey) {
@@ -295,43 +318,118 @@ export function InventoryTableView(props: {
             </span>
           ) : (
             <span>
-              Selection is ready for future bulk tag actions once the backend bulk mutation
-              endpoint lands.
+              Bulk tag actions apply to all selected rows, including any hidden by filters.
             </span>
+          )}
+          {exceedsBulkSelectionLimit ? (
+            <span className="table-selection-summary-accent">
+              Bulk tag actions currently support up to 100 selected rows per request.
+            </span>
+          ) : (
+            <span>Bulk tag actions currently support up to 100 rows per request.</span>
           )}
         </div>
 
-        <div className="table-toolbar-actions">
-          <button
-            className="secondary-button"
-            disabled={activeFilterCount === 0}
-            onClick={() => {
-              props.onFiltersChange(createDefaultInventoryTableFilters());
-              setActiveColumn(null);
-            }}
-            type="button"
-          >
-            Clear filters
-          </button>
-          <button
-            className="secondary-button"
-            disabled={props.items.length === 0}
-            onClick={props.onSelectAllVisible}
-            type="button"
-          >
-            Select all visible
-          </button>
-          <button
-            className="secondary-button"
-            disabled={totalSelectedCount === 0}
-            onClick={props.onClearSelection}
-            type="button"
-          >
-            Clear selection
-          </button>
-          <button className="secondary-button" disabled type="button">
-            Bulk tag actions pending backend
-          </button>
+        <div className="table-toolbar-controls">
+          <div className="table-toolbar-actions">
+            <button
+              className="secondary-button"
+              disabled={activeFilterCount === 0}
+              onClick={() => {
+                props.onFiltersChange(createDefaultInventoryTableFilters());
+                setActiveColumn(null);
+              }}
+              type="button"
+            >
+              Clear filters
+            </button>
+            <button
+              className="secondary-button"
+              disabled={props.items.length === 0}
+              onClick={props.onSelectAllVisible}
+              type="button"
+            >
+              Select all visible
+            </button>
+            <button
+              className="secondary-button"
+              disabled={totalSelectedCount === 0}
+              onClick={props.onClearSelection}
+              type="button"
+            >
+              Clear selection
+            </button>
+          </div>
+
+          <div className="table-bulk-actions">
+            <label className="field table-bulk-field">
+              <span>Bulk tags</span>
+              <input
+                aria-describedby={bulkTagsHintId}
+                className="text-input"
+                disabled={props.bulkTagsBusy}
+                onChange={(event) => setBulkTagsInput(event.target.value)}
+                placeholder="e.g. burn, trade"
+                type="text"
+                value={bulkTagsInput}
+              />
+            </label>
+            <span className="field-hint field-hint-info" id={bulkTagsHintId}>
+              Use comma-separated tags. These actions apply to every selected row.
+            </span>
+
+            <div className="table-bulk-action-buttons">
+              <button
+                className="secondary-button"
+                disabled={
+                  props.bulkTagsBusy ||
+                  totalSelectedCount === 0 ||
+                  exceedsBulkSelectionLimit ||
+                  parsedBulkTags.length === 0
+                }
+                onClick={() => void handleBulkAction("add_tags")}
+                type="button"
+              >
+                Add tags
+              </button>
+              <button
+                className="secondary-button"
+                disabled={
+                  props.bulkTagsBusy ||
+                  totalSelectedCount === 0 ||
+                  exceedsBulkSelectionLimit ||
+                  parsedBulkTags.length === 0
+                }
+                onClick={() => void handleBulkAction("remove_tags")}
+                type="button"
+              >
+                Remove tags
+              </button>
+              <button
+                className="secondary-button"
+                disabled={
+                  props.bulkTagsBusy ||
+                  totalSelectedCount === 0 ||
+                  exceedsBulkSelectionLimit ||
+                  parsedBulkTags.length === 0
+                }
+                onClick={() => void handleBulkAction("set_tags")}
+                type="button"
+              >
+                Replace tags
+              </button>
+              <button
+                className="secondary-button"
+                disabled={
+                  props.bulkTagsBusy || totalSelectedCount === 0 || exceedsBulkSelectionLimit
+                }
+                onClick={() => void handleBulkAction("clear_tags")}
+                type="button"
+              >
+                Clear tags
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

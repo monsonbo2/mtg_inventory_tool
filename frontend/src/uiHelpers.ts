@@ -1,5 +1,6 @@
 import { ApiClientError } from "./api";
 import type {
+  BulkInventoryItemOperation,
   FinishInput,
   FinishValue,
   InventoryAuditEvent,
@@ -206,6 +207,25 @@ export function getPatchSuccessMessage(
       return response.acquisition_price
         ? `Updated acquisition details for ${response.card_name} in ${inventoryLabel}.`
         : `Cleared acquisition details for ${response.card_name} in ${inventoryLabel}.`;
+  }
+}
+
+export function getBulkMutationSuccessMessage(
+  operation: BulkInventoryItemOperation,
+  updatedCount: number,
+  inventoryLabel: string,
+) {
+  const rowLabel = `${updatedCount} row${updatedCount === 1 ? "" : "s"}`;
+
+  switch (operation) {
+    case "add_tags":
+      return `Added tags on ${rowLabel} in ${inventoryLabel}.`;
+    case "remove_tags":
+      return `Removed tags from ${rowLabel} in ${inventoryLabel}.`;
+    case "set_tags":
+      return `Replaced tags on ${rowLabel} in ${inventoryLabel}.`;
+    case "clear_tags":
+      return `Cleared tags on ${rowLabel} in ${inventoryLabel}.`;
   }
 }
 

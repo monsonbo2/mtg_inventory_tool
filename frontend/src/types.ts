@@ -121,6 +121,18 @@ export interface PatchInventoryItemRequest {
   clear_tags?: boolean;
 }
 
+export type BulkInventoryItemOperation =
+  | "add_tags"
+  | "remove_tags"
+  | "set_tags"
+  | "clear_tags";
+
+export interface BulkInventoryItemMutationRequest {
+  operation: BulkInventoryItemOperation;
+  item_ids: number[];
+  tags?: string[];
+}
+
 export type InventoryPatchOperation =
   | "set_quantity"
   | "set_finish"
@@ -162,6 +174,14 @@ export interface InventoryItemMutationResponse {
 
 export interface InventoryItemPatchResponse extends InventoryItemMutationResponse {
   operation: InventoryPatchOperation;
+}
+
+export interface BulkInventoryItemMutationResponse {
+  inventory: string;
+  operation: BulkInventoryItemOperation;
+  requested_item_ids: number[];
+  updated_item_ids: number[];
+  updated_count: number;
 }
 
 export interface SearchCardsParams {

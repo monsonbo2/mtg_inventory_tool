@@ -3,6 +3,7 @@ import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import {
   addInventoryItem,
+  bulkMutateInventoryItems,
   listInventories,
   listInventoryAudit,
   listInventoryItems,
@@ -32,6 +33,7 @@ import {
 } from "./tableViewHelpers";
 import type {
   AddInventoryItemRequest,
+  BulkInventoryItemOperation,
   CatalogNameSearchRow,
   CatalogSearchRow,
   InventoryAuditEvent,
@@ -41,6 +43,7 @@ import type {
 } from "./types";
 import {
   decimalToNumber,
+  getBulkMutationSuccessMessage,
   formatUsd,
   getPatchSuccessMessage,
   resolveSelectedInventorySlug,
@@ -59,6 +62,7 @@ const AUTOCOMPLETE_MIN_QUERY_LENGTH = 2;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 const AUTOCOMPLETE_LIMIT = 5;
 const SEARCH_GROUP_LIMIT = 8;
+const BULK_MUTATION_MAX_ITEMS = 100;
 
 export default function App() {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
@@ -80,6 +84,7 @@ export default function App() {
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
+  const [bulkTagsBusy, setBulkTagsBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [collectionView, setCollectionView] = useState<"compact" | "table" | "detailed">("compact");
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
@@ -621,6 +626,62 @@ export default function App() {
     setSelectedItemIds([]);
   }
 
+  async function handleBulkTagMutation(
+    operation: BulkInventoryItemOperation,
+    tags: string[],
+  ) {
+    const inventorySlug = requireSelectedInventory(
+      "Select an inventory before editing collection rows.",
+    );
+    if (!inventorySlug) {
+      return false;
+    }
+
+    if (!selectedItemIds.length) {
+      showNotice("Select at least one row before running a bulk tag action.");
+      return false;
+    }
+
+    if (selectedItemIds.length > BULK_MUTATION_MAX_ITEMS) {
+      showNotice(
+        `Bulk tag actions currently support up to ${BULK_MUTATION_MAX_ITEMS} rows at a time.`,
+        "error",
+      );
+      return false;
+    }
+
+    if (operation !== "clear_tags" && tags.length === 0) {
+      showNotice("Enter at least one tag before running this bulk tag action.");
+      return false;
+    }
+
+    setBulkTagsBusy(true);
+    setNotice(null);
+
+    try {
+      const response = await bulkMutateInventoryItems(inventorySlug, {
+        operation,
+        item_ids: selectedItemIds,
+        ...(operation === "clear_tags" ? {} : { tags }),
+      });
+      await refreshAfterMutation(
+        inventorySlug,
+        getBulkMutationSuccessMessage(
+          response.operation,
+          response.updated_count,
+          describeInventory(inventorySlug),
+        ),
+      );
+      setSelectedItemIds([]);
+      return true;
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not apply the bulk tag action."), "error");
+      return false;
+    } finally {
+      setBulkTagsBusy(false);
+    }
+  }
+
   const selectedInventoryRow =
     inventories.find((inventory) => inventory.slug === selectedInventory) ?? null;
   const totalEstimatedValue = items.reduce(
@@ -701,6 +762,8 @@ export default function App() {
             tableFilters={tableFilters}
             tableItems={visibleTableItems}
             tableSort={tableSort}
+            bulkTagsBusy={bulkTagsBusy}
+            onBulkTagsSubmit={handleBulkTagMutation}
             onClearSelectedItems={handleClearSelectedItems}
             onClearVisibleSelectedItems={handleClearVisibleSelectedItems}
             onCollectionViewChange={handleCollectionViewChange}

@@ -378,6 +378,37 @@ button {
   justify-content: flex-end;
 }
 
+.table-toolbar-controls,
+.table-bulk-actions,
+.table-bulk-action-buttons {
+  display: grid;
+  gap: 12px;
+}
+
+.table-toolbar-controls {
+  justify-items: end;
+}
+
+.table-bulk-actions {
+  width: min(100%, 480px);
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 18px;
+  background: rgba(8, 17, 31, 0.42);
+}
+
+.table-bulk-field {
+  min-width: min(100%, 320px);
+}
+
+.table-bulk-action-buttons {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.table-bulk-action-buttons .secondary-button {
+  width: 100%;
+}
+
 .table-query-panel {
   display: grid;
   gap: 14px;
@@ -1542,6 +1573,16 @@ button {
   .table-toolbar-actions,
   .table-query-actions {
     justify-content: stretch;
+  }
+
+  .table-toolbar-controls {
+    justify-items: stretch;
+    width: 100%;
+  }
+
+  .table-bulk-actions,
+  .table-bulk-action-buttons {
+    width: 100%;
   }
 
   .table-filter-checklist {
