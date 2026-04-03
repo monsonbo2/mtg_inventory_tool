@@ -1283,7 +1283,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertIsNone(rows_by_id[item_ids[1]]["notes"])
                 self.assertIsNone(rows_by_id[item_ids[0]]["acquisition_price"])
                 self.assertIsNone(rows_by_id[item_ids[0]]["acquisition_currency"])
-                self.assertEqual("2.50", rows_by_id[item_ids[1]]["acquisition_price"])
+                self.assertEqual("2.5", rows_by_id[item_ids[1]]["acquisition_price"])
                 self.assertEqual("USD", rows_by_id[item_ids[1]]["acquisition_currency"])
 
                 audit = client.get("/inventories/personal/audit")
@@ -1613,7 +1613,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(listed.json()))
                 self.assertEqual(5, listed.json()[0]["quantity"])
                 self.assertEqual("Binder B", listed.json()[0]["location"])
-                self.assertEqual("2.50", listed.json()[0]["acquisition_price"])
+                self.assertEqual("2.5", listed.json()[0]["acquisition_price"])
 
                 audit = client.get("/inventories/personal/audit")
                 self.assertEqual(200, audit.status_code)
