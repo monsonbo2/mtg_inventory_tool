@@ -404,6 +404,68 @@ class WebApiTest(unittest.TestCase):
             )
             connection.commit()
 
+    def _insert_catalog_card(
+        self,
+        db_path: Path,
+        *,
+        scryfall_id: str,
+        oracle_id: str,
+        name: str,
+        set_code: str = "tst",
+        set_name: str = "Test Set",
+        collector_number: str = "10",
+        lang: str = "en",
+        released_at: str = "2026-04-01",
+        finishes_json: str = '["normal","foil"]',
+        image_uris_json: str | None = None,
+        layout: str = "normal",
+        is_default_add_searchable: int = 1,
+    ) -> None:
+        if image_uris_json is None:
+            image_uris_json = (
+                '{"small":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-small.jpg","normal":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-normal.jpg"}'
+            )
+
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    is_default_add_searchable
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    is_default_add_searchable,
+                ),
+            )
+            connection.commit()
+
     def _seed_oracle_printings(self, db_path: Path) -> None:
         with connect(db_path) as connection:
             connection.executemany(
@@ -735,6 +797,90 @@ class WebApiTest(unittest.TestCase):
                 missing = client.get("/cards/oracle/missing-oracle/printings")
                 self.assertEqual(404, missing.status_code)
                 self.assertEqual("not_found", missing.json()["error"]["code"])
+
+    def test_demo_api_filters_default_add_scope_for_catalog_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scope-allowed",
+                    oracle_id="api-scope-allowed-oracle",
+                    name="API Scope Probe Card",
+                    collector_number="21",
+                    layout="reversible_card",
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scope-excluded",
+                    oracle_id="api-scope-excluded-oracle",
+                    name="API Scope Probe Token",
+                    collector_number="22",
+                    layout="token",
+                    is_default_add_searchable=0,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scoped-ja",
+                    oracle_id="api-scoped-oracle",
+                    name="API Scoped Lookup Card",
+                    collector_number="31",
+                    lang="ja",
+                    released_at="2026-04-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-scoped-ja-small.jpg","normal":"https://example.test/cards/api-scoped-ja-normal.jpg"}',
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-scoped-en-excluded",
+                    oracle_id="api-scoped-oracle",
+                    name="API Scoped Lookup Card",
+                    collector_number="32",
+                    lang="en",
+                    released_at="2026-05-01",
+                    image_uris_json='{"small":"https://example.test/cards/api-scoped-en-small.jpg","normal":"https://example.test/cards/api-scoped-en-normal.jpg"}',
+                    is_default_add_searchable=0,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-excluded-only",
+                    oracle_id="api-excluded-only-oracle",
+                    name="API Excluded Only Card",
+                    collector_number="41",
+                    layout="emblem",
+                    is_default_add_searchable=0,
+                )
+
+                search = client.get("/cards/search", params={"query": "API Scope Probe"})
+                self.assertEqual(200, search.status_code)
+                self.assertEqual(["api-scope-allowed"], [row["scryfall_id"] for row in search.json()])
+
+                name_search = client.get("/cards/search/names", params={"query": "API Scoped Lookup"})
+                self.assertEqual(200, name_search.status_code)
+                self.assertEqual(1, len(name_search.json()))
+                self.assertEqual("api-scoped-oracle", name_search.json()[0]["oracle_id"])
+                self.assertEqual(1, name_search.json()[0]["printings_count"])
+                self.assertEqual(["ja"], name_search.json()[0]["available_languages"])
+                self.assertEqual(
+                    "https://example.test/cards/api-scoped-ja-small.jpg",
+                    name_search.json()[0]["image_uri_small"],
+                )
+
+                default_printings = client.get("/cards/oracle/api-scoped-oracle/printings")
+                self.assertEqual(200, default_printings.status_code)
+                self.assertEqual(["api-scoped-ja"], [row["scryfall_id"] for row in default_printings.json()])
+
+                all_printings = client.get(
+                    "/cards/oracle/api-scoped-oracle/printings",
+                    params={"lang": "all"},
+                )
+                self.assertEqual(200, all_printings.status_code)
+                self.assertEqual(["api-scoped-ja"], [row["scryfall_id"] for row in all_printings.json()])
+
+                excluded = client.get("/cards/oracle/api-excluded-only-oracle/printings")
+                self.assertEqual(404, excluded.status_code)
+                self.assertEqual("not_found", excluded.json()["error"]["code"])
 
     def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

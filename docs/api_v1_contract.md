@@ -76,6 +76,15 @@ preserve for the first API-backed version of the project.
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language
     values rather than enforcing a strict enum at the HTTP layer
+- `GET /cards/search` and `GET /cards/search/names`
+  - app-facing search is intended to default to the mainline card-add flow
+    scope rather than the full raw catalog
+  - that default scope excludes auxiliary catalog objects such as tokens,
+    emblems, art-series rows, planar cards, schemes, and vanguards, as well as
+    digital-only, non-paper, and oversized prints
+  - deferred follow-up: add an explicit opt-in broad catalog mode such as
+    `scope=all` so callers can intentionally search auxiliary catalog objects
+    like tokens, emblems, and art-series rows when needed
 - `GET /cards/search` query `query`
   - must be non-empty after trimming whitespace
   - blank or whitespace-only search queries return `400 validation_error`
@@ -85,6 +94,8 @@ preserve for the first API-backed version of the project.
   - includes `available_languages` for the matched card
 - `GET /cards/oracle/{oracle_id}/printings`
   - returns printing-level rows for one `oracle_id`
+  - uses the same default mainline add-flow scope as the app-facing search
+    routes before language filtering is applied
   - defaults to English printings when available
   - accepts `lang=all` to include all available catalog languages
   - accepts specific language codes such as `lang=ja` to request one language

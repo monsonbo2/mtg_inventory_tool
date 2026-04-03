@@ -88,6 +88,68 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
             connection.commit()
 
+    def _insert_catalog_card(
+        self,
+        db_path: Path,
+        *,
+        scryfall_id: str,
+        oracle_id: str,
+        name: str,
+        set_code: str = "tst",
+        set_name: str = "Test Set",
+        collector_number: str = "1",
+        lang: str = "en",
+        released_at: str = "2026-04-01",
+        finishes_json: str = '["nonfoil","foil"]',
+        image_uris_json: str | None = None,
+        layout: str = "normal",
+        is_default_add_searchable: int = 1,
+    ) -> None:
+        if image_uris_json is None:
+            image_uris_json = (
+                '{"small":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-small.jpg","normal":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-normal.jpg"}'
+            )
+
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO mtg_cards (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    is_default_add_searchable
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scryfall_id,
+                    oracle_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang,
+                    released_at,
+                    finishes_json,
+                    image_uris_json,
+                    layout,
+                    is_default_add_searchable,
+                ),
+            )
+            connection.commit()
+
     def _insert_inventory_item(
         self,
         db_path: Path,
@@ -645,6 +707,36 @@ class InventoryServiceTest(RepoSmokeTestCase):
             with self.assertRaisesRegex(ValidationError, "query is required"):
                 search_cards(db_path, query="   ", exact=False, limit=10)
 
+    def test_search_cards_filters_to_default_add_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            for scryfall_id, layout, allowed in (
+                ("scope-augment", "augment", 1),
+                ("scope-host", "host", 1),
+                ("scope-reversible", "reversible_card", 1),
+                ("scope-token", "token", 0),
+                ("scope-emblem", "emblem", 0),
+                ("scope-art", "art_series", 0),
+            ):
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id=scryfall_id,
+                    oracle_id=f"{scryfall_id}-oracle",
+                    name=f"Scope Probe {layout}",
+                    collector_number=scryfall_id,
+                    layout=layout,
+                    is_default_add_searchable=allowed,
+                )
+
+            rows = search_cards(db_path, query="Scope Probe", exact=False, limit=20)
+
+            self.assertEqual(
+                ["scope-augment", "scope-host", "scope-reversible"],
+                [row.scryfall_id for row in rows],
+            )
+
     def test_search_card_names_groups_by_oracle_id_and_surfaces_languages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -718,6 +810,50 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
             self.assertEqual(
                 "https://example.test/cards/grouped-search-en-normal.jpg",
+                rows[0].image_uri_normal,
+            )
+
+    def test_search_card_names_filters_group_counts_languages_and_representative_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="scoped-group-ja",
+                oracle_id="scoped-group-oracle",
+                name="Scoped Group Card",
+                collector_number="21",
+                lang="ja",
+                released_at="2026-04-01",
+                image_uris_json='{"small":"https://example.test/cards/scoped-group-ja-small.jpg","normal":"https://example.test/cards/scoped-group-ja-normal.jpg"}',
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="scoped-group-en-excluded",
+                oracle_id="scoped-group-oracle",
+                name="Scoped Group Card",
+                collector_number="22",
+                lang="en",
+                released_at="2026-05-01",
+                image_uris_json='{"small":"https://example.test/cards/scoped-group-en-small.jpg","normal":"https://example.test/cards/scoped-group-en-normal.jpg"}',
+                is_default_add_searchable=0,
+            )
+
+            rows = search_card_names(db_path, query="Scoped Group", exact=False, limit=10)
+
+            self.assertEqual(1, len(rows))
+            self.assertEqual("scoped-group-oracle", rows[0].oracle_id)
+            self.assertEqual("Scoped Group Card", rows[0].name)
+            self.assertEqual(1, rows[0].printings_count)
+            self.assertEqual(["ja"], rows[0].available_languages)
+            self.assertEqual(
+                "https://example.test/cards/scoped-group-ja-small.jpg",
+                rows[0].image_uri_small,
+            )
+            self.assertEqual(
+                "https://example.test/cards/scoped-group-ja-normal.jpg",
                 rows[0].image_uri_normal,
             )
 
@@ -831,6 +967,59 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'missing-oracle'"):
                 list_card_printings_for_oracle(db_path, "missing-oracle")
+
+    def test_list_card_printings_for_oracle_filters_to_default_add_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-scope-ja",
+                oracle_id="lookup-scope-oracle",
+                name="Scoped Lookup Card",
+                collector_number="31",
+                lang="ja",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-scope-en-excluded",
+                oracle_id="lookup-scope-oracle",
+                name="Scoped Lookup Card",
+                collector_number="32",
+                lang="en",
+                released_at="2026-05-01",
+                is_default_add_searchable=0,
+            )
+
+            default_rows = list_card_printings_for_oracle(db_path, "lookup-scope-oracle")
+            self.assertEqual(["lookup-scope-ja"], [row.scryfall_id for row in default_rows])
+
+            all_rows = list_card_printings_for_oracle(db_path, "lookup-scope-oracle", lang="all")
+            self.assertEqual(["lookup-scope-ja"], [row.scryfall_id for row in all_rows])
+
+            english_rows = list_card_printings_for_oracle(db_path, "lookup-scope-oracle", lang="en")
+            self.assertEqual([], [row.scryfall_id for row in english_rows])
+
+    def test_list_card_printings_for_oracle_raises_not_found_when_all_rows_are_out_of_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-excluded-token",
+                oracle_id="lookup-excluded-oracle",
+                name="Excluded Lookup Card",
+                collector_number="41",
+                layout="token",
+                is_default_add_searchable=0,
+            )
+
+            with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'lookup-excluded-oracle'"):
+                list_card_printings_for_oracle(db_path, "lookup-excluded-oracle")
 
     def test_create_inventory_returns_typed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

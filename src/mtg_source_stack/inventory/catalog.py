@@ -21,7 +21,7 @@ from .normalize import (
     validate_supported_finish,
     validate_limit_value,
 )
-from .query_catalog import add_catalog_filters, build_catalog_search_fts_query
+from .query_catalog import add_catalog_filters, add_default_add_search_scope_filter, build_catalog_search_fts_query
 from .response_models import CatalogNameSearchRow, CatalogSearchRow
 
 
@@ -172,6 +172,7 @@ def search_cards(
             finish=finish,
             lang=lang,
         )
+        add_default_add_search_scope_filter(where_parts)
 
         if not exact and fts_query is not None:
             params = [fts_query, *params]
@@ -255,6 +256,8 @@ def search_card_names(
                 """
                 search_join = "LEFT JOIN search_match ON search_match.scryfall_id = mtg_cards.scryfall_id"
 
+        add_default_add_search_scope_filter(where_parts)
+
         if not exact and fts_query is not None:
             params = [fts_query, *params]
         params.extend([query, f"{query}%", limit])
@@ -289,6 +292,7 @@ def search_card_names(
                     COUNT(*) AS printings_count
                 FROM mtg_cards
                 WHERE oracle_id IN (SELECT oracle_id FROM matched_groups)
+                  AND COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
                 GROUP BY oracle_id
             ),
             representative_rows AS (
@@ -315,6 +319,7 @@ def search_card_names(
                     ) AS row_number
                 FROM mtg_cards
                 INNER JOIN matched_groups ON matched_groups.oracle_id = mtg_cards.oracle_id
+                WHERE COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
             )
             SELECT
                 representative_rows.oracle_id,
@@ -346,6 +351,7 @@ def search_card_names(
             SELECT oracle_id, lang
             FROM mtg_cards
             WHERE oracle_id IN ({placeholders})
+              AND COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
             ORDER BY
                 CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
                 LOWER(lang),
@@ -402,6 +408,7 @@ def list_card_printings_for_oracle(
                 image_uris_json
             FROM mtg_cards
             WHERE oracle_id = ?
+              AND COALESCE(mtg_cards.is_default_add_searchable, 1) = 1
             ORDER BY
                 COALESCE(released_at, '') DESC,
                 CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,

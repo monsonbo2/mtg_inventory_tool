@@ -54,6 +54,10 @@ def add_catalog_filters(
         where_parts.append("(" + " OR ".join(finish_parts) + ")")
 
 
+def add_default_add_search_scope_filter(where_parts: list[str], *, table_name: str = "mtg_cards") -> None:
+    where_parts.append(f"COALESCE({table_name}.is_default_add_searchable, 1) = 1")
+
+
 def build_catalog_search_fts_query(query: str) -> str | None:
     tokens = [token.lower() for token in FTS_TOKEN_RE.findall(query)]
     if not tokens:
