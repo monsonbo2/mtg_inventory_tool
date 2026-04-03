@@ -13,9 +13,14 @@ This project is a local-first MTG inventory system with:
 - contract artifacts in `contracts/`
 - demo/bootstrap helpers for frontend work
 
-This checkout is currently on the Phase 2 backend rollout branch,
-`backend_phase_2`, which layers inventory-scoped access control and
-shared-service onboarding on top of the earlier demo/shared-service work.
+This file was last refreshed during the Phase 2 backend rollout/integration
+window. It captures the current runtime baseline and the work that was being
+merged toward `master` at that time.
+
+Do not assume the checked-out branch is still `backend_phase_2`. After that
+merge point, new feature work may happen on multiple branches in parallel.
+Always confirm the live branch and local state with git before treating any
+branch-specific note in this file as current.
 
 ## Current Direction
 
@@ -33,9 +38,9 @@ The intended first-live shape is:
 
 See `docs/shared_service_deploy.md` for the detailed deployment runbook.
 
-## Recent Milestones
+## Recent Baseline Milestones
 
-The recent branch history around the current Phase 2 work includes:
+The recent history that established the current backend baseline includes:
 
 - `a4452d2` Add inventory membership foundations
 - `ab1b1db` Fix health previews and blank location responses
@@ -50,6 +55,11 @@ The recent branch history around the current Phase 2 work includes:
 - `3c7aff1` Document oracle-id default printing policy
 - `c88f80a` Make full-catalog demo bootstrap resolver-driven
 - `4d8e97f` Fix grouped card-name search parameter ordering
+
+Treat these as orientation markers for the currently intended baseline, not as a
+promise that the active branch still contains only this exact work. After the
+Phase 2 merge, expect follow-on feature branches to build on top of these
+milestones rather than replace them.
 
 Do not assume this repo is still in “local demo only” mode, and do not assume
 search/bootstrap behavior is still pre-Phase-2.
@@ -145,14 +155,22 @@ Important current search behavior:
   `scope=all`.
 - The default `oracle_id` printing resolver is now policy-backed and should be
   treated as intentional behavior:
-  - stay inside the default add-search scope unless the caller opts into
-    `scope=all`
+  - quick-add by `oracle_id` stays inside the default add-search scope
   - honor explicit `lang`, `set_code`, `collector_number`, and finish
     compatibility constraints
   - when `lang` is omitted, prefer English
   - within viable candidates, prefer mainstream paper printings before more
     promo-like ones
   - then prefer newer printings with stable tie-breaks
+- `scope=all` is for broader search and printing discovery. If the user
+  intentionally wants an auxiliary or non-default printing, the frontend should
+  discover it with `scope=all` and then add it by exact `scryfall_id` instead
+  of expecting quick-add by `oracle_id` to broaden automatically.
+- Migration `0008` added the durable catalog-classification fields that power
+  the default add-search scope. On an upgraded pre-`0008` database, run a fresh
+  Scryfall bulk import before relying on the narrowed default-scope behavior for
+  tokens, emblems, art-series rows, digital-only rows, and other auxiliary
+  catalog objects.
 
 If you change search or bootstrap behavior, keep this policy and the published
 contract in sync.
@@ -195,6 +213,29 @@ Frontend contract surfaces to keep in sync when backend behavior changes:
 - relevant files in `contracts/demo_payloads/`
 - `docs/frontend_handoff.md`
 - `frontend/src/types.ts` when frontend-facing shapes change
+
+Useful file map for common feature work:
+
+- access control and membership enforcement:
+  - `src/mtg_source_stack/inventory/access.py`
+  - `src/mtg_source_stack/api/dependencies.py`
+  - `src/mtg_source_stack/api/routes.py`
+- catalog search and printing resolution:
+  - `src/mtg_source_stack/inventory/catalog.py`
+  - `src/mtg_source_stack/inventory/query_catalog.py`
+  - `tests/test_inventory_service.py`
+  - `tests/test_web_api.py`
+- inventory mutation behavior and response shaping:
+  - `src/mtg_source_stack/inventory/mutations.py`
+  - `src/mtg_source_stack/inventory/response_models.py`
+  - `src/mtg_source_stack/api/response_models.py`
+  - `tests/test_inventory_service.py`
+  - `tests/test_web_api.py`
+- importer and schema/migration behavior:
+  - `src/mtg_source_stack/importer/scryfall.py`
+  - `src/mtg_source_stack/db/migrations/`
+  - `tests/test_importer.py`
+  - `tests/test_schema_migrations.py`
 
 ## Canonical Validation Commands
 
@@ -317,24 +358,29 @@ Prefer small extractions and targeted tests over broad rewrites.
   when the implementing work is actually committed/pushed or otherwise clearly
   delivered.
 
-## Known Near-Term Priorities
+## Likely Post-Phase-2 Workstreams
 
-At the time this file was updated, the next likely priorities are:
+After the Phase 2 merge, expect new work to happen on focused feature branches
+rather than on one long-lived integration branch. This file cannot predict which
+one is active in your checkout, so treat GitHub issues, the branch description,
+and recent commits as the live source of truth for current branch priorities.
 
-1. Merge/review `backend_phase_2` and do the real shared-service dress
-   rehearsal behind the actual reverse proxy and auth headers.
-2. Close out issue hygiene for the current branch state, especially around:
+The broad workstreams that were expected next are:
+
+1. Shared-service rollout validation behind the real reverse proxy and verified
+   auth headers.
+2. Issue and runbook hygiene around recently landed work such as:
    - full-catalog demo bootstrap
    - playable-card default search scope
    - documented `oracle_id` default printing policy
-3. Finish rollout/runbook validation for the inventory membership model and the
-   `POST /me/bootstrap` first-run flow.
-4. If a next product feature starts, bulk add / pasted list import is the most
-   likely candidate and should build on the existing `oracle_id` resolver.
-5. Larger reporting/performance work is still later, not the immediate next
-   step.
+3. Membership/bootstrap follow-through, especially the `POST /me/bootstrap`
+   first-run flow and operator runbooks.
+4. Next product features such as bulk add or pasted list import, likely
+   building on the existing `oracle_id` resolver and bulk tag mutation shape.
+5. Later reporting/performance work once rollout behavior is stable.
 
-If your task touches one of these areas, assume it is active design territory.
+If your task touches one of these areas, assume it is active design territory,
+but verify the exact branch goal before making broader architectural changes.
 
 ## Things Not To Assume
 
