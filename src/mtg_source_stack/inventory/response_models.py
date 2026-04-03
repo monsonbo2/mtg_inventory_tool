@@ -120,6 +120,33 @@ class BulkInventoryItemMutationResult(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class InventoryTransferItemResult(ResponseModel):
+    source_item_id: int
+    target_item_id: int | None
+    status: str
+    source_removed: bool
+    message: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryTransferResult(ResponseModel):
+    source_inventory: str
+    target_inventory: str
+    mode: str
+    dry_run: bool
+    selection_kind: str
+    requested_item_ids: list[int] | None
+    requested_count: int
+    copied_count: int
+    moved_count: int
+    merged_count: int
+    failed_count: int
+    results_returned: int
+    results_truncated: bool
+    results: list[InventoryTransferItemResult]
+
+
+@dataclass(frozen=True, slots=True)
 class InventoryAuditEvent(ResponseModel):
     id: int
     inventory: str

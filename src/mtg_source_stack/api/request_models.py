@@ -121,6 +121,27 @@ BULK_CONDITION_CODE_DESCRIPTION = (
     "Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized. "
     "Omit this field for every other bulk operation."
 )
+TRANSFER_REQUEST_DESCRIPTION = (
+    "Transfer selected inventory rows, or the entire source inventory, into another inventory. "
+    "The live mutation is atomic and all-or-nothing; if any requested row would fail, no rows are "
+    "transferred. Use dry_run=true to preview copy, move, merge, or failure outcomes without "
+    "mutating either inventory."
+)
+TRANSFER_MODE_DESCRIPTION = "Transfer mode. Use `copy` to leave source rows in place or `move` to remove them."
+TRANSFER_CONFLICT_DESCRIPTION = (
+    "Conflict policy for target-inventory row identity collisions. Use `fail` to reject duplicate rows "
+    "or `merge` to combine rows using the existing inventory merge rules."
+)
+TRANSFER_KEEP_ACQUISITION_DESCRIPTION = (
+    "Only applies when on_conflict is `merge`. Choose whether merged target rows keep the source row "
+    "or target row acquisition metadata."
+)
+TRANSFER_DRY_RUN_DESCRIPTION = (
+    "When true, return the planned transfer outcomes without mutating either inventory."
+)
+TRANSFER_ALL_ITEMS_DESCRIPTION = (
+    "When true, transfer every row in the source inventory. Use either item_ids or all_items=true, not both."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -212,3 +233,21 @@ class BulkInventoryItemMutationRequest(ApiBaseModel):
         default=None,
         description=BULK_KEEP_ACQUISITION_DESCRIPTION,
     )
+
+
+class InventoryTransferRequest(ApiBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": TRANSFER_REQUEST_DESCRIPTION},
+    )
+
+    target_inventory_slug: str
+    mode: Literal["copy", "move"] = Field(description=TRANSFER_MODE_DESCRIPTION)
+    item_ids: list[int] | None = Field(default=None, min_length=1, max_length=100)
+    all_items: bool = Field(default=False, description=TRANSFER_ALL_ITEMS_DESCRIPTION)
+    on_conflict: Literal["fail", "merge"] = Field(description=TRANSFER_CONFLICT_DESCRIPTION)
+    keep_acquisition: Literal["target", "source"] | None = Field(
+        default=None,
+        description=TRANSFER_KEEP_ACQUISITION_DESCRIPTION,
+    )
+    dry_run: bool = Field(default=False, description=TRANSFER_DRY_RUN_DESCRIPTION)

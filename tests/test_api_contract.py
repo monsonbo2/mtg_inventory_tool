@@ -16,6 +16,7 @@ from mtg_source_stack.api_contract import api_error_payload, api_error_status
 from mtg_source_stack.api.request_models import (
     AddInventoryItemRequest,
     BulkInventoryItemMutationRequest,
+    InventoryTransferRequest,
     PatchInventoryItemRequest,
 )
 from mtg_source_stack.api.response_models import (
@@ -24,6 +25,7 @@ from mtg_source_stack.api.response_models import (
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
     DefaultInventoryBootstrapResponse,
+    InventoryTransferResponse,
     OwnedInventoryRowResponse,
     SetAcquisitionResponse,
     SetFinishResponse,
@@ -329,6 +331,57 @@ class ApiContractTest(RepoSmokeTestCase):
         )
         self.assertEqual("add_tags", bulk_response.operation)
         self.assertEqual([12, 44], bulk_response.updated_item_ids)
+
+        transfer_schema = InventoryTransferRequest.model_json_schema()
+        transfer_properties = transfer_schema["properties"]
+        self.assertIn("Transfer selected inventory rows, or the entire source inventory", transfer_schema["description"])
+        self.assertEqual(["copy", "move"], transfer_properties["mode"]["enum"])
+        self.assertEqual(["fail", "merge"], transfer_properties["on_conflict"]["enum"])
+        self.assertEqual(False, transfer_properties["all_items"]["default"])
+        self.assertIn(
+            "Only applies when on_conflict is `merge`",
+            transfer_properties["keep_acquisition"]["description"],
+        )
+        self.assertFalse(transfer_properties["dry_run"]["default"])
+
+        transfer_response = InventoryTransferResponse.model_validate(
+            {
+                "source_inventory": "source",
+                "target_inventory": "target",
+                "mode": "move",
+                "dry_run": True,
+                "selection_kind": "all_items",
+                "requested_item_ids": None,
+                "requested_count": 2,
+                "copied_count": 0,
+                "moved_count": 1,
+                "merged_count": 0,
+                "failed_count": 1,
+                "results_returned": 2,
+                "results_truncated": False,
+                "results": [
+                    {
+                        "source_item_id": 12,
+                        "target_item_id": None,
+                        "status": "would_move",
+                        "source_removed": True,
+                        "message": None,
+                    },
+                    {
+                        "source_item_id": 27,
+                        "target_item_id": 44,
+                        "status": "would_fail",
+                        "source_removed": False,
+                        "message": "conflict",
+                    },
+                ],
+            }
+        )
+        self.assertTrue(transfer_response.dry_run)
+        self.assertEqual("all_items", transfer_response.selection_kind)
+        self.assertIsNone(transfer_response.requested_item_ids)
+        self.assertEqual("would_move", transfer_response.results[0].status)
+        self.assertEqual("would_fail", transfer_response.results[1].status)
 
     def test_patch_contract_publishes_single_operation_rule_and_discriminator(self) -> None:
         patch_schema = PatchInventoryItemRequest.model_json_schema()

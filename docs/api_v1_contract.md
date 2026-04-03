@@ -41,6 +41,17 @@ preserve for the first API-backed version of the project.
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
 - The current bulk implementation is transactional and all-or-nothing: if
   validation or item lookup fails, no rows in the batch are updated.
+- `POST /inventories/{source_inventory_slug}/transfer` returns a stable
+  transfer envelope with source/target inventory slugs, summary counts,
+  selection metadata, and ordered per-item results.
+- Transfer `dry_run=true` previews the planned copy, move, merge, or failure
+  outcome for each requested source row without mutating either inventory.
+- Transfer responses distinguish between selected-row requests and whole-source
+  requests with `selection_kind`.
+- Whole-inventory transfer responses may truncate the returned `results` list
+  while still reporting full `requested_count` and summary counts.
+- Live transfer requests are transactional and all-or-nothing: if any planned
+  row would fail, neither the source nor target inventory is mutated.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,
@@ -157,6 +168,34 @@ preserve for the first API-backed version of the project.
   - if any requested condition change would collide with an existing inventory
     row, the batch returns `409 conflict` unless `merge=true`; on conflict, no
     rows in the batch are updated
+- `POST /inventories/{source_inventory_slug}/transfer`
+  - transfers selected source inventory rows, or the entire source inventory,
+    into `target_inventory_slug`
+  - `mode` accepts `copy` or `move`
+  - use exactly one of:
+    - `item_ids`, which must be non-empty and unique
+    - `all_items=true`, which selects every row in the source inventory
+  - `on_conflict` accepts `fail` or `merge`
+  - `keep_acquisition` only applies when `on_conflict=merge`
+  - `dry_run=true` returns the planned per-row outcomes without mutating either
+    inventory
+  - when `all_items=true`, an empty source inventory returns `200` with zero
+    counts rather than an error
+  - `copy` leaves source rows in place
+  - `move` removes source rows only after the target-side work succeeds
+  - `on_conflict=fail` returns `409 conflict` when a transferred row would
+    collide with an existing row identity in the target inventory
+  - `on_conflict=merge` uses the existing row merge rules:
+    quantity adds, tags merge, notes merge, and acquisition may require an
+    explicit `keep_acquisition` choice
+  - live transfer requests are atomic across both inventories; on conflict or
+    validation failure, no source rows are removed and no target rows are
+    created or updated
+  - responses include:
+    - `selection_kind` of `items` or `all_items`
+    - full summary counts
+    - `results_returned` and `results_truncated` so large whole-inventory
+      previews can stay bounded without losing summary accuracy
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For
@@ -255,6 +294,9 @@ before the generic 500 envelope is returned.
   `PATCH /inventories/{inventory_slug}/items/{item_id}`, and
   `DELETE /inventories/{inventory_slug}/items/{item_id}` require inventory
   write access.
+- `POST /inventories/{source_inventory_slug}/transfer` requires write access to
+  both the source inventory in the path and the target inventory in the
+  request body; global `admin` bypasses both checks.
 - `POST /inventories` still requires a global `editor` or `admin`, and the
   creator is automatically granted `owner` membership on the new inventory.
 - `POST /me/bootstrap` requires a global `editor` or `admin`, creates one

@@ -16,6 +16,7 @@ from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER
 from mtg_source_stack.inventory.response_models import (
     AddCardResult,
     BulkInventoryItemMutationResult,
+    InventoryTransferResult,
     MergeRowsResult,
     RemoveCardResult,
     SetAcquisitionResult,
@@ -52,6 +53,7 @@ from mtg_source_stack.inventory.service import (
     set_quantity,
     set_tags,
     split_row,
+    transfer_inventory_items,
     valuation_filtered,
 )
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
@@ -2771,6 +2773,509 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     condition_code="LP",
                     keep_acquisition="target",
                 )
+
+    def test_transfer_inventory_items_dry_run_reports_copy_merge_and_failure_without_mutating_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="merge-card", collector_number="2")
+            self._insert_test_card(db_path, scryfall_id="fail-card", collector_number="3")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="copy-card",
+                quantity=2,
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="merge-card",
+                quantity=1,
+                location="Binder B",
+                acquisition_price="1.00",
+                acquisition_currency="USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="fail-card",
+                quantity=1,
+                location="Binder C",
+                acquisition_price="5.00",
+                acquisition_currency="USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="target",
+                scryfall_id="merge-card",
+                quantity=3,
+                location="Binder B",
+                acquisition_price="1.00",
+                acquisition_currency="USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="target",
+                scryfall_id="fail-card",
+                quantity=4,
+                location="Binder C",
+                acquisition_price="7.50",
+                acquisition_currency="USD",
+            )
+            with connect(db_path) as connection:
+                source_item_ids = [
+                    int(row["id"])
+                    for row in connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        ORDER BY ii.id
+                        """
+                    ).fetchall()
+                ]
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="move",
+                item_ids=source_item_ids,
+                on_conflict="merge",
+                dry_run=True,
+            )
+            self.assertIsInstance(result, InventoryTransferResult)
+            self.assertTrue(result.dry_run)
+            self.assertEqual("items", result.selection_kind)
+            self.assertEqual(source_item_ids, result.requested_item_ids)
+            self.assertEqual(0, result.copied_count)
+            self.assertEqual(1, result.moved_count)
+            self.assertEqual(1, result.merged_count)
+            self.assertEqual(1, result.failed_count)
+            self.assertEqual(3, result.results_returned)
+            self.assertFalse(result.results_truncated)
+            self.assertEqual(
+                ["would_move", "would_merge", "would_fail"],
+                [row.status for row in result.results],
+            )
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(3, len(source_rows))
+            self.assertEqual(2, len(target_rows))
+
+    def test_transfer_inventory_items_copy_mode_copies_rows_and_writes_grouped_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="copy-card",
+                quantity=2,
+                location="Binder A",
+                tags_json='["deck"]',
+            )
+            with connect(db_path) as connection:
+                source_item_id = int(
+                    connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        """
+                    ).fetchone()["id"]
+                )
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="copy",
+                item_ids=[source_item_id],
+                on_conflict="fail",
+                actor_type="api",
+                actor_id="transfer-user",
+                request_id="req-transfer-copy",
+            )
+            self.assertEqual(1, result.copied_count)
+            self.assertEqual(0, result.merged_count)
+            self.assertEqual("copied", result.results[0].status)
+            self.assertFalse(result.results[0].source_removed)
+            self.assertIsNotNone(result.results[0].target_item_id)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(source_rows))
+            self.assertEqual(1, len(target_rows))
+            self.assertEqual(2, target_rows[0].quantity)
+            self.assertEqual(["deck"], target_rows[0].tags)
+
+            source_audit = list_inventory_audit_events(db_path, inventory_slug="source", limit=10)
+            target_audit = list_inventory_audit_events(db_path, inventory_slug="target", limit=10)
+            self.assertEqual("transfer_items", source_audit[0].action)
+            self.assertEqual("transfer_items", target_audit[0].action)
+            self.assertEqual("source", source_audit[0].metadata["role"])
+            self.assertEqual("target", target_audit[0].metadata["role"])
+            self.assertEqual("copy", source_audit[0].metadata["mode"])
+            self.assertEqual("copied", target_audit[0].metadata["status"])
+            self.assertEqual("req-transfer-copy", source_audit[0].request_id)
+            self.assertEqual("req-transfer-copy", target_audit[0].request_id)
+
+    def test_transfer_inventory_items_move_mode_merges_rows_and_keeps_selected_acquisition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="merge-card")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="merge-card",
+                quantity=2,
+                location="Binder A",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+                notes="source note",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="target",
+                scryfall_id="merge-card",
+                quantity=3,
+                location="Binder A",
+                acquisition_price="2.50",
+                acquisition_currency="USD",
+                notes="target note",
+                tags_json='["trade"]',
+            )
+            with connect(db_path) as connection:
+                source_item_id = int(
+                    connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        """
+                    ).fetchone()["id"]
+                )
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="move",
+                item_ids=[source_item_id],
+                on_conflict="merge",
+                keep_acquisition="target",
+                actor_type="api",
+                actor_id="transfer-user",
+                request_id="req-transfer-merge",
+            )
+            self.assertEqual(1, result.merged_count)
+            self.assertEqual("merged", result.results[0].status)
+            self.assertTrue(result.results[0].source_removed)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], source_rows)
+            self.assertEqual(1, len(target_rows))
+            self.assertEqual(5, target_rows[0].quantity)
+            self.assertEqual(Decimal("2.50"), target_rows[0].acquisition_price)
+            self.assertEqual("USD", target_rows[0].acquisition_currency)
+            self.assertCountEqual(["deck", "trade"], target_rows[0].tags)
+            self.assertIn("source note", target_rows[0].notes)
+            self.assertIn("target note", target_rows[0].notes)
+
+    def test_transfer_inventory_items_fail_conflict_rolls_back_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="conflict-card", collector_number="2")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", location="Binder A")
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="conflict-card", location="Binder B")
+            self._insert_inventory_item(db_path, inventory_slug="target", scryfall_id="conflict-card", location="Binder B")
+            with connect(db_path) as connection:
+                source_item_ids = [
+                    int(row["id"])
+                    for row in connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        ORDER BY ii.id
+                        """
+                    ).fetchall()
+                ]
+
+            with self.assertRaisesRegex(ConflictError, "would collide with an existing row in inventory 'target'"):
+                transfer_inventory_items(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_inventory_slug="target",
+                    mode="move",
+                    item_ids=source_item_ids,
+                    on_conflict="fail",
+                )
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(2, len(source_rows))
+            self.assertEqual(1, len(target_rows))
+            self.assertEqual([], list_inventory_audit_events(db_path, inventory_slug="source", limit=10))
+            self.assertEqual([], list_inventory_audit_events(db_path, inventory_slug="target", limit=10))
+
+    def test_transfer_inventory_items_rejects_invalid_request_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card")
+            with connect(db_path) as connection:
+                source_item_id = int(
+                    connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        """
+                    ).fetchone()["id"]
+                )
+
+            with self.assertRaisesRegex(ValidationError, "target_inventory_slug must be different"):
+                transfer_inventory_items(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_inventory_slug="source",
+                    mode="copy",
+                    item_ids=[source_item_id],
+                    on_conflict="fail",
+                )
+
+            with self.assertRaisesRegex(ValidationError, "keep_acquisition only applies when on_conflict is merge"):
+                transfer_inventory_items(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_inventory_slug="target",
+                    mode="copy",
+                    item_ids=[source_item_id],
+                    on_conflict="fail",
+                    keep_acquisition="target",
+                )
+
+    def test_transfer_inventory_items_all_items_moves_entire_source_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="other-card", collector_number="2")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", location="Binder A")
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="other-card", location="Binder B")
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="move",
+                item_ids=None,
+                all_items=True,
+                on_conflict="fail",
+            )
+            self.assertEqual("all_items", result.selection_kind)
+            self.assertIsNone(result.requested_item_ids)
+            self.assertEqual(2, result.requested_count)
+            self.assertEqual(2, result.moved_count)
+            self.assertEqual(2, result.results_returned)
+            self.assertFalse(result.results_truncated)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], source_rows)
+            self.assertEqual(2, len(target_rows))
+
+    def test_transfer_inventory_items_all_items_dry_run_truncates_preview_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            for index in range(101):
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="copy-card",
+                    location=f"Binder {index}",
+                )
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="copy",
+                item_ids=None,
+                all_items=True,
+                on_conflict="fail",
+                dry_run=True,
+            )
+            self.assertEqual("all_items", result.selection_kind)
+            self.assertEqual(101, result.requested_count)
+            self.assertEqual(101, result.copied_count)
+            self.assertEqual(100, result.results_returned)
+            self.assertTrue(result.results_truncated)
+            self.assertEqual("would_copy", result.results[0].status)
 
     def test_bulk_mutate_inventory_items_rolls_back_when_audit_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

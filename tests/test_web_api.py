@@ -107,6 +107,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
+                ("/inventories/{source_inventory_slug}/transfer", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
@@ -123,6 +124,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
+                ("/inventories/{source_inventory_slug}/transfer", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
@@ -1903,6 +1905,205 @@ class WebApiTest(unittest.TestCase):
                     invalid_keep.json()["error"]["message"],
                 )
 
+    def test_demo_api_transfer_supports_dry_run_and_live_move(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                source_created = client.post(
+                    "/inventories",
+                    json={"slug": "source", "display_name": "Source Collection"},
+                )
+                self.assertEqual(201, source_created.status_code)
+                target_created = client.post(
+                    "/inventories",
+                    json={"slug": "target", "display_name": "Target Collection"},
+                )
+                self.assertEqual(201, target_created.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                    quantity=2,
+                    location="Binder A",
+                    tags_json='["deck"]',
+                )
+                with connect(db_path) as connection:
+                    source_item_id = int(
+                        connection.execute(
+                            """
+                            SELECT ii.id
+                            FROM inventory_items ii
+                            JOIN inventories i ON i.id = ii.inventory_id
+                            WHERE i.slug = 'source'
+                            """
+                        ).fetchone()["id"]
+                    )
+
+                preview = client.post(
+                    "/inventories/source/transfer",
+                    headers={"X-Request-Id": "req-transfer-preview"},
+                    json={
+                        "target_inventory_slug": "target",
+                        "mode": "move",
+                        "item_ids": [source_item_id],
+                        "on_conflict": "fail",
+                        "dry_run": True,
+                    },
+                )
+                self.assertEqual(200, preview.status_code)
+                self.assertTrue(preview.json()["dry_run"])
+                self.assertEqual("items", preview.json()["selection_kind"])
+                self.assertEqual([source_item_id], preview.json()["requested_item_ids"])
+                self.assertEqual("would_move", preview.json()["results"][0]["status"])
+
+                moved = client.post(
+                    "/inventories/source/transfer",
+                    headers={"X-Request-Id": "req-transfer-live"},
+                    json={
+                        "target_inventory_slug": "target",
+                        "mode": "move",
+                        "item_ids": [source_item_id],
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(200, moved.status_code)
+                self.assertFalse(moved.json()["dry_run"])
+                self.assertEqual("items", moved.json()["selection_kind"])
+                self.assertEqual("moved", moved.json()["results"][0]["status"])
+                self.assertTrue(moved.json()["results"][0]["source_removed"])
+
+                source_rows = client.get("/inventories/source/items")
+                target_rows = client.get("/inventories/target/items")
+                self.assertEqual(200, source_rows.status_code)
+                self.assertEqual(200, target_rows.status_code)
+                self.assertEqual([], source_rows.json())
+                self.assertEqual(1, len(target_rows.json()))
+                self.assertEqual(2, target_rows.json()[0]["quantity"])
+                self.assertEqual(["deck"], target_rows.json()[0]["tags"])
+
+                source_audit = client.get("/inventories/source/audit")
+                target_audit = client.get("/inventories/target/audit")
+                self.assertEqual("transfer_items", source_audit.json()[0]["action"])
+                self.assertEqual("transfer_items", target_audit.json()[0]["action"])
+                self.assertEqual("source", source_audit.json()[0]["metadata"]["role"])
+                self.assertEqual("target", target_audit.json()[0]["metadata"]["role"])
+                self.assertEqual("req-transfer-live", source_audit.json()[0]["request_id"])
+
+    def test_demo_api_transfer_conflict_returns_409_without_mutating_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                source_created = client.post(
+                    "/inventories",
+                    json={"slug": "source", "display_name": "Source Collection"},
+                )
+                self.assertEqual(201, source_created.status_code)
+                target_created = client.post(
+                    "/inventories",
+                    json={"slug": "target", "display_name": "Target Collection"},
+                )
+                self.assertEqual(201, target_created.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                    location="Binder A",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="target",
+                    scryfall_id="api-card-1",
+                    location="Binder A",
+                )
+                with connect(db_path) as connection:
+                    source_item_id = int(
+                        connection.execute(
+                            """
+                            SELECT ii.id
+                            FROM inventory_items ii
+                            JOIN inventories i ON i.id = ii.inventory_id
+                            WHERE i.slug = 'source'
+                            """
+                        ).fetchone()["id"]
+                    )
+
+                conflict = client.post(
+                    "/inventories/source/transfer",
+                    json={
+                        "target_inventory_slug": "target",
+                        "mode": "move",
+                        "item_ids": [source_item_id],
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(409, conflict.status_code)
+                self.assertEqual("conflict", conflict.json()["error"]["code"])
+                self.assertIn("would collide with an existing row in inventory 'target'", conflict.json()["error"]["message"])
+
+                source_rows = client.get("/inventories/source/items")
+                target_rows = client.get("/inventories/target/items")
+                self.assertEqual(1, len(source_rows.json()))
+                self.assertEqual(1, len(target_rows.json()))
+
+    def test_demo_api_transfer_all_items_moves_entire_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                source_created = client.post(
+                    "/inventories",
+                    json={"slug": "source", "display_name": "Source Collection"},
+                )
+                self.assertEqual(201, source_created.status_code)
+                target_created = client.post(
+                    "/inventories",
+                    json={"slug": "target", "display_name": "Target Collection"},
+                )
+                self.assertEqual(201, target_created.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                    quantity=2,
+                    location="Binder A",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                    quantity=1,
+                    location="Binder B",
+                )
+
+                moved = client.post(
+                    "/inventories/source/transfer",
+                    headers={"X-Request-Id": "req-transfer-all"},
+                    json={
+                        "target_inventory_slug": "target",
+                        "mode": "move",
+                        "all_items": True,
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(200, moved.status_code)
+                self.assertEqual("all_items", moved.json()["selection_kind"])
+                self.assertIsNone(moved.json()["requested_item_ids"])
+                self.assertEqual(2, moved.json()["requested_count"])
+                self.assertEqual(2, moved.json()["moved_count"])
+
+                source_rows = client.get("/inventories/source/items")
+                target_rows = client.get("/inventories/target/items")
+                self.assertEqual([], source_rows.json())
+                self.assertEqual(2, len(target_rows.json()))
+
     def test_demo_api_bulk_quantity_requires_quantity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -2734,6 +2935,86 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(403, editor_admin_only_add.status_code)
                 self.assertEqual("forbidden", editor_admin_only_add.json()["error"]["code"])
+
+    def test_shared_service_transfer_requires_write_access_to_both_source_and_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            editor_headers = {
+                "X-Authenticated-User": "editor-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            admin_headers = {
+                "X-Authenticated-User": "admin-user",
+                "X-Authenticated-Roles": "admin",
+            }
+
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            create_inventory(
+                db_path,
+                slug="target",
+                display_name="Target Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="source",
+                actor_id="editor-user",
+                role="editor",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    source_item_id = int(
+                        connection.execute(
+                            """
+                            SELECT ii.id
+                            FROM inventory_items ii
+                            JOIN inventories i ON i.id = ii.inventory_id
+                            WHERE i.slug = 'source'
+                            """
+                        ).fetchone()["id"]
+                    )
+
+                denied = client.post(
+                    "/inventories/source/transfer",
+                    headers=editor_headers,
+                    json={
+                        "target_inventory_slug": "target",
+                        "mode": "move",
+                        "item_ids": [source_item_id],
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(403, denied.status_code)
+                self.assertEqual("forbidden", denied.json()["error"]["code"])
+                self.assertIn("Write access to inventory 'target'", denied.json()["error"]["message"])
+
+                allowed = client.post(
+                    "/inventories/source/transfer",
+                    headers=admin_headers,
+                    json={
+                        "target_inventory_slug": "target",
+                        "mode": "move",
+                        "item_ids": [source_item_id],
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(200, allowed.status_code)
+                self.assertEqual("moved", allowed.json()["results"][0]["status"])
 
     def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -276,14 +276,14 @@ def get_inventory_read_request_context(
     raise AuthorizationError(f"Read access to inventory '{inventory_slug}' is required for this shared_service request.")
 
 
-def get_inventory_write_request_context(
+def require_inventory_write_access(
+    settings: ApiSettings,
+    context: RequestContext,
+    *,
     inventory_slug: str,
-    request: "Request",
-) -> RequestContext:
-    context = get_authenticated_request_context(request)
-    settings = get_settings(request)
+) -> None:
     if settings.runtime_mode != "shared_service":
-        return context
+        return
     from ..inventory.service import actor_can_write_inventory
 
     if actor_can_write_inventory(
@@ -292,5 +292,15 @@ def get_inventory_write_request_context(
         actor_id=context.actor_id,
         actor_roles=context.roles,
     ):
-        return context
+        return
     raise AuthorizationError(f"Write access to inventory '{inventory_slug}' is required for this shared_service request.")
+
+
+def get_inventory_write_request_context(
+    inventory_slug: str,
+    request: "Request",
+) -> RequestContext:
+    context = get_authenticated_request_context(request)
+    settings = get_settings(request)
+    require_inventory_write_access(settings, context, inventory_slug=inventory_slug)
+    return context

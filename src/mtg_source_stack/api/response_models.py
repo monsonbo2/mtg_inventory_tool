@@ -88,6 +88,31 @@ class BulkInventoryItemMutationResponse(ApiBaseModel):
     updated_count: int
 
 
+class InventoryTransferItemResultResponse(ApiBaseModel):
+    source_item_id: int
+    target_item_id: int | None
+    status: Literal["would_copy", "would_move", "would_merge", "would_fail", "copied", "moved", "merged"]
+    source_removed: bool
+    message: str | None
+
+
+class InventoryTransferResponse(ApiBaseModel):
+    source_inventory: str
+    target_inventory: str
+    mode: Literal["copy", "move"]
+    dry_run: bool
+    selection_kind: Literal["items", "all_items"]
+    requested_item_ids: list[int] | None
+    requested_count: int
+    copied_count: int
+    moved_count: int
+    merged_count: int
+    failed_count: int
+    results_returned: int
+    results_truncated: bool
+    results: list[InventoryTransferItemResultResponse]
+
+
 class CatalogSearchRowResponse(ApiBaseModel):
     scryfall_id: str
     name: str

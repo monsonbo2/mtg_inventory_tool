@@ -36,6 +36,7 @@ from ..inventory.service import (
     set_notes,
     set_quantity,
     set_tags,
+    transfer_inventory_items,
 )
 from .dependencies import (
     ApiSettings,
@@ -46,6 +47,7 @@ from .dependencies import (
     get_inventory_scoped_read_request_context,
     get_authenticated_request_context,
     get_settings,
+    require_inventory_write_access,
 )
 from .request_models import (
     AddInventoryItemRequest,
@@ -54,6 +56,7 @@ from .request_models import (
     FINISH_INPUT_DESCRIPTION,
     FinishInput,
     InventoryCreateRequest,
+    InventoryTransferRequest,
     LANGUAGE_CODE_DESCRIPTION,
     PatchInventoryItemRequest,
     SEARCH_LANG_DESCRIPTION,
@@ -69,6 +72,7 @@ from .response_models import (
     InventoryAuditEventResponse,
     InventoryCreateResponse,
     InventoryItemPatchResponse,
+    InventoryTransferResponse,
     InventoryListRowResponse,
     OwnedInventoryRowResponse,
     RemoveInventoryItemResponse,
@@ -418,6 +422,37 @@ def inventory_items_bulk_mutate(
             condition_code=payload.condition_code,
             merge=payload.merge,
             keep_acquisition=payload.keep_acquisition,
+            actor_type=context.actor_type,
+            actor_id=context.actor_id,
+            request_id=context.request_id,
+        )
+    )
+
+
+@router.post(
+    "/inventories/{source_inventory_slug}/transfer",
+    response_model=InventoryTransferResponse,
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
+)
+def inventory_items_transfer(
+    source_inventory_slug: str,
+    payload: InventoryTransferRequest,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    require_inventory_write_access(settings, context, inventory_slug=source_inventory_slug)
+    require_inventory_write_access(settings, context, inventory_slug=payload.target_inventory_slug)
+    return _serialize(
+        transfer_inventory_items(
+            settings.db_path,
+            source_inventory_slug=source_inventory_slug,
+            target_inventory_slug=payload.target_inventory_slug,
+            mode=payload.mode,
+            item_ids=payload.item_ids,
+            all_items=payload.all_items,
+            on_conflict=payload.on_conflict,
+            keep_acquisition=payload.keep_acquisition,
+            dry_run=payload.dry_run,
             actor_type=context.actor_type,
             actor_id=context.actor_id,
             request_id=context.request_id,

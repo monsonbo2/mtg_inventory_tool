@@ -978,6 +978,242 @@
         "title": "InventoryListRowResponse",
         "type": "object"
       },
+      "InventoryTransferItemResultResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "source_item_id": {
+            "title": "Source Item Id",
+            "type": "integer"
+          },
+          "source_removed": {
+            "title": "Source Removed",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "would_copy",
+              "would_move",
+              "would_merge",
+              "would_fail",
+              "copied",
+              "moved",
+              "merged"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Item Id"
+          }
+        },
+        "required": [
+          "source_item_id",
+          "target_item_id",
+          "status",
+          "source_removed",
+          "message"
+        ],
+        "title": "InventoryTransferItemResultResponse",
+        "type": "object"
+      },
+      "InventoryTransferRequest": {
+        "additionalProperties": false,
+        "description": "Transfer selected inventory rows, or the entire source inventory, into another inventory. The live mutation is atomic and all-or-nothing; if any requested row would fail, no rows are transferred. Use dry_run=true to preview copy, move, merge, or failure outcomes without mutating either inventory.",
+        "properties": {
+          "all_items": {
+            "default": false,
+            "description": "When true, transfer every row in the source inventory. Use either item_ids or all_items=true, not both.",
+            "title": "All Items",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "When true, return the planned transfer outcomes without mutating either inventory.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "item_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Ids"
+          },
+          "keep_acquisition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "target",
+                  "source"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only applies when on_conflict is `merge`. Choose whether merged target rows keep the source row or target row acquisition metadata.",
+            "title": "Keep Acquisition"
+          },
+          "mode": {
+            "description": "Transfer mode. Use `copy` to leave source rows in place or `move` to remove them.",
+            "enum": [
+              "copy",
+              "move"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "on_conflict": {
+            "description": "Conflict policy for target-inventory row identity collisions. Use `fail` to reject duplicate rows or `merge` to combine rows using the existing inventory merge rules.",
+            "enum": [
+              "fail",
+              "merge"
+            ],
+            "title": "On Conflict",
+            "type": "string"
+          },
+          "target_inventory_slug": {
+            "title": "Target Inventory Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_inventory_slug",
+          "mode",
+          "on_conflict"
+        ],
+        "title": "InventoryTransferRequest",
+        "type": "object"
+      },
+      "InventoryTransferResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "copied_count": {
+            "title": "Copied Count",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "merged_count": {
+            "title": "Merged Count",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "copy",
+              "move"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "moved_count": {
+            "title": "Moved Count",
+            "type": "integer"
+          },
+          "requested_count": {
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "requested_item_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Item Ids"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/InventoryTransferItemResultResponse"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "results_returned": {
+            "title": "Results Returned",
+            "type": "integer"
+          },
+          "results_truncated": {
+            "title": "Results Truncated",
+            "type": "boolean"
+          },
+          "selection_kind": {
+            "enum": [
+              "items",
+              "all_items"
+            ],
+            "title": "Selection Kind",
+            "type": "string"
+          },
+          "source_inventory": {
+            "title": "Source Inventory",
+            "type": "string"
+          },
+          "target_inventory": {
+            "title": "Target Inventory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_inventory",
+          "target_inventory",
+          "mode",
+          "dry_run",
+          "selection_kind",
+          "requested_item_ids",
+          "requested_count",
+          "copied_count",
+          "moved_count",
+          "merged_count",
+          "failed_count",
+          "results_returned",
+          "results_truncated",
+          "results"
+        ],
+        "title": "InventoryTransferResponse",
+        "type": "object"
+      },
       "OwnedInventoryRowResponse": {
         "additionalProperties": false,
         "properties": {
@@ -3988,6 +4224,115 @@
           }
         },
         "summary": "Inventory Items Patch"
+      }
+    },
+    "/inventories/{source_inventory_slug}/transfer": {
+      "post": {
+        "operationId": "inventory_items_transfer_inventories__source_inventory_slug__transfer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Source Inventory Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryTransferResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Items Transfer"
       }
     },
     "/me/bootstrap": {
