@@ -283,40 +283,6 @@ export function SearchResultCard(props: {
                   </option>
                 ))}
               </select>
-              {hasLoadedExactPrintings && hasOtherLanguages && !showLanguagePicker ? (
-                <button
-                  className="field-link-button"
-                  onClick={() => {
-                    setShowLanguagePicker(true);
-                    setRecentlyAdded(false);
-                  }}
-                  type="button"
-                >
-                  Other languages available
-                </button>
-              ) : null}
-              {showLanguagePicker ? (
-                <div className="search-language-picker">
-                  <label htmlFor={languageFieldId}>Language</label>
-                  <select
-                    aria-label="Language"
-                    className="text-input"
-                    disabled={busy}
-                    id={languageFieldId}
-                    onChange={(event) => {
-                      setSelectedLanguageCode(event.target.value);
-                      setRecentlyAdded(false);
-                    }}
-                    value={selectedLanguageCode}
-                  >
-                    {availableLanguageCodes.map((languageCode) => (
-                      <option key={languageCode} value={languageCode}>
-                        {LANGUAGE_LABELS[languageCode] || formatLanguageCode(languageCode)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
             </div>
 
             <label className="field">
@@ -355,6 +321,45 @@ export function SearchResultCard(props: {
                 ))}
               </select>
             </label>
+
+            {hasLoadedExactPrintings && hasOtherLanguages && !showLanguagePicker ? (
+              <div className="search-printing-helper">
+                <button
+                  className="field-link-button"
+                  onClick={() => {
+                    setShowLanguagePicker(true);
+                    setRecentlyAdded(false);
+                  }}
+                  type="button"
+                >
+                  Other languages available
+                </button>
+              </div>
+            ) : null}
+            {showLanguagePicker ? (
+              <div className="search-printing-helper">
+                <div className="search-language-picker">
+                  <label htmlFor={languageFieldId}>Language</label>
+                  <select
+                    aria-label="Language"
+                    className="text-input"
+                    disabled={busy}
+                    id={languageFieldId}
+                    onChange={(event) => {
+                      setSelectedLanguageCode(event.target.value);
+                      setRecentlyAdded(false);
+                    }}
+                    value={selectedLanguageCode}
+                  >
+                    {availableLanguageCodes.map((languageCode) => (
+                      <option key={languageCode} value={languageCode}>
+                        {LANGUAGE_LABELS[languageCode] || formatLanguageCode(languageCode)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {printingStatus === "loading" ? (

@@ -20,6 +20,7 @@ import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
 import {
   createSearchCardGroups,
+  sortNameSearchRows,
   type SearchCardGroup,
 } from "./searchResultHelpers";
 import {
@@ -199,10 +200,11 @@ export default function App() {
           if (requestId !== suggestionLookupRequestIdRef.current) {
             return;
           }
-          suggestionCacheRef.current[normalizedQuery] = results;
-          setSuggestionResults(results);
+          const sortedResults = sortNameSearchRows(results, trimmed);
+          suggestionCacheRef.current[normalizedQuery] = sortedResults;
+          setSuggestionResults(sortedResults);
           setSuggestionStatus("ready");
-          setHighlightedSuggestionIndex(results.length ? 0 : -1);
+          setHighlightedSuggestionIndex(sortedResults.length ? 0 : -1);
         })
         .catch((error) => {
           if (requestId !== suggestionLookupRequestIdRef.current) {
@@ -333,6 +335,19 @@ export default function App() {
     setHighlightedSuggestionIndex(-1);
   }
 
+  function resetSearchWorkspace() {
+    suggestionLookupRequestIdRef.current += 1;
+    skipSuggestionFetchQueryRef.current = null;
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchStatus("idle");
+    setSearchError(null);
+    setSuggestionStatus("idle");
+    setSuggestionError(null);
+    setSuggestionResults([]);
+    closeSuggestionList();
+  }
+
   function openSuggestionList() {
     if (searchQuery.trim().length < AUTOCOMPLETE_MIN_QUERY_LENGTH) {
       return;
@@ -393,7 +408,7 @@ export default function App() {
         query: trimmed,
         limit: SEARCH_GROUP_LIMIT,
       });
-      setSearchResults(results);
+      setSearchResults(sortNameSearchRows(results, trimmed));
       setSearchStatus("ready");
     } catch (error) {
       setSearchResults([]);
@@ -509,6 +524,7 @@ export default function App() {
         inventorySlug,
         `Added ${response.card_name} to ${describeInventory(inventorySlug)}.`,
       );
+      resetSearchWorkspace();
       return true;
     } catch (error) {
       showNotice(toUserMessage(error, "Could not add the card."), "error");

@@ -325,6 +325,8 @@ button {
 
 .search-results-grid {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  position: relative;
+  z-index: 1;
 }
 
 .collection-grid {
@@ -759,15 +761,19 @@ button {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   margin-bottom: 18px;
+  position: relative;
+  z-index: 3;
 }
 
 .search-field {
   position: relative;
+  z-index: 4;
 }
 
 .search-input-stack {
   position: relative;
   isolation: isolate;
+  z-index: 5;
 }
 
 .search-autocomplete {
@@ -990,10 +996,19 @@ button {
 
 .search-result-quick-add-grid {
   grid-template-columns: minmax(0, 1.8fr) repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
 .search-printing-field {
   min-width: 0;
+}
+
+.search-printing-helper {
+  grid-column: 1 / 2;
+  display: grid;
+  gap: 8px;
+  align-self: start;
+  margin-top: -4px;
 }
 
 .field-link-button {
@@ -1015,7 +1030,6 @@ button {
 .search-language-picker {
   display: grid;
   gap: 8px;
-  margin-top: 4px;
 }
 
 .search-printing-state .secondary-button {
