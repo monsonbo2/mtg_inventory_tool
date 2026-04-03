@@ -103,6 +103,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("0005 normalize price snapshot finishes", migrate_output)
             self.assertIn("0006 add inventory memberships", migrate_output)
             self.assertIn("0007 add actor default inventories", migrate_output)
+            self.assertIn("0008 add catalog classification fields", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",
