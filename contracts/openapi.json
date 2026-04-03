@@ -937,6 +937,60 @@
         "title": "InventoryCreateResponse",
         "type": "object"
       },
+      "InventoryDuplicateRequest": {
+        "additionalProperties": false,
+        "description": "Create a new inventory and copy every source inventory row into it atomically. If duplication fails, the new inventory is not created.",
+        "properties": {
+          "target_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional description for the duplicated inventory. When omitted, the source inventory description is copied.",
+            "title": "Target Description"
+          },
+          "target_display_name": {
+            "title": "Target Display Name",
+            "type": "string"
+          },
+          "target_slug": {
+            "title": "Target Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_slug",
+          "target_display_name"
+        ],
+        "title": "InventoryDuplicateRequest",
+        "type": "object"
+      },
+      "InventoryDuplicateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "inventory": {
+            "$ref": "#/components/schemas/InventoryCreateResponse"
+          },
+          "source_inventory": {
+            "title": "Source Inventory",
+            "type": "string"
+          },
+          "transfer": {
+            "$ref": "#/components/schemas/InventoryTransferResponse"
+          }
+        },
+        "required": [
+          "source_inventory",
+          "inventory",
+          "transfer"
+        ],
+        "title": "InventoryDuplicateResponse",
+        "type": "object"
+      },
       "InventoryListRowResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4224,6 +4278,115 @@
           }
         },
         "summary": "Inventory Items Patch"
+      }
+    },
+    "/inventories/{source_inventory_slug}/duplicate": {
+      "post": {
+        "operationId": "inventories_duplicate_inventories__source_inventory_slug__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Source Inventory Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryDuplicateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryDuplicateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventories Duplicate"
       }
     },
     "/inventories/{source_inventory_slug}/transfer": {

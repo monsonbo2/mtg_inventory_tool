@@ -147,6 +147,13 @@ class InventoryTransferResult(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class InventoryDuplicateResult(ResponseModel):
+    source_inventory: str
+    inventory: InventoryCreateResult
+    transfer: InventoryTransferResult
+
+
+@dataclass(frozen=True, slots=True)
 class InventoryAuditEvent(ResponseModel):
     id: int
     inventory: str

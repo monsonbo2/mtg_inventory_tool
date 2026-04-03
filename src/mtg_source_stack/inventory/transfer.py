@@ -11,6 +11,7 @@ from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import ConflictError, ValidationError
 from .audit import load_inventory_item_snapshot, write_inventory_audit_event
+from .inventories import create_inventory_with_connection
 from .policies import build_merged_inventory_item_update
 from .query_inventory import (
     find_inventory_item_collision,
@@ -19,7 +20,11 @@ from .query_inventory import (
     inventory_item_result_from_row,
     merge_inventory_item_rows,
 )
-from .response_models import InventoryTransferItemResult, InventoryTransferResult
+from .response_models import (
+    InventoryDuplicateResult,
+    InventoryTransferItemResult,
+    InventoryTransferResult,
+)
 
 
 _TRANSFER_MODES = frozenset({"copy", "move"})
@@ -686,6 +691,42 @@ def transfer_inventory_items(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> InventoryTransferResult:
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
+        result = transfer_inventory_items_with_connection(
+            connection,
+            source_inventory_slug=source_inventory_slug,
+            target_inventory_slug=target_inventory_slug,
+            mode=mode,
+            item_ids=item_ids,
+            all_items=all_items,
+            on_conflict=on_conflict,
+            keep_acquisition=keep_acquisition,
+            dry_run=dry_run,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+        if not dry_run:
+            connection.commit()
+        return result
+
+
+def transfer_inventory_items_with_connection(
+    connection: sqlite3.Connection,
+    *,
+    source_inventory_slug: str,
+    target_inventory_slug: str,
+    mode: str,
+    item_ids: list[int] | None,
+    all_items: bool = False,
+    on_conflict: str,
+    keep_acquisition: str | None = None,
+    dry_run: bool = False,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> InventoryTransferResult:
     request = _normalize_transfer_request(
         source_inventory_slug=source_inventory_slug,
         target_inventory_slug=target_inventory_slug,
@@ -696,44 +737,94 @@ def transfer_inventory_items(
         keep_acquisition=keep_acquisition,
         dry_run=dry_run,
     )
+    get_inventory_row(connection, source_inventory_slug)
+    target_inventory = get_inventory_row(connection, request.target_inventory_slug)
+    source_rows = _load_transfer_source_rows(
+        connection,
+        source_inventory_slug=source_inventory_slug,
+        item_ids=request.item_ids,
+    )
+    plans = _plan_transfer_items(
+        connection,
+        target_inventory_id=int(target_inventory["id"]),
+        target_inventory_slug=request.target_inventory_slug,
+        request=request,
+        source_rows=source_rows,
+    )
+    if request.dry_run:
+        dry_run_results = [_result_from_plan(plan, dry_run=True) for plan in plans]
+        return _build_transfer_result(
+            source_inventory_slug=source_inventory_slug,
+            request=request,
+            results=dry_run_results,
+        )
+
+    live_results = _execute_transfer_plan(
+        connection,
+        source_inventory_slug=source_inventory_slug,
+        target_inventory_slug=request.target_inventory_slug,
+        target_inventory_id=int(target_inventory["id"]),
+        request=request,
+        plans=plans,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    return _build_transfer_result(
+        source_inventory_slug=source_inventory_slug,
+        request=request,
+        results=live_results,
+    )
+
+
+def duplicate_inventory(
+    db_path: str | Path,
+    *,
+    source_inventory_slug: str,
+    target_slug: str,
+    target_display_name: str,
+    target_description: str | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> InventoryDuplicateResult:
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
-        get_inventory_row(connection, source_inventory_slug)
-        target_inventory = get_inventory_row(connection, request.target_inventory_slug)
-        source_rows = _load_transfer_source_rows(
+        source_inventory = connection.execute(
+            """
+            SELECT description
+            FROM inventories
+            WHERE slug = ?
+            """,
+            (source_inventory_slug,),
+        ).fetchone()
+        if source_inventory is None:
+            get_inventory_row(connection, source_inventory_slug)
+            raise AssertionError("Expected source inventory row to exist.")
+        created_inventory = create_inventory_with_connection(
+            connection,
+            slug=target_slug,
+            display_name=target_display_name,
+            description=source_inventory["description"] if target_description is None else target_description,
+            actor_id=actor_id,
+        )
+        transfer_result = transfer_inventory_items_with_connection(
             connection,
             source_inventory_slug=source_inventory_slug,
-            item_ids=request.item_ids,
-        )
-        plans = _plan_transfer_items(
-            connection,
-            target_inventory_id=int(target_inventory["id"]),
-            target_inventory_slug=request.target_inventory_slug,
-            request=request,
-            source_rows=source_rows,
-        )
-        if request.dry_run:
-            dry_run_results = [_result_from_plan(plan, dry_run=True) for plan in plans]
-            return _build_transfer_result(
-                source_inventory_slug=source_inventory_slug,
-                request=request,
-                results=dry_run_results,
-            )
-
-        live_results = _execute_transfer_plan(
-            connection,
-            source_inventory_slug=source_inventory_slug,
-            target_inventory_slug=request.target_inventory_slug,
-            target_inventory_id=int(target_inventory["id"]),
-            request=request,
-            plans=plans,
+            target_inventory_slug=created_inventory.slug,
+            mode="copy",
+            item_ids=None,
+            all_items=True,
+            on_conflict="fail",
+            keep_acquisition=None,
+            dry_run=False,
             actor_type=actor_type,
             actor_id=actor_id,
             request_id=request_id,
         )
         connection.commit()
-        return _build_transfer_result(
-            source_inventory_slug=source_inventory_slug,
-            request=request,
-            results=live_results,
+        return InventoryDuplicateResult(
+            source_inventory=source_inventory_slug,
+            inventory=created_inventory,
+            transfer=transfer_result,
         )

@@ -104,6 +104,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories", "post"),
+                ("/inventories/{source_inventory_slug}/duplicate", "post"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
@@ -121,6 +122,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
+                ("/inventories/{source_inventory_slug}/duplicate", "post"),
                 ("/inventories/{inventory_slug}/items", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
@@ -250,6 +252,19 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 "InventoryCreateResponse",
                 self._schema_name_from_ref(components[bootstrap_schema_name]["properties"]["inventory"]["$ref"]),
+            )
+            duplicate_schema = spec["paths"]["/inventories/{source_inventory_slug}/duplicate"]["post"]["responses"][
+                "201"
+            ]["content"]["application/json"]["schema"]
+            duplicate_schema_name = self._schema_name_from_ref(duplicate_schema["$ref"])
+            self.assertEqual("InventoryDuplicateResponse", duplicate_schema_name)
+            self.assertEqual(
+                "InventoryCreateResponse",
+                self._schema_name_from_ref(components[duplicate_schema_name]["properties"]["inventory"]["$ref"]),
+            )
+            self.assertEqual(
+                "InventoryTransferResponse",
+                self._schema_name_from_ref(components[duplicate_schema_name]["properties"]["transfer"]["$ref"]),
             )
             inventory_parameters = {
                 parameter["name"]: parameter
@@ -2104,6 +2119,52 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual([], source_rows.json())
                 self.assertEqual(2, len(target_rows.json()))
 
+    def test_demo_api_duplicate_creates_new_inventory_and_copies_all_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                source_created = client.post(
+                    "/inventories",
+                    json={
+                        "slug": "source",
+                        "display_name": "Source Collection",
+                        "description": "Original description",
+                    },
+                )
+                self.assertEqual(201, source_created.status_code)
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                    quantity=2,
+                    location="Binder A",
+                    tags_json='["deck"]',
+                )
+
+                duplicated = client.post(
+                    "/inventories/source/duplicate",
+                    headers={"X-Request-Id": "req-duplicate"},
+                    json={
+                        "target_slug": "source-copy",
+                        "target_display_name": "Source Copy",
+                    },
+                )
+                self.assertEqual(201, duplicated.status_code)
+                self.assertEqual("source", duplicated.json()["source_inventory"])
+                self.assertEqual("source-copy", duplicated.json()["inventory"]["slug"])
+                self.assertEqual("Original description", duplicated.json()["inventory"]["description"])
+                self.assertEqual("all_items", duplicated.json()["transfer"]["selection_kind"])
+                self.assertEqual(1, duplicated.json()["transfer"]["copied_count"])
+
+                source_rows = client.get("/inventories/source/items")
+                target_rows = client.get("/inventories/source-copy/items")
+                self.assertEqual(1, len(source_rows.json()))
+                self.assertEqual(1, len(target_rows.json()))
+                self.assertEqual(2, target_rows.json()[0]["quantity"])
+                self.assertEqual(["deck"], target_rows.json()[0]["tags"])
+
     def test_demo_api_bulk_quantity_requires_quantity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -3015,6 +3076,69 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(200, allowed.status_code)
                 self.assertEqual("moved", allowed.json()["results"][0]["status"])
+
+    def test_shared_service_duplicate_requires_editor_role_and_source_write_access(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            viewer_headers = {
+                "X-Authenticated-User": "viewer-user",
+                "X-Authenticated-Roles": "viewer",
+            }
+            editor_headers = {"X-Authenticated-User": "editor-user"}
+
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="source",
+                actor_id="viewer-user",
+                role="editor",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="source",
+                actor_id="editor-user",
+                role="editor",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                    quantity=1,
+                )
+
+                denied = client.post(
+                    "/inventories/source/duplicate",
+                    headers=viewer_headers,
+                    json={
+                        "target_slug": "source-copy",
+                        "target_display_name": "Source Copy",
+                    },
+                )
+                self.assertEqual(403, denied.status_code)
+                self.assertEqual("forbidden", denied.json()["error"]["code"])
+                self.assertIn("Role 'editor' is required", denied.json()["error"]["message"])
+
+                allowed = client.post(
+                    "/inventories/source/duplicate",
+                    headers=editor_headers,
+                    json={
+                        "target_slug": "source-copy",
+                        "target_display_name": "Source Copy",
+                    },
+                )
+                self.assertEqual(201, allowed.status_code)
+                self.assertEqual("source-copy", allowed.json()["inventory"]["slug"])
+                self.assertEqual(1, allowed.json()["transfer"]["copied_count"])
 
     def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

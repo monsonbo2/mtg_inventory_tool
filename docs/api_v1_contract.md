@@ -52,6 +52,11 @@ preserve for the first API-backed version of the project.
   while still reporting full `requested_count` and summary counts.
 - Live transfer requests are transactional and all-or-nothing: if any planned
   row would fail, neither the source nor target inventory is mutated.
+- `POST /inventories/{source_inventory_slug}/duplicate` creates a new
+  inventory and returns the created inventory together with the stable transfer
+  summary for the all-items copy it performs.
+- Duplicate requests are transactional and all-or-nothing: if duplication
+  fails, the new inventory is not created.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,
@@ -196,6 +201,13 @@ preserve for the first API-backed version of the project.
     - full summary counts
     - `results_returned` and `results_truncated` so large whole-inventory
       previews can stay bounded without losing summary accuracy
+- `POST /inventories/{source_inventory_slug}/duplicate`
+  - creates a brand-new target inventory and copies every source row into it
+  - requires the same inventory-creation permission as `POST /inventories`
+  - also requires write access to the source inventory in shared-service mode
+  - `target_description` is optional; when omitted, the source inventory
+    description is copied to the new inventory
+  - source inventory memberships are not copied to the new inventory
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For
@@ -297,6 +309,10 @@ before the generic 500 envelope is returned.
 - `POST /inventories/{source_inventory_slug}/transfer` requires write access to
   both the source inventory in the path and the target inventory in the
   request body; global `admin` bypasses both checks.
+- `POST /inventories/{source_inventory_slug}/duplicate` requires the same
+  global `editor` or `admin` permission as `POST /inventories`, plus write
+  access to the source inventory; global `admin` bypasses the inventory
+  membership check.
 - `POST /inventories` still requires a global `editor` or `admin`, and the
   creator is automatically granted `owner` membership on the new inventory.
 - `POST /me/bootstrap` requires a global `editor` or `admin`, creates one

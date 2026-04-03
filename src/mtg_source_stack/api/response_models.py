@@ -113,6 +113,12 @@ class InventoryTransferResponse(ApiBaseModel):
     results: list[InventoryTransferItemResultResponse]
 
 
+class InventoryDuplicateResponse(ApiBaseModel):
+    source_inventory: str
+    inventory: InventoryCreateResponse
+    transfer: InventoryTransferResponse
+
+
 class CatalogSearchRowResponse(ApiBaseModel):
     scryfall_id: str
     name: str

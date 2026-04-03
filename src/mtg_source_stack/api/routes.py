@@ -21,6 +21,7 @@ from ..inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
     create_inventory,
+    duplicate_inventory,
     ensure_default_inventory,
     list_card_printings_for_oracle,
     list_inventory_audit_events,
@@ -56,6 +57,7 @@ from .request_models import (
     FINISH_INPUT_DESCRIPTION,
     FinishInput,
     InventoryCreateRequest,
+    InventoryDuplicateRequest,
     InventoryTransferRequest,
     LANGUAGE_CODE_DESCRIPTION,
     PatchInventoryItemRequest,
@@ -71,6 +73,7 @@ from .response_models import (
     HealthResponse,
     InventoryAuditEventResponse,
     InventoryCreateResponse,
+    InventoryDuplicateResponse,
     InventoryItemPatchResponse,
     InventoryTransferResponse,
     InventoryListRowResponse,
@@ -223,6 +226,33 @@ def bootstrap_default_inventory(
             settings.db_path,
             actor_id=context.actor_id,
             actor_roles=context.roles,
+        )
+    )
+
+
+@router.post(
+    "/inventories/{source_inventory_slug}/duplicate",
+    status_code=status.HTTP_201_CREATED,
+    response_model=InventoryDuplicateResponse,
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
+)
+def inventories_duplicate(
+    source_inventory_slug: str,
+    payload: InventoryDuplicateRequest,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+) -> Any:
+    require_inventory_write_access(settings, context, inventory_slug=source_inventory_slug)
+    return _serialize(
+        duplicate_inventory(
+            settings.db_path,
+            source_inventory_slug=source_inventory_slug,
+            target_slug=payload.target_slug,
+            target_display_name=payload.target_display_name,
+            target_description=payload.target_description,
+            actor_type=context.actor_type,
+            actor_id=context.actor_id,
+            request_id=context.request_id,
         )
     )
 

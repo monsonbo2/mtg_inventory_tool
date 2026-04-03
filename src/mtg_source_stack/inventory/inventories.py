@@ -100,30 +100,48 @@ def create_inventory(
 ) -> InventoryCreateResult:
     db_file = require_current_schema(db_path)
     with connect(db_file) as connection:
-        try:
-            cursor = connection.execute(
-                """
-                INSERT INTO inventories (slug, display_name, description)
-                VALUES (?, ?, ?)
-                """,
-                (slug, display_name, description),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise ConflictError(f"Inventory '{slug}' already exists.") from exc
-        if actor_id is not None:
-            grant_inventory_membership_with_connection(
-                connection,
-                inventory_id=int(cursor.lastrowid),
-                actor_id=actor_id,
-                role="owner",
-            )
-        connection.commit()
-        return InventoryCreateResult(
-            inventory_id=int(cursor.lastrowid),
+        created = create_inventory_with_connection(
+            connection,
             slug=slug,
             display_name=display_name,
-            description=text_or_none(description),
+            description=description,
+            actor_id=actor_id,
         )
+        connection.commit()
+        return created
+
+
+def create_inventory_with_connection(
+    connection: sqlite3.Connection,
+    *,
+    slug: str,
+    display_name: str,
+    description: str | None,
+    actor_id: str | None = None,
+) -> InventoryCreateResult:
+    try:
+        cursor = connection.execute(
+            """
+            INSERT INTO inventories (slug, display_name, description)
+            VALUES (?, ?, ?)
+            """,
+            (slug, display_name, description),
+        )
+    except sqlite3.IntegrityError as exc:
+        raise ConflictError(f"Inventory '{slug}' already exists.") from exc
+    if actor_id is not None:
+        grant_inventory_membership_with_connection(
+            connection,
+            inventory_id=int(cursor.lastrowid),
+            actor_id=actor_id,
+            role="owner",
+        )
+    return InventoryCreateResult(
+        inventory_id=int(cursor.lastrowid),
+        slug=slug,
+        display_name=display_name,
+        description=text_or_none(description),
+    )
 
 
 def ensure_default_inventory(

@@ -16,6 +16,7 @@ from mtg_source_stack.api_contract import api_error_payload, api_error_status
 from mtg_source_stack.api.request_models import (
     AddInventoryItemRequest,
     BulkInventoryItemMutationRequest,
+    InventoryDuplicateRequest,
     InventoryTransferRequest,
     PatchInventoryItemRequest,
 )
@@ -25,6 +26,7 @@ from mtg_source_stack.api.response_models import (
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
     DefaultInventoryBootstrapResponse,
+    InventoryDuplicateResponse,
     InventoryTransferResponse,
     OwnedInventoryRowResponse,
     SetAcquisitionResponse,
@@ -382,6 +384,59 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIsNone(transfer_response.requested_item_ids)
         self.assertEqual("would_move", transfer_response.results[0].status)
         self.assertEqual("would_fail", transfer_response.results[1].status)
+
+        duplicate_schema = InventoryDuplicateRequest.model_json_schema()
+        duplicate_properties = duplicate_schema["properties"]
+        self.assertIn("Create a new inventory and copy every source inventory row", duplicate_schema["description"])
+        self.assertIn(
+            "Optional description for the duplicated inventory",
+            duplicate_properties["target_description"]["description"],
+        )
+
+        duplicate_response = InventoryDuplicateResponse.model_validate(
+            {
+                "source_inventory": "source",
+                "inventory": {
+                    "inventory_id": 9,
+                    "slug": "source-copy",
+                    "display_name": "Source Copy",
+                    "description": "Original description",
+                },
+                "transfer": {
+                    "source_inventory": "source",
+                    "target_inventory": "source-copy",
+                    "mode": "copy",
+                    "dry_run": False,
+                    "selection_kind": "all_items",
+                    "requested_item_ids": None,
+                    "requested_count": 2,
+                    "copied_count": 2,
+                    "moved_count": 0,
+                    "merged_count": 0,
+                    "failed_count": 0,
+                    "results_returned": 2,
+                    "results_truncated": False,
+                    "results": [
+                        {
+                            "source_item_id": 12,
+                            "target_item_id": 21,
+                            "status": "copied",
+                            "source_removed": False,
+                            "message": None,
+                        },
+                        {
+                            "source_item_id": 13,
+                            "target_item_id": 22,
+                            "status": "copied",
+                            "source_removed": False,
+                            "message": None,
+                        },
+                    ],
+                },
+            }
+        )
+        self.assertEqual("source-copy", duplicate_response.inventory.slug)
+        self.assertEqual(2, duplicate_response.transfer.copied_count)
 
     def test_patch_contract_publishes_single_operation_rule_and_discriminator(self) -> None:
         patch_schema = PatchInventoryItemRequest.model_json_schema()

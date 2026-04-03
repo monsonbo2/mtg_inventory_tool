@@ -46,4 +46,4 @@ from .mutations import (
     set_tags,
     split_row,
 )
-from .transfer import transfer_inventory_items
+from .transfer import duplicate_inventory, transfer_inventory_items

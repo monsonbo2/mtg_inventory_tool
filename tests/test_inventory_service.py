@@ -16,6 +16,7 @@ from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER
 from mtg_source_stack.inventory.response_models import (
     AddCardResult,
     BulkInventoryItemMutationResult,
+    InventoryDuplicateResult,
     InventoryTransferResult,
     MergeRowsResult,
     RemoveCardResult,
@@ -33,10 +34,12 @@ from mtg_source_stack.inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
     create_inventory,
+    duplicate_inventory,
     inventory_health,
     inventory_report,
     list_card_printings_for_oracle,
     list_inventory_audit_events,
+    list_inventory_memberships,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
@@ -3276,6 +3279,149 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(100, result.results_returned)
             self.assertTrue(result.results_truncated)
             self.assertEqual("would_copy", result.results[0].status)
+
+    def test_duplicate_inventory_copies_all_rows_and_grants_owner_to_actor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="other-card", collector_number="2")
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="other-card", quantity=1)
+
+            result = duplicate_inventory(
+                db_path,
+                source_inventory_slug="source",
+                target_slug="source-copy",
+                target_display_name="Source Copy",
+                actor_type="api",
+                actor_id="duplicator-user",
+                request_id="req-duplicate",
+            )
+            self.assertIsInstance(result, InventoryDuplicateResult)
+            self.assertEqual("source", result.source_inventory)
+            self.assertEqual("source-copy", result.inventory.slug)
+            self.assertEqual("Original description", result.inventory.description)
+            self.assertEqual("all_items", result.transfer.selection_kind)
+            self.assertEqual(2, result.transfer.copied_count)
+
+            duplicated_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source-copy",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(2, len(duplicated_rows))
+            memberships = list_inventory_memberships(db_path, inventory_slug="source-copy")
+            self.assertEqual(["duplicator-user"], [membership.actor_id for membership in memberships])
+            self.assertEqual(["owner"], [membership.role for membership in memberships])
+
+    def test_duplicate_inventory_rolls_back_new_inventory_when_target_slug_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(db_path, slug="source", display_name="Source Collection", description=None)
+            create_inventory(db_path, slug="existing", display_name="Existing Collection", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
+
+            with self.assertRaisesRegex(ConflictError, "Inventory 'existing' already exists"):
+                duplicate_inventory(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_slug="existing",
+                    target_display_name="Existing Copy",
+                )
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            existing_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="existing",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(source_rows))
+            self.assertEqual([], existing_rows)
+
+    def test_duplicate_inventory_creates_empty_inventory_and_uses_explicit_description_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+
+            result = duplicate_inventory(
+                db_path,
+                source_inventory_slug="source",
+                target_slug="source-copy",
+                target_display_name="Source Copy",
+                target_description="Override description",
+                actor_type="api",
+                actor_id="duplicator-user",
+                request_id="req-duplicate-empty",
+            )
+
+            self.assertEqual("Override description", result.inventory.description)
+            self.assertEqual(0, result.transfer.requested_count)
+            self.assertEqual(0, result.transfer.copied_count)
+            self.assertEqual([], result.transfer.results)
+
+            duplicated_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source-copy",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], duplicated_rows)
 
     def test_bulk_mutate_inventory_items_rolls_back_when_audit_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

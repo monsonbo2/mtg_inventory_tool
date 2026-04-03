@@ -142,6 +142,13 @@ TRANSFER_DRY_RUN_DESCRIPTION = (
 TRANSFER_ALL_ITEMS_DESCRIPTION = (
     "When true, transfer every row in the source inventory. Use either item_ids or all_items=true, not both."
 )
+DUPLICATE_REQUEST_DESCRIPTION = (
+    "Create a new inventory and copy every source inventory row into it atomically. "
+    "If duplication fails, the new inventory is not created."
+)
+DUPLICATE_DESCRIPTION_FALLBACK = (
+    "Optional description for the duplicated inventory. When omitted, the source inventory description is copied."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -251,3 +258,14 @@ class InventoryTransferRequest(ApiBaseModel):
         description=TRANSFER_KEEP_ACQUISITION_DESCRIPTION,
     )
     dry_run: bool = Field(default=False, description=TRANSFER_DRY_RUN_DESCRIPTION)
+
+
+class InventoryDuplicateRequest(ApiBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": DUPLICATE_REQUEST_DESCRIPTION},
+    )
+
+    target_slug: str
+    target_display_name: str
+    target_description: str | None = Field(default=None, description=DUPLICATE_DESCRIPTION_FALLBACK)
