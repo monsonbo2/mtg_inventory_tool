@@ -58,11 +58,19 @@ Use this as the first-pass UI-to-endpoint map:
 - Inventory selector -> `GET /inventories`
   Returns only the inventories visible to the current shared-service user.
 - Card search -> `GET /cards/search`
+- Card search scope guidance:
+  - omit `scope` for the ordinary mainline add flow
+  - use `scope=all` only for an intentional advanced or fallback broad-catalog
+    search mode
 - Card-name search -> `GET /cards/search/names`
   Returns one row per card/oracle and includes `available_languages`.
+  - if the frontend opts into `scope=all`, keep that same scope choice when
+    moving from card-name search to printing lookup
 - Printing lookup for a selected card -> `GET /cards/oracle/{oracle_id}/printings`
   Defaults to English printings when available; use `lang=all` or a specific
   language code to expand the list.
+  - also accepts `scope=all` when the frontend intentionally wants the broader
+    local catalog instead of the default mainline add-flow scope
 - Add card -> `POST /inventories/{inventory_slug}/items`
   Accepts printing-level identifiers like `scryfall_id` and card-level
   `oracle_id`. When `language_code` is omitted, the backend stores the
@@ -111,6 +119,10 @@ Use this as the first-pass UI-to-endpoint map:
    pip install -e '.[web]'
    mtg-web-api --db var/db/frontend_demo.db
    ```
+
+   If you are working against an upgraded existing pre-`0008` database instead
+   of a fresh bootstrap, run a fresh Scryfall import before relying on the
+   narrowed default catalog search scope.
 
 3. Point the frontend at the local API base URL.
 4. Build against the published HTTP contract rather than backend internals.

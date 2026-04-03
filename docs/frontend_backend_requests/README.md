@@ -27,6 +27,7 @@ backend requests.
 | `bulk_inventory_item_mutations.md` | Not linked yet | Accepted | Unassigned | generic bulk route accepted; implement tag operations first on the final bulk contract |
 | `card_name_search_and_printing_lookup.md` | [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16) | Done | Boyd | implemented via grouped name search plus oracle printings lookup in commit `b409f56` |
 | `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Done | Steve | stored image URLs exposed in search and owned-item responses |
+| `playable_card_search_scope.md` | [#22](https://github.com/monsonbo2/mtg_inventory_tool/issues/22) | Done | Boyd | default app-facing search is now narrowed to the mainline add flow, with additive `scope=all` support for intentional broad catalog search |
 | `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
 | `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Done | Steve | PATCH stays single-mutation-only and now returns an explicit `operation` discriminator |
 | `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Done | Steve | canonical values, defaults, and finish aliases published in API contract |
