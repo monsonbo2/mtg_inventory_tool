@@ -103,6 +103,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
         finishes_json: str = '["nonfoil","foil"]',
         image_uris_json: str | None = None,
         layout: str = "normal",
+        set_type: str | None = None,
+        booster: int = 0,
+        promo_types_json: str = "[]",
         is_default_add_searchable: int = 1,
     ) -> None:
         if image_uris_json is None:
@@ -129,9 +132,12 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finishes_json,
                     image_uris_json,
                     layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
                     is_default_add_searchable
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scryfall_id,
@@ -145,6 +151,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finishes_json,
                     image_uris_json,
                     layout,
+                    set_type,
+                    booster,
+                    promo_types_json,
                     is_default_add_searchable,
                 ),
             )
@@ -429,6 +438,124 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual("resolve-three-ja", resolved["scryfall_id"])
 
+    def test_resolve_card_row_for_oracle_id_prefers_mainstream_english_over_newer_promo_and_newer_non_english(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-policy-mainstream-en",
+                oracle_id="resolve-policy-oracle",
+                name="Resolver Policy Card",
+                set_code="bro",
+                set_name="The Brothers' War",
+                collector_number="101",
+                lang="en",
+                released_at="2023-11-18",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-policy-mainstream-ja",
+                oracle_id="resolve-policy-oracle",
+                name="Resolver Policy Card",
+                set_code="mkm",
+                set_name="Murders at Karlov Manor",
+                collector_number="102",
+                lang="ja",
+                released_at="2024-02-09",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-policy-promo-en",
+                oracle_id="resolve-policy-oracle",
+                name="Resolver Policy Card",
+                set_code="pneo",
+                set_name="Kamigawa: Neon Dynasty Promos",
+                collector_number="103",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=0,
+                promo_types_json='["promo_pack"]',
+            )
+
+            with connect(db_path) as connection:
+                resolved = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-policy-oracle",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish=None,
+                )
+
+            self.assertEqual("resolve-policy-mainstream-en", resolved["scryfall_id"])
+
+    def test_resolve_card_row_for_oracle_id_uses_default_add_scope_before_ranking(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-scope-mainstream-ja",
+                oracle_id="resolve-scope-oracle",
+                name="Resolver Scope Card",
+                set_code="mkm",
+                set_name="Murders at Karlov Manor",
+                collector_number="111",
+                lang="ja",
+                released_at="2024-02-09",
+                finishes_json='["nonfoil"]',
+                set_type="expansion",
+                booster=1,
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolve-scope-token-en",
+                oracle_id="resolve-scope-oracle",
+                name="Resolver Scope Card",
+                set_code="tmkm",
+                set_name="Murders at Karlov Manor Tokens",
+                collector_number="112",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil"]',
+                layout="token",
+                set_type="token",
+                booster=0,
+                is_default_add_searchable=0,
+            )
+
+            with connect(db_path) as connection:
+                resolved = resolve_card_row(
+                    connection,
+                    scryfall_id=None,
+                    oracle_id="resolve-scope-oracle",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    finish=None,
+                )
+
+            self.assertEqual("resolve-scope-mainstream-ja", resolved["scryfall_id"])
+
     def test_resolve_card_row_can_use_finish_to_break_name_ties(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -628,6 +755,140 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual("add-oracle-ja", added.scryfall_id)
             self.assertEqual("ja", added.language_code)
+
+    def test_add_card_with_oracle_id_prefers_mainstream_default_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-policy-mainstream-en",
+                oracle_id="add-policy-oracle",
+                name="Oracle Policy Add Card",
+                set_code="bro",
+                set_name="The Brothers' War",
+                collector_number="121",
+                lang="en",
+                released_at="2023-11-18",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-policy-mainstream-ja",
+                oracle_id="add-policy-oracle",
+                name="Oracle Policy Add Card",
+                set_code="mkm",
+                set_name="Murders at Karlov Manor",
+                collector_number="122",
+                lang="ja",
+                released_at="2024-02-09",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-policy-promo-en",
+                oracle_id="add-policy-oracle",
+                name="Oracle Policy Add Card",
+                set_code="pneo",
+                set_name="Kamigawa: Neon Dynasty Promos",
+                collector_number="123",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=0,
+                promo_types_json='["promo_pack"]',
+            )
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id=None,
+                oracle_id="add-policy-oracle",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code=None,
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertEqual("add-policy-mainstream-en", added.scryfall_id)
+            self.assertEqual("en", added.language_code)
+
+    def test_add_card_with_oracle_id_rejects_default_normal_when_only_foil_candidates_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="add-foil-only",
+                oracle_id="add-foil-only-oracle",
+                name="Oracle Foil Only Card",
+                set_code="neo",
+                set_name="Kamigawa: Neon Dynasty",
+                collector_number="131",
+                lang="en",
+                released_at="2024-02-01",
+                finishes_json='["foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "No printing found for oracle_id 'add-foil-only-oracle' with finish 'normal'.",
+            ):
+                add_card(
+                    db_path,
+                    inventory_slug="personal",
+                    inventory_display_name=None,
+                    scryfall_id=None,
+                    oracle_id="add-foil-only-oracle",
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
+                    quantity=1,
+                    condition_code="NM",
+                    finish="normal",
+                    language_code=None,
+                    location="Binder A",
+                    acquisition_price=None,
+                    acquisition_currency=None,
+                    notes=None,
+                    tags=None,
+                )
 
     def test_add_card_rejects_explicit_language_code_that_conflicts_with_resolved_printing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

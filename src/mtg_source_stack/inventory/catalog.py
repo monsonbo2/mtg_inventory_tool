@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -27,6 +29,14 @@ from .response_models import CatalogNameSearchRow, CatalogSearchRow
 
 
 _LANGUAGE_ORDER = {code: index for index, code in enumerate(CANONICAL_LANGUAGE_CODES)}
+_PREFERRED_ORACLE_DEFAULT_SET_TYPES = {
+    "commander",
+    "core",
+    "draft_innovation",
+    "expansion",
+    "masters",
+    "starter",
+}
 
 
 def _catalog_search_row_from_payload(payload: Mapping[str, Any]) -> CatalogSearchRow:
@@ -88,7 +98,11 @@ def _catalog_resolution_rows(
             lang,
             finishes_json,
             released_at,
-            tcgplayer_product_id
+            tcgplayer_product_id,
+            set_type,
+            booster,
+            promo_types_json,
+            is_default_add_searchable
         FROM mtg_cards
         WHERE {' AND '.join(filters)}
         ORDER BY
@@ -118,6 +132,54 @@ def _rows_matching_finish(rows: list[sqlite3.Row], requested_finish: str | None)
         row for row in rows if normalized_finish in normalized_catalog_finish_list(row["finishes_json"])
     ]
     return matched_rows, normalized_finish
+
+
+def _row_json_text_list(row: sqlite3.Row, field_name: str) -> list[str]:
+    payload = text_or_none(row[field_name])
+    if payload is None:
+        return []
+    try:
+        value = json.loads(payload)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(value, list):
+        return []
+    return [normalized for normalized in (text_or_none(item) for item in value) if normalized is not None]
+
+
+def _oracle_default_printing_tier(row: sqlite3.Row) -> int:
+    promo_types = _row_json_text_list(row, "promo_types_json")
+    set_type = text_or_none(row["set_type"])
+    normalized_set_type = set_type.lower() if set_type is not None else None
+    booster = bool(row["booster"])
+
+    if not promo_types and (booster or normalized_set_type in _PREFERRED_ORACLE_DEFAULT_SET_TYPES):
+        return 0
+    if not promo_types:
+        return 1
+    return 2
+
+
+def _released_at_sort_key(value: Any) -> tuple[int, int]:
+    released_at = text_or_none(value)
+    if released_at is None:
+        return (1, 0)
+    try:
+        return (0, -date.fromisoformat(released_at).toordinal())
+    except ValueError:
+        return (0, 0)
+
+
+def _oracle_default_printing_sort_key(row: sqlite3.Row, *, prefer_english: bool) -> tuple[Any, ...]:
+    normalized_lang = normalize_language_code(row["lang"])
+    return (
+        0 if prefer_english and normalized_lang == "en" else 1,
+        _oracle_default_printing_tier(row),
+        *_released_at_sort_key(row["released_at"]),
+        text_or_none(row["set_code"]) or "",
+        text_or_none(row["collector_number"]) or "",
+        str(row["scryfall_id"]),
+    )
 
 
 def search_cards(
@@ -496,6 +558,7 @@ def resolve_card_row(
     if oracle_id:
         filters = ["oracle_id = ?"]
         params: list[Any] = [oracle_id]
+        filters.append("COALESCE(is_default_add_searchable, 1) = 1")
         if set_code:
             filters.append("LOWER(set_code) = LOWER(?)")
             params.append(set_code)
@@ -516,7 +579,14 @@ def resolve_card_row(
             raise ValidationError(
                 f"No printing found for oracle_id '{oracle_id}' with finish '{normalized_finish}'."
             )
-        return rows[0]
+        ranked_rows = sorted(
+            rows,
+            key=lambda row: _oracle_default_printing_sort_key(
+                row,
+                prefer_english=normalized_lang is None,
+            ),
+        )
+        return ranked_rows[0]
 
     if not name:
         raise ValidationError("Provide either --scryfall-id, --oracle-id, --tcgplayer-product-id, or --name.")
