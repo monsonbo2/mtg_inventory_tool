@@ -11,63 +11,6 @@ export type SearchCardGroup = {
   availableLanguages: string[];
 };
 
-function normalizeSearchText(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function getNameSearchPriority(name: string, query: string) {
-  const normalizedName = normalizeSearchText(name);
-  const normalizedQuery = normalizeSearchText(query);
-
-  if (!normalizedQuery) {
-    return 4;
-  }
-  if (normalizedName === normalizedQuery) {
-    return 0;
-  }
-  if (normalizedName.startsWith(normalizedQuery)) {
-    return 1;
-  }
-  const firstMatchIndex = normalizedName.indexOf(normalizedQuery);
-  if (firstMatchIndex >= 0) {
-    return normalizedName[firstMatchIndex - 1] === " " ? 2 : 3;
-  }
-  return 4;
-}
-
-export function sortNameSearchRows(rows: CatalogNameSearchRow[], query: string) {
-  const normalizedQuery = normalizeSearchText(query);
-  if (!normalizedQuery) {
-    return [...rows];
-  }
-
-  return [...rows].sort((left, right) => {
-    const priorityDifference =
-      getNameSearchPriority(left.name, normalizedQuery) -
-      getNameSearchPriority(right.name, normalizedQuery);
-    if (priorityDifference !== 0) {
-      return priorityDifference;
-    }
-
-    const leftIndex = normalizeSearchText(left.name).indexOf(normalizedQuery);
-    const rightIndex = normalizeSearchText(right.name).indexOf(normalizedQuery);
-    if (leftIndex !== rightIndex) {
-      return leftIndex - rightIndex;
-    }
-
-    const nameComparison = left.name.localeCompare(right.name, undefined, {
-      sensitivity: "base",
-    });
-    if (nameComparison !== 0) {
-      return nameComparison;
-    }
-
-    return left.oracle_id.localeCompare(right.oracle_id, undefined, {
-      sensitivity: "base",
-    });
-  });
-}
-
 export function createSearchCardGroups(rows: CatalogNameSearchRow[]) {
   return rows.map((row) => ({
     groupId: row.oracle_id,

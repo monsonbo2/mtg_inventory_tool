@@ -21,7 +21,6 @@ import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
 import {
   createSearchCardGroups,
-  sortNameSearchRows,
   type SearchCardGroup,
 } from "./searchResultHelpers";
 import {
@@ -205,11 +204,10 @@ export default function App() {
           if (requestId !== suggestionLookupRequestIdRef.current) {
             return;
           }
-          const sortedResults = sortNameSearchRows(results, trimmed);
-          suggestionCacheRef.current[normalizedQuery] = sortedResults;
-          setSuggestionResults(sortedResults);
+          suggestionCacheRef.current[normalizedQuery] = results;
+          setSuggestionResults(results);
           setSuggestionStatus("ready");
-          setHighlightedSuggestionIndex(sortedResults.length ? 0 : -1);
+          setHighlightedSuggestionIndex(results.length ? 0 : -1);
         })
         .catch((error) => {
           if (requestId !== suggestionLookupRequestIdRef.current) {
@@ -413,7 +411,7 @@ export default function App() {
         query: trimmed,
         limit: SEARCH_GROUP_LIMIT,
       });
-      setSearchResults(sortNameSearchRows(results, trimmed));
+      setSearchResults(results);
       setSearchStatus("ready");
     } catch (error) {
       setSearchResults([]);

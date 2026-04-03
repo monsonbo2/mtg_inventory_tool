@@ -311,32 +311,37 @@ describe("App", () => {
     await user.keyboard("{Enter}");
 
     expect(searchCardNames).toHaveBeenCalledWith({ query: "Fo", limit: 5 });
-    expect(input).toHaveValue("Forest");
+    expect(input).toHaveValue("Force of Will");
     expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Forest" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Force of Will" })).toBeInTheDocument();
   });
 
-  it("prioritizes card names that start with the query over later word matches", async () => {
+  it("preserves backend ordering for name-search suggestions and grouped results", async () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
-      if (params.query === "Lightning") {
+      if (params.query === "lightn") {
         return [
-          buildNameSearchRow({
-            oracle_id: "ball-lightning-oracle",
-            name: "Ball Lightning",
-            printings_count: 2,
-          }),
           buildNameSearchRow({
             oracle_id: "lightning-bolt-oracle",
             name: "Lightning Bolt",
             printings_count: 3,
           }),
           buildNameSearchRow({
+            oracle_id: "lightning-angel-oracle",
+            name: "Lightning Angel",
+            printings_count: 5,
+          }),
+          buildNameSearchRow({
+            oracle_id: "lightning-axe-oracle",
+            name: "Lightning Axe",
+            printings_count: 9,
+          }),
+          buildNameSearchRow({
             oracle_id: "lightning-blast-oracle",
             name: "Lightning Blast",
-            printings_count: 1,
+            printings_count: 6,
           }),
         ];
       }
@@ -346,9 +351,9 @@ describe("App", () => {
     const { container } = render(<App />);
 
     const input = await screen.findByRole("combobox", { name: "Search query" });
-    await user.type(input, "Lightning");
+    await user.type(input, "lightn");
 
-    await screen.findByRole("option", { name: /Lightning Blast/i });
+    await screen.findByRole("option", { name: /Lightning Angel/i });
 
     const listbox = screen.getByRole("listbox", { name: "Card suggestions" });
     const suggestionNames = within(listbox)
@@ -356,23 +361,25 @@ describe("App", () => {
       .map((option) => option.querySelector(".search-autocomplete-copy strong")?.textContent);
 
     expect(suggestionNames).toEqual([
-      "Lightning Blast",
       "Lightning Bolt",
-      "Ball Lightning",
+      "Lightning Angel",
+      "Lightning Axe",
+      "Lightning Blast",
     ]);
 
     await user.click(screen.getByRole("button", { name: "Search cards" }));
 
-    await screen.findByRole("heading", { name: "Lightning Blast" });
+    await screen.findByRole("heading", { name: "Lightning Angel" });
 
     const resultNames = Array.from(
       container.querySelectorAll(".search-results-grid article h3"),
     ).map((heading) => heading.textContent);
 
     expect(resultNames).toEqual([
-      "Lightning Blast",
       "Lightning Bolt",
-      "Ball Lightning",
+      "Lightning Angel",
+      "Lightning Axe",
+      "Lightning Blast",
     ]);
   });
 
