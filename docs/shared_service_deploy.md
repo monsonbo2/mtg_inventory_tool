@@ -66,6 +66,9 @@ Effective behavior:
   or a global `admin`
 - `POST /inventories` still requires a global `editor` or `admin`, and the
   creator automatically becomes `owner`
+- `POST /me/bootstrap` lets a first-time global `editor` or `admin` create one
+  owned personal `Collection` inventory and returns that same inventory on
+  repeated calls
 
 Important rollout note:
 
@@ -129,8 +132,10 @@ mtg-personal-inventory revoke-inventory-membership \
 
 Recommended first-live rollout:
 
-1. Create new inventories through the app so the creator becomes `owner`, or
-   grant `owner` memberships to existing inventories with the CLI.
+1. If the system is blank, let each first user call `POST /me/bootstrap` once
+   so they receive an owned `Collection`. Otherwise, create new inventories
+   through the app so the creator becomes `owner`, or grant `owner`
+   memberships to existing inventories with the CLI.
 2. Grant `viewer` / `editor` memberships for the first cohort.
 3. Verify visible inventories, allowed writes, and denied writes with at least
    two real user identities before launch.

@@ -122,6 +122,9 @@ shared service.
   local memberships, with global `admin` as the bypass.
 - Inventory creation still requires a global `editor` or `admin`, and the
   creator becomes `owner` on the new inventory.
+- First-run shared-service onboarding can now use `POST /me/bootstrap` to
+  create one owned personal `Collection` inventory for an authenticated global
+  `editor` or `admin`.
 - The recommended first-live deployment is same-origin through a reverse proxy
   that publishes `/api`, strips that prefix before forwarding, and injects
   verified identity headers.

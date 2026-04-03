@@ -21,6 +21,7 @@ from ..inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
     create_inventory,
+    ensure_default_inventory,
     list_card_printings_for_oracle,
     list_inventory_audit_events,
     list_visible_inventories,
@@ -63,6 +64,7 @@ from .response_models import (
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
+    DefaultInventoryBootstrapResponse,
     HealthResponse,
     InventoryAuditEventResponse,
     InventoryCreateResponse,
@@ -195,6 +197,24 @@ def inventories_create(
             display_name=payload.display_name,
             description=payload.description,
             actor_id=context.actor_id,
+        )
+    )
+
+
+@router.post(
+    "/me/bootstrap",
+    response_model=DefaultInventoryBootstrapResponse,
+    responses=_error_responses(401, 403, 409, 503, 500),
+)
+def bootstrap_default_inventory(
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+) -> Any:
+    return _serialize(
+        ensure_default_inventory(
+            settings.db_path,
+            actor_id=context.actor_id,
+            actor_roles=context.roles,
         )
     )
 

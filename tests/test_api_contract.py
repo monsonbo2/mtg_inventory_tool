@@ -23,6 +23,7 @@ from mtg_source_stack.api.response_models import (
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
+    DefaultInventoryBootstrapResponse,
     OwnedInventoryRowResponse,
     SetAcquisitionResponse,
     SetFinishResponse,
@@ -209,11 +210,21 @@ class ApiContractTest(RepoSmokeTestCase):
             "image_uri_small": "https://example.test/cards/card-1-small.jpg",
             "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
         }
+        bootstrap_payload = {
+            "created": True,
+            "inventory": {
+                "inventory_id": 7,
+                "slug": "alice-collection",
+                "display_name": "Collection",
+                "description": None,
+            },
+        }
         error_payload = api_error_payload(ValidationError("Bad request."))
 
         owned = OwnedInventoryRowResponse.model_validate(owned_payload)
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
         catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
+        bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
         error = ApiErrorResponse.model_validate(error_payload)
 
         self.assertEqual("2.50", owned.acquisition_price)
@@ -224,6 +235,8 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
+        self.assertTrue(bootstrap.created)
+        self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("validation_error", error.error.code)
 
     def test_api_models_publish_defaults_and_canonical_value_guidance(self) -> None:

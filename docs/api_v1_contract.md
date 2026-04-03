@@ -195,6 +195,9 @@ before the generic 500 envelope is returned.
   write access.
 - `POST /inventories` still requires a global `editor` or `admin`, and the
   creator is automatically granted `owner` membership on the new inventory.
+- `POST /me/bootstrap` requires a global `editor` or `admin`, creates one
+  personal default inventory named `Collection` for that actor, grants
+  `owner`, and returns the same inventory on repeated calls.
 - Existing inventories with no memberships are effectively admin-only until
   memberships are granted intentionally.
 - In `shared_service`, caller-controlled `X-Actor-Id` values are not part of

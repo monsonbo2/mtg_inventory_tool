@@ -105,6 +105,12 @@ class InventoryCreateResult(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class DefaultInventoryBootstrapResult(ResponseModel):
+    created: bool
+    inventory: InventoryCreateResult
+
+
+@dataclass(frozen=True, slots=True)
 class BulkInventoryItemMutationResult(ResponseModel):
     inventory: str
     operation: str

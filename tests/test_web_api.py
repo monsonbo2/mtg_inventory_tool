@@ -99,6 +99,7 @@ class WebApiSchemaTest(unittest.TestCase):
             components = spec["components"]["schemas"]
 
             for path, method in [
+                ("/me/bootstrap", "post"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
@@ -115,6 +116,7 @@ class WebApiSchemaTest(unittest.TestCase):
             for path, method in [
                 ("/inventories", "get"),
                 ("/inventories", "post"),
+                ("/me/bootstrap", "post"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
@@ -219,6 +221,17 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 ["normal", "foil", "etched"],
                 owned_properties["allowed_finishes"]["items"]["enum"],
+            )
+
+            bootstrap_schema = spec["paths"]["/me/bootstrap"]["post"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]
+            bootstrap_schema_name = self._schema_name_from_ref(bootstrap_schema["$ref"])
+            self.assertEqual("DefaultInventoryBootstrapResponse", bootstrap_schema_name)
+            self.assertEqual("boolean", components[bootstrap_schema_name]["properties"]["created"]["type"])
+            self.assertEqual(
+                "InventoryCreateResponse",
+                self._schema_name_from_ref(components[bootstrap_schema_name]["properties"]["inventory"]["$ref"]),
             )
             inventory_parameters = {
                 parameter["name"]: parameter
@@ -1238,6 +1251,10 @@ class WebApiTest(unittest.TestCase):
             with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
                 self._seed_card(db_path)
 
+                bootstrap_without_auth = client.post("/me/bootstrap")
+                self.assertEqual(401, bootstrap_without_auth.status_code)
+                self.assertEqual("authentication_required", bootstrap_without_auth.json()["error"]["code"])
+
                 create_without_auth = client.post(
                     "/inventories",
                     json={"slug": "personal", "display_name": "Personal Collection"},
@@ -1253,6 +1270,16 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(401, create_with_wrong_header.status_code)
                 self.assertEqual("authentication_required", create_with_wrong_header.json()["error"]["code"])
+
+                bootstrap_with_viewer_role = client.post(
+                    "/me/bootstrap",
+                    headers={
+                        "X-Authenticated-User": "shared-viewer",
+                        "X-Authenticated-Roles": "viewer",
+                    },
+                )
+                self.assertEqual(403, bootstrap_with_viewer_role.status_code)
+                self.assertEqual("forbidden", bootstrap_with_viewer_role.json()["error"]["code"])
 
                 created_inventory = client.post(
                     "/inventories",
@@ -1291,6 +1318,69 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(401, bulk_without_auth.status_code)
                 self.assertEqual("authentication_required", bulk_without_auth.json()["error"]["code"])
+
+    def test_shared_service_bootstrap_creates_one_default_inventory_and_unlocks_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            user_headers = {"X-Authenticated-User": "shared-user@example.com"}
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                pre_bootstrap_search = client.get("/cards/search", headers=user_headers, params={"query": "API Test"})
+                self.assertEqual(403, pre_bootstrap_search.status_code)
+                self.assertEqual("forbidden", pre_bootstrap_search.json()["error"]["code"])
+
+                created = client.post("/me/bootstrap", headers=user_headers)
+                self.assertEqual(200, created.status_code)
+                self.assertTrue(created.json()["created"])
+                self.assertEqual("Collection", created.json()["inventory"]["display_name"])
+                self.assertEqual("shared-user-collection", created.json()["inventory"]["slug"])
+
+                inventories = client.get("/inventories", headers=user_headers)
+                self.assertEqual(200, inventories.status_code)
+                self.assertEqual(["shared-user-collection"], [row["slug"] for row in inventories.json()])
+
+                repeated = client.post("/me/bootstrap", headers=user_headers)
+                self.assertEqual(200, repeated.status_code)
+                self.assertFalse(repeated.json()["created"])
+                self.assertEqual(created.json()["inventory"], repeated.json()["inventory"])
+
+                post_bootstrap_search = client.get("/cards/search", headers=user_headers, params={"query": "API Test"})
+                self.assertEqual(200, post_bootstrap_search.status_code)
+
+    def test_shared_service_bootstrap_creates_personal_default_even_when_user_has_shared_membership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            user_headers = {"X-Authenticated-User": "viewer-user@example.com"}
+
+            create_inventory(
+                db_path,
+                slug="team",
+                display_name="Team Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="team",
+                actor_id="viewer-user@example.com",
+                role="viewer",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                created = client.post("/me/bootstrap", headers=user_headers)
+                self.assertEqual(200, created.status_code)
+                self.assertTrue(created.json()["created"])
+                self.assertEqual("viewer-user-collection", created.json()["inventory"]["slug"])
+
+                inventories = client.get("/inventories", headers=user_headers)
+                self.assertEqual(200, inventories.status_code)
+                self.assertEqual(
+                    ["team", "viewer-user-collection"],
+                    [row["slug"] for row in inventories.json()],
+                )
 
     def test_shared_service_inventory_write_routes_allow_editors_and_owners_but_reject_viewers_and_non_members(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

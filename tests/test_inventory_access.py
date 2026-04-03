@@ -6,8 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.errors import NotFoundError, ValidationError
+from mtg_source_stack.errors import AuthorizationError, NotFoundError, ValidationError
 from mtg_source_stack.inventory.service import (
     actor_can_read_any_inventory,
     actor_can_read_inventory,
@@ -16,6 +17,7 @@ from mtg_source_stack.inventory.service import (
     can_read_inventory,
     can_write_inventory,
     create_inventory,
+    ensure_default_inventory,
     grant_inventory_membership,
     list_inventory_memberships,
     list_visible_inventories,
@@ -117,6 +119,142 @@ class InventoryAccessTest(unittest.TestCase):
 
             memberships_after = list_inventory_memberships(db_path, inventory_slug="personal")
             self.assertEqual([("bob@example.com", "owner")], [(row.actor_id, row.role) for row in memberships_after])
+
+    def test_ensure_default_inventory_creates_owned_collection_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            created = ensure_default_inventory(
+                db_path,
+                actor_id="alice@example.com",
+                actor_roles={"editor"},
+            )
+            self.assertTrue(created.created)
+            self.assertEqual("Collection", created.inventory.display_name)
+            self.assertEqual("alice-collection", created.inventory.slug)
+
+            repeated = ensure_default_inventory(
+                db_path,
+                actor_id="alice@example.com",
+                actor_roles={"editor"},
+            )
+            self.assertFalse(repeated.created)
+            self.assertEqual(created.inventory.inventory_id, repeated.inventory.inventory_id)
+            self.assertEqual(created.inventory.slug, repeated.inventory.slug)
+
+            self.assertEqual(
+                "owner",
+                actor_inventory_role(
+                    db_path,
+                    inventory_slug="alice-collection",
+                    actor_id="alice@example.com",
+                ),
+            )
+
+            with connect(db_path) as connection:
+                mapping_rows = connection.execute(
+                    """
+                    SELECT actor_id, inventory_id
+                    FROM actor_default_inventories
+                    """
+                ).fetchall()
+            self.assertEqual(
+                [("alice@example.com", created.inventory.inventory_id)],
+                [tuple(row) for row in mapping_rows],
+            )
+
+    def test_ensure_default_inventory_uses_suffix_when_slug_root_collides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            create_inventory(
+                db_path,
+                slug="alice-collection",
+                display_name="Shared Alice Collection",
+                description=None,
+            )
+
+            created = ensure_default_inventory(
+                db_path,
+                actor_id="alice@example.com",
+                actor_roles={"editor"},
+            )
+
+            self.assertTrue(created.created)
+            self.assertEqual("alice-collection-2", created.inventory.slug)
+
+    def test_ensure_default_inventory_allows_admin_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            created = ensure_default_inventory(
+                db_path,
+                actor_id="admin@example.com",
+                actor_roles={"admin"},
+            )
+
+            self.assertTrue(created.created)
+            self.assertEqual(
+                "owner",
+                actor_inventory_role(
+                    db_path,
+                    inventory_slug=created.inventory.slug,
+                    actor_id="admin@example.com",
+                ),
+            )
+
+    def test_ensure_default_inventory_creates_personal_inventory_even_if_actor_has_shared_membership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            create_inventory(
+                db_path,
+                slug="team",
+                display_name="Team Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="team",
+                actor_id="alice@example.com",
+                role="viewer",
+            )
+
+            created = ensure_default_inventory(
+                db_path,
+                actor_id="alice@example.com",
+                actor_roles={"editor"},
+            )
+
+            self.assertTrue(created.created)
+            self.assertEqual("alice-collection", created.inventory.slug)
+            self.assertEqual(
+                ["alice-collection", "team"],
+                [
+                    row.slug
+                    for row in list_visible_inventories(
+                        db_path,
+                        actor_id="alice@example.com",
+                        actor_roles={"editor"},
+                    )
+                ],
+            )
+
+    def test_ensure_default_inventory_requires_global_editor_or_admin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with self.assertRaisesRegex(AuthorizationError, "Role 'editor' is required"):
+                ensure_default_inventory(
+                    db_path,
+                    actor_id="viewer@example.com",
+                    actor_roles={"viewer"},
+                )
 
     def test_list_visible_inventories_filters_memberships_with_admin_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

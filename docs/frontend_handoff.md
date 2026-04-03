@@ -171,6 +171,8 @@ export default {
   - catalog search should not be treated as globally available to every
     authenticated user; it currently requires a user who can read at least one
     inventory, or a global `admin`
+  - first-run shared-service users can call `POST /me/bootstrap` to create a
+    personal `Collection` inventory and unlock search/add flows
 
 ## Known Limits
 

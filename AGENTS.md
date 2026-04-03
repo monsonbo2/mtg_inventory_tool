@@ -73,6 +73,9 @@ Current authz behavior:
   `admin`
 - `POST /inventories` still requires global `editor` / `admin`, and the
   creator becomes `owner`
+- `POST /me/bootstrap` creates one personal `Collection` inventory per
+  authenticated global `editor` / `admin`, grants `owner`, and returns that
+  same inventory on repeated calls
 
 Important limitation:
 

@@ -116,6 +116,9 @@ The current shared-service behavior is:
 - inventory writes require `editor` or `owner` membership on that inventory
 - `POST /inventories` still requires a global `editor` or `admin` user, and the
   creator is automatically granted `owner`
+- `POST /me/bootstrap` creates one personal default inventory named
+  `Collection` for a first-time global `editor` or `admin`, grants `owner`,
+  and returns the same inventory on repeated calls
 
 For the first live cohort, the recommended deployment shape is:
 
@@ -218,6 +221,19 @@ mtg-personal-inventory revoke-inventory-membership \
   --inventory personal \
   --actor-id alice@example.com
 ```
+
+For greenfield shared-service onboarding, the API can also create a personal
+default inventory exactly once per user:
+
+```bash
+curl -X POST \
+  -H "X-Authenticated-User: alice@example.com" \
+  http://127.0.0.1:8000/me/bootstrap
+```
+
+That creates a `Collection` inventory for the actor if they do not already have
+one and immediately unlocks card search under the current membership-gated
+shared-service model.
 
 Preview a CSV import with the bundled sample file:
 
@@ -345,8 +361,10 @@ Recommended rollout sequence:
 
 1. Migrate the DB intentionally.
 2. Start the API in `shared_service`.
-3. Create new inventories through the API so creators become `owner`, or use
-   the CLI membership commands to assign owners on existing inventories.
+3. If you are starting from a blank system, let each first user call
+   `POST /me/bootstrap` once so they get an owned `Collection`. Otherwise,
+   create inventories through the API so creators become `owner`, or use the
+   CLI membership commands to assign owners on existing inventories.
 4. Grant `viewer` / `editor` memberships to the first cohort.
 5. Verify real user sessions against those memberships before launch.
 
