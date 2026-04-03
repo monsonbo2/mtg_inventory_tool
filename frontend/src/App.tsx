@@ -8,7 +8,8 @@ import {
   listInventoryItems,
   patchInventoryItem,
   deleteInventoryItem,
-  searchCards,
+  listCardPrintings,
+  searchCardNames,
 } from "./api";
 import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AuditFeed } from "./components/AuditFeed";
@@ -18,8 +19,7 @@ import { SearchPanel } from "./components/SearchPanel";
 import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
 import {
-  getSearchCardGroupId,
-  groupCatalogSearchRows,
+  createSearchCardGroups,
   type SearchCardGroup,
 } from "./searchResultHelpers";
 import {
@@ -31,6 +31,7 @@ import {
 } from "./tableViewHelpers";
 import type {
   AddInventoryItemRequest,
+  CatalogNameSearchRow,
   CatalogSearchRow,
   InventoryAuditEvent,
   InventorySummary,
@@ -56,9 +57,7 @@ import type {
 const AUTOCOMPLETE_MIN_QUERY_LENGTH = 2;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 const AUTOCOMPLETE_LIMIT = 5;
-const SEARCH_RESULT_PRINTING_LIMIT = 100;
 const SEARCH_GROUP_LIMIT = 8;
-const PRINTING_LOOKUP_LIMIT = 100;
 
 export default function App() {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
@@ -74,8 +73,8 @@ export default function App() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<CatalogSearchRow[]>([]);
-  const [suggestionResults, setSuggestionResults] = useState<CatalogSearchRow[]>([]);
+  const [searchResults, setSearchResults] = useState<CatalogNameSearchRow[]>([]);
+  const [suggestionResults, setSuggestionResults] = useState<CatalogNameSearchRow[]>([]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
@@ -92,7 +91,7 @@ export default function App() {
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
   const suggestionLookupRequestIdRef = useRef(0);
-  const suggestionCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
+  const suggestionCacheRef = useRef<Record<string, CatalogNameSearchRow[]>>({});
   const printingLookupCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
   const printingLookupPromisesRef = useRef<Record<string, Promise<CatalogSearchRow[]>>>({});
   const skipSuggestionFetchQueryRef = useRef<string | null>(null);
@@ -192,7 +191,7 @@ export default function App() {
       setSuggestionStatus("loading");
       setSuggestionError(null);
 
-      void searchCards({
+      void searchCardNames({
         query: trimmed,
         limit: AUTOCOMPLETE_LIMIT,
       })
@@ -390,9 +389,9 @@ export default function App() {
     setNotice(null);
 
     try {
-      const results = await searchCards({
+      const results = await searchCardNames({
         query: trimmed,
-        limit: SEARCH_RESULT_PRINTING_LIMIT,
+        limit: SEARCH_GROUP_LIMIT,
       });
       setSearchResults(results);
       setSearchStatus("ready");
@@ -453,12 +452,15 @@ export default function App() {
     }
   }
 
-  async function handleSuggestionSelect(result: CatalogSearchRow) {
+  async function handleSuggestionSelect(result: CatalogNameSearchRow) {
     const query = result.name.trim();
     skipSuggestionFetchQueryRef.current = query.toLowerCase();
     setSearchQuery(query);
+    setSearchResults([result]);
+    setSearchError(null);
+    setSearchStatus("ready");
+    setNotice(null);
     closeSuggestionList();
-    await runCardSearch(query);
   }
 
   async function loadSearchGroupPrintings(group: SearchCardGroup) {
@@ -472,15 +474,8 @@ export default function App() {
       return inFlightRequest;
     }
 
-    const request = searchCards({
-      query: group.name,
-      exact: true,
-      limit: PRINTING_LOOKUP_LIMIT,
-    })
-      .then((results) => {
-        const nextPrintings = results.filter(
-          (result) => getSearchCardGroupId(result.name) === group.groupId,
-        );
+    const request = listCardPrintings(group.oracleId, { lang: "all" })
+      .then((nextPrintings) => {
         if (!nextPrintings.length) {
           throw new Error(`No printings are currently available for ${group.name}.`);
         }
@@ -616,7 +611,7 @@ export default function App() {
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
   );
-  const searchGroups = groupCatalogSearchRows(searchResults).slice(0, SEARCH_GROUP_LIMIT);
+  const searchGroups = createSearchCardGroups(searchResults).slice(0, SEARCH_GROUP_LIMIT);
   const visibleTableItems = applyInventoryTableQuery(items, tableSort, tableFilters);
   const tableFilterOptions = getInventoryTableFilterOptions(items);
 

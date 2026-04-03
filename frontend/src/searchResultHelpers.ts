@@ -1,73 +1,48 @@
-import type { CatalogSearchRow } from "./types";
+import type { CatalogNameSearchRow, CatalogSearchRow } from "./types";
+import { formatLanguageCode } from "./uiHelpers";
 
 export type SearchCardGroup = {
   groupId: string;
+  oracleId: string;
   name: string;
-  rarity: string | null;
   image_uri_small: string | null;
   image_uri_normal: string | null;
-  previewPrintings: CatalogSearchRow[];
+  printingsCount: number;
+  availableLanguages: string[];
 };
 
-export function getSearchCardGroupId(name: string) {
-  return name.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-export function groupCatalogSearchRows(rows: CatalogSearchRow[]) {
-  const groups: SearchCardGroup[] = [];
-  const groupsById = new Map<string, SearchCardGroup>();
-
-  for (const row of rows) {
-    const groupId = getSearchCardGroupId(row.name);
-    const existingGroup = groupsById.get(groupId);
-
-    if (!existingGroup) {
-      const nextGroup: SearchCardGroup = {
-        groupId,
-        name: row.name,
-        rarity: row.rarity,
-        image_uri_small: row.image_uri_small,
-        image_uri_normal: row.image_uri_normal,
-        previewPrintings: [row],
-      };
-      groups.push(nextGroup);
-      groupsById.set(groupId, nextGroup);
-      continue;
-    }
-
-    if (!existingGroup.image_uri_small && row.image_uri_small) {
-      existingGroup.image_uri_small = row.image_uri_small;
-    }
-    if (!existingGroup.image_uri_normal && row.image_uri_normal) {
-      existingGroup.image_uri_normal = row.image_uri_normal;
-    }
-    if (!existingGroup.rarity && row.rarity) {
-      existingGroup.rarity = row.rarity;
-    }
-    if (!existingGroup.previewPrintings.some((printing) => printing.scryfall_id === row.scryfall_id)) {
-      existingGroup.previewPrintings.push(row);
-    }
-  }
-
-  return groups;
+export function createSearchCardGroups(rows: CatalogNameSearchRow[]) {
+  return rows.map((row) => ({
+    groupId: row.oracle_id,
+    oracleId: row.oracle_id,
+    name: row.name,
+    image_uri_small: row.image_uri_small,
+    image_uri_normal: row.image_uri_normal,
+    printingsCount: row.printings_count,
+    availableLanguages: row.available_languages,
+  }));
 }
 
 export function formatPrintingOptionLabel(printing: CatalogSearchRow) {
   return `${printing.set_code.toUpperCase()} · ${printing.set_name} · #${printing.collector_number} · ${printing.lang.toUpperCase()}`;
 }
 
-export function summarizePreviewPrintings(group: SearchCardGroup) {
-  const previewSetCodes = Array.from(
-    new Set(group.previewPrintings.map((printing) => printing.set_code.toUpperCase())),
+export function summarizeSearchGroup(group: SearchCardGroup) {
+  const formattedLanguages = group.availableLanguages.map((languageCode) =>
+    formatLanguageCode(languageCode),
   );
 
-  if (previewSetCodes.length === 0) {
-    return "Open the printing picker to choose an exact version.";
+  if (!formattedLanguages.length) {
+    return `${group.printingsCount} printing${group.printingsCount === 1 ? "" : "s"} available.`;
   }
 
-  if (previewSetCodes.length <= 3) {
-    return `Preview printings: ${previewSetCodes.join(", ")}.`;
+  if (formattedLanguages.length === 1) {
+    return `${group.printingsCount} printing${group.printingsCount === 1 ? "" : "s"} available in ${formattedLanguages[0]}.`;
   }
 
-  return `Preview printings: ${previewSetCodes.slice(0, 3).join(", ")} +${previewSetCodes.length - 3} more.`;
+  if (formattedLanguages.length <= 4) {
+    return `${group.printingsCount} printings available across ${formattedLanguages.join(", ")}.`;
+  }
+
+  return `${group.printingsCount} printings across ${formattedLanguages.slice(0, 4).join(", ")} +${formattedLanguages.length - 4} more languages.`;
 }

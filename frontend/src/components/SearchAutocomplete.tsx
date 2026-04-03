@@ -1,16 +1,17 @@
 import { CardThumbnail } from "./ui/CardThumbnail";
-import type { CatalogSearchRow } from "../types";
+import type { CatalogNameSearchRow } from "../types";
 import type { AsyncStatus } from "../uiTypes";
+import { formatLanguageCode } from "../uiHelpers";
 
 export function SearchAutocomplete(props: {
   highlightedIndex: number;
   isOpen: boolean;
   listboxId: string;
   onHighlight: (index: number) => void;
-  onSelect: (result: CatalogSearchRow) => void;
+  onSelect: (result: CatalogNameSearchRow) => void;
   optionIdPrefix: string;
   query: string;
-  results: CatalogSearchRow[];
+  results: CatalogNameSearchRow[];
   status: AsyncStatus;
   error: string | null;
 }) {
@@ -46,7 +47,7 @@ export function SearchAutocomplete(props: {
                   : "search-autocomplete-item"
               }
               id={`${props.optionIdPrefix}-option-${index}`}
-              key={result.scryfall_id}
+              key={result.oracle_id}
               onMouseDown={(event) => {
                 event.preventDefault();
                 props.onSelect(result);
@@ -65,7 +66,8 @@ export function SearchAutocomplete(props: {
               <span className="search-autocomplete-copy">
                 <strong>{result.name}</strong>
                 <span className="search-autocomplete-meta">
-                  {result.set_name} · #{result.collector_number}
+                  {result.printings_count} printing{result.printings_count === 1 ? "" : "s"} ·{" "}
+                  {result.available_languages.map((languageCode) => formatLanguageCode(languageCode)).join(", ")}
                 </span>
               </span>
             </button>

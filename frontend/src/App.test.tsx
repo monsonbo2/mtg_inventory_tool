@@ -4,7 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { ApiClientError } from "./api";
-import type { CatalogSearchRow, InventoryAuditEvent, OwnedInventoryRow } from "./types";
+import type {
+  CatalogNameSearchRow,
+  CatalogSearchRow,
+  InventoryAuditEvent,
+  OwnedInventoryRow,
+} from "./types";
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -13,7 +18,8 @@ vi.mock("./api", async () => {
     listInventories: vi.fn(),
     listInventoryItems: vi.fn(),
     listInventoryAudit: vi.fn(),
-    searchCards: vi.fn(),
+    searchCardNames: vi.fn(),
+    listCardPrintings: vi.fn(),
     addInventoryItem: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
@@ -22,11 +28,12 @@ vi.mock("./api", async () => {
 
 import {
   addInventoryItem,
+  listCardPrintings,
   listInventories,
   listInventoryItems,
   listInventoryAudit,
-  searchCards,
   patchInventoryItem,
+  searchCardNames,
 } from "./api";
 
 afterEach(() => {
@@ -80,6 +87,20 @@ describe("App", () => {
     };
   }
 
+  function buildNameSearchRow(
+    overrides: Partial<CatalogNameSearchRow> = {},
+  ): CatalogNameSearchRow {
+    return {
+      oracle_id: "bolt-oracle",
+      name: "Lightning Bolt",
+      printings_count: 2,
+      available_languages: ["en"],
+      image_uri_small: null,
+      image_uri_normal: null,
+      ...overrides,
+    };
+  }
+
   function mockCollectionViewApp(options?: {
     items?: OwnedInventoryRow[];
     auditEvents?: InventoryAuditEvent[];
@@ -98,7 +119,8 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue(items);
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
-    vi.mocked(searchCards).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
   }
 
   function mockBaseSearchApp() {
@@ -113,13 +135,15 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
   }
 
   it("starts with an empty search field and keeps the example text as a placeholder only", async () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(searchCards).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
 
     render(<App />);
 
@@ -129,7 +153,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Search cards" }));
 
-    expect(searchCards).not.toHaveBeenCalled();
+    expect(searchCardNames).not.toHaveBeenCalled();
     expect(screen.getByText("Run a search")).toBeInTheDocument();
   });
 
@@ -171,21 +195,8 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([ownedRow]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCards).mockResolvedValue([
-      {
-        scryfall_id: "bolt-1",
-        name: "Lightning Bolt",
-        set_code: "lea",
-        set_name: "Limited Edition Alpha",
-        collector_number: "161",
-        lang: "en",
-        rarity: "common",
-        finishes: ["normal", "foil"],
-        tcgplayer_product_id: "123",
-        image_uri_small: null,
-        image_uri_normal: null,
-      },
-    ]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(patchInventoryItem).mockRejectedValue(
       new ApiClientError(
         "Finish 'foil' is not available for this card printing. Available finishes: normal.",
@@ -236,45 +247,27 @@ describe("App", () => {
 
     expect(within(row!).getByRole("combobox")).toBeEnabled();
     expect(within(row!).getByText("Available: Normal, Foil.")).toBeInTheDocument();
-    expect(searchCards).not.toHaveBeenCalled();
+    expect(listCardPrintings).not.toHaveBeenCalled();
   });
 
   it("supports keyboard selection from autocomplete suggestions", async () => {
     const user = userEvent.setup();
-    const forest: CatalogSearchRow = {
-      scryfall_id: "forest-1",
+    const forest = buildNameSearchRow({
+      oracle_id: "forest-oracle",
       name: "Forest",
-      set_code: "m10",
-      set_name: "Magic 2010",
-      collector_number: "246",
-      lang: "en",
-      rarity: "common",
-      finishes: ["normal"],
-      tcgplayer_product_id: "1003",
-      image_uri_small: null,
-      image_uri_normal: null,
-    };
-    const forceOfWill: CatalogSearchRow = {
-      scryfall_id: "force-1",
+      printings_count: 1,
+    });
+    const forceOfWill = buildNameSearchRow({
+      oracle_id: "force-oracle",
       name: "Force of Will",
-      set_code: "all",
-      set_name: "Alliances",
-      collector_number: "28",
-      lang: "en",
-      rarity: "rare",
-      finishes: ["normal"],
-      tcgplayer_product_id: "2001",
-      image_uri_small: null,
-      image_uri_normal: null,
-    };
+      printings_count: 4,
+      available_languages: ["en", "de"],
+    });
 
     mockBaseSearchApp();
-    vi.mocked(searchCards).mockImplementation(async (params) => {
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Fo") {
         return [forest, forceOfWill];
-      }
-      if (params.query === "Force of Will") {
-        return [forceOfWill];
       }
       return [];
     });
@@ -301,11 +294,7 @@ describe("App", () => {
 
     await user.keyboard("{Enter}");
 
-    await waitFor(() => {
-      expect(searchCards).toHaveBeenCalledWith(
-        expect.objectContaining({ query: "Force of Will", limit: 100 }),
-      );
-    });
+    expect(searchCardNames).toHaveBeenCalledWith({ query: "Fo", limit: 5 });
     expect(input).toHaveValue("Force of Will");
     expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Force of Will" })).toBeInTheDocument();
@@ -315,37 +304,27 @@ describe("App", () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(searchCards).mockImplementation(async (params) => {
-      if (params.query === "Lightning" && !params.exact) {
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
         return [
-          buildSearchRow({
-            scryfall_id: "bolt-alpha",
+          buildNameSearchRow({
+            oracle_id: "bolt-oracle",
             name: "Lightning Bolt",
-            set_code: "lea",
-            set_name: "Limited Edition Alpha",
-            collector_number: "161",
-            finishes: ["normal"],
+            printings_count: 3,
+            available_languages: ["en", "ja"],
           }),
-          buildSearchRow({
-            scryfall_id: "bolt-m11",
-            name: "Lightning Bolt",
-            set_code: "m11",
-            set_name: "Magic 2011",
-            collector_number: "146",
-            finishes: ["normal", "foil"],
-          }),
-          buildSearchRow({
-            scryfall_id: "blast-ice",
+          buildNameSearchRow({
+            oracle_id: "blast-oracle",
             name: "Lightning Blast",
-            set_code: "ice",
-            set_name: "Ice Age",
-            collector_number: "200",
-            finishes: ["normal"],
+            printings_count: 1,
+            available_languages: ["en"],
           }),
         ];
       }
-
-      if (params.query === "Lightning Bolt" && params.exact) {
+      return [];
+    });
+    vi.mocked(listCardPrintings).mockImplementation(async (oracleId) => {
+      if (oracleId === "bolt-oracle") {
         return [
           buildSearchRow({
             scryfall_id: "bolt-alpha",
@@ -374,7 +353,6 @@ describe("App", () => {
           }),
         ];
       }
-
       return [];
     });
     vi.mocked(addInventoryItem).mockResolvedValue({ card_name: "Lightning Bolt" } as any);
@@ -398,13 +376,7 @@ describe("App", () => {
     await user.click(printingSelect);
 
     await waitFor(() => {
-      expect(searchCards).toHaveBeenCalledWith(
-        expect.objectContaining({
-          query: "Lightning Bolt",
-          exact: true,
-          limit: 100,
-        }),
-      );
+      expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
     });
 
     expect(
@@ -464,22 +436,14 @@ describe("App", () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(searchCards).mockImplementation(async (params) => {
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Fo") {
         return [
-          {
-            scryfall_id: "forest-1",
+          buildNameSearchRow({
+            oracle_id: "forest-oracle",
             name: "Forest",
-            set_code: "m10",
-            set_name: "Magic 2010",
-            collector_number: "246",
-            lang: "en",
-            rarity: "common",
-            finishes: ["normal"],
-            tcgplayer_product_id: "1003",
-            image_uri_small: null,
-            image_uri_normal: null,
-          },
+            printings_count: 1,
+          }),
         ];
       }
       return [];
@@ -845,7 +809,8 @@ describe("App", () => {
       ];
     });
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCards).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
 
     render(<App />);
 

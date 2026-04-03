@@ -6,7 +6,7 @@ import type { SearchCardGroup } from "../searchResultHelpers";
 import type { AsyncStatus, NoticeTone } from "../uiTypes";
 import {
   formatPrintingOptionLabel,
-  summarizePreviewPrintings,
+  summarizeSearchGroup,
 } from "../searchResultHelpers";
 import {
   FINISH_OPTIONS,
@@ -40,7 +40,7 @@ export function SearchResultCard(props: {
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
-  const [printings, setPrintings] = useState<CatalogSearchRow[]>(props.group.previewPrintings);
+  const [printings, setPrintings] = useState<CatalogSearchRow[]>([]);
   const [printingStatus, setPrintingStatus] = useState<AsyncStatus>("idle");
   const [printingError, setPrintingError] = useState<string | null>(null);
   const [hasLoadedExactPrintings, setHasLoadedExactPrintings] = useState(false);
@@ -71,7 +71,7 @@ export function SearchResultCard(props: {
   }, [recentlyAdded]);
 
   useEffect(() => {
-    setPrintings(props.group.previewPrintings);
+    setPrintings([]);
     setPrintingStatus("idle");
     setPrintingError(null);
     setHasLoadedExactPrintings(false);
@@ -84,7 +84,7 @@ export function SearchResultCard(props: {
     setNotes("");
     setTags("");
     setRecentlyAdded(false);
-  }, [props.group.groupId, props.group.previewPrintings]);
+  }, [props.group.groupId]);
 
   const activePrinting =
     printings.find((printing) => printing.scryfall_id === selectedPrintingId) || null;
@@ -169,7 +169,7 @@ export function SearchResultCard(props: {
   );
   const selectedPrintingSummary = activePrinting
     ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}`
-    : "Choose a printing below, then set finish and add details.";
+    : "Choose a printing below to add this card.";
 
   async function loadPrintings() {
     if (printingStatus === "loading") {
@@ -243,23 +243,12 @@ export function SearchResultCard(props: {
               <h3>{props.group.name}</h3>
               <p className="result-card-subtitle">{selectedPrintingSummary}</p>
             </div>
-            <span className="rarity-pill">{props.group.rarity || "unknown"}</span>
+            <span className="rarity-pill">
+              {props.group.printingsCount} printing{props.group.printingsCount === 1 ? "" : "s"}
+            </span>
           </div>
 
-          <p className="search-result-summary">{summarizePreviewPrintings(props.group)}</p>
-
-          <div className="tag-row">
-            {props.group.previewPrintings.slice(0, 3).map((printing) => (
-              <span className="tag-chip subdued" key={printing.scryfall_id}>
-                {printing.set_code.toUpperCase()}
-              </span>
-            ))}
-            {props.group.previewPrintings.length > 3 ? (
-              <span className="tag-chip subdued">
-                +{props.group.previewPrintings.length - 3} more sampled
-              </span>
-            ) : null}
-          </div>
+          <p className="search-result-summary">{summarizeSearchGroup(props.group)}</p>
         </div>
       </div>
 
@@ -268,9 +257,7 @@ export function SearchResultCard(props: {
           <div className="form-section-header">
             <strong>Quick add</strong>
             <span>
-              {activePrinting
-                ? `${printings.length} printings available`
-                : "Choose a printing first"}
+              {props.group.printingsCount} printing{props.group.printingsCount === 1 ? "" : "s"} available
             </span>
           </div>
 
