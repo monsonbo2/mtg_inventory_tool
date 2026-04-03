@@ -115,8 +115,13 @@ shared service.
   use.
 - The API now uses sync route handlers to match the current synchronous
   inventory services and SQLite access.
-- In `shared_service`, all current app routes except `/health` now require an
-  authenticated `editor` user, with `admin` reserved for maintenance surfaces.
+- In `shared_service`, the current access model now has two layers:
+  - global proxy-backed app roles: `editor`, `admin`
+  - local inventory membership roles: `viewer`, `editor`, `owner`
+- Inventory listing, inventory reads, and inventory writes are now scoped by
+  local memberships, with global `admin` as the bypass.
+- Inventory creation still requires a global `editor` or `admin`, and the
+  creator becomes `owner` on the new inventory.
 - The recommended first-live deployment is same-origin through a reverse proxy
   that publishes `/api`, strips that prefix before forwarding, and injects
   verified identity headers.
@@ -129,8 +134,8 @@ shared service.
 
 The next API-hardening steps are:
 
-- finer-grained authorization and admin-only route policy for shared use
-- rollout validation against the real single-host deployment shape
+- rollout validation against the real proxy/header/membership deployment shape
+- clearer admin-only route policy for shared use
 - observability and operator automation for the shared-service deployment
 
 ## Frontend Collaboration Boundary

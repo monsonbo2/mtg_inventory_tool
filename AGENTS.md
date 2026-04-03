@@ -65,11 +65,22 @@ Current authz behavior:
 - app routes are protected in `shared_service`
 - authenticated users with no roles header default to `editor`
 - `admin` implies `editor`
+- global proxy-backed app roles are `editor` and `admin`
+- local inventory membership roles are `viewer`, `editor`, and `owner`
+- `GET /inventories` is filtered to visible inventories
+- inventory reads require inventory membership or global `admin`
+- inventory writes require inventory `editor` / `owner` membership or global
+  `admin`
+- `POST /inventories` still requires global `editor` / `admin`, and the
+  creator becomes `owner`
 
 Important limitation:
 
-- this is not yet a true per-user inventory ownership or membership model
-- current shared-service authz is one shared permission domain for trusted users
+- this is still a small single-host authorization model, not a full multi-user
+  organization/team system
+- existing inventories with no memberships are effectively admin-only until
+  memberships are granted
+- membership management is currently CLI-first, not a full app UI workflow
 
 If a task requires real user/inventory isolation, treat that as new
 architecture work rather than a small follow-up.
@@ -196,15 +207,14 @@ At the time this file was written, the next likely backend priorities are:
 3. Fix `inventory_health(..., preview_limit=...)` so it actually limits preview
    payloads.
 4. Normalize optional blank fields consistently, especially `location`.
-5. Decide whether a real inventory ownership/membership model is needed before
-   broader rollout.
+5. Finish rollout/runbook validation for the new inventory membership model.
 
 If your task touches one of these areas, assume it is active design territory.
 
 ## Things Not To Assume
 
 - Do not assume the backend is ready for horizontal scale.
-- Do not assume `shared_service` means true multi-user inventory isolation.
+- Do not assume `shared_service` means a full org/team permission system.
 - Do not assume blank optional fields are normalized consistently everywhere.
 - Do not assume docs/examples are allowed to drift from code.
 - Do not assume `oracle_id` changes storage semantics; storage remains
@@ -219,4 +229,3 @@ If your task touches one of these areas, assume it is active design territory.
   new frontend-facing features.
 - Be careful around demo/bootstrap scripts: they are part of the effective
   frontend contract, not just throwaway tooling.
-

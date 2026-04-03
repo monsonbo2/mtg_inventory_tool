@@ -158,10 +158,31 @@ before the generic 500 envelope is returned.
 - In `shared_service`, the API also accepts a normalized roles header. The
   default header name is `X-Authenticated-Roles`, and it can be overridden with
   `MTG_API_AUTHENTICATED_ROLES_HEADER`.
-- The current recognized app roles are `editor` and `admin`.
+- The current recognized global app roles are `editor` and `admin`.
 - If the verified user header is present and the roles header is missing, the
   API defaults that caller to `editor`.
 - `admin` implies `editor`.
+- Shared-service inventory access is also scoped by local inventory
+  memberships:
+  - `viewer` can read a specific inventory
+  - `editor` can read and write a specific inventory
+  - `owner` can read and write a specific inventory
+  - global `admin` bypasses inventory membership checks
+- `GET /inventories` returns only the inventories visible to the caller, while
+  global `admin` can see all inventories.
+- `GET /cards/search`, `GET /cards/search/names`, and
+  `GET /cards/oracle/{oracle_id}/printings` require a caller who can read at
+  least one inventory, or a global `admin`.
+- `GET /inventories/{inventory_slug}/items` and
+  `GET /inventories/{inventory_slug}/audit` require inventory read access.
+- `POST /inventories/{inventory_slug}/items`,
+  `PATCH /inventories/{inventory_slug}/items/{item_id}`, and
+  `DELETE /inventories/{inventory_slug}/items/{item_id}` require inventory
+  write access.
+- `POST /inventories` still requires a global `editor` or `admin`, and the
+  creator is automatically granted `owner` membership on the new inventory.
+- Existing inventories with no memberships are effectively admin-only until
+  memberships are granted intentionally.
 - In `shared_service`, caller-controlled `X-Actor-Id` values are not part of
   the trust boundary for audit attribution.
 - In `shared_service`, `MTG_API_TRUST_ACTOR_HEADERS=true` is not a valid
@@ -175,8 +196,8 @@ before the generic 500 envelope is returned.
 - `X-Request-Id` remains a supported tracing header and is echoed back in API
   responses.
 - The API logs startup mode and unexpected failures. The main remaining
-  blockers before broader shared deployment are finer-grained permission rules
-  for admin-only surfaces and broader deployment policy choices.
+  blockers before broader shared deployment are rollout validation against the
+  real membership model and clearer admin-only surface policy.
 
 ## Notes For Web V1
 

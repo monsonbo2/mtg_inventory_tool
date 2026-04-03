@@ -56,6 +56,7 @@ The current intended demo surface is:
 Use this as the first-pass UI-to-endpoint map:
 
 - Inventory selector -> `GET /inventories`
+  Returns only the inventories visible to the current shared-service user.
 - Card search -> `GET /cards/search`
 - Card-name search -> `GET /cards/search/names`
   Returns one row per card/oracle and includes `available_languages`.
@@ -162,21 +163,32 @@ export default {
 - `shared_service` uses verified upstream identity headers such as
   `X-Authenticated-User` and optionally `X-Authenticated-Roles`; frontend code
   should not treat `X-Actor-Id` as the shared-service auth model.
+- Shared-service inventory access is now membership-scoped. Frontend code
+  should assume:
+  - inventory lists are filtered to the current user
+  - some inventory reads may return `403`
+  - inventory writes may return `403` if the user is a viewer or non-member
+  - catalog search should not be treated as globally available to every
+    authenticated user; it currently requires a user who can read at least one
+    inventory, or a global `admin`
 
 ## Known Limits
 
 - The current frontend sandbox should keep using the default `local_demo` API
   posture for local work.
 - The backend now also has a `shared_service` startup mode for pre-migrated,
-  single-host deployments. In that mode, all current non-health routes require
-  an authenticated `editor` user, and `admin` is reserved for maintenance
-  surfaces. Broader deployment policy is not finished yet.
+  single-host deployments. In that mode, the app uses verified upstream
+  identity plus local inventory memberships rather than one global permission
+  domain. Broader deployment policy and admin-only surface policy are not
+  finished yet.
 - The recommended first-live deployment shape is same-origin and proxy-based,
   not separate-origin CORS.
 - The backend still uses synchronous SQLite-backed services under the HTTP
   layer, with sync HTTP route handlers aligned to that service boundary.
-- The current backend permission model is intentionally coarse:
-  authenticated `editor` access for the app routes, with `admin` reserved for
-  maintenance surfaces.
+- The current backend permission model is now inventory-scoped for reads and
+  writes, but still intentionally small:
+  - proxy-backed global app roles: `editor`, `admin`
+  - local inventory roles: `viewer`, `editor`, `owner`
+  - no richer org/team/ownership workflow exists yet
 - Browser-based local dev is expected to use a frontend proxy unless backend
   CORS behavior is changed deliberately.

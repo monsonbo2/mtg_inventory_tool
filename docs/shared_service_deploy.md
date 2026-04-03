@@ -38,6 +38,40 @@ The app currently treats:
 - authenticated users with no roles header as `editor`
 - `admin` as implying `editor`
 
+These are global app roles from the proxy, not per-inventory roles.
+
+## Inventory Access Model
+
+Shared-service access is now inventory-scoped.
+
+Global app roles:
+
+- `editor`
+- `admin`
+
+Local inventory membership roles:
+
+- `viewer`
+- `editor`
+- `owner`
+
+Effective behavior:
+
+- `GET /inventories` returns only the inventories visible to the caller
+- inventory card search routes require a caller who can read at least one
+  inventory, or a global `admin`
+- inventory reads require `viewer`, `editor`, or `owner` membership on that
+  inventory, or a global `admin`
+- inventory writes require `editor` or `owner` membership on that inventory,
+  or a global `admin`
+- `POST /inventories` still requires a global `editor` or `admin`, and the
+  creator automatically becomes `owner`
+
+Important rollout note:
+
+- existing inventories with no memberships are effectively admin-only until
+  you grant memberships intentionally
+
 ## Backend Startup
 
 Migrate the database intentionally before starting the service:
@@ -72,6 +106,35 @@ Useful environment settings:
 - `MTG_API_FORWARDED_ALLOW_IPS`
 - `MTG_API_AUTO_MIGRATE`
 
+## Membership Rollout Commands
+
+Use the inventory CLI to seed or repair memberships:
+
+```bash
+mtg-personal-inventory grant-inventory-membership \
+  --db "var/db/mtg_mvp.db" \
+  --inventory personal \
+  --actor-id alice@example.com \
+  --role owner
+
+mtg-personal-inventory list-inventory-memberships \
+  --db "var/db/mtg_mvp.db" \
+  --inventory personal
+
+mtg-personal-inventory revoke-inventory-membership \
+  --db "var/db/mtg_mvp.db" \
+  --inventory personal \
+  --actor-id alice@example.com
+```
+
+Recommended first-live rollout:
+
+1. Create new inventories through the app so the creator becomes `owner`, or
+   grant `owner` memberships to existing inventories with the CLI.
+2. Grant `viewer` / `editor` memberships for the first cohort.
+3. Verify visible inventories, allowed writes, and denied writes with at least
+   two real user identities before launch.
+
 ## Operational Expectations
 
 - keep the SQLite database on local storage, not a network filesystem
@@ -94,4 +157,6 @@ Before first live use, run a rollout smoke pass against this exact shape:
 - start the API in `shared_service`
 - verify the proxy injects the expected headers
 - verify at least two authenticated browser sessions
+- verify visible inventories and denied inventory access match the granted
+  memberships
 - verify audit attribution and request IDs
