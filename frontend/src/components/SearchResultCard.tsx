@@ -160,9 +160,9 @@ export function SearchResultCard(props: {
     : recentlyAdded
       ? "Added"
       : !props.canAdd
-        ? "Select inventory"
+        ? "Select collection"
         : quantityIsValid
-          ? "Add to inventory"
+          ? "Add to collection"
           : "Enter valid qty";
   const availableFinishes = FINISH_OPTIONS.filter((option) =>
     activePrinting?.finishes.includes(option.value),
@@ -200,7 +200,7 @@ export function SearchResultCard(props: {
     event.preventDefault();
 
     if (!props.canAdd) {
-      props.onNotice("Select an inventory before adding a card.");
+      props.onNotice("Select a collection before adding a card.");
       return;
     }
 

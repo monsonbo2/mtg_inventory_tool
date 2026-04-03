@@ -6,6 +6,8 @@ import type {
   CatalogNameSearchRow,
   CatalogSearchRow,
   InventoryAuditEvent,
+  InventoryCreateRequest,
+  InventoryCreateResponse,
   InventoryItemPatchResponse,
   InventoryItemMutationResponse,
   InventorySummary,
@@ -104,6 +106,13 @@ async function request<T>(
 
 export async function listInventories() {
   return request<InventorySummary[]>("/inventories");
+}
+
+export async function createInventory(payload: InventoryCreateRequest) {
+  return request<InventoryCreateResponse>("/inventories", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function searchCards(params: SearchCardsParams) {

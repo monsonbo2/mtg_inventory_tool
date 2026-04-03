@@ -57,6 +57,12 @@ function getColumnActionHint(column: InventoryTableColumnKey) {
   }
 }
 
+function shouldIgnoreRowSelectionClick(target: EventTarget | null) {
+  return target instanceof HTMLElement
+    ? Boolean(target.closest('input, button, a, select, textarea, label'))
+    : false;
+}
+
 export function InventoryTableView(props: {
   items: OwnedInventoryRow[];
   allItemsCount: number;
@@ -167,7 +173,7 @@ export function InventoryTableView(props: {
     if (!options.length) {
       return (
         <p className="table-query-empty">
-          No values are available for this column in the current inventory.
+          No values are available for this column in the current collection.
         </p>
       );
     }
@@ -600,11 +606,19 @@ export function InventoryTableView(props: {
                         : "inventory-table-row"
                     }
                     key={item.item_id}
+                    onClick={(event) => {
+                      if (shouldIgnoreRowSelectionClick(event.target)) {
+                        return;
+                      }
+
+                      props.onToggleItemSelection(item.item_id);
+                    }}
                   >
                     <td className="inventory-table-checkbox-cell">
                       <input
                         aria-label={`Select ${item.name}`}
                         checked={isSelected}
+                        onClick={(event) => event.stopPropagation()}
                         onChange={() => props.onToggleItemSelection(item.item_id)}
                         type="checkbox"
                       />

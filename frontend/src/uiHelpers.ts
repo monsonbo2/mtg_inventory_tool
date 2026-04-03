@@ -105,6 +105,14 @@ export function normalizeOptionalText(value: string | null | undefined) {
   return text ? text : null;
 }
 
+export function normalizeInventorySlugInput(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function equalStringArrays(left: string[], right: string[]) {
   if (left.length !== right.length) {
     return false;
@@ -126,7 +134,7 @@ export function getInventoryCollectionEmptyMessage(inventory: InventorySummary) 
 
 export function getInventoryAuditEmptyMessage(inventory: InventorySummary) {
   if (inventory.total_cards === 0) {
-    return "This inventory has not recorded any write activity yet. Adding the first card will start the audit trail.";
+    return "This collection has not recorded any write activity yet. Adding the first card will start the audit trail.";
   }
 
   return "Once you add, edit, or remove cards, the latest events will appear here.";

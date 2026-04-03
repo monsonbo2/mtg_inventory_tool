@@ -131,7 +131,7 @@ function CompactInventoryRow(props: {
 
   async function handleDelete() {
     const confirmed = window.confirm(
-      `Remove ${props.item.name} from the selected inventory?`,
+      `Remove ${props.item.name} from the selected collection?`,
     );
     if (!confirmed) {
       return;

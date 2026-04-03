@@ -13,6 +13,19 @@ export interface InventorySummary {
   total_cards: number;
 }
 
+export interface InventoryCreateRequest {
+  slug: string;
+  display_name: string;
+  description?: string | null;
+}
+
+export interface InventoryCreateResponse {
+  inventory_id: number;
+  slug: string;
+  display_name: string;
+  description: string | null;
+}
+
 export type FinishValue = "normal" | "foil" | "etched";
 export type FinishInput = FinishValue | "nonfoil";
 export type ConditionCode =

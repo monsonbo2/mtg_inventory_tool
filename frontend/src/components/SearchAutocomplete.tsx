@@ -22,6 +22,7 @@ export function SearchAutocomplete(props: {
   return (
     <div
       aria-label="Card suggestions"
+      aria-busy={props.status === "loading"}
       className="search-autocomplete"
       id={props.listboxId}
       role="listbox"
@@ -53,6 +54,7 @@ export function SearchAutocomplete(props: {
                 props.onSelect(result);
               }}
               onMouseEnter={() => props.onHighlight(index)}
+              onFocus={() => props.onHighlight(index)}
               role="option"
               tabIndex={-1}
               type="button"

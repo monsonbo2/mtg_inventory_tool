@@ -21,6 +21,15 @@ export type NoticeState = {
   tone: NoticeTone;
 };
 
+export type InventoryCreateResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      reason: "conflict" | "error";
+    };
+
 export type SearchResultNoticeHandler = (message: string, tone?: NoticeTone) => void;
 export type OwnedRowNoticeHandler = (message: string, tone?: NoticeTone) => void;
 

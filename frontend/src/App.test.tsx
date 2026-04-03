@@ -22,6 +22,7 @@ vi.mock("./api", async () => {
     listCardPrintings: vi.fn(),
     addInventoryItem: vi.fn(),
     bulkMutateInventoryItems: vi.fn(),
+    createInventory: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
   };
@@ -30,6 +31,7 @@ vi.mock("./api", async () => {
 import {
   addInventoryItem,
   bulkMutateInventoryItems,
+  createInventory,
   listCardPrintings,
   listInventories,
   listInventoryItems,
@@ -487,7 +489,7 @@ describe("App", () => {
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
 
     await user.selectOptions(finishSelect, "foil");
-    await user.click(within(boltCard!).getByRole("button", { name: "Add to inventory" }));
+    await user.click(within(boltCard!).getByRole("button", { name: "Add to collection" }));
 
     await waitFor(() => {
       expect(addInventoryItem).toHaveBeenCalledWith(
@@ -679,32 +681,80 @@ describe("App", () => {
 
     await screen.findByRole("button", { name: "View Activity" });
     expect(screen.queryByRole("heading", { name: "Audit Feed" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "View Activity" }));
-    expect(await screen.findByRole("dialog", { name: "Inventory Activity" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
     expect(screen.getByText("Set Finish")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Close activity drawer" }));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "View Activity" }));
-    expect(await screen.findByRole("dialog", { name: "Inventory Activity" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
 
     await user.click(screen.getByTestId("activity-drawer-backdrop"));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "View Activity" }));
-    expect(await screen.findByRole("dialog", { name: "Inventory Activity" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
+  });
+
+  it("moves focus into the activity drawer, traps tab focus, and returns focus to the opener", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      auditEvents: [
+        {
+          id: 1,
+          inventory: "personal",
+          item_id: 42,
+          action: "set_finish",
+          actor_type: "api",
+          actor_id: "local-demo",
+          request_id: "req-1",
+          occurred_at: "2026-04-02T01:07:30Z",
+          before: null,
+          after: null,
+          metadata: {},
+        },
+      ],
+    });
+
+    render(<App />);
+
+    const openButton = await screen.findByRole("button", { name: "View Activity" });
+    openButton.focus();
+    expect(openButton).toHaveFocus();
+
+    await user.click(openButton);
+
+    const closeButton = await screen.findByRole("button", {
+      name: "Close activity drawer",
+    });
+    await waitFor(() => {
+      expect(closeButton).toHaveFocus();
+    });
+
+    await user.tab();
+    expect(closeButton).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Collection Activity" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(openButton).toHaveFocus();
   });
 
   it("supports table view row selection without refetching and preserves selection across view changes", async () => {
@@ -739,8 +789,16 @@ describe("App", () => {
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("checkbox", { name: "Select Lightning Bolt" }));
+    const table = screen.getByRole("table");
+    const lightningBoltRow = within(table)
+      .getAllByRole("row")
+      .find((row) => row.textContent?.includes("Lightning Bolt"));
+    expect(lightningBoltRow).toBeDefined();
+
+    await user.click(lightningBoltRow!);
+
     expect(screen.getByText("1 row selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Detailed" }));
     expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
@@ -953,10 +1011,126 @@ describe("App", () => {
     await user.click(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" }));
     expect(screen.getByText("1 row selected")).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: /Change collection/i }));
     await user.click(screen.getByRole("button", { name: /Trade Binder/i }));
 
     expect(await screen.findByText("No rows selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
+  });
+
+  it("creates a new inventory from the sidebar and selects it", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([
+        {
+          slug: "personal",
+          display_name: "Personal Collection",
+          description: "Main demo inventory",
+          item_rows: 0,
+          total_cards: 0,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          slug: "personal",
+          display_name: "Personal Collection",
+          description: "Main demo inventory",
+          item_rows: 0,
+          total_cards: 0,
+        },
+        {
+          slug: "trade-binder",
+          display_name: "Trade Binder",
+          description: "Cards available to trade",
+          item_rows: 0,
+          total_cards: 0,
+        },
+      ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(createInventory).mockResolvedValue({
+      inventory_id: 42,
+      slug: "trade-binder",
+      display_name: "Trade Binder",
+      description: "Cards available to trade",
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Collection" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: "Collection name" })).toHaveFocus();
+    expect(within(dialog).queryByRole("textbox", { name: /Short name/i })).not.toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: "Collection name" }), "Trade Binder");
+
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Description (optional)" }),
+      "Cards available to trade",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Create Collection" }));
+
+    await waitFor(() => {
+      expect(createInventory).toHaveBeenCalledWith({
+        slug: "trade-binder",
+        display_name: "Trade Binder",
+        description: "Cards available to trade",
+      });
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Created Trade Binder.");
+    expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Create Collection" })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledWith("trade-binder");
+      expect(listInventoryAudit).toHaveBeenCalledWith("trade-binder");
+    });
+  });
+
+  it("reveals the short name field after a create conflict", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 0,
+        total_cards: 0,
+      },
+    ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(createInventory).mockRejectedValue(
+      new ApiClientError("Inventory short name already exists.", {
+        code: "conflict",
+        status: 409,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Collection" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
+    expect(within(dialog).queryByRole("textbox", { name: /Short name/i })).not.toBeInTheDocument();
+
+    await user.type(within(dialog).getByRole("textbox", { name: "Collection name" }), "Trade Binder");
+    await user.click(within(dialog).getByRole("button", { name: "Create Collection" }));
+
+    expect(await within(dialog).findByRole("textbox", { name: /Short name/i })).toHaveValue(
+      "trade-binder",
+    );
+    expect(
+      screen.getByText(
+        "That collection name needs a different short name. Edit it below and try again.",
+      ),
+    ).toBeInTheDocument();
   });
 });

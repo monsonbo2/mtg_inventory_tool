@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useId, useRef } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -21,14 +22,15 @@ function getFocusableElements(container: HTMLElement | null) {
   );
 }
 
-export function ActivityDrawer(props: {
+export function ModalDialog(props: {
   isOpen: boolean;
+  kicker?: string;
   title: string;
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
-  const drawerRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
@@ -56,10 +58,10 @@ export function ActivityDrawer(props: {
         return;
       }
 
-      const focusableElements = getFocusableElements(drawerRef.current);
+      const focusableElements = getFocusableElements(dialogRef.current);
       if (!focusableElements.length) {
         event.preventDefault();
-        drawerRef.current?.focus();
+        dialogRef.current?.focus();
         return;
       }
 
@@ -68,7 +70,7 @@ export function ActivityDrawer(props: {
       const activeElement = document.activeElement;
 
       if (event.shiftKey) {
-        if (activeElement === firstElement || activeElement === drawerRef.current) {
+        if (activeElement === firstElement || activeElement === dialogRef.current) {
           event.preventDefault();
           lastElement.focus();
         }
@@ -83,14 +85,22 @@ export function ActivityDrawer(props: {
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const frameId = window.requestAnimationFrame(() => {
-      const firstFocusableElement = getFocusableElements(drawerRef.current)[0];
-      (firstFocusableElement ?? closeButtonRef.current ?? drawerRef.current)?.focus();
-    });
+    function focusInitialElement() {
+      const preferredFocusElement =
+        dialogRef.current?.querySelector<HTMLElement>("[data-autofocus]") ?? null;
+      const firstFocusableElement = getFocusableElements(dialogRef.current)[0];
+      (
+        preferredFocusElement ??
+        firstFocusableElement ??
+        closeButtonRef.current ??
+        dialogRef.current
+      )?.focus();
+    }
+
+    focusInitialElement();
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.cancelAnimationFrame(frameId);
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleKeyDown);
 
@@ -104,37 +114,37 @@ export function ActivityDrawer(props: {
     return null;
   }
 
-  return (
+  const dialog = (
     <div
-      className="activity-drawer-backdrop"
-      data-testid="activity-drawer-backdrop"
+      className="modal-backdrop"
+      data-testid="modal-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           props.onClose();
         }
       }}
     >
-      <aside
+      <section
         aria-describedby={props.subtitle ? subtitleId : undefined}
         aria-labelledby={titleId}
         aria-modal="true"
-        className="activity-drawer"
+        className="modal-dialog"
         role="dialog"
-        ref={drawerRef}
+        ref={dialogRef}
         tabIndex={-1}
       >
-        <div className="activity-drawer-header">
+        <div className="modal-dialog-header">
           <div>
-            <p className="section-kicker">Recent Activity</p>
+            {props.kicker ? <p className="section-kicker">{props.kicker}</p> : null}
             <h2 id={titleId}>{props.title}</h2>
             {props.subtitle ? (
-              <p className="activity-drawer-subtitle" id={subtitleId}>
+              <p className="modal-dialog-subtitle" id={subtitleId}>
                 {props.subtitle}
               </p>
             ) : null}
           </div>
           <button
-            aria-label="Close activity drawer"
+            aria-label="Close dialog"
             className="secondary-button"
             onClick={props.onClose}
             ref={closeButtonRef}
@@ -144,8 +154,10 @@ export function ActivityDrawer(props: {
           </button>
         </div>
 
-        <div className="activity-drawer-body">{props.children}</div>
-      </aside>
+        <div className="modal-dialog-body">{props.children}</div>
+      </section>
     </div>
   );
+
+  return createPortal(dialog, document.body);
 }
