@@ -69,7 +69,7 @@ PATCH_KEEP_ACQUISITION_DESCRIPTION = (
 BULK_ITEM_MUTATION_REQUEST_DESCRIPTION = (
     "Specify exactly one bulk mutation operation per request. "
     "The current runtime supports add_tags, remove_tags, set_tags, clear_tags, "
-    "set_quantity, set_notes, set_acquisition, and set_finish."
+    "set_quantity, set_notes, set_acquisition, set_finish, and set_location."
 )
 BULK_TAGS_DESCRIPTION = (
     "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. "
@@ -100,6 +100,21 @@ BULK_FINISH_DESCRIPTION = (
     f"Used by set_finish. Accepted input values: {_ACCEPTED_FINISH_INPUTS_TEXT}. "
     f"Canonical response values: {_CANONICAL_FINISHES_TEXT}. "
     "The input alias `nonfoil` is normalized to `normal`. Omit this field for every other bulk operation."
+)
+BULK_LOCATION_DESCRIPTION = (
+    "Used by set_location. Provide a location to set/replace location, or omit it when "
+    "clear_location is true. Omit this field for every other bulk operation."
+)
+BULK_CLEAR_LOCATION_DESCRIPTION = (
+    "Only applies to set_location. When true, location must be omitted and location is cleared."
+)
+BULK_MERGE_DESCRIPTION = (
+    "Only applies to set_location. When true, a collision with an existing row is merged "
+    "instead of returning a conflict."
+)
+BULK_KEEP_ACQUISITION_DESCRIPTION = (
+    "Only applies to merged set_location changes. Choose whether the merged row keeps "
+    "the target row or source row acquisition metadata."
 )
 
 
@@ -172,6 +187,7 @@ class BulkInventoryItemMutationRequest(ApiBaseModel):
         "set_notes",
         "set_acquisition",
         "set_finish",
+        "set_location",
     ]
     item_ids: list[int] = Field(min_length=1, max_length=100)
     tags: list[str] | None = Field(default=None, description=BULK_TAGS_DESCRIPTION)
@@ -182,3 +198,10 @@ class BulkInventoryItemMutationRequest(ApiBaseModel):
     acquisition_currency: str | None = Field(default=None, description=BULK_ACQUISITION_CURRENCY_DESCRIPTION)
     clear_acquisition: bool = Field(default=False, description=BULK_CLEAR_ACQUISITION_DESCRIPTION)
     finish: FinishInput | None = Field(default=None, description=BULK_FINISH_DESCRIPTION)
+    location: str | None = Field(default=None, description=BULK_LOCATION_DESCRIPTION)
+    clear_location: bool = Field(default=False, description=BULK_CLEAR_LOCATION_DESCRIPTION)
+    merge: bool = Field(default=False, description=BULK_MERGE_DESCRIPTION)
+    keep_acquisition: Literal["target", "source"] | None = Field(
+        default=None,
+        description=BULK_KEEP_ACQUISITION_DESCRIPTION,
+    )

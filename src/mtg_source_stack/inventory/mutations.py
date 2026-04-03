@@ -105,12 +105,14 @@ _BULK_QUANTITY_OPERATIONS = frozenset({"set_quantity"})
 _BULK_NOTES_OPERATIONS = frozenset({"set_notes"})
 _BULK_ACQUISITION_OPERATIONS = frozenset({"set_acquisition"})
 _BULK_FINISH_OPERATIONS = frozenset({"set_finish"})
+_BULK_LOCATION_OPERATIONS = frozenset({"set_location"})
 _SUPPORTED_BULK_ITEM_OPERATIONS = frozenset(
     _BULK_TAG_OPERATIONS
     | _BULK_QUANTITY_OPERATIONS
     | _BULK_NOTES_OPERATIONS
     | _BULK_ACQUISITION_OPERATIONS
     | _BULK_FINISH_OPERATIONS
+    | _BULK_LOCATION_OPERATIONS
 )
 
 
@@ -126,6 +128,10 @@ class _BulkMutationRequest:
     acquisition_currency: str | None = None
     clear_acquisition: bool = False
     finish: str | None = None
+    location: str | None = None
+    clear_location: bool = False
+    merge: bool = False
+    keep_acquisition: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +139,14 @@ class _BulkPlannedItemUpdate:
     row: sqlite3.Row
     before_snapshot: dict[str, Any]
     column_values: dict[str, Any]
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingBulkAuditEvent:
+    item_id: int
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
     metadata: dict[str, Any]
 
 
@@ -162,6 +176,10 @@ def _validate_bulk_fields_omitted(
     acquisition_currency: str | None = None,
     clear_acquisition: bool = False,
     finish: str | None = None,
+    location: str | None = None,
+    clear_location: bool = False,
+    merge: bool = False,
+    keep_acquisition: str | None = None,
 ) -> None:
     if tags is not None:
         raise _bulk_item_field_error(field_name="tags", operation=operation)
@@ -179,6 +197,14 @@ def _validate_bulk_fields_omitted(
         raise _bulk_item_field_error(field_name="clear_acquisition", operation=operation)
     if finish is not None:
         raise _bulk_item_field_error(field_name="finish", operation=operation)
+    if location is not None:
+        raise _bulk_item_field_error(field_name="location", operation=operation)
+    if clear_location:
+        raise _bulk_item_field_error(field_name="clear_location", operation=operation)
+    if merge:
+        raise _bulk_item_field_error(field_name="merge", operation=operation)
+    if keep_acquisition is not None:
+        raise _bulk_item_field_error(field_name="keep_acquisition", operation=operation)
 
 
 def _normalize_bulk_item_ids(item_ids: list[int]) -> list[int]:
@@ -219,6 +245,10 @@ def _normalize_bulk_mutation_request(
     acquisition_currency: str | None,
     clear_acquisition: bool,
     finish: str | None,
+    location: str | None,
+    clear_location: bool,
+    merge: bool,
+    keep_acquisition: str | None,
 ) -> _BulkMutationRequest:
     normalized_item_ids = _normalize_bulk_item_ids(item_ids)
     if operation not in _SUPPORTED_BULK_ITEM_OPERATIONS:
@@ -236,6 +266,10 @@ def _normalize_bulk_mutation_request(
             acquisition_currency=acquisition_currency,
             clear_acquisition=clear_acquisition,
             finish=finish,
+            location=location,
+            clear_location=clear_location,
+            merge=merge,
+            keep_acquisition=keep_acquisition,
         )
     elif operation in _BULK_QUANTITY_OPERATIONS:
         _validate_bulk_fields_omitted(
@@ -247,6 +281,10 @@ def _normalize_bulk_mutation_request(
             acquisition_currency=acquisition_currency,
             clear_acquisition=clear_acquisition,
             finish=finish,
+            location=location,
+            clear_location=clear_location,
+            merge=merge,
+            keep_acquisition=keep_acquisition,
         )
         if quantity is None:
             raise ValidationError("quantity is required for set_quantity.")
@@ -261,6 +299,10 @@ def _normalize_bulk_mutation_request(
             acquisition_currency=acquisition_currency,
             clear_acquisition=clear_acquisition,
             finish=finish,
+            location=location,
+            clear_location=clear_location,
+            merge=merge,
+            keep_acquisition=keep_acquisition,
         )
         if clear_notes and notes is not None:
             raise ValidationError("notes must be omitted when clear_notes is true for set_notes.")
@@ -274,6 +316,10 @@ def _normalize_bulk_mutation_request(
             notes=notes,
             clear_notes=clear_notes,
             finish=finish,
+            location=location,
+            clear_location=clear_location,
+            merge=merge,
+            keep_acquisition=keep_acquisition,
         )
         if clear_acquisition and (acquisition_price is not None or acquisition_currency is not None):
             raise ValidationError(
@@ -297,10 +343,35 @@ def _normalize_bulk_mutation_request(
             acquisition_price=acquisition_price,
             acquisition_currency=acquisition_currency,
             clear_acquisition=clear_acquisition,
+            location=location,
+            clear_location=clear_location,
+            merge=merge,
+            keep_acquisition=keep_acquisition,
         )
         if finish is None:
             raise ValidationError("finish is required for set_finish.")
         finish = normalize_finish(finish)
+    elif operation in _BULK_LOCATION_OPERATIONS:
+        _validate_bulk_fields_omitted(
+            operation=operation,
+            tags=tags,
+            quantity=quantity,
+            notes=notes,
+            clear_notes=clear_notes,
+            acquisition_price=acquisition_price,
+            acquisition_currency=acquisition_currency,
+            clear_acquisition=clear_acquisition,
+            finish=finish,
+        )
+        if clear_location and location is not None:
+            raise ValidationError("Use either location or clear_location for set_location, not both.")
+        if not clear_location and location is None:
+            raise ValidationError("location is required for set_location unless clear_location is true.")
+        if keep_acquisition not in (None, "source", "target"):
+            raise ValidationError("keep_acquisition must be one of: source, target.")
+        if not merge and keep_acquisition is not None:
+            raise ValidationError("keep_acquisition only applies when merge is true for set_location.")
+        location = "" if clear_location else (text_or_none(location) or "")
 
     return _BulkMutationRequest(
         operation=operation,
@@ -313,6 +384,10 @@ def _normalize_bulk_mutation_request(
         acquisition_currency=acquisition_currency,
         clear_acquisition=clear_acquisition,
         finish=finish,
+        location=location,
+        clear_location=clear_location,
+        merge=merge,
+        keep_acquisition=keep_acquisition,
     )
 
 
@@ -579,6 +654,217 @@ def _apply_bulk_item_update(
         request_id=request_id,
     )
     return item_id
+
+
+def _write_pending_bulk_audit_events(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    request: _BulkMutationRequest,
+    pending_events: list[_PendingBulkAuditEvent],
+    updated_count: int,
+    actor_type: str,
+    actor_id: str | None,
+    request_id: str | None,
+) -> None:
+    for pending_event in pending_events:
+        metadata = dict(pending_event.metadata)
+        metadata.update(
+            {
+                "bulk_operation": True,
+                "bulk_kind": request.operation,
+                "bulk_count": len(request.item_ids),
+                "updated_count": updated_count,
+            }
+        )
+        write_inventory_audit_event(
+            connection,
+            inventory_slug=inventory_slug,
+            action=request.operation,
+            item_id=pending_event.item_id,
+            before=pending_event.before,
+            after=pending_event.after,
+            metadata=metadata,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+
+
+def _apply_bulk_location_updates(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    item_rows: list[sqlite3.Row],
+    request: _BulkMutationRequest,
+    actor_type: str,
+    actor_id: str | None,
+    request_id: str | None,
+) -> list[int]:
+    normalized_location = str(request.location or "")
+    updated_item_ids: list[int] = []
+    pending_events: list[_PendingBulkAuditEvent] = []
+
+    for row in item_rows:
+        item_id = int(row["item_id"])
+        item = get_inventory_item_row(connection, inventory_slug, item_id)
+        before_snapshot = inventory_item_result_from_row(item)
+        if normalized_location == str(item["location"]):
+            continue
+
+        collision = find_inventory_item_collision(
+            connection,
+            inventory_id=int(item["inventory_id"]),
+            scryfall_id=str(item["scryfall_id"]),
+            condition_code=str(item["condition_code"]),
+            finish=str(item["finish"]),
+            language_code=str(item["language_code"]),
+            location=normalized_location,
+            exclude_item_id=item_id,
+        )
+        if collision is not None:
+            if not request.merge:
+                raise _set_location_collision_error()
+            target_before_snapshot = inventory_item_result_from_row(collision)
+            result = merge_inventory_item_rows(
+                connection,
+                inventory_slug=inventory_slug,
+                source_item=item,
+                target_item=collision,
+                acquisition_preference=request.keep_acquisition,
+            )
+            target_item_id = int(result["item_id"])
+            target_after_snapshot = load_inventory_item_snapshot(
+                connection,
+                inventory_slug=inventory_slug,
+                item_id=target_item_id,
+            )
+            updated_item_ids.append(item_id)
+            pending_events.append(
+                _PendingBulkAuditEvent(
+                    item_id=item_id,
+                    before=before_snapshot,
+                    after=None,
+                    metadata={
+                        "merged": True,
+                        "target_item_id": target_item_id,
+                        "new_location": text_or_none(normalized_location),
+                        "keep_acquisition": request.keep_acquisition,
+                    },
+                )
+            )
+            pending_events.append(
+                _PendingBulkAuditEvent(
+                    item_id=target_item_id,
+                    before=target_before_snapshot,
+                    after=target_after_snapshot,
+                    metadata={
+                        "merged": True,
+                        "source_item_id": item_id,
+                        "new_location": text_or_none(normalized_location),
+                        "keep_acquisition": request.keep_acquisition,
+                    },
+                )
+            )
+            continue
+
+        try:
+            connection.execute(
+                """
+                UPDATE inventory_items
+                SET location = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (normalized_location, item_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            if not request.merge:
+                raise _set_location_collision_error() from exc
+            collision = find_inventory_item_collision(
+                connection,
+                inventory_id=int(item["inventory_id"]),
+                scryfall_id=str(item["scryfall_id"]),
+                condition_code=str(item["condition_code"]),
+                finish=str(item["finish"]),
+                language_code=str(item["language_code"]),
+                location=normalized_location,
+                exclude_item_id=item_id,
+            )
+            if collision is None:
+                raise _set_location_concurrent_merge_error() from exc
+            target_before_snapshot = inventory_item_result_from_row(collision)
+            result = merge_inventory_item_rows(
+                connection,
+                inventory_slug=inventory_slug,
+                source_item=item,
+                target_item=collision,
+                acquisition_preference=request.keep_acquisition,
+            )
+            target_item_id = int(result["item_id"])
+            target_after_snapshot = load_inventory_item_snapshot(
+                connection,
+                inventory_slug=inventory_slug,
+                item_id=target_item_id,
+            )
+            updated_item_ids.append(item_id)
+            pending_events.append(
+                _PendingBulkAuditEvent(
+                    item_id=item_id,
+                    before=before_snapshot,
+                    after=None,
+                    metadata={
+                        "merged": True,
+                        "target_item_id": target_item_id,
+                        "new_location": text_or_none(normalized_location),
+                        "keep_acquisition": request.keep_acquisition,
+                    },
+                )
+            )
+            pending_events.append(
+                _PendingBulkAuditEvent(
+                    item_id=target_item_id,
+                    before=target_before_snapshot,
+                    after=target_after_snapshot,
+                    metadata={
+                        "merged": True,
+                        "source_item_id": item_id,
+                        "new_location": text_or_none(normalized_location),
+                        "keep_acquisition": request.keep_acquisition,
+                    },
+                )
+            )
+            continue
+
+        after_snapshot = load_inventory_item_snapshot(
+            connection,
+            inventory_slug=inventory_slug,
+            item_id=item_id,
+        )
+        updated_item_ids.append(item_id)
+        pending_events.append(
+            _PendingBulkAuditEvent(
+                item_id=item_id,
+                before=before_snapshot,
+                after=after_snapshot,
+                metadata={
+                    "merged": False,
+                    "old_location": text_or_none(item["location"]),
+                    "new_location": text_or_none(normalized_location),
+                },
+            )
+        )
+
+    _write_pending_bulk_audit_events(
+        connection,
+        inventory_slug=inventory_slug,
+        request=request,
+        pending_events=pending_events,
+        updated_count=len(updated_item_ids),
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    return updated_item_ids
 
 
 def _complete_location_merge(
@@ -1768,6 +2054,10 @@ def bulk_mutate_inventory_items(
     acquisition_currency: str | None = None,
     clear_acquisition: bool = False,
     finish: str | None = None,
+    location: str | None = None,
+    clear_location: bool = False,
+    merge: bool = False,
+    keep_acquisition: str | None = None,
     actor_type: str = "cli",
     actor_id: str | None = None,
     request_id: str | None = None,
@@ -1783,6 +2073,10 @@ def bulk_mutate_inventory_items(
         acquisition_currency=acquisition_currency,
         clear_acquisition=clear_acquisition,
         finish=finish,
+        location=location,
+        clear_location=clear_location,
+        merge=merge,
+        keep_acquisition=keep_acquisition,
     )
     db_file = _prepared_db_path(db_path)
 
@@ -1792,26 +2086,37 @@ def bulk_mutate_inventory_items(
             inventory_slug=inventory_slug,
             item_ids=normalized_request.item_ids,
         )
-        planned_updates = _plan_bulk_item_updates(
-            connection=connection,
-            item_rows=item_rows,
-            request=normalized_request,
-        )
-        updated_item_ids: list[int] = []
-        updated_count = len(planned_updates)
-        for planned_update in planned_updates:
-            updated_item_ids.append(
-                _apply_bulk_item_update(
-                    connection,
-                    inventory_slug=inventory_slug,
-                    request=normalized_request,
-                    planned_update=planned_update,
-                    updated_count=updated_count,
-                    actor_type=actor_type,
-                    actor_id=actor_id,
-                    request_id=request_id,
-                )
+        if normalized_request.operation in _BULK_LOCATION_OPERATIONS:
+            updated_item_ids = _apply_bulk_location_updates(
+                connection,
+                inventory_slug=inventory_slug,
+                item_rows=item_rows,
+                request=normalized_request,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                request_id=request_id,
             )
+        else:
+            planned_updates = _plan_bulk_item_updates(
+                connection=connection,
+                item_rows=item_rows,
+                request=normalized_request,
+            )
+            updated_item_ids = []
+            updated_count = len(planned_updates)
+            for planned_update in planned_updates:
+                updated_item_ids.append(
+                    _apply_bulk_item_update(
+                        connection,
+                        inventory_slug=inventory_slug,
+                        request=normalized_request,
+                        planned_update=planned_update,
+                        updated_count=updated_count,
+                        actor_type=actor_type,
+                        actor_id=actor_id,
+                        request_id=request_id,
+                    )
+                )
 
         connection.commit()
 
@@ -1820,7 +2125,7 @@ def bulk_mutate_inventory_items(
         operation=normalized_request.operation,
         requested_item_ids=normalized_request.item_ids,
         updated_item_ids=updated_item_ids,
-        updated_count=updated_count,
+        updated_count=len(updated_item_ids),
     )
 
 

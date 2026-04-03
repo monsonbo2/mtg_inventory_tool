@@ -80,6 +80,7 @@ class BulkInventoryItemMutationResponse(ApiBaseModel):
         "set_notes",
         "set_acquisition",
         "set_finish",
+        "set_location",
     ]
     requested_item_ids: list[int]
     updated_item_ids: list[int]

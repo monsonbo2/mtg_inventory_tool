@@ -324,7 +324,7 @@ class WebApiSchemaTest(unittest.TestCase):
 
             bulk_request_schema = components["BulkInventoryItemMutationRequest"]
             self.assertIn(
-                "supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, and set_finish",
+                "supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, and set_location",
                 bulk_request_schema["description"],
             )
             self.assertEqual(
@@ -337,11 +337,19 @@ class WebApiSchemaTest(unittest.TestCase):
                     "set_notes",
                     "set_acquisition",
                     "set_finish",
+                    "set_location",
                 ],
                 bulk_request_schema["properties"]["operation"]["enum"],
             )
             self.assertEqual(1, bulk_request_schema["properties"]["item_ids"]["minItems"])
             self.assertEqual(100, bulk_request_schema["properties"]["item_ids"]["maxItems"])
+            self.assertIn("Used by set_location", bulk_request_schema["properties"]["location"]["description"])
+            self.assertIn("Only applies to set_location", bulk_request_schema["properties"]["clear_location"]["description"])
+            self.assertIn("Only applies to set_location", bulk_request_schema["properties"]["merge"]["description"])
+            self.assertIn(
+                "Only applies to merged set_location changes",
+                bulk_request_schema["properties"]["keep_acquisition"]["description"],
+            )
 
             bulk_response_schema = spec["paths"]["/inventories/{inventory_slug}/items/bulk"]["post"]["responses"]["200"][
                 "content"
@@ -1393,6 +1401,276 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("normal", rows_by_id[item_ids[0]]["finish"])
                 self.assertEqual("foil", rows_by_id[item_ids[1]]["finish"])
                 self.assertEqual("normal", rows_by_id[item_ids[2]]["finish"])
+
+    def test_demo_api_bulk_location_updates_rows_and_skips_noops(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal","foil"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="normal",
+                    location="Binder A",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="foil",
+                    location="Binder B",
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-location-demo"},
+                    json={
+                        "operation": "set_location",
+                        "item_ids": item_ids,
+                        "location": "Binder B",
+                    },
+                )
+                self.assertEqual(200, bulk.status_code)
+                self.assertEqual("set_location", bulk.json()["operation"])
+                self.assertEqual([item_ids[0]], bulk.json()["updated_item_ids"])
+                self.assertEqual(1, bulk.json()["updated_count"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                rows_by_id = {row["item_id"]: row for row in listed.json()}
+                self.assertEqual("Binder B", rows_by_id[item_ids[0]]["location"])
+                self.assertEqual("Binder B", rows_by_id[item_ids[1]]["location"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_location", audit.json()[0]["action"])
+                self.assertEqual("Binder A", audit.json()[0]["metadata"]["old_location"])
+                self.assertEqual("Binder B", audit.json()[0]["metadata"]["new_location"])
+                self.assertEqual("req-bulk-location-demo", audit.json()[0]["request_id"])
+
+    def test_demo_api_bulk_clear_location_normalizes_to_null(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    location="Binder A",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                clear_location = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-clear-location-demo"},
+                    json={
+                        "operation": "set_location",
+                        "item_ids": [item_id],
+                        "clear_location": True,
+                    },
+                )
+                self.assertEqual(200, clear_location.status_code)
+                self.assertEqual([item_id], clear_location.json()["updated_item_ids"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                self.assertIsNone(listed.json()[0]["location"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("Binder A", audit.json()[0]["before"]["location"])
+                self.assertIsNone(audit.json()[0]["after"]["location"])
+                self.assertIsNone(audit.json()[0]["metadata"]["new_location"])
+
+    def test_demo_api_bulk_location_conflict_returns_409(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    condition_code="NM",
+                    location="Binder A",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    condition_code="NM",
+                    location="Binder B",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    condition_code="LP",
+                    location="Binder C",
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                conflict = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "set_location",
+                        "item_ids": [item_ids[2], item_ids[0]],
+                        "location": "Binder B",
+                    },
+                )
+                self.assertEqual(409, conflict.status_code)
+                self.assertEqual("conflict", conflict.json()["error"]["code"])
+                self.assertIn("Changing location would collide", conflict.json()["error"]["message"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                rows_by_id = {row["item_id"]: row for row in listed.json()}
+                self.assertEqual("Binder A", rows_by_id[item_ids[0]]["location"])
+                self.assertEqual("Binder B", rows_by_id[item_ids[1]]["location"])
+                self.assertEqual("Binder C", rows_by_id[item_ids[2]]["location"])
+
+    def test_demo_api_bulk_location_merge_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    quantity=2,
+                    location="Binder A",
+                    acquisition_price="1.25",
+                    acquisition_currency="USD",
+                    tags_json='["deck"]',
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    quantity=3,
+                    location="Binder B",
+                    acquisition_price="2.50",
+                    acquisition_currency="USD",
+                    tags_json='["trade"]',
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                merged = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-location-merge-demo"},
+                    json={
+                        "operation": "set_location",
+                        "item_ids": [item_ids[0]],
+                        "location": "Binder B",
+                        "merge": True,
+                        "keep_acquisition": "target",
+                    },
+                )
+                self.assertEqual(200, merged.status_code)
+                self.assertEqual("set_location", merged.json()["operation"])
+                self.assertEqual([item_ids[0]], merged.json()["updated_item_ids"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual(1, len(listed.json()))
+                self.assertEqual(5, listed.json()[0]["quantity"])
+                self.assertEqual("Binder B", listed.json()[0]["location"])
+                self.assertEqual("2.50", listed.json()[0]["acquisition_price"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                location_audits = [row for row in audit.json() if row["action"] == "set_location"]
+                self.assertEqual(2, len(location_audits))
+                self.assertTrue(all(row["metadata"]["merged"] for row in location_audits))
+                self.assertTrue(all(row["metadata"]["keep_acquisition"] == "target" for row in location_audits))
+
+    def test_demo_api_bulk_location_rejects_invalid_field_combinations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                invalid_combo = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "set_location",
+                        "item_ids": [item_id],
+                        "location": "Binder A",
+                        "clear_location": True,
+                    },
+                )
+                self.assertEqual(400, invalid_combo.status_code)
+                self.assertEqual("validation_error", invalid_combo.json()["error"]["code"])
+                self.assertIn(
+                    "Use either location or clear_location for set_location",
+                    invalid_combo.json()["error"]["message"],
+                )
+
+                invalid_keep = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "set_location",
+                        "item_ids": [item_id],
+                        "location": "Binder A",
+                        "keep_acquisition": "target",
+                    },
+                )
+                self.assertEqual(400, invalid_keep.status_code)
+                self.assertEqual("validation_error", invalid_keep.json()["error"]["code"])
+                self.assertIn(
+                    "keep_acquisition only applies when merge is true for set_location",
+                    invalid_keep.json()["error"]["message"],
+                )
 
     def test_demo_api_bulk_quantity_requires_quantity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

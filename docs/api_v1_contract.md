@@ -35,7 +35,7 @@ preserve for the first API-backed version of the project.
 - `POST /inventories/{inventory_slug}/items/bulk` accepts exactly one bulk
   mutation operation per request and currently supports:
   `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
-  `set_notes`, `set_acquisition`, and `set_finish`.
+  `set_notes`, `set_acquisition`, `set_finish`, and `set_location`.
 - Bulk item mutation responses use a stable envelope with `inventory`,
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
 - The current bulk implementation is transactional and all-or-nothing: if
@@ -119,7 +119,7 @@ preserve for the first API-backed version of the project.
 - `POST /inventories/{inventory_slug}/items/bulk`
   - current supported operations:
     `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
-    `set_notes`, `set_acquisition`, `set_finish`
+    `set_notes`, `set_acquisition`, `set_finish`, `set_location`
   - `item_ids` must be non-empty and unique
   - `tags` is required for `add_tags`, `remove_tags`, and `set_tags`
   - `tags` must be omitted for `clear_tags`
@@ -137,6 +137,16 @@ preserve for the first API-backed version of the project.
     patch route
   - if any requested finish change would collide with an existing inventory row,
     the batch returns `409 conflict` and no rows in the batch are updated
+  - `location` is used by `set_location`
+  - `clear_location=true` clears location for `set_location` and requires
+    `location` to be omitted
+  - `merge=true` only applies to `set_location`
+  - `keep_acquisition` only applies to merged `set_location` changes
+  - `set_location` uses the same location normalization and merge rules as the
+    single-item patch route
+  - if any requested location change would collide with an existing inventory
+    row, the batch returns `409 conflict` unless `merge=true`; on conflict, no
+    rows in the batch are updated
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For
