@@ -115,9 +115,34 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
 
             self.assertIn("Catalog mode: full", result.stdout)
             self.assertIn("Inventories seeded: personal, trade-binder", result.stdout)
-            self.assertIn("Scryfall cards imported: 7", result.stdout)
+            self.assertIn("Scryfall cards imported: 12", result.stdout)
             self.assertIn("Curated owned-item demo rows resolved from imported catalog printings.", result.stdout)
             self.assert_richer_demo_dataset(db_path)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            owned_by_name = {row.name: row for row in owned_rows}
+            self.assertEqual(
+                {
+                    "Lightning Bolt": "fixture-bolt-mainstream-en",
+                    "Counterspell": "fixture-counterspell-modern-en",
+                    "Swords to Plowshares": "fixture-swords-ja-modern",
+                    "Sol Ring": "fixture-sol-ring-mainstream-en",
+                },
+                {name: row.scryfall_id for name, row in owned_by_name.items()},
+            )
 
             with connect(db_path) as connection:
                 mtg_card_rows = connection.execute("SELECT COUNT(*) FROM mtg_cards").fetchone()[0]
@@ -132,9 +157,9 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
                     "SELECT COUNT(*) FROM inventory_items WHERE scryfall_id LIKE 'demo-%'"
                 ).fetchone()[0]
 
-            self.assertEqual(7, mtg_card_rows)
+            self.assertEqual(12, mtg_card_rows)
             self.assertEqual(0, demo_card_rows)
-            self.assertGreaterEqual(price_rows, 7)
+            self.assertEqual(7, price_rows)
             self.assertEqual(1, brainstorm_rows)
             self.assertEqual(0, owned_demo_rows)
 
@@ -158,3 +183,29 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
 
             self.assertNotEqual(0, result.returncode)
             self.assertIn("--scryfall-json is required with --full-catalog", result.stderr)
+
+    def test_bootstrap_full_catalog_mode_fails_fast_when_demo_finish_constraints_cannot_resolve(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "frontend_demo_invalid_fixture.db"
+            scryfall_json = fixture_path("frontend_demo_full_catalog_missing_finish", "scryfall.json")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/bootstrap_frontend_demo.py",
+                    "--db",
+                    str(db_path),
+                    "--force",
+                    "--full-catalog",
+                    "--scryfall-json",
+                    str(scryfall_json),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("Could not seed full-catalog demo row for 'Lightning Bolt'", result.stderr)
+            self.assertIn("finish 'foil'", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)

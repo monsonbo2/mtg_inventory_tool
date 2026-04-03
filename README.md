@@ -300,8 +300,11 @@ python3 scripts/bootstrap_frontend_demo.py \
 
 That mode imports real Scryfall-backed `mtg_cards` rows, then resolves the same
 curated demo inventory against real printings instead of the built-in demo
-catalog. It is the better fit when the frontend should search a realistic card
-catalog while still keeping the owned demo rows intentionally curated.
+catalog. The curated rows now flow through the same `oracle_id` default
+printing policy used by the app, so upstream catalog drift fails early with a
+clear bootstrap error instead of a later finish-mismatch surprise. It is the
+better fit when the frontend should search a realistic card catalog while still
+keeping the owned demo rows intentionally curated.
 
 For the fuller maintenance surface, check `--help` on:
 

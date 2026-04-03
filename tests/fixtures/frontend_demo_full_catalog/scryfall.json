@@ -5,6 +5,8 @@
     "name": "Brainstorm",
     "set": "ice",
     "set_name": "Ice Age",
+    "set_type": "expansion",
+    "booster": true,
     "collector_number": "61",
     "lang": "en",
     "rarity": "common",
@@ -16,67 +18,112 @@
     }
   },
   {
-    "id": "fixture-bolt-en",
+    "id": "fixture-bolt-alpha-en",
     "oracle_id": "fixture-oracle-bolt",
     "name": "Lightning Bolt",
     "set": "lea",
     "set_name": "Limited Edition Alpha",
+    "set_type": "expansion",
+    "booster": true,
     "collector_number": "161",
     "lang": "en",
     "rarity": "common",
     "released_at": "1993-08-05",
-    "finishes": ["normal", "foil"],
+    "finishes": ["normal"],
     "image_uris": {
       "small": "https://cards.scryfall.io/small/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645",
       "normal": "https://cards.scryfall.io/normal/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645"
     }
   },
   {
-    "id": "fixture-counterspell-en",
-    "oracle_id": "fixture-oracle-counterspell",
-    "name": "Counterspell",
-    "set": "7ed",
-    "set_name": "Seventh Edition",
-    "collector_number": "67",
-    "lang": "en",
-    "rarity": "uncommon",
-    "released_at": "2001-04-11",
-    "finishes": ["normal", "foil"],
-    "image_uris": {
-      "small": "https://cards.scryfall.io/small/front/2/9/29bb1b85-9444-4bfa-b622-092a6873631c.jpg?1562234566",
-      "normal": "https://cards.scryfall.io/normal/front/2/9/29bb1b85-9444-4bfa-b622-092a6873631c.jpg?1562234566"
-    }
-  },
-  {
-    "id": "fixture-forest-en",
-    "oracle_id": "fixture-oracle-forest",
-    "name": "Forest",
-    "set": "m10",
-    "set_name": "Magic 2010",
-    "collector_number": "246",
+    "id": "fixture-bolt-mainstream-en",
+    "oracle_id": "fixture-oracle-bolt",
+    "name": "Lightning Bolt",
+    "set": "m11",
+    "set_name": "Magic 2011",
+    "set_type": "core",
+    "booster": true,
+    "collector_number": "146",
     "lang": "en",
     "rarity": "common",
-    "released_at": "2009-07-17",
-    "finishes": ["normal"],
+    "released_at": "2010-07-16",
+    "finishes": ["normal", "foil"],
     "image_uris": {
-      "small": "https://cards.scryfall.io/small/front/3/3/3394d804-c0e5-4901-a8ff-c1a765cc1e21.jpg?1561975836",
-      "normal": "https://cards.scryfall.io/normal/front/3/3/3394d804-c0e5-4901-a8ff-c1a765cc1e21.jpg?1561975836"
+      "small": "https://example.test/cards/fixture-bolt-mainstream-en-small.jpg",
+      "normal": "https://example.test/cards/fixture-bolt-mainstream-en-normal.jpg"
     }
   },
   {
-    "id": "fixture-sol-ring-en",
-    "oracle_id": "fixture-oracle-sol-ring",
-    "name": "Sol Ring",
-    "set": "cmr",
-    "set_name": "Commander Legends",
-    "collector_number": "334",
-    "lang": "en",
+    "id": "fixture-bolt-mainstream-ja",
+    "oracle_id": "fixture-oracle-bolt",
+    "name": "Lightning Bolt",
+    "set": "sta",
+    "set_name": "Strixhaven Mystical Archive",
+    "set_type": "expansion",
+    "booster": true,
+    "collector_number": "108",
+    "lang": "ja",
     "rarity": "uncommon",
-    "released_at": "2020-11-20",
-    "finishes": ["normal", "etched"],
+    "released_at": "2021-04-23",
+    "finishes": ["normal", "foil"],
     "image_uris": {
-      "small": "https://cards.scryfall.io/small/front/5/8/58b26011-e103-45c4-a253-900f4e6b2eeb.jpg?1627501347",
-      "normal": "https://cards.scryfall.io/normal/front/5/8/58b26011-e103-45c4-a253-900f4e6b2eeb.jpg?1627501347"
+      "small": "https://example.test/cards/fixture-bolt-mainstream-ja-small.jpg",
+      "normal": "https://example.test/cards/fixture-bolt-mainstream-ja-normal.jpg"
+    }
+  },
+  {
+    "id": "fixture-bolt-promo-en",
+    "oracle_id": "fixture-oracle-bolt",
+    "name": "Lightning Bolt",
+    "set": "p30t",
+    "set_name": "30th Anniversary Promos",
+    "set_type": "expansion",
+    "booster": false,
+    "promo_types": ["promo_pack"],
+    "collector_number": "17",
+    "lang": "en",
+    "rarity": "mythic",
+    "released_at": "2025-01-01",
+    "finishes": ["normal", "foil"],
+    "image_uris": {
+      "small": "https://example.test/cards/fixture-bolt-promo-en-small.jpg",
+      "normal": "https://example.test/cards/fixture-bolt-promo-en-normal.jpg"
+    }
+  },
+  {
+    "id": "fixture-counterspell-modern-en",
+    "oracle_id": "fixture-oracle-counterspell",
+    "name": "Counterspell",
+    "set": "mmq",
+    "set_name": "Mercadian Masques",
+    "set_type": "expansion",
+    "booster": true,
+    "collector_number": "68",
+    "lang": "en",
+    "rarity": "common",
+    "released_at": "1999-10-04",
+    "finishes": ["normal"],
+    "image_uris": {
+      "small": "https://example.test/cards/fixture-counterspell-modern-en-small.jpg",
+      "normal": "https://example.test/cards/fixture-counterspell-modern-en-normal.jpg"
+    }
+  },
+  {
+    "id": "fixture-forest-modern-en",
+    "oracle_id": "fixture-oracle-forest",
+    "name": "Forest",
+    "set": "dmu",
+    "set_name": "Dominaria United",
+    "set_type": "expansion",
+    "booster": true,
+    "collector_number": "281",
+    "lang": "en",
+    "rarity": "common",
+    "released_at": "2022-09-09",
+    "finishes": ["normal"],
+    "image_uris": {
+      "small": "https://example.test/cards/fixture-forest-modern-en-small.jpg",
+      "normal": "https://example.test/cards/fixture-forest-modern-en-normal.jpg"
     }
   },
   {
@@ -85,6 +132,8 @@
     "name": "Swords to Plowshares",
     "set": "ice",
     "set_name": "Ice Age",
+    "set_type": "expansion",
+    "booster": true,
     "collector_number": "54",
     "lang": "en",
     "rarity": "uncommon",
@@ -96,19 +145,76 @@
     }
   },
   {
-    "id": "fixture-swords-ja",
+    "id": "fixture-swords-ja-modern",
     "oracle_id": "fixture-oracle-swords",
     "name": "Swords to Plowshares",
     "set": "sta",
     "set_name": "Strixhaven Mystical Archive",
-    "collector_number": "10",
+    "set_type": "expansion",
+    "booster": true,
+    "collector_number": "123",
     "lang": "ja",
     "rarity": "uncommon",
     "released_at": "2021-04-23",
     "finishes": ["normal"],
     "image_uris": {
-      "small": "https://cards.scryfall.io/small/front/3/7/375fd2cb-443b-4be4-ad60-6d1a8e74f510.jpg?1562905275",
-      "normal": "https://cards.scryfall.io/normal/front/3/7/375fd2cb-443b-4be4-ad60-6d1a8e74f510.jpg?1562905275"
+      "small": "https://example.test/cards/fixture-swords-ja-modern-small.jpg",
+      "normal": "https://example.test/cards/fixture-swords-ja-modern-normal.jpg"
+    }
+  },
+  {
+    "id": "fixture-sol-ring-old-en",
+    "oracle_id": "fixture-oracle-sol-ring",
+    "name": "Sol Ring",
+    "set": "cmr",
+    "set_name": "Commander Legends",
+    "set_type": "commander",
+    "booster": true,
+    "collector_number": "334",
+    "lang": "en",
+    "rarity": "uncommon",
+    "released_at": "2020-11-20",
+    "finishes": ["normal"],
+    "image_uris": {
+      "small": "https://example.test/cards/fixture-sol-ring-old-en-small.jpg",
+      "normal": "https://example.test/cards/fixture-sol-ring-old-en-normal.jpg"
+    }
+  },
+  {
+    "id": "fixture-sol-ring-mainstream-en",
+    "oracle_id": "fixture-oracle-sol-ring",
+    "name": "Sol Ring",
+    "set": "cmm",
+    "set_name": "Commander Masters",
+    "set_type": "masters",
+    "booster": true,
+    "collector_number": "402",
+    "lang": "en",
+    "rarity": "uncommon",
+    "released_at": "2023-08-04",
+    "finishes": ["normal", "etched"],
+    "image_uris": {
+      "small": "https://example.test/cards/fixture-sol-ring-mainstream-en-small.jpg",
+      "normal": "https://example.test/cards/fixture-sol-ring-mainstream-en-normal.jpg"
+    }
+  },
+  {
+    "id": "fixture-sol-ring-promo-en",
+    "oracle_id": "fixture-oracle-sol-ring",
+    "name": "Sol Ring",
+    "set": "pcmm",
+    "set_name": "Commander Masters Promos",
+    "set_type": "masters",
+    "booster": false,
+    "promo_types": ["promo_pack"],
+    "collector_number": "403",
+    "lang": "en",
+    "rarity": "mythic",
+    "released_at": "2024-01-12",
+    "finishes": ["normal", "etched"],
+    "image_uris": {
+      "small": "https://example.test/cards/fixture-sol-ring-promo-en-small.jpg",
+      "normal": "https://example.test/cards/fixture-sol-ring-promo-en-normal.jpg"
     }
   }
 ]

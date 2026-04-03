@@ -7,6 +7,7 @@ import argparse
 from decimal import Decimal
 from pathlib import Path
 import sys
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
@@ -15,11 +16,15 @@ if str(SRC_ROOT) not in sys.path:
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
+from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.importer.scryfall import import_scryfall_cards
+from mtg_source_stack.inventory.normalize import normalize_finish, validate_supported_finish
 from mtg_source_stack.inventory.service import (
     add_card,
+    add_card_with_connection,
     create_inventory,
     remove_card,
+    resolve_card_row,
     set_acquisition,
     set_condition,
     set_finish,
@@ -206,6 +211,97 @@ def seed_demo_inventories(db_path: Path) -> None:
         display_name="Trade Binder",
         description="Intentionally empty inventory for frontend empty states",
     )
+
+
+def _resolve_full_catalog_demo_oracle_id(db_path: Path, *, card_name: str) -> str:
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT oracle_id
+            FROM mtg_cards
+            WHERE LOWER(name) = LOWER(?)
+              AND COALESCE(is_default_add_searchable, 1) = 1
+            ORDER BY oracle_id
+            """,
+            (card_name,),
+        ).fetchall()
+    if not rows:
+        raise ValidationError(
+            f"Could not seed full-catalog demo row for '{card_name}': "
+            "no default-scope oracle match was found."
+        )
+    if len(rows) > 1:
+        raise ValidationError(
+            f"Could not seed full-catalog demo row for '{card_name}': "
+            "multiple oracle IDs matched the exact card name."
+        )
+    return str(rows[0]["oracle_id"])
+
+
+def _add_full_catalog_demo_card(
+    db_path: Path,
+    *,
+    inventory_slug: str,
+    card_name: str,
+    lang: str | None,
+    quantity: int,
+    condition_code: str,
+    initial_finish: str,
+    required_finish: str,
+    location: str,
+    acquisition_price: Decimal | None,
+    acquisition_currency: str | None,
+    notes: str | None,
+    tags: str | None,
+    request_id: str,
+) -> Any:
+    oracle_id = _resolve_full_catalog_demo_oracle_id(db_path, card_name=card_name)
+    normalized_initial_finish = normalize_finish(initial_finish)
+    try:
+        with connect(db_path) as connection:
+            resolved_card = resolve_card_row(
+                connection,
+                scryfall_id=None,
+                oracle_id=oracle_id,
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=lang,
+                finish=required_finish,
+            )
+            validate_supported_finish(resolved_card["finishes_json"], normalized_initial_finish)
+            result = add_card_with_connection(
+                connection,
+                inventory_slug=inventory_slug,
+                inventory_display_name=None,
+                scryfall_id=None,
+                oracle_id=oracle_id,
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=lang,
+                quantity=quantity,
+                condition_code=condition_code,
+                finish=initial_finish,
+                language_code=None,
+                location=location,
+                acquisition_price=acquisition_price,
+                acquisition_currency=acquisition_currency,
+                notes=notes,
+                tags=tags,
+                resolved_card=resolved_card,
+                actor_type=ACTOR_TYPE,
+                actor_id=ACTOR_ID,
+                request_id=request_id,
+            )
+            connection.commit()
+            return result
+    except (NotFoundError, ValidationError) as exc:
+        raise ValidationError(
+            f"Could not seed full-catalog demo row for '{card_name}': {exc}"
+        ) from exc
 
 
 def seed_small_demo_inventory_items(db_path: Path) -> None:
@@ -423,28 +519,20 @@ def seed_small_demo_inventory_items(db_path: Path) -> None:
 
 
 def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
-    bolt = add_card(
+    bolt = _add_full_catalog_demo_card(
         db_path,
         inventory_slug="personal",
-        inventory_display_name=None,
-        scryfall_id=None,
-        oracle_id=None,
-        tcgplayer_product_id=None,
-        name="Lightning Bolt",
-        set_code="lea",
-        collector_number="161",
-        lang="en",
+        card_name="Lightning Bolt",
+        lang=None,
         quantity=2,
         condition_code="NM",
-        finish="normal",
-        language_code=None,
+        initial_finish="normal",
+        required_finish="foil",
         location="Red Binder",
         acquisition_price=Decimal("2.25"),
         acquisition_currency="USD",
         notes=None,
         tags="burn,trade",
-        actor_type=ACTOR_TYPE,
-        actor_id=ACTOR_ID,
         request_id="seed-add-bolt",
     )
     set_finish(
@@ -466,28 +554,20 @@ def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
         request_id="seed-notes-bolt",
     )
 
-    counterspell = add_card(
+    counterspell = _add_full_catalog_demo_card(
         db_path,
         inventory_slug="personal",
-        inventory_display_name=None,
-        scryfall_id=None,
-        oracle_id=None,
-        tcgplayer_product_id=None,
-        name="Counterspell",
-        set_code="7ed",
-        collector_number="67",
-        lang="en",
+        card_name="Counterspell",
+        lang=None,
         quantity=2,
         condition_code="NM",
-        finish="normal",
-        language_code=None,
+        initial_finish="normal",
+        required_finish="normal",
         location="Blue Binder",
         acquisition_price=Decimal("1.10"),
         acquisition_currency="USD",
         notes=None,
         tags="control",
-        actor_type=ACTOR_TYPE,
-        actor_id=ACTOR_ID,
         request_id="seed-add-counterspell",
     )
     set_tags(
@@ -518,28 +598,20 @@ def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
         request_id="seed-quantity-counterspell",
     )
 
-    swords = add_card(
+    swords = _add_full_catalog_demo_card(
         db_path,
         inventory_slug="personal",
-        inventory_display_name=None,
-        scryfall_id=None,
-        oracle_id=None,
-        tcgplayer_product_id=None,
-        name="Swords to Plowshares",
-        set_code="sta",
-        collector_number="10",
+        card_name="Swords to Plowshares",
         lang="ja",
         quantity=1,
         condition_code="NM",
-        finish="normal",
-        language_code=None,
+        initial_finish="normal",
+        required_finish="normal",
         location="Commander Case",
         acquisition_price=Decimal("3.00"),
         acquisition_currency="USD",
         notes=None,
         tags=None,
-        actor_type=ACTOR_TYPE,
-        actor_id=ACTOR_ID,
         request_id="seed-add-swords",
     )
     set_condition(
@@ -552,28 +624,20 @@ def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
         request_id="seed-condition-swords",
     )
 
-    sol_ring = add_card(
+    sol_ring = _add_full_catalog_demo_card(
         db_path,
         inventory_slug="personal",
-        inventory_display_name=None,
-        scryfall_id=None,
-        oracle_id=None,
-        tcgplayer_product_id=None,
-        name="Sol Ring",
-        set_code="cmr",
-        collector_number="334",
-        lang="en",
+        card_name="Sol Ring",
+        lang=None,
         quantity=1,
         condition_code="NM",
-        finish="normal",
-        language_code=None,
+        initial_finish="normal",
+        required_finish="etched",
         location="Commander Staples",
         acquisition_price=Decimal("5.00"),
         acquisition_currency="USD",
         notes=None,
         tags="commander,trade",
-        actor_type=ACTOR_TYPE,
-        actor_id=ACTOR_ID,
         request_id="seed-add-sol-ring",
     )
     set_finish(
@@ -606,28 +670,20 @@ def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
         request_id="seed-clear-acquisition-sol-ring",
     )
 
-    forest = add_card(
+    forest = _add_full_catalog_demo_card(
         db_path,
         inventory_slug="personal",
-        inventory_display_name=None,
-        scryfall_id=None,
-        oracle_id=None,
-        tcgplayer_product_id=None,
-        name="Forest",
-        set_code="m10",
-        collector_number="246",
-        lang="en",
+        card_name="Forest",
+        lang=None,
         quantity=10,
         condition_code="NM",
-        finish="normal",
-        language_code=None,
+        initial_finish="normal",
+        required_finish="normal",
         location="Land Box",
         acquisition_price=None,
         acquisition_currency=None,
         notes=None,
         tags="bulk",
-        actor_type=ACTOR_TYPE,
-        actor_id=ACTOR_ID,
         request_id="seed-add-forest",
     )
     remove_card(
@@ -652,16 +708,6 @@ def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
                 "USD",
                 "2026-04-01",
                 1.25,
-                "demo-seed",
-            ),
-            (
-                counterspell.scryfall_id,
-                "tcgplayer",
-                "retail",
-                "foil",
-                "USD",
-                "2026-04-01",
-                4.25,
                 "demo-seed",
             ),
             (
@@ -759,11 +805,14 @@ def main(argv: list[str] | None = None) -> None:
             )
         db_path.unlink()
 
-    summary = bootstrap_demo_data(
-        db_path,
-        full_catalog=args.full_catalog,
-        scryfall_json=scryfall_json,
-    )
+    try:
+        summary = bootstrap_demo_data(
+            db_path,
+            full_catalog=args.full_catalog,
+            scryfall_json=scryfall_json,
+        )
+    except (NotFoundError, ValidationError) as exc:
+        raise SystemExit(str(exc)) from exc
     print(f"Bootstrapped frontend demo data at {db_path}")
     print(f"Catalog mode: {summary['catalog_mode']}")
     print("Inventories seeded: personal, trade-binder")
