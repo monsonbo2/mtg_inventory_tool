@@ -59,11 +59,17 @@ root-mounted routes such as `/inventories` and `/cards/search`.
    pip install -e '..[web]'
    ```
 
-3. Start the API:
+3. Start the API from this checkout:
 
    ```bash
-   mtg-web-api --db ../var/db/frontend_demo.db
+   npm run backend:demo
    ```
+
+   This launcher forces `PYTHONPATH` to the current repo's `src/` tree before
+   starting the backend. Use it instead of a globally installed `mtg-web-api`
+   wrapper when you have more than one local checkout of `mtg_source_stack`, or
+   the demo can fail with a false `schema_not_ready` mismatch against another
+   repo's migration set.
 
 4. Install the frontend dependencies:
 
@@ -78,6 +84,13 @@ root-mounted routes such as `/inventories` and `/cards/search`.
    ```
 
 6. Open the local Vite URL, usually `http://127.0.0.1:5173`.
+
+If you need to point the launcher at a different database, pass explicit API
+args through npm:
+
+```bash
+npm run backend:demo -- --db /absolute/path/to/other.db
+```
 
 ## Current UI Shape
 

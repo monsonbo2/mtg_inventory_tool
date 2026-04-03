@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { FormEvent } from "react";
 
 import type { AddInventoryItemRequest, CatalogSearchRow, FinishValue } from "../types";
@@ -6,10 +6,31 @@ import type { SearchCardGroup } from "../searchResultHelpers";
 import type { AsyncStatus, NoticeTone } from "../uiTypes";
 import {
   formatPrintingOptionLabel,
-  summarizePreviewPrintings,
+  summarizeSearchGroup,
 } from "../searchResultHelpers";
-import { FINISH_OPTIONS, formatFinishLabel, parseTags, toUserMessage } from "../uiHelpers";
+import {
+  FINISH_OPTIONS,
+  formatFinishLabel,
+  formatLanguageCode,
+  parseTags,
+  toUserMessage,
+} from "../uiHelpers";
 import { CardThumbnail } from "./ui/CardThumbnail";
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: "English",
+  ja: "Japanese",
+  de: "German",
+  fr: "French",
+  it: "Italian",
+  es: "Spanish",
+  pt: "Portuguese",
+  ru: "Russian",
+  ko: "Korean",
+  zhs: "Chinese (Simplified)",
+  zht: "Chinese (Traditional)",
+  ph: "Phyrexian",
+};
 
 export function SearchResultCard(props: {
   group: SearchCardGroup;
@@ -19,17 +40,21 @@ export function SearchResultCard(props: {
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
-  const [printings, setPrintings] = useState<CatalogSearchRow[]>(props.group.previewPrintings);
+  const [printings, setPrintings] = useState<CatalogSearchRow[]>([]);
   const [printingStatus, setPrintingStatus] = useState<AsyncStatus>("idle");
   const [printingError, setPrintingError] = useState<string | null>(null);
   const [hasLoadedExactPrintings, setHasLoadedExactPrintings] = useState(false);
   const [selectedPrintingId, setSelectedPrintingId] = useState("");
+  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState("en");
   const [quantity, setQuantity] = useState("1");
   const [finish, setFinish] = useState<FinishValue>("normal");
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState("");
   const [recentlyAdded, setRecentlyAdded] = useState(false);
+  const printingFieldId = useId();
+  const languageFieldId = useId();
 
   useEffect(() => {
     if (!recentlyAdded) {
@@ -46,22 +71,42 @@ export function SearchResultCard(props: {
   }, [recentlyAdded]);
 
   useEffect(() => {
-    setPrintings(props.group.previewPrintings);
+    setPrintings([]);
     setPrintingStatus("idle");
     setPrintingError(null);
     setHasLoadedExactPrintings(false);
     setSelectedPrintingId("");
+    setShowLanguagePicker(false);
+    setSelectedLanguageCode("en");
     setQuantity("1");
     setFinish("normal");
     setLocation("");
     setNotes("");
     setTags("");
     setRecentlyAdded(false);
-  }, [props.group.groupId, props.group.previewPrintings]);
+  }, [props.group.groupId]);
 
   const activePrinting =
     printings.find((printing) => printing.scryfall_id === selectedPrintingId) || null;
   const busy = props.busyPrintingId !== null && props.busyPrintingId === selectedPrintingId;
+  const availableLanguageCodes = Array.from(new Set(printings.map((printing) => printing.lang))).sort(
+    (left, right) => {
+      if (left === "en") {
+        return -1;
+      }
+      if (right === "en") {
+        return 1;
+      }
+      return left.localeCompare(right);
+    },
+  );
+  const hasEnglishPrintings = availableLanguageCodes.includes("en");
+  const hasOtherLanguages = availableLanguageCodes.some((languageCode) => languageCode !== "en");
+  const visiblePrintings = showLanguagePicker
+    ? printings.filter((printing) => printing.lang === selectedLanguageCode)
+    : hasEnglishPrintings
+      ? printings.filter((printing) => printing.lang === "en")
+      : printings;
 
   useEffect(() => {
     if (!activePrinting) {
@@ -74,6 +119,30 @@ export function SearchResultCard(props: {
       setRecentlyAdded(false);
     }
   }, [activePrinting, finish]);
+
+  useEffect(() => {
+    if (!availableLanguageCodes.length) {
+      setSelectedLanguageCode("en");
+      return;
+    }
+
+    setSelectedLanguageCode((current) => {
+      if (availableLanguageCodes.includes(current as (typeof availableLanguageCodes)[number])) {
+        return current;
+      }
+      return hasEnglishPrintings ? "en" : availableLanguageCodes[0];
+    });
+  }, [availableLanguageCodes, hasEnglishPrintings]);
+
+  useEffect(() => {
+    if (!selectedPrintingId) {
+      return;
+    }
+
+    if (!visiblePrintings.some((printing) => printing.scryfall_id === selectedPrintingId)) {
+      setSelectedPrintingId("");
+    }
+  }, [selectedPrintingId, visiblePrintings]);
 
   const parsedQuantity = Number.parseInt(quantity, 10);
   const parsedTags = parseTags(tags);
@@ -100,7 +169,7 @@ export function SearchResultCard(props: {
   );
   const selectedPrintingSummary = activePrinting
     ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}`
-    : "Choose a printing below, then set finish and add details.";
+    : "Choose a printing below to add this card.";
 
   async function loadPrintings() {
     if (printingStatus === "loading") {
@@ -174,23 +243,12 @@ export function SearchResultCard(props: {
               <h3>{props.group.name}</h3>
               <p className="result-card-subtitle">{selectedPrintingSummary}</p>
             </div>
-            <span className="rarity-pill">{props.group.rarity || "unknown"}</span>
+            <span className="rarity-pill">
+              {props.group.printingsCount} printing{props.group.printingsCount === 1 ? "" : "s"}
+            </span>
           </div>
 
-          <p className="search-result-summary">{summarizePreviewPrintings(props.group)}</p>
-
-          <div className="tag-row">
-            {props.group.previewPrintings.slice(0, 3).map((printing) => (
-              <span className="tag-chip subdued" key={printing.scryfall_id}>
-                {printing.set_code.toUpperCase()}
-              </span>
-            ))}
-            {props.group.previewPrintings.length > 3 ? (
-              <span className="tag-chip subdued">
-                +{props.group.previewPrintings.length - 3} more sampled
-              </span>
-            ) : null}
-          </div>
+          <p className="search-result-summary">{summarizeSearchGroup(props.group)}</p>
         </div>
       </div>
 
@@ -199,18 +257,18 @@ export function SearchResultCard(props: {
           <div className="form-section-header">
             <strong>Quick add</strong>
             <span>
-              {activePrinting
-                ? `${printings.length} printings available`
-                : "Choose a printing first"}
+              {props.group.printingsCount} printing{props.group.printingsCount === 1 ? "" : "s"} available
             </span>
           </div>
 
           <div className="search-result-quick-add-grid">
-            <label className="field search-printing-field">
-              <span>Printing</span>
+            <div className="field search-printing-field">
+              <label htmlFor={printingFieldId}>Printing</label>
               <select
+                aria-label="Printing"
                 className="text-input"
                 disabled={busy}
+                id={printingFieldId}
                 onChange={(event) => {
                   setSelectedPrintingId(event.target.value);
                   setRecentlyAdded(false);
@@ -219,13 +277,13 @@ export function SearchResultCard(props: {
                 value={selectedPrintingId}
               >
                 <option value="">Choose printing</option>
-                {printings.map((printing) => (
+                {visiblePrintings.map((printing) => (
                   <option key={printing.scryfall_id} value={printing.scryfall_id}>
                     {formatPrintingOptionLabel(printing)}
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
             <label className="field">
               <span>Qty</span>
@@ -263,6 +321,45 @@ export function SearchResultCard(props: {
                 ))}
               </select>
             </label>
+
+            {hasLoadedExactPrintings && hasOtherLanguages && !showLanguagePicker ? (
+              <div className="search-printing-helper">
+                <button
+                  className="field-link-button"
+                  onClick={() => {
+                    setShowLanguagePicker(true);
+                    setRecentlyAdded(false);
+                  }}
+                  type="button"
+                >
+                  Other languages available
+                </button>
+              </div>
+            ) : null}
+            {showLanguagePicker ? (
+              <div className="search-printing-helper">
+                <div className="search-language-picker">
+                  <label htmlFor={languageFieldId}>Language</label>
+                  <select
+                    aria-label="Language"
+                    className="text-input"
+                    disabled={busy}
+                    id={languageFieldId}
+                    onChange={(event) => {
+                      setSelectedLanguageCode(event.target.value);
+                      setRecentlyAdded(false);
+                    }}
+                    value={selectedLanguageCode}
+                  >
+                    {availableLanguageCodes.map((languageCode) => (
+                      <option key={languageCode} value={languageCode}>
+                        {LANGUAGE_LABELS[languageCode] || formatLanguageCode(languageCode)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {printingStatus === "loading" ? (
@@ -290,17 +387,6 @@ export function SearchResultCard(props: {
             </p>
           ) : null}
 
-          {activePrinting ? (
-            <div className="tag-row search-printing-meta">
-              <span className="tag-chip">{activePrinting.set_code.toUpperCase()}</span>
-              <span className="tag-chip">{activePrinting.lang.toUpperCase()}</span>
-              {activePrinting.finishes.map((value) => (
-                <span className="tag-chip subdued" key={value}>
-                  {formatFinishLabel(value)}
-                </span>
-              ))}
-            </div>
-          ) : null}
         </div>
 
         <div className="form-section form-section-muted">

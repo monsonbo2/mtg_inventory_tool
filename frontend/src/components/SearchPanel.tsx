@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from "react";
-import type { AddInventoryItemRequest, CatalogSearchRow, InventorySummary } from "../types";
+import type { AddInventoryItemRequest, CatalogNameSearchRow, CatalogSearchRow, InventorySummary } from "../types";
 import type { SearchCardGroup } from "../searchResultHelpers";
 import type { AsyncStatus, NoticeTone } from "../uiTypes";
 import { SearchAutocomplete } from "./SearchAutocomplete";
@@ -14,7 +14,7 @@ export function SearchPanel(props: {
   suggestionError: string | null;
   searchQuery: string;
   searchGroups: SearchCardGroup[];
-  suggestionResults: CatalogSearchRow[];
+  suggestionResults: CatalogNameSearchRow[];
   suggestionOpen: boolean;
   highlightedSuggestionIndex: number;
   busyAddCardId: string | null;
@@ -25,7 +25,7 @@ export function SearchPanel(props: {
   onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogSearchRow[]>;
   onSuggestionHighlight: (index: number) => void;
   onSuggestionRequestClose: () => void;
-  onSuggestionSelect: (result: CatalogSearchRow) => void;
+  onSuggestionSelect: (result: CatalogNameSearchRow) => void;
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
@@ -59,7 +59,7 @@ export function SearchPanel(props: {
   }, [props.onSuggestionRequestClose, props.suggestionOpen]);
 
   return (
-    <section className="panel panel-featured">
+    <section className="panel panel-featured search-panel">
       <div className="panel-heading">
         <div>
           <p className="section-kicker">Search And Add</p>
