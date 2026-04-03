@@ -33,11 +33,12 @@ preserve for the first API-backed version of the project.
   `set_finish` or `set_quantity`; clients should branch on `operation` instead
   of inferring the result type from optional fields alone.
 - `POST /inventories/{inventory_slug}/items/bulk` accepts exactly one bulk
-  mutation operation per request and currently supports tag operations only:
-  `add_tags`, `remove_tags`, `set_tags`, and `clear_tags`.
+  mutation operation per request and currently supports:
+  `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
+  `set_notes`, `set_acquisition`, and `set_finish`.
 - Bulk item mutation responses use a stable envelope with `inventory`,
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
-- The current bulk tag implementation is transactional and all-or-nothing: if
+- The current bulk implementation is transactional and all-or-nothing: if
   validation or item lookup fails, no rows in the batch are updated.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
@@ -116,12 +117,26 @@ preserve for the first API-backed version of the project.
   - accepts `lang=all` to include all available catalog languages
   - accepts specific language codes such as `lang=ja` to request one language
 - `POST /inventories/{inventory_slug}/items/bulk`
-  - current supported operations: `add_tags`, `remove_tags`, `set_tags`,
-    `clear_tags`
+  - current supported operations:
+    `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
+    `set_notes`, `set_acquisition`, `set_finish`
   - `item_ids` must be non-empty and unique
   - `tags` is required for `add_tags`, `remove_tags`, and `set_tags`
   - `tags` must be omitted for `clear_tags`
   - use `clear_tags` instead of sending an empty tag list
+  - `quantity` is required for `set_quantity`
+  - `notes` is used by `set_notes`
+  - `clear_notes=true` clears notes for `set_notes` and requires `notes` to be
+    omitted
+  - `set_acquisition` accepts `acquisition_price`,
+    `acquisition_currency`, or both
+  - `clear_acquisition=true` clears acquisition data for `set_acquisition` and
+    requires acquisition fields to be omitted
+  - `finish` is required for `set_finish`
+  - `set_finish` uses the same finish-compatibility rules as the single-item
+    patch route
+  - if any requested finish change would collide with an existing inventory row,
+    the batch returns `409 conflict` and no rows in the batch are updated
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For

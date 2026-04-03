@@ -68,12 +68,38 @@ PATCH_KEEP_ACQUISITION_DESCRIPTION = (
 )
 BULK_ITEM_MUTATION_REQUEST_DESCRIPTION = (
     "Specify exactly one bulk mutation operation per request. "
-    "The first shipped bulk route supports only tag operations: add_tags, remove_tags, "
-    "set_tags, or clear_tags."
+    "The current runtime supports add_tags, remove_tags, set_tags, clear_tags, "
+    "set_quantity, set_notes, set_acquisition, and set_finish."
 )
 BULK_TAGS_DESCRIPTION = (
     "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. "
-    "Use clear_tags instead of sending an empty tag list."
+    "Omit this field for non-tag bulk operations."
+)
+BULK_QUANTITY_DESCRIPTION = (
+    "Required for set_quantity. Omit this field for every other bulk operation."
+)
+BULK_NOTES_DESCRIPTION = (
+    "Used by set_notes. Provide notes to set/replace notes, or omit it when clear_notes is true. "
+    "Omit this field for every other bulk operation."
+)
+BULK_CLEAR_NOTES_DESCRIPTION = (
+    "Only applies to set_notes. When true, notes must be omitted and notes are cleared."
+)
+BULK_ACQUISITION_PRICE_DESCRIPTION = (
+    "Used by set_acquisition. Provide this field to set/replace acquisition_price. "
+    "Omit this field for every other bulk operation."
+)
+BULK_ACQUISITION_CURRENCY_DESCRIPTION = (
+    "Used by set_acquisition. Provide this field to set/replace acquisition_currency. "
+    "Omit this field for every other bulk operation."
+)
+BULK_CLEAR_ACQUISITION_DESCRIPTION = (
+    "Only applies to set_acquisition. When true, acquisition_price and acquisition_currency are cleared."
+)
+BULK_FINISH_DESCRIPTION = (
+    f"Used by set_finish. Accepted input values: {_ACCEPTED_FINISH_INPUTS_TEXT}. "
+    f"Canonical response values: {_CANONICAL_FINISHES_TEXT}. "
+    "The input alias `nonfoil` is normalized to `normal`. Omit this field for every other bulk operation."
 )
 
 
@@ -137,6 +163,22 @@ class BulkInventoryItemMutationRequest(ApiBaseModel):
         json_schema_extra={"description": BULK_ITEM_MUTATION_REQUEST_DESCRIPTION},
     )
 
-    operation: Literal["add_tags", "remove_tags", "set_tags", "clear_tags"]
+    operation: Literal[
+        "add_tags",
+        "remove_tags",
+        "set_tags",
+        "clear_tags",
+        "set_quantity",
+        "set_notes",
+        "set_acquisition",
+        "set_finish",
+    ]
     item_ids: list[int] = Field(min_length=1, max_length=100)
     tags: list[str] | None = Field(default=None, description=BULK_TAGS_DESCRIPTION)
+    quantity: int | None = Field(default=None, description=BULK_QUANTITY_DESCRIPTION)
+    notes: str | None = Field(default=None, description=BULK_NOTES_DESCRIPTION)
+    clear_notes: bool = Field(default=False, description=BULK_CLEAR_NOTES_DESCRIPTION)
+    acquisition_price: str | None = Field(default=None, description=BULK_ACQUISITION_PRICE_DESCRIPTION)
+    acquisition_currency: str | None = Field(default=None, description=BULK_ACQUISITION_CURRENCY_DESCRIPTION)
+    clear_acquisition: bool = Field(default=False, description=BULK_CLEAR_ACQUISITION_DESCRIPTION)
+    finish: FinishInput | None = Field(default=None, description=BULK_FINISH_DESCRIPTION)

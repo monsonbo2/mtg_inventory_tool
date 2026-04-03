@@ -71,7 +71,16 @@ class DefaultInventoryBootstrapResponse(ApiBaseModel):
 
 class BulkInventoryItemMutationResponse(ApiBaseModel):
     inventory: str
-    operation: Literal["add_tags", "remove_tags", "set_tags", "clear_tags"]
+    operation: Literal[
+        "add_tags",
+        "remove_tags",
+        "set_tags",
+        "clear_tags",
+        "set_quantity",
+        "set_notes",
+        "set_acquisition",
+        "set_finish",
+    ]
     requested_item_ids: list[int]
     updated_item_ids: list[int]
     updated_count: int

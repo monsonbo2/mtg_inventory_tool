@@ -280,14 +280,33 @@ class ApiContractTest(RepoSmokeTestCase):
 
         bulk_schema = BulkInventoryItemMutationRequest.model_json_schema()
         bulk_properties = bulk_schema["properties"]
-        self.assertIn("supports only tag operations", bulk_schema["description"])
+        self.assertIn(
+            "supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, and set_finish",
+            bulk_schema["description"],
+        )
         self.assertEqual(
-            ["add_tags", "remove_tags", "set_tags", "clear_tags"],
+            [
+                "add_tags",
+                "remove_tags",
+                "set_tags",
+                "clear_tags",
+                "set_quantity",
+                "set_notes",
+                "set_acquisition",
+                "set_finish",
+            ],
             bulk_properties["operation"]["enum"],
         )
         self.assertEqual(1, bulk_properties["item_ids"]["minItems"])
         self.assertEqual(100, bulk_properties["item_ids"]["maxItems"])
-        self.assertIn("Omit this field for clear_tags", bulk_properties["tags"]["description"])
+        self.assertIn("Omit this field for non-tag bulk operations", bulk_properties["tags"]["description"])
+        self.assertIn("Required for set_quantity", bulk_properties["quantity"]["description"])
+        self.assertIn("Used by set_notes", bulk_properties["notes"]["description"])
+        self.assertIn("Only applies to set_notes", bulk_properties["clear_notes"]["description"])
+        self.assertIn("Used by set_acquisition", bulk_properties["acquisition_price"]["description"])
+        self.assertIn("Used by set_acquisition", bulk_properties["acquisition_currency"]["description"])
+        self.assertIn("Only applies to set_acquisition", bulk_properties["clear_acquisition"]["description"])
+        self.assertIn("Used by set_finish", bulk_properties["finish"]["description"])
 
         bulk_response = BulkInventoryItemMutationResponse.model_validate(
             {

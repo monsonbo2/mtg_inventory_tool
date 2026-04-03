@@ -323,9 +323,21 @@ class WebApiSchemaTest(unittest.TestCase):
             )
 
             bulk_request_schema = components["BulkInventoryItemMutationRequest"]
-            self.assertIn("supports only tag operations", bulk_request_schema["description"])
+            self.assertIn(
+                "supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, and set_finish",
+                bulk_request_schema["description"],
+            )
             self.assertEqual(
-                ["add_tags", "remove_tags", "set_tags", "clear_tags"],
+                [
+                    "add_tags",
+                    "remove_tags",
+                    "set_tags",
+                    "clear_tags",
+                    "set_quantity",
+                    "set_notes",
+                    "set_acquisition",
+                    "set_finish",
+                ],
                 bulk_request_schema["properties"]["operation"]["enum"],
             )
             self.assertEqual(1, bulk_request_schema["properties"]["item_ids"]["minItems"])
@@ -602,6 +614,9 @@ class WebApiTest(unittest.TestCase):
         finish: str = "normal",
         language_code: str = "en",
         location: str = "",
+        acquisition_price: str | None = None,
+        acquisition_currency: str | None = None,
+        notes: str | None = None,
         tags_json: str = "[]",
     ) -> None:
         with connect(db_path) as connection:
@@ -619,9 +634,12 @@ class WebApiTest(unittest.TestCase):
                     finish,
                     language_code,
                     location,
+                    acquisition_price,
+                    acquisition_currency,
+                    notes,
                     tags_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -631,6 +649,9 @@ class WebApiTest(unittest.TestCase):
                     finish,
                     language_code,
                     location,
+                    acquisition_price,
+                    acquisition_currency,
+                    notes,
                     tags_json,
                 ),
             )
@@ -1115,6 +1136,294 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(400, duplicate.status_code)
                 self.assertEqual("validation_error", duplicate.json()["error"]["code"])
                 self.assertIn("must not contain duplicates", duplicate.json()["error"]["message"])
+
+    def test_demo_api_bulk_tag_mutation_rejects_unrelated_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                invalid = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "add_tags",
+                        "item_ids": [item_id],
+                        "tags": ["trade"],
+                        "quantity": 2,
+                    },
+                )
+                self.assertEqual(400, invalid.status_code)
+                self.assertEqual("validation_error", invalid.json()["error"]["code"])
+                self.assertIn("quantity is not valid for add_tags", invalid.json()["error"]["message"])
+
+    def test_demo_api_bulk_mutation_supports_quantity_notes_and_acquisition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    quantity=1,
+                    location="Binder A",
+                    notes="old note",
+                    acquisition_price="1.25",
+                    acquisition_currency="USD",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    quantity=3,
+                    location="Binder B",
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                quantity_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-quantity-demo"},
+                    json={
+                        "operation": "set_quantity",
+                        "item_ids": item_ids,
+                        "quantity": 4,
+                    },
+                )
+                self.assertEqual(200, quantity_bulk.status_code)
+                self.assertEqual("set_quantity", quantity_bulk.json()["operation"])
+                self.assertEqual(item_ids, quantity_bulk.json()["updated_item_ids"])
+
+                notes_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-notes-demo"},
+                    json={
+                        "operation": "set_notes",
+                        "item_ids": item_ids,
+                        "notes": "featured",
+                    },
+                )
+                self.assertEqual(200, notes_bulk.status_code)
+                self.assertEqual("set_notes", notes_bulk.json()["operation"])
+
+                clear_notes_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-clear-notes-demo"},
+                    json={
+                        "operation": "set_notes",
+                        "item_ids": [item_ids[1]],
+                        "clear_notes": True,
+                    },
+                )
+                self.assertEqual(200, clear_notes_bulk.status_code)
+                self.assertEqual([item_ids[1]], clear_notes_bulk.json()["updated_item_ids"])
+
+                acquisition_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-acquisition-demo"},
+                    json={
+                        "operation": "set_acquisition",
+                        "item_ids": item_ids,
+                        "acquisition_price": "2.50",
+                        "acquisition_currency": "usd",
+                    },
+                )
+                self.assertEqual(200, acquisition_bulk.status_code)
+                self.assertEqual("set_acquisition", acquisition_bulk.json()["operation"])
+
+                clear_acquisition_bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-clear-acquisition-demo"},
+                    json={
+                        "operation": "set_acquisition",
+                        "item_ids": [item_ids[0]],
+                        "clear_acquisition": True,
+                    },
+                )
+                self.assertEqual(200, clear_acquisition_bulk.status_code)
+                self.assertEqual([item_ids[0]], clear_acquisition_bulk.json()["updated_item_ids"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                rows_by_id = {row["item_id"]: row for row in listed.json()}
+                self.assertEqual(4, rows_by_id[item_ids[0]]["quantity"])
+                self.assertEqual(4, rows_by_id[item_ids[1]]["quantity"])
+                self.assertEqual("featured", rows_by_id[item_ids[0]]["notes"])
+                self.assertIsNone(rows_by_id[item_ids[1]]["notes"])
+                self.assertIsNone(rows_by_id[item_ids[0]]["acquisition_price"])
+                self.assertIsNone(rows_by_id[item_ids[0]]["acquisition_currency"])
+                self.assertEqual("2.50", rows_by_id[item_ids[1]]["acquisition_price"])
+                self.assertEqual("USD", rows_by_id[item_ids[1]]["acquisition_currency"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_acquisition", audit.json()[0]["action"])
+                self.assertTrue(audit.json()[0]["metadata"]["bulk_operation"])
+                self.assertTrue(audit.json()[0]["metadata"]["clear"])
+                self.assertEqual("req-bulk-clear-acquisition-demo", audit.json()[0]["request_id"])
+
+    def test_demo_api_bulk_finish_updates_rows_and_skips_noops(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal","foil"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="normal",
+                    location="Binder A",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="foil",
+                    location="Binder B",
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-finish-demo"},
+                    json={
+                        "operation": "set_finish",
+                        "item_ids": item_ids,
+                        "finish": "foil",
+                    },
+                )
+                self.assertEqual(200, bulk.status_code)
+                self.assertEqual("set_finish", bulk.json()["operation"])
+                self.assertEqual([item_ids[0]], bulk.json()["updated_item_ids"])
+                self.assertEqual(1, bulk.json()["updated_count"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                rows_by_id = {row["item_id"]: row for row in listed.json()}
+                self.assertEqual("foil", rows_by_id[item_ids[0]]["finish"])
+                self.assertEqual("foil", rows_by_id[item_ids[1]]["finish"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_finish", audit.json()[0]["action"])
+                self.assertEqual("normal", audit.json()[0]["metadata"]["old_finish"])
+                self.assertEqual("foil", audit.json()[0]["metadata"]["new_finish"])
+                self.assertEqual("req-bulk-finish-demo", audit.json()[0]["request_id"])
+
+    def test_demo_api_bulk_finish_conflict_returns_409(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path, finishes_json='["normal","foil"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="normal",
+                    location="",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="foil",
+                    location="",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    finish="normal",
+                    location="Binder C",
+                )
+                with connect(db_path) as connection:
+                    item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+                conflict = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "set_finish",
+                        "item_ids": [item_ids[2], item_ids[0]],
+                        "finish": "foil",
+                    },
+                )
+                self.assertEqual(409, conflict.status_code)
+                self.assertEqual("conflict", conflict.json()["error"]["code"])
+                self.assertIn("Changing finish would collide", conflict.json()["error"]["message"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                rows_by_id = {row["item_id"]: row for row in listed.json()}
+                self.assertEqual("normal", rows_by_id[item_ids[0]]["finish"])
+                self.assertEqual("foil", rows_by_id[item_ids[1]]["finish"])
+                self.assertEqual("normal", rows_by_id[item_ids[2]]["finish"])
+
+    def test_demo_api_bulk_quantity_requires_quantity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                invalid = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "set_quantity",
+                        "item_ids": [item_id],
+                    },
+                )
+                self.assertEqual(400, invalid.status_code)
+                self.assertEqual("validation_error", invalid.json()["error"]["code"])
+                self.assertIn("quantity is required for set_quantity", invalid.json()["error"]["message"])
 
     def test_demo_api_add_item_accepts_oracle_id_and_inherits_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

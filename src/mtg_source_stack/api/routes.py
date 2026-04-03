@@ -391,7 +391,7 @@ def inventory_items_add(
 @router.post(
     "/inventories/{inventory_slug}/items/bulk",
     response_model=BulkInventoryItemMutationResponse,
-    responses=_error_responses(401, 403, 400, 404, 503, 500),
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
 )
 def inventory_items_bulk_mutate(
     inventory_slug: str,
@@ -406,6 +406,13 @@ def inventory_items_bulk_mutate(
             operation=payload.operation,
             item_ids=payload.item_ids,
             tags=payload.tags,
+            quantity=payload.quantity,
+            notes=payload.notes,
+            clear_notes=payload.clear_notes,
+            acquisition_price=coerce_decimal(payload.acquisition_price),
+            acquisition_currency=payload.acquisition_currency,
+            clear_acquisition=payload.clear_acquisition,
+            finish=payload.finish,
             actor_type=context.actor_type,
             actor_id=context.actor_id,
             request_id=context.request_id,

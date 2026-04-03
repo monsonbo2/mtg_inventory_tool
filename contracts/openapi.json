@@ -336,8 +336,62 @@
       },
       "BulkInventoryItemMutationRequest": {
         "additionalProperties": false,
-        "description": "Specify exactly one bulk mutation operation per request. The first shipped bulk route supports only tag operations: add_tags, remove_tags, set_tags, or clear_tags.",
+        "description": "Specify exactly one bulk mutation operation per request. The current runtime supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, and set_finish.",
         "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Used by set_acquisition. Provide this field to set/replace acquisition_currency. Omit this field for every other bulk operation.",
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Used by set_acquisition. Provide this field to set/replace acquisition_price. Omit this field for every other bulk operation.",
+            "title": "Acquisition Price"
+          },
+          "clear_acquisition": {
+            "default": false,
+            "description": "Only applies to set_acquisition. When true, acquisition_price and acquisition_currency are cleared.",
+            "title": "Clear Acquisition",
+            "type": "boolean"
+          },
+          "clear_notes": {
+            "default": false,
+            "description": "Only applies to set_notes. When true, notes must be omitted and notes are cleared.",
+            "title": "Clear Notes",
+            "type": "boolean"
+          },
+          "finish": {
+            "anyOf": [
+              {
+                "enum": [
+                  "normal",
+                  "nonfoil",
+                  "foil",
+                  "etched"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Used by set_finish. Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`. Omit this field for every other bulk operation.",
+            "title": "Finish"
+          },
           "item_ids": {
             "items": {
               "type": "integer"
@@ -347,15 +401,43 @@
             "title": "Item Ids",
             "type": "array"
           },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Used by set_notes. Provide notes to set/replace notes, or omit it when clear_notes is true. Omit this field for every other bulk operation.",
+            "title": "Notes"
+          },
           "operation": {
             "enum": [
               "add_tags",
               "remove_tags",
               "set_tags",
-              "clear_tags"
+              "clear_tags",
+              "set_quantity",
+              "set_notes",
+              "set_acquisition",
+              "set_finish"
             ],
             "title": "Operation",
             "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for set_quantity. Omit this field for every other bulk operation.",
+            "title": "Quantity"
           },
           "tags": {
             "anyOf": [
@@ -369,7 +451,7 @@
                 "type": "null"
               }
             ],
-            "description": "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. Use clear_tags instead of sending an empty tag list.",
+            "description": "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. Omit this field for non-tag bulk operations.",
             "title": "Tags"
           }
         },
@@ -392,7 +474,11 @@
               "add_tags",
               "remove_tags",
               "set_tags",
-              "clear_tags"
+              "clear_tags",
+              "set_quantity",
+              "set_notes",
+              "set_acquisition",
+              "set_finish"
             ],
             "title": "Operation",
             "type": "string"
@@ -3586,6 +3672,16 @@
               }
             },
             "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {
