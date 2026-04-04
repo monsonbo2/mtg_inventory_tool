@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 from html import escape
+from io import BytesIO
 import json
 import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.errors import NotFoundError, ValidationError
+from mtg_source_stack.errors import ValidationError
 from mtg_source_stack.inventory.deck_url_import import (
     RemoteDeckCard,
     RemoteDeckSource,
+    _RemoteDeckSourceError,
     _aetherhub_deck_slug_from_url,
     _archidekt_deck_id_from_url,
+    _fetch_text,
     _extract_mtggoldfish_download_id,
     _manabox_deck_id_from_url,
     _mtggoldfish_deck_id_from_url,
@@ -37,6 +41,23 @@ from mtg_source_stack.inventory.service import create_inventory
 
 
 class DeckUrlImportTest(unittest.TestCase):
+    class _FakeUrlopenResponse:
+        def __init__(self, payload: bytes, *, final_url: str) -> None:
+            self._buffer = BytesIO(payload)
+            self._final_url = final_url
+
+        def __enter__(self) -> "DeckUrlImportTest._FakeUrlopenResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def read(self, size: int = -1) -> bytes:
+            return self._buffer.read(size)
+
+        def geturl(self) -> str:
+            return self._final_url
+
     def _manabox_page_html(self, deck_payload: dict[str, object]) -> str:
         props = json.dumps({"deck": [0, deck_payload]}, separators=(",", ":"))
         return f'<astro-island component-export="Main" props="{escape(props, quote=True)}"></astro-island>'
@@ -174,6 +195,53 @@ class DeckUrlImportTest(unittest.TestCase):
             "7252087",
             _extract_mtggoldfish_download_id('<a href="/deck/download/7252087">Download</a>'),
         )
+
+    def test_fetch_text_distinguishes_http_404_and_403(self) -> None:
+        url = "https://www.mtggoldfish.com/deck/7171667#paper"
+
+        with patch(
+            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            side_effect=HTTPError(url, 404, "missing", hdrs=None, fp=None),
+        ):
+            with self.assertRaises(_RemoteDeckSourceError) as not_found_error:
+                _fetch_text(url)
+
+        self.assertEqual("not_found", not_found_error.exception.code)
+
+        with patch(
+            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            side_effect=HTTPError(url, 403, "blocked", hdrs=None, fp=None),
+        ):
+            with self.assertRaises(_RemoteDeckSourceError) as blocked_error:
+                _fetch_text(url)
+
+        self.assertEqual("private_or_blocked", blocked_error.exception.code)
+
+    def test_fetch_text_rejects_redirect_to_unsupported_host(self) -> None:
+        with patch(
+            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            return_value=self._FakeUrlopenResponse(
+                b"{}",
+                final_url="https://example.test/decks/redirected",
+            ),
+        ):
+            with self.assertRaises(_RemoteDeckSourceError) as error:
+                _fetch_text("https://archidekt.com/api/decks/123/")
+
+        self.assertEqual("unsupported_provider", error.exception.code)
+
+    def test_fetch_text_rejects_oversized_payload(self) -> None:
+        with patch(
+            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            return_value=self._FakeUrlopenResponse(
+                b"x" * ((2 * 1024 * 1024) + 1),
+                final_url="https://archidekt.com/api/decks/123/",
+            ),
+        ):
+            with self.assertRaises(_RemoteDeckSourceError) as error:
+                _fetch_text("https://archidekt.com/api/decks/123/")
+
+        self.assertEqual("unexpected_payload", error.exception.code)
 
     def test_archidekt_payload_maps_sections_and_skips_maybeboard(self) -> None:
         source = _remote_source_from_archidekt_payload(
@@ -652,13 +720,41 @@ class DeckUrlImportTest(unittest.TestCase):
     def test_fetch_remote_deck_source_surfaces_moxfield_paste_fallback_on_blocked_fetch(self) -> None:
         with patch(
             "mtg_source_stack.inventory.deck_url_import._fetch_json",
-            side_effect=NotFoundError("blocked"),
+            side_effect=_RemoteDeckSourceError(
+                code="private_or_blocked",
+                message="blocked",
+            ),
         ):
             with self.assertRaisesRegex(
                 ValidationError,
                 "paste the deck text into /imports/decklist",
             ):
                 fetch_remote_deck_source("https://moxfield.com/decks/qNF3FLXLGUWAird08TxYrw")
+
+    def test_fetch_remote_deck_source_surfaces_provider_specific_timeout(self) -> None:
+        with patch(
+            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            side_effect=_RemoteDeckSourceError(
+                code="timeout",
+                message="timed out",
+            ),
+        ):
+            with self.assertRaisesRegex(
+                ValidationError,
+                "AetherHub deck URL fetch timed out",
+            ):
+                fetch_remote_deck_source("https://aetherhub.com/Deck/deck-969058")
+
+    def test_fetch_remote_deck_source_surfaces_provider_parse_drift(self) -> None:
+        with patch(
+            "mtg_source_stack.inventory.deck_url_import._fetch_json",
+            return_value={},
+        ):
+            with self.assertRaisesRegex(
+                ValidationError,
+                "Archidekt deck URL returned an unexpected payload shape",
+            ):
+                fetch_remote_deck_source("https://archidekt.com/decks/123/test")
 
     def test_fetch_remote_deck_source_uses_mtggoldfish_downloads(self) -> None:
         with patch(

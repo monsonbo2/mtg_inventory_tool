@@ -5,14 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import unescape
 import json
+import logging
 from pathlib import Path
+import socket
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 import re
 
-from ..errors import NotFoundError, ValidationError
+from ..errors import MtgStackError, NotFoundError, ValidationError
 from ..db.connection import connect
 from ..db.schema import initialize_database
 from .catalog import resolve_default_card_row_for_name
@@ -89,6 +91,20 @@ _SUPPORTED_REMOTE_DECK_PROVIDERS_TEXT = (
     "Archidekt, AetherHub, ManaBox, Moxfield, MTGGoldfish, MTGTop8, and TappedOut"
 )
 _EXPORTED_DECKLIST_SECTION_HEADERS = {"deck", "mainboard", "main deck", "commander", "companion", "sideboard"}
+_REMOTE_FETCH_TIMEOUT_SECONDS = 15
+_REMOTE_FETCH_MAX_BYTES = 2 * 1024 * 1024
+_REMOTE_FETCH_CHUNK_BYTES = 64 * 1024
+_PROVIDER_DISPLAY_NAMES = {
+    "archidekt": "Archidekt",
+    "aetherhub": "AetherHub",
+    "manabox": "ManaBox",
+    "moxfield": "Moxfield",
+    "mtggoldfish": "MTGGoldfish",
+    "mtgtop8": "MTGTop8",
+    "tappedout": "TappedOut",
+}
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +138,219 @@ class _ParsedMtgGoldfishExactEntry:
     block_index: int
 
 
+@dataclass(frozen=True, slots=True)
+class _RemoteDeckSourceError(Exception):
+    code: str
+    message: str
+    provider: str | None = None
+    source_url: str | None = None
+    stage: str = "fetch"
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def _allowed_redirect_hosts_for_url(url: str) -> set[str]:
+    hostname = (urlparse(url).hostname or "").lower()
+    if not hostname:
+        return set()
+    for supported_hosts in (
+        _ARCHIDEKT_HOSTS,
+        _AETHERHUB_HOSTS,
+        _MANABOX_HOSTS,
+        _MOXFIELD_HOSTS,
+        _MTGGOLDFISH_HOSTS,
+        _MTGTOP8_HOSTS,
+        _TAPPEDOUT_HOSTS,
+    ):
+        if hostname in supported_hosts:
+            return set(supported_hosts)
+    return {hostname}
+
+
+def _remote_timeout_error(url: str) -> _RemoteDeckSourceError:
+    return _RemoteDeckSourceError(
+        code="timeout",
+        message="Public deck URL fetch timed out.",
+        source_url=url,
+        stage="fetch",
+    )
+
+
+def _remote_unsupported_redirect_error(url: str, *, redirected_to: str) -> _RemoteDeckSourceError:
+    return _RemoteDeckSourceError(
+        code="unsupported_provider",
+        message=f"Public deck URL redirected to unsupported host '{redirected_to}'.",
+        source_url=url,
+        stage="fetch",
+    )
+
+
+def _remote_payload_too_large_error(url: str) -> _RemoteDeckSourceError:
+    return _RemoteDeckSourceError(
+        code="unexpected_payload",
+        message="Public deck URL returned a payload that exceeded the size limit.",
+        source_url=url,
+        stage="fetch",
+    )
+
+
+def _remote_http_error(url: str, exc: HTTPError) -> _RemoteDeckSourceError:
+    if exc.code == 404:
+        return _RemoteDeckSourceError(
+            code="not_found",
+            message="Public deck URL could not be fetched. Check that the deck exists and is publicly accessible.",
+            source_url=url,
+            stage="fetch",
+        )
+    if exc.code in {401, 403, 429}:
+        return _RemoteDeckSourceError(
+            code="private_or_blocked",
+            message="Public deck URL could not be fetched because the deck is private or the provider blocked access.",
+            source_url=url,
+            stage="fetch",
+        )
+    if exc.code == 408:
+        return _remote_timeout_error(url)
+    return _RemoteDeckSourceError(
+        code="upstream_error",
+        message=f"Could not fetch public deck URL: HTTP {exc.code}.",
+        source_url=url,
+        stage="fetch",
+    )
+
+
+def _remote_transport_error(url: str) -> _RemoteDeckSourceError:
+    return _RemoteDeckSourceError(
+        code="upstream_error",
+        message="Could not fetch public deck URL.",
+        source_url=url,
+        stage="fetch",
+    )
+
+
+def _is_timeout_exception(exc: BaseException) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    reason = getattr(exc, "reason", None)
+    return isinstance(reason, (TimeoutError, socket.timeout))
+
+
+def _read_remote_payload(response: Any, *, source_url: str) -> bytes:
+    chunks: list[bytes] = []
+    total_bytes = 0
+    while True:
+        chunk = response.read(_REMOTE_FETCH_CHUNK_BYTES)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > _REMOTE_FETCH_MAX_BYTES:
+            raise _remote_payload_too_large_error(source_url)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _validate_remote_redirect(url: str, *, final_url: str) -> None:
+    allowed_hosts = _allowed_redirect_hosts_for_url(url)
+    if not allowed_hosts:
+        return
+    final_hostname = (urlparse(final_url).hostname or "").lower()
+    if final_hostname and final_hostname not in allowed_hosts:
+        raise _remote_unsupported_redirect_error(url, redirected_to=final_hostname)
+
+
+def _provider_display_name(provider: str) -> str:
+    return _PROVIDER_DISPLAY_NAMES.get(provider, provider)
+
+
+def _public_provider_error(provider: str, exc: _RemoteDeckSourceError) -> MtgStackError:
+    provider_name = _provider_display_name(provider)
+    if provider == "moxfield" and exc.code in {
+        "private_or_blocked",
+        "timeout",
+        "unexpected_payload",
+        "parse_drift",
+        "upstream_error",
+        "unsupported_provider",
+    }:
+        return ValidationError(
+            "Moxfield deck URL could not be imported automatically. "
+            "If the deck is public, export it from Moxfield and paste the deck text into /imports/decklist."
+        )
+    if exc.code == "not_found":
+        return NotFoundError(
+            f"{provider_name} deck URL could not be fetched. Check that the deck exists and is publicly accessible."
+        )
+    if exc.code == "private_or_blocked":
+        return ValidationError(
+            f"{provider_name} deck URL could not be fetched because the deck is private or the provider blocked automated access."
+        )
+    if exc.code == "timeout":
+        return ValidationError(f"{provider_name} deck URL fetch timed out.")
+    if exc.code == "unsupported_provider":
+        return ValidationError(f"{provider_name} deck URL redirected to an unsupported host.")
+    if exc.code == "parse_drift":
+        return ValidationError(
+            f"{provider_name} deck URL returned an unexpected payload shape. The provider page format may have changed."
+        )
+    if exc.code == "unexpected_payload":
+        return ValidationError(f"{provider_name} deck URL returned an unexpected payload.")
+    if exc.code == "upstream_error":
+        return ValidationError(f"{provider_name} deck URL could not be fetched due to an upstream error.")
+    return ValidationError(f"{provider_name} deck URL could not be fetched.")
+
+
+def _log_remote_source_error(exc: _RemoteDeckSourceError) -> None:
+    logger.warning(
+        "remote_deck_import_failure provider=%s stage=%s code=%s source_url=%s message=%s",
+        exc.provider or "unknown",
+        exc.stage,
+        exc.code,
+        exc.source_url,
+        exc.message,
+    )
+
+
+def _load_provider_remote_source(
+    *,
+    provider: str,
+    source_url: str,
+    loader: Callable[[], RemoteDeckSource],
+) -> RemoteDeckSource:
+    logger.info("remote_deck_fetch_start provider=%s source_url=%s", provider, source_url)
+    try:
+        source = loader()
+    except _RemoteDeckSourceError as exc:
+        wrapped = _RemoteDeckSourceError(
+            code=exc.code,
+            message=exc.message,
+            provider=provider,
+            source_url=source_url,
+            stage=exc.stage,
+        )
+        _log_remote_source_error(wrapped)
+        raise _public_provider_error(provider, wrapped) from exc
+    except ValidationError as exc:
+        wrapped = _RemoteDeckSourceError(
+            code="parse_drift",
+            message=str(exc),
+            provider=provider,
+            source_url=source_url,
+            stage="parse",
+        )
+        _log_remote_source_error(wrapped)
+        raise _public_provider_error(provider, wrapped) from exc
+
+    logger.info(
+        "remote_deck_fetch_success provider=%s source_url=%s deck_name=%s cards=%s",
+        provider,
+        source_url,
+        source.deck_name,
+        len(source.cards),
+    )
+    return source
+
+
 def _fetch_text(url: str) -> str:
     request = Request(
         url,
@@ -131,30 +360,43 @@ def _fetch_text(url: str) -> str:
         },
     )
     try:
-        with urlopen(request, timeout=15) as response:
-            payload = response.read()
+        with urlopen(request, timeout=_REMOTE_FETCH_TIMEOUT_SECONDS) as response:
+            _validate_remote_redirect(url, final_url=response.geturl())
+            payload = _read_remote_payload(response, source_url=url)
     except HTTPError as exc:
-        if exc.code in {403, 404}:
-            raise NotFoundError(
-                "Public deck URL could not be fetched. Check that the deck exists and is publicly accessible."
-            ) from exc
-        raise ValidationError(f"Could not fetch public deck URL: HTTP {exc.code}.") from exc
+        raise _remote_http_error(url, exc) from exc
     except URLError as exc:
-        raise ValidationError("Could not fetch public deck URL.") from exc
+        if _is_timeout_exception(exc):
+            raise _remote_timeout_error(url) from exc
+        raise _remote_transport_error(url) from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise _remote_timeout_error(url) from exc
     except OSError as exc:
-        raise ValidationError("Could not fetch public deck URL.") from exc
+        if _is_timeout_exception(exc):
+            raise _remote_timeout_error(url) from exc
+        raise _remote_transport_error(url) from exc
 
     try:
         return payload.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ValidationError("Public deck URL returned an invalid text payload.") from exc
+        raise _RemoteDeckSourceError(
+            code="unexpected_payload",
+            message="Public deck URL returned an invalid text payload.",
+            source_url=url,
+            stage="fetch",
+        ) from exc
 
 
 def _fetch_json(url: str) -> Any:
     try:
         return json.loads(_fetch_text(url))
     except json.JSONDecodeError as exc:
-        raise ValidationError("Public deck URL returned an invalid JSON payload.") from exc
+        raise _RemoteDeckSourceError(
+            code="unexpected_payload",
+            message="Public deck URL returned an invalid JSON payload.",
+            source_url=url,
+            stage="fetch",
+        ) from exc
 
 
 def _parse_remote_deck_url(source_url: str) -> Any:
@@ -925,65 +1167,117 @@ def _remote_source_from_mtgtop8_export(source_url: str, *, export_text: str) -> 
     )
 
 
+def _archidekt_payload_for_deck_id(deck_id: str) -> dict[str, Any]:
+    payload = _fetch_json(f"https://archidekt.com/api/decks/{deck_id}/")
+    if not isinstance(payload, dict):
+        raise _RemoteDeckSourceError(
+            code="unexpected_payload",
+            message="Public deck URL returned an unexpected JSON payload shape.",
+            stage="fetch",
+        )
+    return payload
+
+
+def _moxfield_payload_for_public_id(public_id: str) -> dict[str, Any]:
+    payload = _fetch_json(f"https://api2.moxfield.com/v2/decks/all/{public_id}")
+    if not isinstance(payload, dict):
+        raise _RemoteDeckSourceError(
+            code="unexpected_payload",
+            message="Public deck URL returned an unexpected JSON payload shape.",
+            stage="fetch",
+        )
+    return payload
+
+
+def _remote_source_from_mtggoldfish_url(source_url: str) -> RemoteDeckSource:
+    deck_id = _mtggoldfish_deck_id_from_url(source_url)
+    return _remote_source_from_mtggoldfish_downloads(
+        source_url,
+        arena_page_html=_fetch_text(f"https://www.mtggoldfish.com/deck/arena_download/{deck_id}"),
+        exact_download_text=_fetch_text(
+            f"https://www.mtggoldfish.com/deck/download/{deck_id}?output=mtggoldfish&type=tabletop"
+        ),
+    )
+
+
+def _remote_source_from_mtgtop8_url(source_url: str) -> RemoteDeckSource:
+    return _remote_source_from_mtgtop8_export(
+        source_url,
+        export_text=_fetch_text(_mtgtop8_dec_export_url_from_url(source_url)),
+    )
+
+
 def fetch_remote_deck_source(source_url: str) -> RemoteDeckSource:
     parsed = _parse_remote_deck_url(source_url)
     hostname = (parsed.hostname or "").lower()
 
     if hostname in _ARCHIDEKT_HOSTS:
         deck_id = _archidekt_deck_id_from_url(source_url)
-        payload = _fetch_json(f"https://archidekt.com/api/decks/{deck_id}/")
-        if not isinstance(payload, dict):
-            raise ValidationError("Public deck URL returned an unexpected payload shape.")
-        return _remote_source_from_archidekt_payload(source_url, payload)
+        return _load_provider_remote_source(
+            provider="archidekt",
+            source_url=source_url,
+            loader=lambda: _remote_source_from_archidekt_payload(
+                source_url,
+                _archidekt_payload_for_deck_id(deck_id),
+            ),
+        )
 
     if hostname in _AETHERHUB_HOSTS:
         deck_slug = _aetherhub_deck_slug_from_url(source_url)
-        return _remote_source_from_aetherhub_page(
-            source_url,
-            page_html=_fetch_text(f"https://aetherhub.com/Deck/{deck_slug}"),
+        return _load_provider_remote_source(
+            provider="aetherhub",
+            source_url=source_url,
+            loader=lambda: _remote_source_from_aetherhub_page(
+                source_url,
+                page_html=_fetch_text(f"https://aetherhub.com/Deck/{deck_slug}"),
+            ),
         )
 
     if hostname in _MANABOX_HOSTS:
         deck_id = _manabox_deck_id_from_url(source_url)
-        return _remote_source_from_manabox_page(
-            source_url,
-            page_html=_fetch_text(f"https://manabox.app/decks/{deck_id}"),
+        return _load_provider_remote_source(
+            provider="manabox",
+            source_url=source_url,
+            loader=lambda: _remote_source_from_manabox_page(
+                source_url,
+                page_html=_fetch_text(f"https://manabox.app/decks/{deck_id}"),
+            ),
         )
 
     if hostname in _MOXFIELD_HOSTS:
         public_id = _moxfield_public_id_from_url(source_url)
-        try:
-            payload = _fetch_json(f"https://api2.moxfield.com/v2/decks/all/{public_id}")
-        except (NotFoundError, ValidationError) as exc:
-            raise ValidationError(
-                "Moxfield deck URL could not be imported automatically. "
-                "If the deck is public, export it from Moxfield and paste the deck text into /imports/decklist."
-            ) from exc
-        if not isinstance(payload, dict):
-            raise ValidationError("Public deck URL returned an unexpected payload shape.")
-        return _remote_source_from_moxfield_payload(source_url, payload)
-
-    if hostname in _MTGGOLDFISH_HOSTS:
-        deck_id = _mtggoldfish_deck_id_from_url(source_url)
-        return _remote_source_from_mtggoldfish_downloads(
-            source_url,
-            arena_page_html=_fetch_text(f"https://www.mtggoldfish.com/deck/arena_download/{deck_id}"),
-            exact_download_text=_fetch_text(
-                f"https://www.mtggoldfish.com/deck/download/{deck_id}?output=mtggoldfish&type=tabletop"
+        return _load_provider_remote_source(
+            provider="moxfield",
+            source_url=source_url,
+            loader=lambda: _remote_source_from_moxfield_payload(
+                source_url,
+                _moxfield_payload_for_public_id(public_id),
             ),
         )
 
+    if hostname in _MTGGOLDFISH_HOSTS:
+        return _load_provider_remote_source(
+            provider="mtggoldfish",
+            source_url=source_url,
+            loader=lambda: _remote_source_from_mtggoldfish_url(source_url),
+        )
+
     if hostname in _MTGTOP8_HOSTS:
-        return _remote_source_from_mtgtop8_export(
-            source_url,
-            export_text=_fetch_text(_mtgtop8_dec_export_url_from_url(source_url)),
+        return _load_provider_remote_source(
+            provider="mtgtop8",
+            source_url=source_url,
+            loader=lambda: _remote_source_from_mtgtop8_url(source_url),
         )
 
     if hostname in _TAPPEDOUT_HOSTS:
         deck_slug = _tappedout_deck_slug_from_url(source_url)
-        return _remote_source_from_tappedout_page(
-            source_url,
-            page_html=_fetch_text(f"https://tappedout.net/mtg-decks/{deck_slug}/"),
+        return _load_provider_remote_source(
+            provider="tappedout",
+            source_url=source_url,
+            loader=lambda: _remote_source_from_tappedout_page(
+                source_url,
+                page_html=_fetch_text(f"https://tappedout.net/mtg-decks/{deck_slug}/"),
+            ),
         )
 
     raise ValidationError(f"Only {_SUPPORTED_REMOTE_DECK_PROVIDERS_TEXT} deck URLs are supported right now.")
@@ -1101,6 +1395,12 @@ def import_deck_url(
         with connect(db_path) as connection:
             inventory_validator(connection, inventory_slug)
 
+    logger.info(
+        "remote_deck_import_start source_url=%s default_inventory=%s dry_run=%s",
+        source_url,
+        default_inventory,
+        dry_run,
+    )
     source = fetch_remote_deck_source(source_url)
     imported_rows = _import_pending_rows(
         db_path,
@@ -1116,6 +1416,15 @@ def import_deck_url(
         actor_type=actor_type,
         actor_id=actor_id,
         request_id=request_id,
+    )
+    logger.info(
+        "remote_deck_import_complete provider=%s source_url=%s default_inventory=%s dry_run=%s rows_seen=%s rows_written=%s",
+        source.provider,
+        source.source_url,
+        default_inventory,
+        dry_run,
+        len(source.cards),
+        len(imported_rows),
     )
     return {
         "source_url": source.source_url,
