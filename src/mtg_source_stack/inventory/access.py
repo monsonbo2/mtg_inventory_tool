@@ -10,6 +10,7 @@ from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import NotFoundError, ValidationError
 from .access_models import InventoryMembershipRemovalResult, InventoryMembershipRow
+from .normalize import normalize_inventory_slug
 
 
 INVENTORY_MEMBERSHIP_ROLES = frozenset({"viewer", "editor", "owner"})
@@ -33,6 +34,7 @@ def _normalize_actor_id(actor_id: str) -> str:
 
 
 def _inventory_row_from_slug(connection: sqlite3.Connection, inventory_slug: str) -> sqlite3.Row:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     row = connection.execute(
         """
         SELECT id, slug
@@ -179,7 +181,7 @@ def revoke_inventory_membership(
         ).fetchone()
         if row is None:
             raise NotFoundError(
-                f"No inventory membership found for actor '{normalized_actor_id}' in inventory '{inventory_slug}'."
+                f"No inventory membership found for actor '{normalized_actor_id}' in inventory '{inventory['slug']}'."
             )
         connection.execute(
             """

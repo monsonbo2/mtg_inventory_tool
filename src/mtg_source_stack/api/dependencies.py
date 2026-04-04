@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from ..db.connection import DEFAULT_DB_PATH
 from ..errors import AuthenticationError, AuthorizationError
+from ..inventory.normalize import normalize_inventory_slug
 
 if TYPE_CHECKING:  # pragma: no cover - typing-only import
     from fastapi import Request
@@ -260,6 +261,7 @@ def get_inventory_read_request_context(
     inventory_slug: str,
     request: "Request",
 ) -> RequestContext:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     context = get_authenticated_request_context(request)
     settings = get_settings(request)
     if settings.runtime_mode != "shared_service":
@@ -282,6 +284,7 @@ def require_inventory_write_access(
     *,
     inventory_slug: str,
 ) -> None:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if settings.runtime_mode != "shared_service":
         return
     from ..inventory.service import actor_can_write_inventory

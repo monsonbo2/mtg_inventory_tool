@@ -7,7 +7,7 @@ from typing import Any
 
 from ..errors import NotFoundError
 from .money import coerce_decimal
-from .normalize import load_tags_json, normalize_finish, parse_tag_filters, text_or_none
+from .normalize import load_tags_json, normalize_finish, normalize_inventory_slug, parse_tag_filters, text_or_none
 from .policies import build_merged_inventory_item_update
 
 
@@ -66,6 +66,7 @@ def add_owned_filters(
 
 
 def get_inventory_row(connection: sqlite3.Connection, slug: str) -> sqlite3.Row:
+    slug = normalize_inventory_slug(slug)
     row = connection.execute(
         """
         SELECT id, slug, display_name
@@ -87,6 +88,7 @@ def get_or_create_inventory_row(
     inventory_cache: dict[str, sqlite3.Row] | None = None,
     auto_create: bool = False,
 ) -> sqlite3.Row:
+    slug = normalize_inventory_slug(slug)
     if inventory_cache is not None and slug in inventory_cache:
         return inventory_cache[slug]
 
@@ -119,6 +121,7 @@ def get_or_create_inventory_row(
 
 
 def get_inventory_item_row(connection: sqlite3.Connection, inventory_slug: str, item_id: int) -> sqlite3.Row:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     row = connection.execute(
         """
         SELECT

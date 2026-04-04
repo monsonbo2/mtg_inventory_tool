@@ -12,6 +12,7 @@ from ..db.schema import require_current_schema
 from ..errors import ConflictError, ValidationError
 from .audit import load_inventory_item_snapshot, write_inventory_audit_event
 from .inventories import create_inventory_with_connection
+from .normalize import normalize_inventory_slug
 from .policies import build_merged_inventory_item_update
 from .query_inventory import (
     find_inventory_item_collision,
@@ -80,10 +81,8 @@ def _normalize_transfer_request(
     keep_acquisition: str | None,
     dry_run: bool,
 ) -> _TransferRequest:
-    normalized_source = source_inventory_slug.strip()
-    normalized_target = target_inventory_slug.strip()
-    if not normalized_target:
-        raise ValidationError("target_inventory_slug is required.")
+    normalized_source = normalize_inventory_slug(source_inventory_slug)
+    normalized_target = normalize_inventory_slug(target_inventory_slug)
     if normalized_target == normalized_source:
         raise ValidationError("target_inventory_slug must be different from the source inventory.")
     if mode not in _TRANSFER_MODES:
@@ -691,6 +690,7 @@ def transfer_inventory_items(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> InventoryTransferResult:
+    source_inventory_slug = normalize_inventory_slug(source_inventory_slug)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
         result = transfer_inventory_items_with_connection(
@@ -727,6 +727,7 @@ def transfer_inventory_items_with_connection(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> InventoryTransferResult:
+    source_inventory_slug = normalize_inventory_slug(source_inventory_slug)
     request = _normalize_transfer_request(
         source_inventory_slug=source_inventory_slug,
         target_inventory_slug=target_inventory_slug,
@@ -788,6 +789,8 @@ def duplicate_inventory(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> InventoryDuplicateResult:
+    source_inventory_slug = normalize_inventory_slug(source_inventory_slug)
+    target_slug = normalize_inventory_slug(target_slug)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
         source_inventory = connection.execute(

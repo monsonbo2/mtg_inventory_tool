@@ -16,6 +16,7 @@ from .normalize import (
     MAX_OWNED_ROWS_LIMIT,
     format_finishes,
     load_tags_json,
+    normalize_inventory_slug,
     normalized_catalog_finish_list,
     text_or_none,
     truncate,
@@ -189,6 +190,7 @@ def list_price_gaps(
     provider: str,
     limit: int | None,
 ) -> list[PriceGapRow]:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = query_price_gaps(
@@ -207,6 +209,7 @@ def reconcile_prices(
     provider: str,
     apply_changes: bool,
 ) -> ReconcilePricesResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if apply_changes:
         raise ValidationError(
             "reconcile-prices is suggestion-only and no longer changes inventory finish values. "
@@ -255,6 +258,7 @@ def inventory_health(
     stale_days: int,
     preview_limit: int,
 ) -> InventoryHealthResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if stale_days < 0:
         raise ValidationError("--stale-days must be zero or greater.")
     if preview_limit <= 0:
@@ -382,6 +386,7 @@ def list_owned_filtered(
     tags: list[str] | None,
 ) -> list[OwnedInventoryRow]:
     validate_limit_value(limit, maximum=MAX_OWNED_ROWS_LIMIT, allow_none=True)
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -464,6 +469,7 @@ def export_inventory_csv(
     tags: list[str] | None,
     limit: int | None,
 ) -> ExportInventoryCsvResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     rows = list_owned_filtered(
         db_path,
         inventory_slug=inventory_slug,
@@ -533,6 +539,7 @@ def valuation_filtered(
     location: str | None,
     tags: list[str] | None,
 ) -> list[ValuationRow]:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -691,6 +698,7 @@ def inventory_report(
     limit: int,
     stale_days: int,
 ) -> InventoryReportResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     rows = list_owned_filtered(
         db_path,
         inventory_slug=inventory_slug,

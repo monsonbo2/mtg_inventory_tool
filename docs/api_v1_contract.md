@@ -315,6 +315,9 @@ before the generic 500 envelope is returned.
   membership check.
 - `POST /inventories` still requires a global `editor` or `admin`, and the
   creator is automatically granted `owner` membership on the new inventory.
+  Inventory slugs are trimmed before create-time uniqueness checks and
+  storage, and inventory path/body slugs are resolved using that same trimmed
+  canonical value.
 - `POST /me/bootstrap` requires a global `editor` or `admin`, creates one
   personal default inventory named `Collection` for that actor, grants
   `owner`, and returns the same inventory on repeated calls.

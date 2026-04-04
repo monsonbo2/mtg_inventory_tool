@@ -10,7 +10,7 @@ from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import AuthorizationError, ConflictError, ValidationError
 from .access import grant_inventory_membership_with_connection, is_global_admin
-from .normalize import slugify_inventory_name, text_or_none
+from .normalize import normalize_inventory_slug, slugify_inventory_name, text_or_none
 from .response_models import DefaultInventoryBootstrapResult, InventoryCreateResult, InventoryListRow
 
 
@@ -119,6 +119,7 @@ def create_inventory_with_connection(
     description: str | None,
     actor_id: str | None = None,
 ) -> InventoryCreateResult:
+    slug = normalize_inventory_slug(slug)
     try:
         cursor = connection.execute(
             """

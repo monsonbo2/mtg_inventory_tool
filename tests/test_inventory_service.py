@@ -3280,6 +3280,81 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertTrue(result.results_truncated)
             self.assertEqual("would_copy", result.results[0].status)
 
+    def test_create_inventory_trims_slug_and_conflicts_after_trim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            created = create_inventory(
+                db_path,
+                slug=" source-copy ",
+                display_name="Source Copy",
+                description=None,
+            )
+            self.assertEqual("source-copy", created.slug)
+
+            with self.assertRaisesRegex(ConflictError, "Inventory 'source-copy' already exists"):
+                create_inventory(
+                    db_path,
+                    slug="source-copy",
+                    display_name="Duplicate",
+                    description=None,
+                )
+
+    def test_transfer_inventory_items_normalizes_padded_source_and_target_slugs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", location="Binder A")
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug=" source ",
+                target_inventory_slug=" target ",
+                mode="move",
+                item_ids=None,
+                all_items=True,
+                on_conflict="fail",
+            )
+
+            self.assertEqual("source", result.source_inventory)
+            self.assertEqual("target", result.target_inventory)
+            self.assertEqual(1, result.moved_count)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], source_rows)
+            self.assertEqual(1, len(target_rows))
+
     def test_duplicate_inventory_copies_all_rows_and_grants_owner_to_actor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -3422,6 +3497,50 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 tags=None,
             )
             self.assertEqual([], duplicated_rows)
+
+    def test_duplicate_inventory_normalizes_padded_target_slug(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
+
+            result = duplicate_inventory(
+                db_path,
+                source_inventory_slug=" source ",
+                target_slug=" source-copy ",
+                target_display_name="Source Copy",
+                actor_type="api",
+                actor_id="duplicator-user",
+                request_id="req-duplicate-normalized",
+            )
+
+            self.assertEqual("source", result.source_inventory)
+            self.assertEqual("source-copy", result.inventory.slug)
+            self.assertEqual("source-copy", result.transfer.target_inventory)
+
+            duplicated_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source-copy",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(duplicated_rows))
 
     def test_bulk_mutate_inventory_items_rolls_back_when_audit_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

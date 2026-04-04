@@ -115,6 +115,13 @@ def compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
 
 
+def normalize_inventory_slug(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValidationError("inventory_slug is required.")
+    return normalized
+
+
 def slugify_inventory_name(value: str) -> str:
     lowered = value.strip().lower()
     slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")

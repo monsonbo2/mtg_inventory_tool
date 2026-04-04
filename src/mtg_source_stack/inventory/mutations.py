@@ -21,6 +21,7 @@ from .normalize import (
     normalize_currency_code,
     normalize_external_id,
     normalize_finish,
+    normalize_inventory_slug,
     normalize_language_code,
     normalize_tags,
     parse_tags,
@@ -1248,6 +1249,7 @@ def add_card_with_connection(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> AddCardResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if quantity <= 0:
         raise ValidationError("--quantity must be a positive integer.")
 
@@ -1473,6 +1475,7 @@ def add_card(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> AddCardResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
         result = add_card_with_connection(
@@ -1514,6 +1517,7 @@ def set_quantity(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetQuantityResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if quantity <= 0:
         raise ValidationError("--quantity must be a positive integer. Use remove-card to delete a row.")
 
@@ -1565,6 +1569,7 @@ def set_acquisition(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetAcquisitionResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if clear and (acquisition_price is not None or acquisition_currency is not None):
         raise ValidationError("Use either --clear or --price / --currency, not both.")
     if not clear and acquisition_price is None and acquisition_currency is None:
@@ -1635,6 +1640,7 @@ def set_finish_with_connection(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetFinishResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     item = get_inventory_item_row(connection, inventory_slug, item_id)
     before_snapshot = inventory_item_result_from_row(item)
     normalized_finish = normalize_finish(finish)
@@ -1690,6 +1696,7 @@ def set_finish(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetFinishResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
         result = set_finish_with_connection(
@@ -1718,6 +1725,7 @@ def set_location(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetLocationResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     normalized_location = text_or_none(location) or ""
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
@@ -1840,6 +1848,7 @@ def set_condition(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetConditionResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     normalized_condition = normalize_condition_code(condition_code)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
@@ -1966,6 +1975,7 @@ def split_row(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SplitRowResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if quantity <= 0:
         raise ValidationError("--quantity must be a positive integer.")
     if clear_location and location is not None:
@@ -2171,6 +2181,7 @@ def set_notes(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetNotesResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     normalized_notes = text_or_none(notes)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
@@ -2216,6 +2227,7 @@ def set_tags(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> SetTagsResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)
@@ -2274,6 +2286,7 @@ def bulk_mutate_inventory_items(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> BulkInventoryItemMutationResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     normalized_request = _normalize_bulk_mutation_request(
         operation=operation,
         item_ids=item_ids,
@@ -2364,6 +2377,7 @@ def merge_rows(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> MergeRowsResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if source_item_id == target_item_id:
         raise ValidationError("Choose two different item ids when using merge-rows.")
 
@@ -2443,6 +2457,7 @@ def remove_card(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> RemoveCardResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     db_file = _prepared_db_path(db_path)
     with connect(db_file) as connection:
         item = get_inventory_item_row(connection, inventory_slug, item_id)

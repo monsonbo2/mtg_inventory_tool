@@ -2165,6 +2165,25 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(2, target_rows.json()[0]["quantity"])
                 self.assertEqual(["deck"], target_rows.json()[0]["tags"])
 
+    def test_demo_api_inventory_create_trims_slug_and_rejects_trimmed_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                created = client.post(
+                    "/inventories",
+                    json={"slug": " personal ", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created.status_code)
+                self.assertEqual("personal", created.json()["slug"])
+
+                duplicate = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Duplicate Personal"},
+                )
+                self.assertEqual(409, duplicate.status_code)
+                self.assertEqual("conflict", duplicate.json()["error"]["code"])
+                self.assertIn("Inventory 'personal' already exists", duplicate.json()["error"]["message"])
+
     def test_demo_api_bulk_quantity_requires_quantity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -3068,7 +3087,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/source/transfer",
                     headers=admin_headers,
                     json={
-                        "target_inventory_slug": "target",
+                        "target_inventory_slug": " target ",
                         "mode": "move",
                         "item_ids": [source_item_id],
                         "on_conflict": "fail",
@@ -3076,6 +3095,7 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(200, allowed.status_code)
                 self.assertEqual("moved", allowed.json()["results"][0]["status"])
+                self.assertEqual("target", allowed.json()["target_inventory"])
 
     def test_shared_service_duplicate_requires_editor_role_and_source_write_access(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3132,12 +3152,13 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/source/duplicate",
                     headers=editor_headers,
                     json={
-                        "target_slug": "source-copy",
+                        "target_slug": " source-copy ",
                         "target_display_name": "Source Copy",
                     },
                 )
                 self.assertEqual(201, allowed.status_code)
                 self.assertEqual("source-copy", allowed.json()["inventory"]["slug"])
+                self.assertEqual("source-copy", allowed.json()["transfer"]["target_inventory"])
                 self.assertEqual(1, allowed.json()["transfer"]["copied_count"])
 
     def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
