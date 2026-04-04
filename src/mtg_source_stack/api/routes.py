@@ -10,7 +10,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from starlette.concurrency import run_in_threadpool
 
-from ..errors import AuthorizationError, ValidationError
+from ..errors import AuthorizationError, MtgStackError, ValidationError
 from ..inventory.access import actor_inventory_role_with_connection, can_write_inventory
 from ..inventory.export_profiles import supported_csv_export_profiles
 from ..inventory.money import coerce_decimal
@@ -233,10 +233,13 @@ def _parse_resolutions_json_form(raw_value: str | None) -> list[dict[str, Any]]:
 
 def _validate_uploaded_csv_size(upload: UploadFile, *, max_bytes: int) -> None:
     handle = upload.file
-    current_position = handle.tell()
+    # Starlette's multipart parser does not guarantee the current stream
+    # position for uploaded files, and file-only multipart requests can arrive
+    # with the spooled file already positioned at EOF. Always rewind after the
+    # size probe so the CSV reader sees the full upload body.
     handle.seek(0, 2)
     size = handle.tell()
-    handle.seek(current_position)
+    handle.seek(0)
     if size > max_bytes:
         raise ValidationError(f"CSV upload must not exceed {max_bytes} bytes.")
 
@@ -416,6 +419,8 @@ async def imports_csv(
                 actor_id=context.actor_id,
                 request_id=context.request_id,
             )
+        except MtgStackError:
+            raise
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
     finally:

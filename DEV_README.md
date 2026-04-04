@@ -143,6 +143,44 @@ Rules of thumb:
   - optional `lang`
   - optional `finish`
 
+## Import / Export Route Notes
+
+Current import surfaces:
+
+- `POST /imports/csv`
+- `POST /imports/decklist`
+- `POST /imports/deck-url`
+
+Current shared-service auth shape:
+
+- `_require_import_inventory_write_access(...)` in
+  `src/mtg_source_stack/api/routes.py` is the real shared write-access rule for
+  import routes.
+- `_require_csv_import_inventory_write_access(...)` is currently a naming seam
+  on top of that shared helper, not separate policy.
+- Each import route currently builds its own `inventory_validator` closure
+  before calling the service-layer import function.
+
+Why this matters:
+
+- The layering is reasonable if CSV import later needs stricter or different
+  auth behavior than decklist or deck-URL imports.
+- Today, though, the CSV-specific wrapper and the repeated inline validator
+  closures are mostly structure rather than behavior.
+- If future cleanup touches this area, keep one shared source of truth for the
+  actual write-access rule and only keep route-specific wrappers if they are
+  buying real policy separation or clearer intent.
+
+Multipart caveat:
+
+- `POST /imports/csv` uses FastAPI `UploadFile` + `File(...)` + `Form(...)`.
+- FastAPI checks for `python-multipart` when that route is registered, not only
+  when a request reaches the route.
+- That means app import, route registration, and OpenAPI generation can all
+  fail if `python-multipart` is unavailable, even for unrelated tests or routes.
+- Treat that as an app-startup coupling, not just a CSV-upload runtime detail,
+  when changing import-route wiring.
+
 ## File Map
 
 - access control:
