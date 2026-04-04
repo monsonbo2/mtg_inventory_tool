@@ -525,6 +525,225 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual(2, item_row["quantity"])
             self.assertEqual("normal", item_row["finish"])
 
+    def test_import_csv_detects_deckbox_collection_and_preserves_source_flags_as_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "deckbox_collection.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-deckbox',
+                        'csv-oracle-deckbox',
+                        'Deckbox Product Card',
+                        'rtr',
+                        'Return to Ravnica',
+                        '1',
+                        'en',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "Count,Tradelist Count,Name,Edition,Card Number,Condition,Language,Foil,"
+                    "Signed,Artist Proof,Altered Art,Mis\n"
+                    "4,4,Deckbox Product Card,Return to Ravnica,1,Near Mint,English,foil,Yes,,Yes,Yes\n"
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory="personal",
+                dry_run=False,
+            )
+
+            self.assertEqual("deckbox_collection_csv", report["detected_format"])
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("foil", report["imported_rows"][0]["finish"])
+            self.assertEqual(["signed", "altered art", "misprint"], report["imported_rows"][0]["tags"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT quantity, finish, tags_json
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual(4, item_row["quantity"])
+            self.assertEqual("foil", item_row["finish"])
+            self.assertEqual('["signed","altered art","misprint"]', item_row["tags_json"])
+
+    def test_import_csv_detects_deckstats_collection_and_preserves_pinned_flag_as_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "deckstats_collection.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-deckstats',
+                        'csv-oracle-deckstats',
+                        'Deckstats Product Card',
+                        'emn',
+                        'Eldritch Moon',
+                        '147',
+                        'en',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "amount,card_name,is_foil,is_pinned,set_id,set_code\n"
+                    '2,"Deckstats Product Card",1,1,147,"EMN"\n'
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory="personal",
+                dry_run=False,
+            )
+
+            self.assertEqual("deckstats_collection_csv", report["detected_format"])
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("foil", report["imported_rows"][0]["finish"])
+            self.assertEqual(["pinned"], report["imported_rows"][0]["tags"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT quantity, finish, tags_json
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual(2, item_row["quantity"])
+            self.assertEqual("foil", item_row["finish"])
+            self.assertEqual('["pinned"]', item_row["tags_json"])
+
+    def test_import_csv_detects_mtgstocks_collection_and_treats_set_column_as_set_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "mtgstocks_collection.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-mtgstocks',
+                        'csv-oracle-mtgstocks',
+                        'MTGStocks Product Card',
+                        'mma',
+                        'Modern Masters',
+                        '1',
+                        'en',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    '"Card","Set","Quantity","Price","Condition","Language","Foil","Signed"\n'
+                    '"MTGStocks Product Card","Modern Masters",2,0.99,NM,en,Yes,Yes\n'
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory="personal",
+                dry_run=False,
+            )
+
+            self.assertEqual("mtgstocks_collection_csv", report["detected_format"])
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("foil", report["imported_rows"][0]["finish"])
+            self.assertEqual(["signed"], report["imported_rows"][0]["tags"])
+            self.assertIsNone(report["imported_rows"][0]["acquisition_price"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT quantity, finish, acquisition_price, tags_json
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual(2, item_row["quantity"])
+            self.assertEqual("foil", item_row["finish"])
+            self.assertIsNone(item_row["acquisition_price"])
+            self.assertEqual('["signed"]', item_row["tags_json"])
+
     def test_import_csv_accepts_oracle_id_and_infers_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

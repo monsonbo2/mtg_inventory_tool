@@ -154,11 +154,24 @@ preserve for the first API-backed version of the project.
     finish inference, and row-number-specific validation behavior from the CLI
     import path
   - the current first-party format detectors are:
+    - `deckbox_collection_csv`
+    - `deckstats_collection_csv`
     - `generic_csv`
     - `manabox_collection_csv`
     - `mtggoldfish_collection_csv`
+    - `mtgstocks_collection_csv`
     - `tcgplayer_legacy_collection_csv`
     - `tcgplayer_app_collection_csv`
+  - Deckstats collection CSV uploads are normalized on the backend, including
+    mapping `amount` to quantity, `is_foil` to finish, and preserving
+    `is_pinned` as a tag
+  - MTGStocks collection CSV uploads are normalized on the backend, including
+    treating the source `Set` column as a set name and preserving `Signed` as a
+    tag. The adapter does not currently persist the source `Price` field as an
+    acquisition price
+  - Deckbox collection CSV uploads are normalized on the backend, including
+    mapping `Count` to quantity, `Edition` to `Set Name`, and source flags such
+    as `Signed`, `Artist Proof`, `Altered Art`, and `Mis` into tags
   - TCGplayer collection-style CSV uploads are normalized on the backend
     before row import so the frontend does not need to translate fields such as
     `Printing` into the backend's canonical finish columns
