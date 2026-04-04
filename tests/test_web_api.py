@@ -281,6 +281,10 @@ class WebApiSchemaTest(unittest.TestCase):
                     components[import_response_schema_name]["properties"]["imported_rows"]["items"]["$ref"]
                 ),
             )
+            self.assertEqual(
+                "ImportSummaryResponse",
+                self._schema_name_from_ref(components[import_response_schema_name]["properties"]["summary"]["$ref"]),
+            )
             decklist_request_schema = spec["paths"]["/imports/decklist"]["post"]["requestBody"]["content"][
                 "application/json"
             ]["schema"]
@@ -294,15 +298,35 @@ class WebApiSchemaTest(unittest.TestCase):
                 False,
                 components[decklist_request_schema_name]["properties"]["dry_run"]["default"],
             )
+            self.assertEqual(
+                "DecklistImportResolutionRequest",
+                self._schema_name_from_ref(
+                    components[decklist_request_schema_name]["properties"]["resolutions"]["items"]["$ref"]
+                ),
+            )
             decklist_response_schema = spec["paths"]["/imports/decklist"]["post"]["responses"]["200"]["content"][
                 "application/json"
             ]["schema"]
             decklist_response_schema_name = self._schema_name_from_ref(decklist_response_schema["$ref"])
             self.assertEqual("DecklistImportResponse", decklist_response_schema_name)
             self.assertEqual(
+                "boolean",
+                components[decklist_response_schema_name]["properties"]["ready_to_commit"]["type"],
+            )
+            self.assertEqual(
                 "DecklistImportRowResponse",
                 self._schema_name_from_ref(
                     components[decklist_response_schema_name]["properties"]["imported_rows"]["items"]["$ref"]
+                ),
+            )
+            self.assertEqual(
+                "DecklistImportSummaryResponse",
+                self._schema_name_from_ref(components[decklist_response_schema_name]["properties"]["summary"]["$ref"]),
+            )
+            self.assertEqual(
+                "DecklistImportResolutionIssueResponse",
+                self._schema_name_from_ref(
+                    components[decklist_response_schema_name]["properties"]["resolution_issues"]["items"]["$ref"]
                 ),
             )
             deck_url_request_schema = spec["paths"]["/imports/deck-url"]["post"]["requestBody"]["content"][
@@ -324,6 +348,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 self._schema_name_from_ref(
                     components[deck_url_response_schema_name]["properties"]["imported_rows"]["items"]["$ref"]
                 ),
+            )
+            self.assertEqual(
+                "DeckImportSummaryResponse",
+                self._schema_name_from_ref(components[deck_url_response_schema_name]["properties"]["summary"]["$ref"]),
             )
             export_csv_response = spec["paths"]["/inventories/{inventory_slug}/export.csv"]["get"]["responses"]["200"]
             self.assertIn("text/csv", export_csv_response["content"])
@@ -971,6 +999,9 @@ class WebApiTest(unittest.TestCase):
                 self.assertTrue(preview_payload["dry_run"])
                 self.assertEqual(1, preview_payload["rows_seen"])
                 self.assertEqual(1, preview_payload["rows_written"])
+                self.assertEqual(2, preview_payload["summary"]["total_card_quantity"])
+                self.assertEqual(1, preview_payload["summary"]["distinct_card_names"])
+                self.assertEqual(1, preview_payload["summary"]["distinct_printings"])
                 self.assertEqual("personal", preview_payload["imported_rows"][0]["inventory"])
                 self.assertEqual("Imported by API", preview_payload["imported_rows"][0]["notes"])
                 self.assertEqual("req-import-preview", preview.headers["X-Request-Id"])
@@ -991,6 +1022,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertFalse(committed_payload["dry_run"])
                 self.assertEqual("generic_csv", committed_payload["detected_format"])
                 self.assertEqual(1, committed_payload["rows_written"])
+                self.assertEqual(2, committed_payload["summary"]["total_card_quantity"])
                 self.assertEqual(2, committed_payload["imported_rows"][0]["quantity"])
 
                 with connect(db_path) as connection:
@@ -1445,6 +1477,12 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("API Test Deck", preview_payload["deck_name"])
                 self.assertEqual(1, preview_payload["rows_seen"])
                 self.assertEqual(1, preview_payload["rows_written"])
+                self.assertTrue(preview_payload["ready_to_commit"])
+                self.assertEqual(4, preview_payload["summary"]["total_card_quantity"])
+                self.assertEqual(4, preview_payload["summary"]["requested_card_quantity"])
+                self.assertEqual(0, preview_payload["summary"]["unresolved_card_quantity"])
+                self.assertEqual({"mainboard": 4}, preview_payload["summary"]["section_card_quantities"])
+                self.assertEqual([], preview_payload["resolution_issues"])
                 self.assertEqual(5, preview_payload["imported_rows"][0]["decklist_line"])
                 self.assertEqual("mainboard", preview_payload["imported_rows"][0]["section"])
                 self.assertEqual("personal", preview_payload["imported_rows"][0]["inventory"])
@@ -1469,6 +1507,12 @@ class WebApiTest(unittest.TestCase):
                 self.assertFalse(committed_payload["dry_run"])
                 self.assertIsNone(committed_payload["deck_name"])
                 self.assertEqual(1, committed_payload["rows_written"])
+                self.assertTrue(committed_payload["ready_to_commit"])
+                self.assertEqual(1, committed_payload["summary"]["total_card_quantity"])
+                self.assertEqual(1, committed_payload["summary"]["requested_card_quantity"])
+                self.assertEqual(0, committed_payload["summary"]["unresolved_card_quantity"])
+                self.assertEqual({"commander": 1}, committed_payload["summary"]["section_card_quantities"])
+                self.assertEqual([], committed_payload["resolution_issues"])
                 self.assertEqual("commander", committed_payload["imported_rows"][0]["section"])
 
                 with connect(db_path) as connection:
@@ -1491,6 +1535,85 @@ class WebApiTest(unittest.TestCase):
 
                 self.assertEqual(1, item_row["quantity"])
                 self.assertEqual(("api", "local-demo", "req-decklist-commit"), tuple(audit_row))
+
+    def test_demo_api_decklist_import_returns_resolution_issues_and_accepts_resolutions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-ambiguous-main",
+                    oracle_id="api-ambiguous-main-oracle",
+                    name="API Ambiguous Card",
+                    set_code="lea",
+                    set_name="Limited Edition Alpha",
+                    collector_number="161",
+                    finishes_json='["normal"]',
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-ambiguous-other",
+                    oracle_id="api-ambiguous-other-oracle",
+                    name="API Ambiguous Card",
+                    set_code="2ed",
+                    set_name="Unlimited Edition",
+                    collector_number="162",
+                    finishes_json='["normal"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                preview = client.post(
+                    "/imports/decklist",
+                    json={
+                        "deck_text": "4 API Ambiguous Card",
+                        "default_inventory": "personal",
+                        "dry_run": True,
+                    },
+                )
+                self.assertEqual(200, preview.status_code)
+                preview_payload = preview.json()
+                self.assertFalse(preview_payload["ready_to_commit"])
+                self.assertEqual(0, preview_payload["rows_written"])
+                self.assertEqual(4, preview_payload["summary"]["requested_card_quantity"])
+                self.assertEqual(4, preview_payload["summary"]["unresolved_card_quantity"])
+                self.assertEqual(1, len(preview_payload["resolution_issues"]))
+                self.assertEqual("ambiguous_card_name", preview_payload["resolution_issues"][0]["kind"])
+
+                unresolved_commit = client.post(
+                    "/imports/decklist",
+                    json={
+                        "deck_text": "4 API Ambiguous Card",
+                        "default_inventory": "personal",
+                    },
+                )
+                self.assertEqual(400, unresolved_commit.status_code)
+                self.assertEqual("validation_error", unresolved_commit.json()["error"]["code"])
+                self.assertIn("resolution_issues", unresolved_commit.json()["error"]["details"])
+
+                committed = client.post(
+                    "/imports/decklist",
+                    json={
+                        "deck_text": "4 API Ambiguous Card",
+                        "default_inventory": "personal",
+                        "resolutions": [
+                            {
+                                "decklist_line": 1,
+                                "scryfall_id": "api-ambiguous-other",
+                                "finish": "normal",
+                            }
+                        ],
+                    },
+                )
+                self.assertEqual(200, committed.status_code)
+                committed_payload = committed.json()
+                self.assertTrue(committed_payload["ready_to_commit"])
+                self.assertEqual([], committed_payload["resolution_issues"])
+                self.assertEqual("api-ambiguous-other", committed_payload["imported_rows"][0]["scryfall_id"])
 
     def test_demo_api_deck_url_import_supports_preview_and_commit(self) -> None:
         from mtg_source_stack.inventory.deck_url_import import RemoteDeckCard, RemoteDeckSource
@@ -1539,6 +1662,8 @@ class WebApiTest(unittest.TestCase):
                     self.assertEqual("Preview Deck", preview_payload["deck_name"])
                     self.assertEqual(1, preview_payload["rows_seen"])
                     self.assertEqual(1, preview_payload["rows_written"])
+                    self.assertEqual(4, preview_payload["summary"]["total_card_quantity"])
+                    self.assertEqual({"mainboard": 4}, preview_payload["summary"]["section_card_quantities"])
                     self.assertEqual("mainboard", preview_payload["imported_rows"][0]["section"])
                     self.assertEqual("req-deck-url-preview", preview.headers["X-Request-Id"])
 
@@ -1561,6 +1686,8 @@ class WebApiTest(unittest.TestCase):
                 committed_payload = committed.json()
                 self.assertFalse(committed_payload["dry_run"])
                 self.assertEqual("Committed Deck", committed_payload["deck_name"])
+                self.assertEqual(1, committed_payload["summary"]["total_card_quantity"])
+                self.assertEqual({"commander": 1}, committed_payload["summary"]["section_card_quantities"])
                 self.assertEqual("commander", committed_payload["imported_rows"][0]["section"])
 
                 with connect(db_path) as connection:

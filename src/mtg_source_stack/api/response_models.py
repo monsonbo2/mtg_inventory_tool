@@ -37,6 +37,7 @@ class ApiBaseModel(BaseModel):
 class ApiErrorBody(ApiBaseModel):
     code: str
     message: str
+    details: dict[str, Any] | None = None
 
 
 class ApiErrorResponse(ApiBaseModel):
@@ -165,12 +166,28 @@ class CsvImportRowResponse(InventoryItemMutationBaseResponse):
     csv_row: int
 
 
+class ImportSummaryResponse(ApiBaseModel):
+    total_card_quantity: int
+    distinct_card_names: int
+    distinct_printings: int
+
+
+class DeckImportSummaryResponse(ImportSummaryResponse):
+    section_card_quantities: dict[str, int]
+
+
+class DecklistImportSummaryResponse(DeckImportSummaryResponse):
+    requested_card_quantity: int
+    unresolved_card_quantity: int
+
+
 class CsvImportResponse(ApiBaseModel):
     csv_filename: str
     detected_format: str
     default_inventory: str | None
     rows_seen: int
     rows_written: int
+    summary: ImportSummaryResponse
     dry_run: bool
     imported_rows: list[CsvImportRowResponse]
 
@@ -180,11 +197,42 @@ class DecklistImportRowResponse(InventoryItemMutationBaseResponse):
     section: str
 
 
+class DecklistImportRequestedCardResponse(ApiBaseModel):
+    name: str
+    quantity: int
+    set_code: str | None
+    collector_number: str | None
+    finish: Literal["normal", "foil", "etched"] | None = Field(default=None, description=FINISH_RESPONSE_DESCRIPTION)
+
+
+class ImportResolutionOptionResponse(ApiBaseModel):
+    scryfall_id: str
+    finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
+    name: str
+    set_code: str
+    set_name: str
+    collector_number: str
+    lang: str = Field(description=SEARCH_LANG_RESPONSE_DESCRIPTION)
+    image_uri_small: str | None
+    image_uri_normal: str | None
+
+
+class DecklistImportResolutionIssueResponse(ApiBaseModel):
+    kind: Literal["ambiguous_card_name", "ambiguous_printing", "finish_required"]
+    decklist_line: int
+    section: str
+    requested: DecklistImportRequestedCardResponse
+    options: list[ImportResolutionOptionResponse]
+
+
 class DecklistImportResponse(ApiBaseModel):
     deck_name: str | None
     default_inventory: str | None
     rows_seen: int
     rows_written: int
+    ready_to_commit: bool
+    summary: DecklistImportSummaryResponse
+    resolution_issues: list[DecklistImportResolutionIssueResponse]
     dry_run: bool
     imported_rows: list[DecklistImportRowResponse]
 
@@ -200,6 +248,7 @@ class DeckUrlImportResponse(ApiBaseModel):
     default_inventory: str | None
     rows_seen: int
     rows_written: int
+    summary: DeckImportSummaryResponse
     dry_run: bool
     imported_rows: list[DeckUrlImportRowResponse]
 

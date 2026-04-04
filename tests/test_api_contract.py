@@ -231,6 +231,11 @@ class ApiContractTest(RepoSmokeTestCase):
             "default_inventory": "personal",
             "rows_seen": 1,
             "rows_written": 1,
+            "summary": {
+                "total_card_quantity": 4,
+                "distinct_card_names": 1,
+                "distinct_printings": 1,
+            },
             "dry_run": True,
             "imported_rows": [
                 {
@@ -259,6 +264,16 @@ class ApiContractTest(RepoSmokeTestCase):
             "default_inventory": "personal",
             "rows_seen": 1,
             "rows_written": 1,
+            "ready_to_commit": True,
+            "summary": {
+                "total_card_quantity": 4,
+                "distinct_card_names": 1,
+                "distinct_printings": 1,
+                "section_card_quantities": {"mainboard": 4},
+                "requested_card_quantity": 4,
+                "unresolved_card_quantity": 0,
+            },
+            "resolution_issues": [],
             "dry_run": True,
             "imported_rows": [
                 {
@@ -290,6 +305,12 @@ class ApiContractTest(RepoSmokeTestCase):
             "default_inventory": "personal",
             "rows_seen": 1,
             "rows_written": 1,
+            "summary": {
+                "total_card_quantity": 1,
+                "distinct_card_names": 1,
+                "distinct_printings": 1,
+                "section_card_quantities": {"commander": 1},
+            },
             "dry_run": True,
             "imported_rows": [
                 {
@@ -335,10 +356,16 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("generic_csv", csv_import.detected_format)
+        self.assertEqual(4, csv_import.summary.total_card_quantity)
         self.assertEqual(2, csv_import.imported_rows[0].csv_row)
+        self.assertTrue(decklist_import.ready_to_commit)
+        self.assertEqual({"mainboard": 4}, decklist_import.summary.section_card_quantities)
+        self.assertEqual(4, decklist_import.summary.requested_card_quantity)
+        self.assertEqual(0, decklist_import.summary.unresolved_card_quantity)
         self.assertEqual("mainboard", decklist_import.imported_rows[0].section)
         self.assertEqual(1, decklist_import.imported_rows[0].decklist_line)
         self.assertEqual("archidekt", deck_url_import.provider)
+        self.assertEqual({"commander": 1}, deck_url_import.summary.section_card_quantities)
         self.assertEqual("commander", deck_url_import.imported_rows[0].section)
         self.assertEqual("validation_error", error.error.code)
 
@@ -362,6 +389,8 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("4 Lightning Bolt", decklist_properties["deck_text"]["description"])
         self.assertIn("About", decklist_properties["deck_text"]["description"])
         self.assertIn("Target inventory slug", decklist_properties["default_inventory"]["description"])
+        self.assertEqual("array", decklist_properties["resolutions"]["type"])
+        self.assertIn("explicit row resolutions", decklist_properties["resolutions"]["description"])
 
         deck_url_schema = DeckUrlImportRequest.model_json_schema()
         deck_url_properties = deck_url_schema["properties"]

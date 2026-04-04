@@ -471,6 +471,7 @@ async def imports_decklist(
         deck_text=payload.deck_text,
         default_inventory=payload.default_inventory,
         dry_run=payload.dry_run,
+        resolutions=[selection.model_dump() for selection in payload.resolutions],
         inventory_validator=inventory_validator,
         actor_type=context.actor_type,
         actor_id=context.actor_id,

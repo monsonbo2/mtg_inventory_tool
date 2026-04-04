@@ -84,6 +84,10 @@ DECKLIST_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = "Target inventory slug for the p
 DECKLIST_IMPORT_DRY_RUN_DESCRIPTION = (
     "When true, validate and resolve the import using the real add-card workflow but roll back before commit."
 )
+DECKLIST_IMPORT_RESOLUTIONS_DESCRIPTION = (
+    "Optional explicit row resolutions for ambiguous decklist lines. "
+    "Each item selects one suggested printing and finish for a specific decklist_line."
+)
 DECK_URL_IMPORT_SOURCE_URL_DESCRIPTION = (
     "Public deck URL to import. V1 currently supports Archidekt, AetherHub, ManaBox, "
     "Moxfield, MTGGoldfish, MTGTop8, and TappedOut deck URLs."
@@ -102,10 +106,20 @@ class InventoryCreateRequest(ApiBaseModel):
     description: str | None = None
 
 
+class DecklistImportResolutionRequest(ApiBaseModel):
+    decklist_line: int
+    scryfall_id: str
+    finish: FinishInput = Field(description=FINISH_INPUT_DESCRIPTION)
+
+
 class DecklistImportRequest(ApiBaseModel):
     deck_text: str = Field(description=DECKLIST_IMPORT_TEXT_DESCRIPTION)
     default_inventory: str = Field(description=DECKLIST_IMPORT_DEFAULT_INVENTORY_DESCRIPTION)
     dry_run: bool = Field(default=False, description=DECKLIST_IMPORT_DRY_RUN_DESCRIPTION)
+    resolutions: list[DecklistImportResolutionRequest] = Field(
+        default_factory=list,
+        description=DECKLIST_IMPORT_RESOLUTIONS_DESCRIPTION,
+    )
 
 
 class DeckUrlImportRequest(ApiBaseModel):

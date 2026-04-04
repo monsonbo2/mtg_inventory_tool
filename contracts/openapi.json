@@ -309,6 +309,18 @@
             "title": "Code",
             "type": "string"
           },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
           "message": {
             "title": "Message",
             "type": "string"
@@ -625,6 +637,9 @@
           "rows_written": {
             "title": "Rows Written",
             "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ImportSummaryResponse"
           }
         },
         "required": [
@@ -633,6 +648,7 @@
           "default_inventory",
           "rows_seen",
           "rows_written",
+          "summary",
           "dry_run",
           "imported_rows"
         ],
@@ -772,6 +788,38 @@
         "title": "CsvImportRowResponse",
         "type": "object"
       },
+      "DeckImportSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "distinct_card_names": {
+            "title": "Distinct Card Names",
+            "type": "integer"
+          },
+          "distinct_printings": {
+            "title": "Distinct Printings",
+            "type": "integer"
+          },
+          "section_card_quantities": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Section Card Quantities",
+            "type": "object"
+          },
+          "total_card_quantity": {
+            "title": "Total Card Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_card_quantity",
+          "distinct_card_names",
+          "distinct_printings",
+          "section_card_quantities"
+        ],
+        "title": "DeckImportSummaryResponse",
+        "type": "object"
+      },
       "DeckUrlImportRequest": {
         "additionalProperties": false,
         "properties": {
@@ -850,6 +898,9 @@
           "source_url": {
             "title": "Source Url",
             "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DeckImportSummaryResponse"
           }
         },
         "required": [
@@ -859,6 +910,7 @@
           "default_inventory",
           "rows_seen",
           "rows_written",
+          "summary",
           "dry_run",
           "imported_rows"
         ],
@@ -1016,6 +1068,14 @@
             "description": "When true, validate and resolve the import using the real add-card workflow but roll back before commit.",
             "title": "Dry Run",
             "type": "boolean"
+          },
+          "resolutions": {
+            "description": "Optional explicit row resolutions for ambiguous decklist lines. Each item selects one suggested printing and finish for a specific decklist_line.",
+            "items": {
+              "$ref": "#/components/schemas/DecklistImportResolutionRequest"
+            },
+            "title": "Resolutions",
+            "type": "array"
           }
         },
         "required": [
@@ -1023,6 +1083,138 @@
           "default_inventory"
         ],
         "title": "DecklistImportRequest",
+        "type": "object"
+      },
+      "DecklistImportRequestedCardResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "collector_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collector Number"
+          },
+          "finish": {
+            "anyOf": [
+              {
+                "enum": [
+                  "normal",
+                  "foil",
+                  "etched"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical finish values: normal, foil, etched.",
+            "title": "Finish"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "set_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Code"
+          }
+        },
+        "required": [
+          "name",
+          "quantity",
+          "set_code",
+          "collector_number"
+        ],
+        "title": "DecklistImportRequestedCardResponse",
+        "type": "object"
+      },
+      "DecklistImportResolutionIssueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "decklist_line": {
+            "title": "Decklist Line",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "ambiguous_card_name",
+              "ambiguous_printing",
+              "finish_required"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/ImportResolutionOptionResponse"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "requested": {
+            "$ref": "#/components/schemas/DecklistImportRequestedCardResponse"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "decklist_line",
+          "section",
+          "requested",
+          "options"
+        ],
+        "title": "DecklistImportResolutionIssueResponse",
+        "type": "object"
+      },
+      "DecklistImportResolutionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decklist_line": {
+            "title": "Decklist Line",
+            "type": "integer"
+          },
+          "finish": {
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+            "enum": [
+              "normal",
+              "nonfoil",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "type": "string"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decklist_line",
+          "scryfall_id",
+          "finish"
+        ],
+        "title": "DecklistImportResolutionRequest",
         "type": "object"
       },
       "DecklistImportResponse": {
@@ -1061,6 +1253,17 @@
             "title": "Imported Rows",
             "type": "array"
           },
+          "ready_to_commit": {
+            "title": "Ready To Commit",
+            "type": "boolean"
+          },
+          "resolution_issues": {
+            "items": {
+              "$ref": "#/components/schemas/DecklistImportResolutionIssueResponse"
+            },
+            "title": "Resolution Issues",
+            "type": "array"
+          },
           "rows_seen": {
             "title": "Rows Seen",
             "type": "integer"
@@ -1068,6 +1271,9 @@
           "rows_written": {
             "title": "Rows Written",
             "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DecklistImportSummaryResponse"
           }
         },
         "required": [
@@ -1075,6 +1281,9 @@
           "default_inventory",
           "rows_seen",
           "rows_written",
+          "ready_to_commit",
+          "summary",
+          "resolution_issues",
           "dry_run",
           "imported_rows"
         ],
@@ -1219,6 +1428,48 @@
         "title": "DecklistImportRowResponse",
         "type": "object"
       },
+      "DecklistImportSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "distinct_card_names": {
+            "title": "Distinct Card Names",
+            "type": "integer"
+          },
+          "distinct_printings": {
+            "title": "Distinct Printings",
+            "type": "integer"
+          },
+          "requested_card_quantity": {
+            "title": "Requested Card Quantity",
+            "type": "integer"
+          },
+          "section_card_quantities": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Section Card Quantities",
+            "type": "object"
+          },
+          "total_card_quantity": {
+            "title": "Total Card Quantity",
+            "type": "integer"
+          },
+          "unresolved_card_quantity": {
+            "title": "Unresolved Card Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_card_quantity",
+          "distinct_card_names",
+          "distinct_printings",
+          "section_card_quantities",
+          "requested_card_quantity",
+          "unresolved_card_quantity"
+        ],
+        "title": "DecklistImportSummaryResponse",
+        "type": "object"
+      },
       "DefaultInventoryBootstrapResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1259,6 +1510,105 @@
           "trusted_actor_headers"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "ImportResolutionOptionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "collector_number": {
+            "title": "Collector Number",
+            "type": "string"
+          },
+          "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "type": "string"
+          },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
+          "lang": {
+            "description": "Catalog language code. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph.",
+            "title": "Lang",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          },
+          "set_code": {
+            "title": "Set Code",
+            "type": "string"
+          },
+          "set_name": {
+            "title": "Set Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scryfall_id",
+          "finish",
+          "name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "lang",
+          "image_uri_small",
+          "image_uri_normal"
+        ],
+        "title": "ImportResolutionOptionResponse",
+        "type": "object"
+      },
+      "ImportSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "distinct_card_names": {
+            "title": "Distinct Card Names",
+            "type": "integer"
+          },
+          "distinct_printings": {
+            "title": "Distinct Printings",
+            "type": "integer"
+          },
+          "total_card_quantity": {
+            "title": "Total Card Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_card_quantity",
+          "distinct_card_names",
+          "distinct_printings"
+        ],
+        "title": "ImportSummaryResponse",
         "type": "object"
       },
       "InventoryAuditEventResponse": {

@@ -6,14 +6,28 @@ from dataclasses import dataclass
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from ..errors import ValidationError
-from .catalog import resolve_card_row, resolve_default_card_row_for_name
+from .catalog import (
+    list_default_card_name_candidate_rows,
+    list_printing_candidate_rows,
+    resolve_card_row,
+    resolve_default_card_row_for_name,
+)
 from ..db.connection import connect
 from ..db.schema import initialize_database
 from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
-from .normalize import DEFAULT_CONDITION_CODE, DEFAULT_FINISH, text_or_none
+from .import_summary import build_import_summary
+from .import_resolution import (
+    DecklistRequestedCard,
+    DecklistResolutionIssue,
+    DecklistResolutionSelection,
+    build_resolution_options_for_catalog_row,
+)
+from .normalize import DEFAULT_CONDITION_CODE, normalize_finish, text_or_none
+from .query_inventory import get_inventory_row
+from .response_models import serialize_response
 
 
 _DEFAULT_SECTION = "mainboard"
@@ -67,6 +81,15 @@ class ParsedDecklistEntry:
     section: str = _DEFAULT_SECTION
     set_code: str | None = None
     collector_number: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedDecklistImport:
+    deck_name: str | None
+    rows_seen: int
+    requested_card_quantity: int
+    pending_rows: list[PendingImportRow]
+    resolution_issues: list[DecklistResolutionIssue]
 
 
 def _normalize_section_label(label: str) -> str | None:
@@ -230,6 +253,7 @@ def build_add_card_kwargs_from_decklist_entry(
     *,
     resolved_card: sqlite3.Row,
     default_inventory: str | None,
+    finish: str,
 ) -> dict[str, Any]:
     inventory_slug = text_or_none(default_inventory)
     if inventory_slug is None:
@@ -246,7 +270,7 @@ def build_add_card_kwargs_from_decklist_entry(
         "lang": None,
         "quantity": entry.quantity,
         "condition_code": DEFAULT_CONDITION_CODE,
-        "finish": DEFAULT_FINISH,
+        "finish": finish,
         "language_code": None,
         "location": "",
         "acquisition_price": None,
@@ -256,35 +280,271 @@ def build_add_card_kwargs_from_decklist_entry(
     }
 
 
-def _load_pending_decklist_rows(
+def _build_decklist_requested_card(entry: ParsedDecklistEntry) -> DecklistRequestedCard:
+    return DecklistRequestedCard(
+        name=entry.name,
+        quantity=entry.quantity,
+        set_code=entry.set_code,
+        collector_number=entry.collector_number,
+        finish=None,
+    )
+
+
+def _build_decklist_summary(
+    imported_rows: list[dict[str, Any]],
+    *,
+    requested_card_quantity: int,
+) -> dict[str, Any]:
+    summary = build_import_summary(imported_rows)
+    summary.setdefault("section_card_quantities", {})
+    imported_quantity = int(summary["total_card_quantity"])
+    summary["requested_card_quantity"] = requested_card_quantity
+    summary["unresolved_card_quantity"] = max(requested_card_quantity - imported_quantity, 0)
+    return summary
+
+
+def _normalize_decklist_resolution_selections(
+    resolutions: list[Mapping[str, Any]] | None,
+) -> dict[int, DecklistResolutionSelection]:
+    if not resolutions:
+        return {}
+
+    normalized: dict[int, DecklistResolutionSelection] = {}
+    for raw_selection in resolutions:
+        decklist_line = raw_selection.get("decklist_line")
+        if not isinstance(decklist_line, int):
+            raise ValidationError("Each decklist resolution must include an integer decklist_line.")
+        if decklist_line in normalized:
+            raise ValidationError("decklist resolutions must not repeat the same decklist_line.")
+        scryfall_id = text_or_none(raw_selection.get("scryfall_id"))
+        if scryfall_id is None:
+            raise ValidationError("Each decklist resolution must include a scryfall_id.")
+        finish_raw = text_or_none(raw_selection.get("finish"))
+        if finish_raw is None:
+            raise ValidationError("Each decklist resolution must include a finish.")
+        normalized[decklist_line] = DecklistResolutionSelection(
+            decklist_line=decklist_line,
+            scryfall_id=scryfall_id,
+            finish=normalize_finish(finish_raw),
+        )
+    return normalized
+
+
+def _build_pending_decklist_row(
+    entry: ParsedDecklistEntry,
+    *,
+    resolved_card: sqlite3.Row,
+    default_inventory: str | None,
+    finish: str,
+) -> PendingImportRow:
+    return PendingImportRow(
+        row_number=entry.line_number,
+        add_kwargs=build_add_card_kwargs_from_decklist_entry(
+            entry,
+            resolved_card=resolved_card,
+            default_inventory=default_inventory,
+            finish=finish,
+        ),
+        response_metadata={
+            "decklist_line": entry.line_number,
+            "section": entry.section,
+        },
+        error_label="Decklist line",
+    )
+
+
+def _build_decklist_issue(
+    kind: str,
+    entry: ParsedDecklistEntry,
+    *,
+    options: list[Any],
+) -> DecklistResolutionIssue:
+    return DecklistResolutionIssue(
+        kind=kind,
+        decklist_line=entry.line_number,
+        section=entry.section,
+        requested=_build_decklist_requested_card(entry),
+        options=options,
+    )
+
+
+def _probe_decklist_resolution(
+    connection: sqlite3.Connection,
+    *,
+    entry: ParsedDecklistEntry,
+    default_inventory: str | None,
+) -> tuple[PendingImportRow | None, DecklistResolutionIssue | None]:
+    if entry.set_code is not None and entry.collector_number is not None:
+        candidate_rows = list_printing_candidate_rows(
+            connection,
+            name=entry.name,
+            set_code=entry.set_code,
+            set_name=None,
+            collector_number=entry.collector_number,
+            lang=None,
+            finish=None,
+        )
+        if len(candidate_rows) > 1:
+            options: list[Any] = []
+            for row in candidate_rows:
+                row_options, _ = build_resolution_options_for_catalog_row(row)
+                options.extend(row_options)
+            return None, _build_decklist_issue("ambiguous_printing", entry, options=options)
+
+        row_options, requires_choice = build_resolution_options_for_catalog_row(candidate_rows[0])
+        if requires_choice:
+            return None, _build_decklist_issue("finish_required", entry, options=row_options)
+        return _build_pending_decklist_row(
+            entry,
+            resolved_card=candidate_rows[0],
+            default_inventory=default_inventory,
+            finish=row_options[0].finish,
+        ), None
+
+    candidate_rows = list_default_card_name_candidate_rows(
+        connection,
+        name=entry.name,
+        lang=None,
+        finish=None,
+    )
+    oracle_ids = sorted({str(row["oracle_id"]) for row in candidate_rows})
+    if len(oracle_ids) > 1:
+        options: list[Any] = []
+        for oracle_id in oracle_ids:
+            resolved_card = resolve_card_row(
+                connection,
+                scryfall_id=None,
+                oracle_id=oracle_id,
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                finish=None,
+            )
+            row_options, _ = build_resolution_options_for_catalog_row(resolved_card)
+            options.extend(row_options)
+        return None, _build_decklist_issue("ambiguous_card_name", entry, options=options)
+
+    resolved_card = resolve_default_card_row_for_name(
+        connection,
+        name=entry.name,
+        lang=None,
+        finish=None,
+    )
+    row_options, requires_choice = build_resolution_options_for_catalog_row(resolved_card)
+    if requires_choice:
+        return None, _build_decklist_issue("finish_required", entry, options=row_options)
+    return _build_pending_decklist_row(
+        entry,
+        resolved_card=resolved_card,
+        default_inventory=default_inventory,
+        finish=row_options[0].finish,
+    ), None
+
+
+def _build_pending_decklist_row_from_selection(
+    connection: sqlite3.Connection,
+    *,
+    entry: ParsedDecklistEntry,
+    default_inventory: str | None,
+    selection: DecklistResolutionSelection,
+) -> PendingImportRow:
+    pending_row, resolution_issue = _probe_decklist_resolution(
+        connection,
+        entry=entry,
+        default_inventory=default_inventory,
+    )
+    if resolution_issue is None:
+        raise ValidationError(f"Decklist line {entry.line_number} does not require an explicit resolution.")
+
+    valid_options = {
+        (option.scryfall_id, option.finish)
+        for option in resolution_issue.options
+    }
+    if (selection.scryfall_id, selection.finish) not in valid_options:
+        raise ValidationError(
+            f"Decklist line {entry.line_number} resolution does not match any suggested option.",
+            details={"resolution_issue": serialize_response(resolution_issue)},
+        )
+
+    resolved_card = resolve_card_row(
+        connection,
+        scryfall_id=selection.scryfall_id,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name=None,
+        set_code=None,
+        collector_number=None,
+        lang=None,
+        finish=selection.finish,
+    )
+    return _build_pending_decklist_row(
+        entry,
+        resolved_card=resolved_card,
+        default_inventory=default_inventory,
+        finish=selection.finish,
+    )
+
+
+def _plan_decklist_import(
     db_path: str | Path,
     *,
     deck_text: str,
     default_inventory: str | None,
-) -> tuple[str | None, int, list[PendingImportRow]]:
+    resolutions: list[Mapping[str, Any]] | None = None,
+    inventory_validator: InventoryValidator | None = None,
+) -> PlannedDecklistImport:
     parsed_decklist = parse_decklist_text_with_metadata(deck_text)
     entries = parsed_decklist.entries
+    requested_card_quantity = sum(entry.quantity for entry in entries)
+    selection_map = _normalize_decklist_resolution_selections(resolutions)
     initialize_database(db_path)
     pending_rows: list[PendingImportRow] = []
+    resolution_issues: list[DecklistResolutionIssue] = []
     with connect(db_path) as connection:
+        inventory_slug = text_or_none(default_inventory)
+        if inventory_slug is None:
+            raise ValidationError("default_inventory is required for decklist imports.")
+        if inventory_validator is not None:
+            inventory_validator(connection, inventory_slug)
+        get_inventory_row(connection, inventory_slug)
         for entry in entries:
-            resolved_card = resolve_decklist_entry_card_row(connection, entry=entry)
-            pending_rows.append(
-                PendingImportRow(
-                    row_number=entry.line_number,
-                    add_kwargs=build_add_card_kwargs_from_decklist_entry(
-                        entry,
-                        resolved_card=resolved_card,
+            selection = selection_map.pop(entry.line_number, None)
+            if selection is not None:
+                pending_rows.append(
+                    _build_pending_decklist_row_from_selection(
+                        connection,
+                        entry=entry,
                         default_inventory=default_inventory,
-                    ),
-                    response_metadata={
-                        "decklist_line": entry.line_number,
-                        "section": entry.section,
-                    },
-                    error_label="Decklist line",
+                        selection=selection,
+                    )
                 )
+                continue
+
+            pending_row, resolution_issue = _probe_decklist_resolution(
+                connection,
+                entry=entry,
+                default_inventory=default_inventory,
             )
-    return parsed_decklist.deck_name, len(entries), pending_rows
+            if resolution_issue is not None:
+                resolution_issues.append(resolution_issue)
+                continue
+            if pending_row is None:
+                raise AssertionError("Decklist probe returned neither a pending row nor a resolution issue.")
+            pending_rows.append(pending_row)
+
+    if selection_map:
+        unknown_lines = ", ".join(str(line_number) for line_number in sorted(selection_map))
+        raise ValidationError(f"decklist resolutions reference unknown decklist lines: {unknown_lines}.")
+
+    return PlannedDecklistImport(
+        deck_name=parsed_decklist.deck_name,
+        rows_seen=len(entries),
+        requested_card_quantity=requested_card_quantity,
+        pending_rows=pending_rows,
+        resolution_issues=resolution_issues,
+    )
 
 
 def import_decklist_text(
@@ -293,20 +553,28 @@ def import_decklist_text(
     deck_text: str,
     default_inventory: str | None,
     dry_run: bool = False,
+    resolutions: list[Mapping[str, Any]] | None = None,
     before_write: Callable[[], Any] | None = None,
     inventory_validator: InventoryValidator | None = None,
     actor_type: str = "cli",
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
-    deck_name, rows_seen, pending_rows = _load_pending_decklist_rows(
+    plan = _plan_decklist_import(
         db_path,
         deck_text=deck_text,
         default_inventory=default_inventory,
+        resolutions=resolutions,
+        inventory_validator=inventory_validator,
     )
+    if plan.resolution_issues and not dry_run:
+        raise ValidationError(
+            "Unresolved decklist import ambiguities remain.",
+            details={"resolution_issues": serialize_response(plan.resolution_issues)},
+        )
     imported_rows = _import_pending_rows(
         db_path,
-        pending_rows=pending_rows,
+        pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,
         allow_inventory_auto_create=False,
@@ -316,10 +584,16 @@ def import_decklist_text(
         request_id=request_id,
     )
     return {
-        "deck_name": deck_name,
+        "deck_name": plan.deck_name,
         "default_inventory": default_inventory,
-        "rows_seen": rows_seen,
+        "rows_seen": plan.rows_seen,
         "rows_written": len(imported_rows),
+        "ready_to_commit": not plan.resolution_issues,
+        "summary": _build_decklist_summary(
+            imported_rows,
+            requested_card_quantity=plan.requested_card_quantity,
+        ),
+        "resolution_issues": serialize_response(plan.resolution_issues),
         "imported_rows": imported_rows,
         "dry_run": dry_run,
     }

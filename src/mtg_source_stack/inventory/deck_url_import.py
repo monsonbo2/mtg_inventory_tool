@@ -20,6 +20,7 @@ from ..db.schema import initialize_database
 from .catalog import resolve_default_card_row_for_name
 from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
 from .decklist_import import ParsedDecklistEntry, parse_decklist_text
+from .import_summary import build_import_summary
 from .normalize import DEFAULT_CONDITION_CODE, DEFAULT_FINISH, normalize_finish, text_or_none
 
 
@@ -1433,6 +1434,7 @@ def import_deck_url(
         "default_inventory": default_inventory,
         "rows_seen": len(source.cards),
         "rows_written": len(imported_rows),
+        "summary": build_import_summary(imported_rows),
         "dry_run": dry_run,
         "imported_rows": imported_rows,
     }

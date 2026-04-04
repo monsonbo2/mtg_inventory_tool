@@ -316,9 +316,13 @@ class DecklistImportTest(unittest.TestCase):
             self.assertEqual("Burn Test", preview["deck_name"])
             self.assertEqual(1, preview["rows_seen"])
             self.assertEqual(1, preview["rows_written"])
+            self.assertTrue(preview["ready_to_commit"])
+            self.assertEqual([], preview["resolution_issues"])
+            self.assertEqual(4, preview["summary"]["requested_card_quantity"])
             self.assertEqual(5, preview["imported_rows"][0]["decklist_line"])
             self.assertEqual("mainboard", preview["imported_rows"][0]["section"])
             self.assertEqual(4, preview["imported_rows"][0]["quantity"])
+            self.assertEqual(0, preview["summary"]["unresolved_card_quantity"])
 
             with connect(db_path) as connection:
                 self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0])
@@ -332,6 +336,10 @@ class DecklistImportTest(unittest.TestCase):
             self.assertFalse(committed["dry_run"])
             self.assertIsNone(committed["deck_name"])
             self.assertEqual(1, committed["rows_written"])
+            self.assertTrue(committed["ready_to_commit"])
+            self.assertEqual([], committed["resolution_issues"])
+            self.assertEqual(4, committed["summary"]["requested_card_quantity"])
+            self.assertEqual(0, committed["summary"]["unresolved_card_quantity"])
 
             with connect(db_path) as connection:
                 item_row = connection.execute(
@@ -339,6 +347,131 @@ class DecklistImportTest(unittest.TestCase):
                 ).fetchone()
             self.assertEqual(4, item_row["quantity"])
             self.assertEqual("normal", item_row["finish"])
+
+    def test_import_decklist_text_returns_structured_ambiguity_preview_and_accepts_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="ambiguous-main",
+                oracle_id="ambiguous-oracle-main",
+                name="Ambiguous Bolt",
+                set_code="lea",
+                collector_number="161",
+                finishes_json='["normal"]',
+            )
+            self._insert_card(
+                db_path,
+                scryfall_id="ambiguous-other",
+                oracle_id="ambiguous-oracle-other",
+                name="Ambiguous Bolt",
+                set_code="2ed",
+                collector_number="162",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            preview = import_decklist_text(
+                db_path,
+                deck_text="4 Ambiguous Bolt",
+                default_inventory="personal",
+                dry_run=True,
+            )
+            self.assertFalse(preview["ready_to_commit"])
+            self.assertEqual(0, preview["rows_written"])
+            self.assertEqual(4, preview["summary"]["requested_card_quantity"])
+            self.assertEqual(4, preview["summary"]["unresolved_card_quantity"])
+            self.assertEqual(1, len(preview["resolution_issues"]))
+            issue = preview["resolution_issues"][0]
+            self.assertEqual("ambiguous_card_name", issue["kind"])
+            self.assertEqual(1, issue["decklist_line"])
+            self.assertEqual("Ambiguous Bolt", issue["requested"]["name"])
+            self.assertEqual(
+                {("ambiguous-main", "normal"), ("ambiguous-other", "normal")},
+                {(option["scryfall_id"], option["finish"]) for option in issue["options"]},
+            )
+
+            with self.assertRaisesRegex(ValidationError, "Unresolved decklist import ambiguities remain."):
+                import_decklist_text(
+                    db_path,
+                    deck_text="4 Ambiguous Bolt",
+                    default_inventory="personal",
+                    dry_run=False,
+                )
+
+            committed = import_decklist_text(
+                db_path,
+                deck_text="4 Ambiguous Bolt",
+                default_inventory="personal",
+                dry_run=False,
+                resolutions=[
+                    {
+                        "decklist_line": 1,
+                        "scryfall_id": "ambiguous-other",
+                        "finish": "normal",
+                    }
+                ],
+            )
+            self.assertTrue(committed["ready_to_commit"])
+            self.assertEqual([], committed["resolution_issues"])
+            self.assertEqual("ambiguous-other", committed["imported_rows"][0]["scryfall_id"])
+
+    def test_import_decklist_text_returns_finish_required_issue_without_normal_option(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="finish-choice-card",
+                oracle_id="finish-choice-oracle",
+                name="Finish Choice Card",
+                set_code="tst",
+                collector_number="201",
+                finishes_json='["foil","etched"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            preview = import_decklist_text(
+                db_path,
+                deck_text="1 Finish Choice Card",
+                default_inventory="personal",
+                dry_run=True,
+            )
+            self.assertFalse(preview["ready_to_commit"])
+            self.assertEqual("finish_required", preview["resolution_issues"][0]["kind"])
+            self.assertEqual(
+                {("finish-choice-card", "foil"), ("finish-choice-card", "etched")},
+                {
+                    (option["scryfall_id"], option["finish"])
+                    for option in preview["resolution_issues"][0]["options"]
+                },
+            )
+
+            committed = import_decklist_text(
+                db_path,
+                deck_text="1 Finish Choice Card",
+                default_inventory="personal",
+                dry_run=False,
+                resolutions=[
+                    {
+                        "decklist_line": 1,
+                        "scryfall_id": "finish-choice-card",
+                        "finish": "foil",
+                    }
+                ],
+            )
+            self.assertEqual("foil", committed["imported_rows"][0]["finish"])
 
     def test_import_decklist_text_requires_default_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

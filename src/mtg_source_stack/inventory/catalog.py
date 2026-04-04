@@ -97,6 +97,7 @@ def _catalog_resolution_rows(
             collector_number,
             lang,
             finishes_json,
+            image_uris_json,
             released_at,
             tcgplayer_product_id,
             set_type,
@@ -507,13 +508,13 @@ def list_card_printings_for_oracle(
     return [_catalog_search_row_from_payload(row) for row in selected_rows]
 
 
-def resolve_default_card_row_for_name(
+def list_default_card_name_candidate_rows(
     connection: sqlite3.Connection,
     *,
     name: str,
     lang: str | None = None,
     finish: str | None = None,
-) -> sqlite3.Row:
+) -> list[sqlite3.Row]:
     name_text = text_or_none(name)
     if name_text is None:
         raise ValidationError("name is required.")
@@ -536,6 +537,69 @@ def resolve_default_card_row_for_name(
         raise ValidationError(
             f"No matching default-add card found for name '{name_text}' with finish '{normalized_finish}'."
         )
+    return rows
+
+
+def list_printing_candidate_rows(
+    connection: sqlite3.Connection,
+    *,
+    name: str,
+    set_code: str | None,
+    set_name: str | None = None,
+    collector_number: str | None,
+    lang: str | None,
+    finish: str | None = None,
+) -> list[sqlite3.Row]:
+    name_text = text_or_none(name)
+    if name_text is None:
+        raise ValidationError("name is required.")
+
+    normalized_lang = normalize_language_code(lang) if text_or_none(lang) is not None else None
+    params: list[Any] = [name_text]
+    filters = ["LOWER(name) = LOWER(?)"]
+    if set_code:
+        filters.append("LOWER(set_code) = LOWER(?)")
+        params.append(set_code)
+    if set_name:
+        filters.append("LOWER(set_name) = LOWER(?)")
+        params.append(set_name)
+    if collector_number:
+        filters.append("collector_number = ?")
+        params.append(collector_number)
+    if normalized_lang:
+        filters.append("LOWER(lang) = LOWER(?)")
+        params.append(normalized_lang)
+
+    rows = _catalog_resolution_rows(connection, filters=filters, params=params)
+    if not rows:
+        raise NotFoundError("No matching printing found. Try search-cards first to find the exact printing.")
+
+    rows, normalized_finish = _rows_matching_finish(rows, finish)
+    if normalized_finish is not None and not rows:
+        raise ValidationError(
+            f"No matching printing found for name '{name_text}' with finish '{normalized_finish}'."
+        )
+    return rows
+
+
+def resolve_default_card_row_for_name(
+    connection: sqlite3.Connection,
+    *,
+    name: str,
+    lang: str | None = None,
+    finish: str | None = None,
+) -> sqlite3.Row:
+    name_text = text_or_none(name)
+    if name_text is None:
+        raise ValidationError("name is required.")
+
+    normalized_lang = normalize_language_code(lang) if text_or_none(lang) is not None else None
+    rows = list_default_card_name_candidate_rows(
+        connection,
+        name=name_text,
+        lang=normalized_lang,
+        finish=finish,
+    )
 
     oracle_ids = {str(row["oracle_id"]) for row in rows}
     if len(oracle_ids) != 1:
@@ -649,31 +713,15 @@ def resolve_card_row(
     if not name:
         raise ValidationError("Provide either --scryfall-id, --oracle-id, --tcgplayer-product-id, or --name.")
 
-    params: list[Any] = [name]
-    filters = ["LOWER(name) = LOWER(?)"]
-
-    if set_code:
-        filters.append("LOWER(set_code) = LOWER(?)")
-        params.append(set_code)
-    if set_name:
-        filters.append("LOWER(set_name) = LOWER(?)")
-        params.append(set_name)
-    if collector_number:
-        filters.append("collector_number = ?")
-        params.append(collector_number)
-    if normalized_lang:
-        filters.append("LOWER(lang) = LOWER(?)")
-        params.append(normalized_lang)
-
-    rows = _catalog_resolution_rows(connection, filters=filters, params=params)
-
-    if not rows:
-        raise NotFoundError("No matching printing found. Try search-cards first to find the exact printing.")
-    rows, normalized_finish = _rows_matching_finish(rows, finish)
-    if normalized_finish is not None and not rows:
-        raise ValidationError(
-            f"No matching printing found for name '{name}' with finish '{normalized_finish}'."
-        )
+    rows = list_printing_candidate_rows(
+        connection,
+        name=name,
+        set_code=set_code,
+        set_name=set_name,
+        collector_number=collector_number,
+        lang=normalized_lang,
+        finish=finish,
+    )
     if len(rows) > 1:
         raise ValidationError(
             "Multiple printings matched that name. Narrow it with --set-code, --collector-number, or --scryfall-id. "

@@ -13,6 +13,7 @@ from ..db.schema import initialize_database
 from ..errors import MtgStackError, ValidationError
 from .catalog import resolve_card_row
 from .csv_formats import GENERIC_CSV_FORMAT, detect_csv_import_format
+from .import_summary import build_import_summary
 from .normalize import (
     CSV_HEADER_ALIASES,
     finish_and_source_from_row,
@@ -317,6 +318,7 @@ def import_csv_stream(
         "default_inventory": default_inventory,
         "rows_seen": rows_seen,
         "rows_written": len(imported_rows),
+        "summary": build_import_summary(imported_rows),
         "imported_rows": imported_rows,
         "dry_run": dry_run,
     }
@@ -377,6 +379,7 @@ def import_csv(
         "default_inventory": default_inventory,
         "rows_seen": rows_seen,
         "rows_written": len(imported_rows),
+        "summary": build_import_summary(imported_rows),
         "imported_rows": imported_rows,
         "dry_run": dry_run,
     }

@@ -285,6 +285,16 @@ def format_import_csv_result(result: dict[str, Any]) -> str:
         f"Rows imported: {result['rows_written']}",
     ]
 
+    summary = result.get("summary") or {}
+    if summary:
+        lines.extend(
+            [
+                f"Total card quantity: {summary.get('total_card_quantity', 0)}",
+                f"Distinct card names: {summary.get('distinct_card_names', 0)}",
+                f"Distinct printings: {summary.get('distinct_printings', 0)}",
+            ]
+        )
+
     if result.get("dry_run"):
         lines.append("Mode: dry run (no changes saved)")
 
