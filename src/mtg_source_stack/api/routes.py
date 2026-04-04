@@ -534,6 +534,7 @@ async def imports_deck_url(
         default_inventory=payload.default_inventory,
         dry_run=payload.dry_run,
         source_snapshot_token=payload.source_snapshot_token,
+        snapshot_signing_secret=settings.snapshot_signing_secret,
         resolutions=[selection.model_dump() for selection in payload.resolutions],
         inventory_validator=inventory_validator,
         actor_type=context.actor_type,

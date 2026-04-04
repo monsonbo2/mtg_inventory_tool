@@ -1029,7 +1029,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional snapshot token returned by a prior dry-run deck URL import. When supplied, the backend reuses the normalized remote deck payload instead of refetching the provider.",
+            "description": "Optional snapshot token returned by a prior dry-run deck URL import. When supplied, the backend reuses the short-lived signed normalized remote deck payload instead of refetching the provider.",
             "title": "Source Snapshot Token"
           },
           "source_url": {

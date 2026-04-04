@@ -1,11 +1,11 @@
 # Import / Export Follow-Ups
 
 This note captures the highest-value follow-up work that remains after the
-current import/export backend slice:
+current import/export backend slice. The backend already ships:
 
-- CSV import API
-- decklist text import API
-- deck URL import API
+- CSV import API with preview summaries and structured resolution issues
+- decklist text import API with preview/commit resolution flow
+- deck URL import API with signed preview snapshot tokens
 - profile-based CSV export API
 
 Current deck URL providers:
@@ -19,6 +19,18 @@ Current deck URL providers:
 - TappedOut
 
 ## Highest-Value Next Work
+
+### Documentation
+
+- Write a single narrative import/export guide that explains the currently
+  shipped user-facing flows in one place:
+  - CSV upload import
+  - pasted decklist import
+  - deck URL import
+  - CSV export download
+  - preview/commit resolution flows and common fallback paths
+  The current contract docs are accurate, but this end-user-oriented guide
+  does not exist yet.
 
 ### Frontend UX
 
@@ -52,19 +64,19 @@ Current deck URL providers:
 
 ### Provider Hardening
 
-- Add provider-specific telemetry so blocked fetches, missing decks, and parse
-  drift can be distinguished quickly in logs.
-- Add retries or narrower error mapping only where providers prove flaky in
-  practice.
+- Expand provider-specific telemetry beyond the current structured logging and
+  error categorization so blocked fetches, missing decks, and parse drift can
+  be aggregated and monitored more easily.
+- Add retries only where providers prove flaky in practice; the backend
+  already distinguishes blocked, missing, timeout, and parse-drift failure
+  classes.
 - Capture more real-world provider fixtures so parser regressions are caught
   before live users hit them.
+- Add operational guidance for rotating `MTG_API_SNAPSHOT_SIGNING_SECRET`
+  without surprising in-flight deck URL preview tokens.
 
 ### Import UX
 
-- Surface ambiguity suggestions for name-only imports instead of returning only
-  a hard validation error.
-- Add preview summaries such as total cards, distinct cards, sections, and
-  unresolved lines.
 - Consider optional source tags such as `imported-from:moxfield` or
   `section:sideboard` if users want provenance carried into inventory rows.
 

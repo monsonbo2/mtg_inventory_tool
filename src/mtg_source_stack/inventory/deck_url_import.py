@@ -5,7 +5,9 @@ from __future__ import annotations
 import base64
 import binascii
 from dataclasses import dataclass
+import hashlib
 from html import unescape
+import hmac
 import json
 import logging
 from pathlib import Path
@@ -113,6 +115,7 @@ _REMOTE_FETCH_MAX_BYTES = 2 * 1024 * 1024
 _REMOTE_FETCH_CHUNK_BYTES = 64 * 1024
 _REMOTE_SOURCE_SNAPSHOT_VERSION = 1
 _REMOTE_SOURCE_SNAPSHOT_TTL_SECONDS = 3600
+_DEFAULT_REMOTE_SOURCE_SNAPSHOT_SIGNING_SECRET = "local-demo-deck-url-snapshot-secret"
 _PROVIDER_DISPLAY_NAMES = {
     "archidekt": "Archidekt",
     "aetherhub": "AetherHub",
@@ -453,27 +456,68 @@ def _remote_snapshot_payload(source: RemoteDeckSource) -> dict[str, Any]:
     }
 
 
-def _encode_remote_source_snapshot_token(source: RemoteDeckSource) -> str:
-    payload = json.dumps(_remote_snapshot_payload(source), separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return base64.urlsafe_b64encode(payload).decode("ascii")
+def _normalize_snapshot_signing_secret(snapshot_signing_secret: str | None) -> str:
+    if text_or_none(snapshot_signing_secret) is None:
+        return _DEFAULT_REMOTE_SOURCE_SNAPSHOT_SIGNING_SECRET
+    return text_or_none(snapshot_signing_secret) or _DEFAULT_REMOTE_SOURCE_SNAPSHOT_SIGNING_SECRET
+
+
+def _snapshot_payload_bytes(payload: Mapping[str, Any]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def _snapshot_signature(payload: Mapping[str, Any], *, snapshot_signing_secret: str) -> str:
+    return hmac.new(
+        snapshot_signing_secret.encode("utf-8"),
+        _snapshot_payload_bytes(payload),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _encode_remote_source_snapshot_token(
+    source: RemoteDeckSource,
+    *,
+    snapshot_signing_secret: str | None = None,
+) -> str:
+    payload = _remote_snapshot_payload(source)
+    container = {
+        "payload": payload,
+        "signature": _snapshot_signature(
+            payload,
+            snapshot_signing_secret=_normalize_snapshot_signing_secret(snapshot_signing_secret),
+        ),
+    }
+    return base64.urlsafe_b64encode(_snapshot_payload_bytes(container)).decode("ascii")
 
 
 def _decode_remote_source_snapshot_token(
     source_snapshot_token: str,
     *,
     source_url: str,
+    snapshot_signing_secret: str | None = None,
 ) -> RemoteDeckSource:
     token_text = text_or_none(source_snapshot_token)
     if token_text is None:
         raise ValidationError("source_snapshot_token is required.")
     try:
         padded_token = token_text + "=" * (-len(token_text) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded_token.encode("ascii")).decode("utf-8"))
+        container = json.loads(base64.urlsafe_b64decode(padded_token.encode("ascii")).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError, binascii.Error) as exc:
         raise ValidationError("source_snapshot_token is invalid.") from exc
 
-    if not isinstance(payload, dict):
+    if not isinstance(container, dict):
         raise ValidationError("source_snapshot_token is invalid.")
+    payload = container.get("payload")
+    signature = text_or_none(container.get("signature"))
+    if not isinstance(payload, dict) or signature is None:
+        raise ValidationError("source_snapshot_token is invalid.")
+    expected_signature = _snapshot_signature(
+        payload,
+        snapshot_signing_secret=_normalize_snapshot_signing_secret(snapshot_signing_secret),
+    )
+    if not hmac.compare_digest(signature, expected_signature):
+        raise ValidationError("source_snapshot_token is invalid.")
+
     if payload.get("version") != _REMOTE_SOURCE_SNAPSHOT_VERSION:
         raise ValidationError("source_snapshot_token version is unsupported. Re-run preview.")
 
@@ -535,16 +579,21 @@ def _load_remote_source_for_import(
     source_url: str,
     *,
     source_snapshot_token: str | None = None,
+    snapshot_signing_secret: str | None = None,
 ) -> tuple[RemoteDeckSource, str]:
     if text_or_none(source_snapshot_token) is not None:
         source = _decode_remote_source_snapshot_token(
             text_or_none(source_snapshot_token) or "",
             source_url=source_url,
+            snapshot_signing_secret=snapshot_signing_secret,
         )
         return source, text_or_none(source_snapshot_token) or ""
 
     source = fetch_remote_deck_source(source_url)
-    return source, _encode_remote_source_snapshot_token(source)
+    return source, _encode_remote_source_snapshot_token(
+        source,
+        snapshot_signing_secret=snapshot_signing_secret,
+    )
 
 
 def _parse_remote_deck_url(source_url: str) -> Any:
@@ -1691,6 +1740,7 @@ def _plan_remote_deck_import(
     *,
     source_url: str,
     source_snapshot_token: str | None,
+    snapshot_signing_secret: str | None,
     resolutions: list[Mapping[str, Any]] | None,
     inventory_validator: InventoryValidator | None,
     default_inventory: str | None,
@@ -1708,6 +1758,7 @@ def _plan_remote_deck_import(
     source, snapshot_token = _load_remote_source_for_import(
         source_url,
         source_snapshot_token=source_snapshot_token,
+        snapshot_signing_secret=snapshot_signing_secret,
     )
     requested_card_quantity = sum(card.quantity for card in source.cards)
     selection_map = _normalize_remote_resolution_selections(resolutions)
@@ -1761,6 +1812,7 @@ def import_deck_url(
     default_inventory: str | None,
     dry_run: bool = False,
     source_snapshot_token: str | None = None,
+    snapshot_signing_secret: str | None = None,
     resolutions: list[Mapping[str, Any]] | None = None,
     before_write: Callable[[], Any] | None = None,
     inventory_validator: InventoryValidator | None = None,
@@ -1778,6 +1830,7 @@ def import_deck_url(
         db_path,
         source_url=source_url,
         source_snapshot_token=source_snapshot_token,
+        snapshot_signing_secret=snapshot_signing_secret,
         resolutions=resolutions,
         inventory_validator=inventory_validator,
         default_inventory=default_inventory,

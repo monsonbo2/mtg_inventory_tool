@@ -256,9 +256,11 @@ preserve for the first API-backed version of the project.
     `scryfall_id + finish` pair for a specific `source_position`
   - response field `ready_to_commit` is `false` when one or more remote rows
     still need explicit resolution
-  - response field `source_snapshot_token` contains a short-lived normalized
-    snapshot of the fetched remote deck so preview and commit can stay in sync
-    without another provider fetch
+  - response field `source_snapshot_token` contains a short-lived signed
+    normalized snapshot of the fetched remote deck so preview and commit can
+    stay in sync without another provider fetch
+  - a tampered, expired, or wrong-URL `source_snapshot_token` returns
+    `400 validation_error` and the caller should re-run preview
   - response field `summary` includes total imported quantity, requested card
     quantity, unresolved card quantity, distinct card and printing counts, and
     per-section card quantities
@@ -384,6 +386,10 @@ before the generic 500 envelope is returned.
   values to flow into audit attribution.
 - `shared_service` disables auto-migrate by default. It should be started
   against a pre-migrated database and a single app process for now.
+- `local_demo` uses a stable built-in deck URL snapshot signing secret so
+  preview/commit flows work without extra setup.
+- `shared_service` requires an explicit non-empty deck URL snapshot signing
+  secret via `MTG_API_SNAPSHOT_SIGNING_SECRET`.
 - In `shared_service`, every current app route except `/health` requires a
   verified upstream user header. The default header name is
   `X-Authenticated-User`, and it can be overridden with

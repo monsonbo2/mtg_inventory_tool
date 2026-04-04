@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.inventory.service import create_inventory, grant_inventory_membership
+from mtg_source_stack.inventory.service import create_inventory, grant_inventory_membership, import_deck_url
 
 
 FASTAPI_TESTING_AVAILABLE = (
@@ -32,7 +32,7 @@ if FASTAPI_TESTING_AVAILABLE:
     from mtg_source_stack.api.app import create_app
     from mtg_source_stack.api.dependencies import ApiSettings, RequestContext
     from mtg_source_stack.api.routes import _parse_csv_import_form, _require_csv_import_inventory_write_access
-    from mtg_source_stack.errors import AuthorizationError
+    from mtg_source_stack.errors import AuthorizationError, ValidationError
 
 
 def _localhost_server_testing_available() -> bool:
@@ -647,6 +647,7 @@ class WebApiTest(unittest.TestCase):
         trust_actor_headers: bool = False,
         runtime_mode: str = "local_demo",
         auto_migrate: bool = True,
+        snapshot_signing_secret: str | None = None,
     ):
         settings_kwargs = {
             "db_path": db_path,
@@ -657,6 +658,10 @@ class WebApiTest(unittest.TestCase):
             "trust_actor_headers": trust_actor_headers,
             "proxy_headers": runtime_mode == "shared_service",
         }
+        if snapshot_signing_secret is not None:
+            settings_kwargs["snapshot_signing_secret"] = snapshot_signing_secret
+        elif runtime_mode == "shared_service":
+            settings_kwargs["snapshot_signing_secret"] = "test-shared-snapshot-secret"
         app = create_app(
             ApiSettings(**settings_kwargs)
         )
@@ -1984,6 +1989,51 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual([], committed_payload["resolution_issues"])
                 self.assertEqual("api-remote-other", committed_payload["imported_rows"][0]["scryfall_id"])
                 self.assertEqual(1, fetch_remote_deck_source.call_count)
+
+    def test_demo_api_deck_url_snapshot_token_uses_configured_signing_secret(self) -> None:
+        from mtg_source_stack.inventory.deck_url_import import RemoteDeckCard, RemoteDeckSource
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path, snapshot_signing_secret="api-custom-secret") as client:
+                self._seed_card(db_path, finishes_json='["normal"]')
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                with patch(
+                    "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                    return_value=RemoteDeckSource(
+                        provider="archidekt",
+                        source_url="https://archidekt.com/decks/123/test",
+                        deck_name="Signed Deck",
+                        cards=[RemoteDeckCard(1, 1, "mainboard", "api-card-1", "normal")],
+                    ),
+                ):
+                    preview = client.post(
+                        "/imports/deck-url",
+                        json={
+                            "source_url": "https://archidekt.com/decks/123/test",
+                            "default_inventory": "personal",
+                            "dry_run": True,
+                        },
+                    )
+
+                self.assertEqual(200, preview.status_code)
+                preview_payload = preview.json()
+                self.assertIsInstance(preview_payload["source_snapshot_token"], str)
+
+                with self.assertRaisesRegex(ValidationError, "source_snapshot_token is invalid."):
+                    import_deck_url(
+                        db_path,
+                        source_url="https://archidekt.com/decks/123/test",
+                        default_inventory="personal",
+                        source_snapshot_token=preview_payload["source_snapshot_token"],
+                        snapshot_signing_secret="wrong-secret",
+                    )
 
     def test_demo_api_export_csv_route_returns_filtered_download(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

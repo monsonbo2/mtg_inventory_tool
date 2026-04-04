@@ -47,6 +47,10 @@ The current intended demo surface is:
 - card search
 - card-name search plus printing lookup
 - add card flow
+- CSV import preview/commit
+- pasted decklist import preview/commit
+- deck URL import preview/commit
+- CSV export download
 - owned rows table
 - quick edit for quantity, finish, location, notes, and tags
 - recent audit activity
@@ -75,6 +79,31 @@ Use this as the first-pass UI-to-endpoint map:
   Accepts printing-level identifiers like `scryfall_id` and card-level
   `oracle_id`. When `language_code` is omitted, the backend stores the
   resolved printing language.
+- CSV import preview/commit -> `POST /imports/csv`
+  Request body is `multipart/form-data`.
+  - use `dry_run=true` for preview
+  - if `ready_to_commit` is `false`, show `resolution_issues` and resubmit the
+    same file with `resolutions_json`
+  - current backend CSV adapters are `generic_csv`,
+    `tcgplayer_app_collection_csv`, `tcgplayer_legacy_collection_csv`,
+    `manabox_collection_csv`, `mtggoldfish_collection_csv`,
+    `deckbox_collection_csv`, `deckstats_collection_csv`, and
+    `mtgstocks_collection_csv`
+- Pasted decklist import preview/commit -> `POST /imports/decklist`
+  Request body is JSON.
+  - use `dry_run=true` for preview
+  - if `ready_to_commit` is `false`, resubmit with `resolutions`
+- Deck URL import preview/commit -> `POST /imports/deck-url`
+  Request body is JSON.
+  - use `dry_run=true` for preview
+  - if `ready_to_commit` is `false`, resubmit with `resolutions`
+  - preserve `source_snapshot_token` from preview and send it back on commit so
+    the backend reuses the same signed remote deck snapshot instead of
+    refetching the provider
+  - current providers are `archidekt`, `aetherhub`, `manabox`, `moxfield`,
+    `mtggoldfish`, `mtgtop8`, and `tappedout`
+- CSV export download -> `GET /inventories/{inventory_slug}/export.csv`
+  Uses `profile=default` today and returns `text/csv`.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
   Returned rows include `allowed_finishes` for safe finish-edit controls.
 - Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
@@ -209,6 +238,9 @@ export default {
   identity plus local inventory memberships rather than one global permission
   domain. Broader deployment policy and admin-only surface policy are not
   finished yet.
+- Deck URL preview/commit flows now depend on the backend-issued
+  `source_snapshot_token`; frontend code should treat that token as opaque and
+  short-lived rather than trying to inspect or modify it.
 - The recommended first-live deployment shape is same-origin and proxy-based,
   not separate-origin CORS.
 - The backend still uses synchronous SQLite-backed services under the HTTP

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from html import escape
 from io import BytesIO
 import json
@@ -1295,6 +1296,159 @@ class DeckUrlImportTest(unittest.TestCase):
 
             self.assertEqual(1, fetch_remote_deck_source.call_count)
             self.assertEqual(2, committed["imported_rows"][0]["quantity"])
+
+    def test_import_deck_url_rejects_tampered_snapshot_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="tamper-card",
+                oracle_id="tamper-oracle",
+                name="Tamper Card",
+                collector_number="1",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/987/test",
+                deck_name="Tamper Deck",
+                cards=[RemoteDeckCard(1, 1, "mainboard", "tamper-card", "normal")],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ):
+                preview = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/987/test",
+                    default_inventory="personal",
+                    dry_run=True,
+                    snapshot_signing_secret="custom-secret",
+                )
+
+            padded_token = preview["source_snapshot_token"] + "=" * (-len(preview["source_snapshot_token"]) % 4)
+            container = json.loads(base64.urlsafe_b64decode(padded_token.encode("ascii")).decode("utf-8"))
+            container["payload"]["source"]["deck_name"] = "Tampered Deck"
+            tampered_token = base64.urlsafe_b64encode(
+                json.dumps(container, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            ).decode("ascii")
+
+            with self.assertRaisesRegex(ValidationError, "source_snapshot_token is invalid."):
+                import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/987/test",
+                    default_inventory="personal",
+                    dry_run=False,
+                    source_snapshot_token=tampered_token,
+                    snapshot_signing_secret="custom-secret",
+                )
+
+    def test_import_deck_url_rejects_expired_snapshot_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="expired-card",
+                oracle_id="expired-oracle",
+                name="Expired Card",
+                collector_number="1",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/654/test",
+                deck_name="Expired Deck",
+                cards=[RemoteDeckCard(1, 1, "mainboard", "expired-card", "normal")],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ):
+                with patch("mtg_source_stack.inventory.deck_url_import.time.time", return_value=100):
+                    preview = import_deck_url(
+                        db_path,
+                        source_url="https://archidekt.com/decks/654/test",
+                        default_inventory="personal",
+                        dry_run=True,
+                        snapshot_signing_secret="custom-secret",
+                    )
+
+            with patch("mtg_source_stack.inventory.deck_url_import.time.time", return_value=5000):
+                with self.assertRaisesRegex(ValidationError, "source_snapshot_token has expired. Re-run preview."):
+                    import_deck_url(
+                        db_path,
+                        source_url="https://archidekt.com/decks/654/test",
+                        default_inventory="personal",
+                        dry_run=False,
+                        source_snapshot_token=preview["source_snapshot_token"],
+                        snapshot_signing_secret="custom-secret",
+                    )
+
+    def test_import_deck_url_snapshot_token_depends_on_signing_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="secret-card",
+                oracle_id="secret-oracle",
+                name="Secret Card",
+                collector_number="1",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/321/test",
+                deck_name="Secret Deck",
+                cards=[RemoteDeckCard(1, 1, "mainboard", "secret-card", "normal")],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ):
+                preview = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/321/test",
+                    default_inventory="personal",
+                    dry_run=True,
+                    snapshot_signing_secret="custom-secret",
+                )
+
+            with self.assertRaisesRegex(ValidationError, "source_snapshot_token is invalid."):
+                import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/321/test",
+                    default_inventory="personal",
+                    dry_run=False,
+                    source_snapshot_token=preview["source_snapshot_token"],
+                    snapshot_signing_secret="wrong-secret",
+                )
 
     def test_import_deck_url_rejects_missing_inventory(self) -> None:
         remote_source = RemoteDeckSource(

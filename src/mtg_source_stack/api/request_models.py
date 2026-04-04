@@ -100,7 +100,8 @@ DECK_URL_IMPORT_RESOLUTIONS_DESCRIPTION = (
 )
 DECK_URL_IMPORT_SOURCE_SNAPSHOT_TOKEN_DESCRIPTION = (
     "Optional snapshot token returned by a prior dry-run deck URL import. "
-    "When supplied, the backend reuses the normalized remote deck payload instead of refetching the provider."
+    "When supplied, the backend reuses the short-lived signed normalized remote deck payload "
+    "instead of refetching the provider."
 )
 
 
