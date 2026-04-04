@@ -1,10 +1,27 @@
 # Frontend Backend Request: Full-Catalog Demo Bootstrap Compatibility
 
-Status: Proposed
-Owner: Unassigned
+Status: Done
+Owner: Boyd
 GitHub issue: [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21)
-Implementation PR: Not linked yet
-Last updated: 2026-04-02
+Implementation PR: Commit `c88f80a`
+Last updated: 2026-04-04
+
+Resolved. The backend-owned full-catalog demo bootstrap is now resolver-driven
+instead of depending on brittle hard-coded printings that drift against the
+current upstream Scryfall catalog.
+
+Current implemented behavior:
+
+- full-catalog mode still imports the real local catalog
+- curated demo rows are resolved by intended constraints rather than by stale
+  hard-coded printings
+- if the imported catalog cannot satisfy an intended demo state, the bootstrap
+  now fails early with a clear seed-resolution error instead of a later
+  finish-mismatch or missing-printing surprise
+
+That keeps the documented full-catalog demo flow usable against the current
+official `default-cards` bulk file while preserving the intended frontend demo
+states.
 
 ## Frontend Backend Request
 

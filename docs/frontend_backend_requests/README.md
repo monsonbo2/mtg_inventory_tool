@@ -27,9 +27,12 @@ backend requests.
 | `bulk_inventory_item_mutations.md` | Not linked yet | Done | Boyd | generic bulk route now supports tags, quantity, notes, acquisition, finish, location, and condition mutations |
 | `card_name_search_and_printing_lookup.md` | [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16) | Done | Boyd | implemented via grouped name search plus oracle printings lookup in commit `b409f56` |
 | `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Done | Steve | stored image URLs exposed in search and owned-item responses |
+| `csv_import_http_api.md` | [#25](https://github.com/monsonbo2/mtg_inventory_tool/issues/25) | Done | Boyd | HTTP CSV import now ships with preview/commit, multipart upload, and structured resolution issues |
+| `default_printing_resolution_policy.md` | [#23](https://github.com/monsonbo2/mtg_inventory_tool/issues/23) | Done | Boyd | `oracle_id` quick-add now publishes the default printing policy as stable contract behavior |
 | `playable_card_search_scope.md` | [#22](https://github.com/monsonbo2/mtg_inventory_tool/issues/22) | Done | Boyd | default app-facing search is now narrowed to the mainline add flow, with additive `scope=all` support for intentional broad catalog search |
 | `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
-| `full_catalog_demo_bootstrap_compatibility.md` | [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21) | Proposed | Unassigned | full-catalog demo bootstrap currently fails against the real current Scryfall bulk file |
+| `full_catalog_demo_bootstrap_compatibility.md` | [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21) | Done | Boyd | full-catalog demo bootstrap is now resolver-driven against the real current Scryfall catalog |
+| `inventory_transfer_api.md` | [#30](https://github.com/monsonbo2/mtg_inventory_tool/issues/30) | Done | Boyd | atomic transfer now supports copy/move, selected rows or `all_items`, merge/fail conflict policy, dry-run, and dual-inventory auth |
 | `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Done | Steve | PATCH stays single-mutation-only and now returns an explicit `operation` discriminator |
 | `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Done | Steve | canonical values, defaults, and finish aliases published in API contract |
 

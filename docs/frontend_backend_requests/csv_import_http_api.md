@@ -1,10 +1,10 @@
 # Frontend Backend Request: CSV Import HTTP API
 
-Status: Implemented
-Owner: Unassigned
+Status: Done
+Owner: Boyd
 GitHub issue: [#25](https://github.com/monsonbo2/mtg_inventory_tool/issues/25)
-Implementation PR: Backend branch `import-export-tools-backend`
-Last updated: 2026-04-03
+Implementation PR: Commits `69afeb7`..`9169928`, merged via `485f937`
+Last updated: 2026-04-04
 
 ## Frontend Backend Request
 
