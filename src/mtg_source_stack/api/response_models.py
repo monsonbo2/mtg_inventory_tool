@@ -167,6 +167,7 @@ class CsvImportRowResponse(InventoryItemMutationBaseResponse):
 
 class CsvImportResponse(ApiBaseModel):
     csv_filename: str
+    detected_format: str
     default_inventory: str | None
     rows_seen: int
     rows_written: int

@@ -280,6 +280,7 @@ def format_import_csv_result(result: dict[str, Any]) -> str:
         "Imported inventory rows from CSV",
         "",
         f"File: {result['csv_path']}",
+        f"Detected format: {result.get('detected_format', 'generic_csv')}",
         f"Rows seen: {result['rows_seen']}",
         f"Rows imported: {result['rows_written']}",
     ]

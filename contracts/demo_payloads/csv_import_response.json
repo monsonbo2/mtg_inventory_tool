@@ -1,5 +1,6 @@
 {
   "csv_filename": "inventory_import.csv",
+  "detected_format": "generic_csv",
   "default_inventory": "personal",
   "rows_seen": 1,
   "rows_written": 1,

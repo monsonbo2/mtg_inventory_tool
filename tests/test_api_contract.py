@@ -25,6 +25,7 @@ from mtg_source_stack.api.response_models import (
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
+    CsvImportResponse,
     DecklistImportResponse,
     DeckUrlImportResponse,
     DefaultInventoryBootstrapResponse,
@@ -224,6 +225,35 @@ class ApiContractTest(RepoSmokeTestCase):
                 "description": None,
             },
         }
+        csv_import_payload = {
+            "csv_filename": "inventory_import.csv",
+            "detected_format": "generic_csv",
+            "default_inventory": "personal",
+            "rows_seen": 1,
+            "rows_written": 1,
+            "dry_run": True,
+            "imported_rows": [
+                {
+                    "csv_row": 2,
+                    "inventory": "personal",
+                    "card_name": "Lightning Bolt",
+                    "set_code": "lea",
+                    "set_name": "Limited Edition Alpha",
+                    "collector_number": "161",
+                    "scryfall_id": "card-1",
+                    "item_id": 1,
+                    "quantity": 4,
+                    "finish": "normal",
+                    "condition_code": "NM",
+                    "language_code": "en",
+                    "location": None,
+                    "acquisition_price": None,
+                    "acquisition_currency": None,
+                    "notes": None,
+                    "tags": [],
+                }
+            ],
+        }
         decklist_import_payload = {
             "deck_name": None,
             "default_inventory": "personal",
@@ -289,6 +319,7 @@ class ApiContractTest(RepoSmokeTestCase):
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
         catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
         bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
+        csv_import = CsvImportResponse.model_validate(csv_import_payload)
         decklist_import = DecklistImportResponse.model_validate(decklist_import_payload)
         deck_url_import = DeckUrlImportResponse.model_validate(deck_url_import_payload)
         error = ApiErrorResponse.model_validate(error_payload)
@@ -303,6 +334,8 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
+        self.assertEqual("generic_csv", csv_import.detected_format)
+        self.assertEqual(2, csv_import.imported_rows[0].csv_row)
         self.assertEqual("mainboard", decklist_import.imported_rows[0].section)
         self.assertEqual(1, decklist_import.imported_rows[0].decklist_line)
         self.assertEqual("archidekt", deck_url_import.provider)

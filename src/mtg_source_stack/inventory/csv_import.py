@@ -12,6 +12,7 @@ from ..db.connection import connect
 from ..db.schema import initialize_database
 from ..errors import MtgStackError, ValidationError
 from .catalog import resolve_card_row
+from .csv_formats import GENERIC_CSV_FORMAT, detect_csv_import_format
 from .normalize import (
     CSV_HEADER_ALIASES,
     finish_and_source_from_row,
@@ -162,7 +163,7 @@ def _load_pending_csv_rows(
     *,
     source_name: str,
     default_inventory: str | None,
-) -> tuple[int, list[PendingImportRow]]:
+) -> tuple[str, int, list[PendingImportRow]]:
     pending_rows: list[PendingImportRow] = []
     rows_seen = 0
 
@@ -170,9 +171,18 @@ def _load_pending_csv_rows(
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             raise ValueError("CSV file must include a header row.")
+        normalized_headers = {
+            normalize_csv_header(fieldname)
+            for fieldname in reader.fieldnames
+            if fieldname is not None
+        }
+        format_adapter = detect_csv_import_format(normalized_headers)
+        detected_format = format_adapter.key if format_adapter is not None else GENERIC_CSV_FORMAT
 
         for row_number, raw_row in enumerate(reader, start=2):
             row = normalize_csv_row(raw_row)
+            if format_adapter is not None:
+                row = format_adapter.normalize_row(row)
             if is_blank_csv_row(row):
                 continue
 
@@ -198,7 +208,7 @@ def _load_pending_csv_rows(
     except UnicodeError as exc:
         raise ValueError(f"Could not decode CSV file '{source_name}' as UTF-8.") from exc
 
-    return rows_seen, pending_rows
+    return detected_format, rows_seen, pending_rows
 
 
 def _import_pending_rows(
@@ -283,7 +293,7 @@ def import_csv_stream(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
-    rows_seen, pending_rows = _load_pending_csv_rows(
+    detected_format, rows_seen, pending_rows = _load_pending_csv_rows(
         csv_handle,
         source_name=csv_filename,
         default_inventory=default_inventory,
@@ -301,6 +311,7 @@ def import_csv_stream(
     )
     return {
         "csv_filename": csv_filename,
+        "detected_format": detected_format,
         "default_inventory": default_inventory,
         "rows_seen": rows_seen,
         "rows_written": len(imported_rows),
@@ -344,7 +355,7 @@ def import_csv(
 ) -> dict[str, Any]:
     try:
         with Path(csv_path).open(mode="r", encoding="utf-8-sig", newline="") as handle:
-            rows_seen, pending_rows = _load_pending_csv_rows(
+            detected_format, rows_seen, pending_rows = _load_pending_csv_rows(
                 handle,
                 source_name=str(csv_path),
                 default_inventory=default_inventory,
@@ -360,6 +371,7 @@ def import_csv(
 
     return {
         "csv_path": str(csv_path),
+        "detected_format": detected_format,
         "default_inventory": default_inventory,
         "rows_seen": rows_seen,
         "rows_written": len(imported_rows),

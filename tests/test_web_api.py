@@ -272,6 +272,10 @@ class WebApiSchemaTest(unittest.TestCase):
             import_response_schema_name = self._schema_name_from_ref(import_response_schema["$ref"])
             self.assertEqual("CsvImportResponse", import_response_schema_name)
             self.assertEqual(
+                "string",
+                components[import_response_schema_name]["properties"]["detected_format"]["type"],
+            )
+            self.assertEqual(
                 "CsvImportRowResponse",
                 self._schema_name_from_ref(
                     components[import_response_schema_name]["properties"]["imported_rows"]["items"]["$ref"]
@@ -963,6 +967,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, preview.status_code)
                 preview_payload = preview.json()
                 self.assertEqual("inventory_import.csv", preview_payload["csv_filename"])
+                self.assertEqual("generic_csv", preview_payload["detected_format"])
                 self.assertTrue(preview_payload["dry_run"])
                 self.assertEqual(1, preview_payload["rows_seen"])
                 self.assertEqual(1, preview_payload["rows_written"])
@@ -984,6 +989,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, committed.status_code)
                 committed_payload = committed.json()
                 self.assertFalse(committed_payload["dry_run"])
+                self.assertEqual("generic_csv", committed_payload["detected_format"])
                 self.assertEqual(1, committed_payload["rows_written"])
                 self.assertEqual(2, committed_payload["imported_rows"][0]["quantity"])
 
@@ -1007,6 +1013,72 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("Blue Binder", item_row["location"])
                 self.assertEqual("Imported by API", item_row["notes"])
                 self.assertEqual(("api", "local-demo", "req-import-commit"), tuple(audit_row))
+
+    def test_demo_api_csv_import_detects_tcgplayer_app_collection_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                with connect(db_path) as connection:
+                    connection.execute(
+                        """
+                        INSERT INTO mtg_cards (
+                            scryfall_id,
+                            oracle_id,
+                            name,
+                            set_code,
+                            set_name,
+                            collector_number,
+                            lang,
+                            tcgplayer_product_id,
+                            finishes_json,
+                            image_uris_json
+                        )
+                        VALUES (
+                            'api-card-product',
+                            'api-oracle-product',
+                            'API Product Card',
+                            'tst',
+                            'Test Set',
+                            '12',
+                            'en',
+                            '777888',
+                            '["normal","foil"]',
+                            '{"small":"https://example.test/cards/api-card-product-small.jpg","normal":"https://example.test/cards/api-card-product-normal.jpg"}'
+                        )
+                        """
+                    )
+                    connection.commit()
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                csv_body = (
+                    "List Name,Product ID,Name,Condition,Language,Printing,Quantity\n"
+                    "Personal Collection,777888,API Product Card,Near Mint,English,Non-Foil,3\n"
+                ).encode("utf-8")
+
+                preview = client.post(
+                    "/imports/csv",
+                    files={"file": ("tcgplayer_app.csv", csv_body, "text/csv")},
+                    data={"default_inventory": "personal", "dry_run": "true"},
+                )
+                self.assertEqual(200, preview.status_code)
+                preview_payload = preview.json()
+                self.assertEqual("tcgplayer_app_collection_csv", preview_payload["detected_format"])
+                self.assertEqual("normal", preview_payload["imported_rows"][0]["finish"])
+                self.assertEqual(1, preview_payload["rows_written"])
+
+                committed = client.post(
+                    "/imports/csv",
+                    files={"file": ("tcgplayer_app.csv", csv_body, "text/csv")},
+                    data={"default_inventory": "personal"},
+                )
+                self.assertEqual(200, committed.status_code)
+                self.assertEqual("tcgplayer_app_collection_csv", committed.json()["detected_format"])
+                self.assertEqual("normal", committed.json()["imported_rows"][0]["finish"])
 
     def test_demo_api_decklist_import_supports_preview_and_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

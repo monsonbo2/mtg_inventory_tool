@@ -38,8 +38,8 @@ preserve for the first API-backed version of the project.
 - Bulk item mutation responses use a stable envelope with `inventory`,
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
 - `POST /imports/csv` returns a stable import-report envelope with
-  `csv_filename`, `default_inventory`, `rows_seen`, `rows_written`, `dry_run`,
-  and `imported_rows`.
+  `csv_filename`, `detected_format`, `default_inventory`, `rows_seen`,
+  `rows_written`, `dry_run`, and `imported_rows`.
 - `POST /imports/decklist` returns a stable import-report envelope with
   `default_inventory`, `rows_seen`, `rows_written`, `dry_run`, and
   `imported_rows`.
@@ -146,11 +146,20 @@ preserve for the first API-backed version of the project.
   - multipart field `file` is required
   - multipart field `default_inventory` is optional
   - multipart field `dry_run` is optional and defaults to `false`
+  - response field `detected_format` identifies whether the backend treated the
+    upload as a known source CSV or as generic CSV
   - `dry_run=true` uses the real add-card workflow but rolls the transaction
     back before commit
   - the route reuses the existing CSV normalization, identifier resolution,
     finish inference, and row-number-specific validation behavior from the CLI
     import path
+  - the current first-party format detectors are:
+    - `generic_csv`
+    - `tcgplayer_legacy_collection_csv`
+    - `tcgplayer_app_collection_csv`
+  - TCGplayer collection-style CSV uploads are normalized on the backend
+    before row import so the frontend does not need to translate fields such as
+    `Printing` into the backend's canonical finish columns
   - unlike the CLI import flow, the HTTP route does not implicitly create new
     inventories from CSV display names; referenced inventories must already
     exist

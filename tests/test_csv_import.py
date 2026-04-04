@@ -251,6 +251,134 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
                     allow_inventory_auto_create=False,
                 )
 
+    def test_import_csv_detects_tcgplayer_legacy_collection_csv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "legacy_data.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        tcgplayer_product_id,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-legacy',
+                        'csv-oracle-legacy',
+                        'Legacy Product Card',
+                        'tst',
+                        'Test Set',
+                        '11',
+                        'en',
+                        '534658',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "Collection Name,Product ID,Condition,Language,Variant,Quantity\n"
+                    "Trade Binder,534658,Near Mint,English,Traditional Foil,2\n"
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory=None,
+                dry_run=False,
+            )
+
+            self.assertEqual("tcgplayer_legacy_collection_csv", report["detected_format"])
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("foil", report["imported_rows"][0]["finish"])
+            self.assertEqual("trade-binder", report["imported_rows"][0]["inventory"])
+
+    def test_import_csv_detects_tcgplayer_app_collection_and_maps_printing_to_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "tcgplayer_app.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        tcgplayer_product_id,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-app',
+                        'csv-oracle-app',
+                        'App Product Card',
+                        'tst',
+                        'Test Set',
+                        '12',
+                        'en',
+                        '777888',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "List Name,Product ID,Name,Condition,Language,Printing,Quantity\n"
+                    "Personal Collection,777888,App Product Card,Near Mint,English,Non-Foil,3\n"
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory="personal",
+                dry_run=False,
+            )
+
+            self.assertEqual("tcgplayer_app_collection_csv", report["detected_format"])
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("normal", report["imported_rows"][0]["finish"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT quantity, finish
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual(3, item_row["quantity"])
+            self.assertEqual("normal", item_row["finish"])
+
     def test_import_csv_accepts_oracle_id_and_infers_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

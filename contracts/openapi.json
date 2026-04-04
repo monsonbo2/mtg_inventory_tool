@@ -603,6 +603,10 @@
             ],
             "title": "Default Inventory"
           },
+          "detected_format": {
+            "title": "Detected Format",
+            "type": "string"
+          },
           "dry_run": {
             "title": "Dry Run",
             "type": "boolean"
@@ -625,6 +629,7 @@
         },
         "required": [
           "csv_filename",
+          "detected_format",
           "default_inventory",
           "rows_seen",
           "rows_written",
