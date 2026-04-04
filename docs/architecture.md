@@ -64,6 +64,19 @@ The main modules are:
   Inventory reads, valuation, health checks, report assembly, and export prep.
 - `csv_import.py`
   CSV ingest orchestration for inventory imports.
+- `csv_formats.py`
+  Source-specific CSV adapter detection and normalization before import.
+- `decklist_import.py`
+  Pasted decklist parsing plus preview/commit planning for decklist imports.
+- `deck_url_import.py`
+  Remote deck fetch/parsing plus preview/commit planning for URL imports.
+- `export_profiles.py`
+  Profile registry for HTTP and CLI CSV exports.
+- `import_resolution.py`
+  Shared structured ambiguity-resolution models and option shaping for import
+  preview flows.
+- `import_summary.py`
+  Shared import summary helpers for preview/commit responses.
 - `audit.py`
   Transactional audit logging for inventory mutations.
 - `response_models.py`

@@ -16,6 +16,8 @@ from mtg_source_stack.api_contract import api_error_payload, api_error_status
 from mtg_source_stack.api.request_models import (
     AddInventoryItemRequest,
     BulkInventoryItemMutationRequest,
+    DecklistImportRequest,
+    DeckUrlImportRequest,
     InventoryDuplicateRequest,
     InventoryTransferRequest,
     PatchInventoryItemRequest,
@@ -25,6 +27,9 @@ from mtg_source_stack.api.response_models import (
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
     CatalogSearchRowResponse,
+    CsvImportResponse,
+    DecklistImportResponse,
+    DeckUrlImportResponse,
     DefaultInventoryBootstrapResponse,
     InventoryDuplicateResponse,
     InventoryTransferResponse,
@@ -224,12 +229,134 @@ class ApiContractTest(RepoSmokeTestCase):
                 "description": None,
             },
         }
+        csv_import_payload = {
+            "csv_filename": "inventory_import.csv",
+            "detected_format": "generic_csv",
+            "default_inventory": "personal",
+            "rows_seen": 1,
+            "rows_written": 1,
+            "ready_to_commit": True,
+            "summary": {
+                "total_card_quantity": 4,
+                "distinct_card_names": 1,
+                "distinct_printings": 1,
+                "requested_card_quantity": 4,
+                "unresolved_card_quantity": 0,
+            },
+            "resolution_issues": [],
+            "dry_run": True,
+            "imported_rows": [
+                {
+                    "csv_row": 2,
+                    "inventory": "personal",
+                    "card_name": "Lightning Bolt",
+                    "set_code": "lea",
+                    "set_name": "Limited Edition Alpha",
+                    "collector_number": "161",
+                    "scryfall_id": "card-1",
+                    "item_id": 1,
+                    "quantity": 4,
+                    "finish": "normal",
+                    "condition_code": "NM",
+                    "language_code": "en",
+                    "location": None,
+                    "acquisition_price": None,
+                    "acquisition_currency": None,
+                    "notes": None,
+                    "tags": [],
+                }
+            ],
+        }
+        decklist_import_payload = {
+            "deck_name": None,
+            "default_inventory": "personal",
+            "rows_seen": 1,
+            "rows_written": 1,
+            "ready_to_commit": True,
+            "summary": {
+                "total_card_quantity": 4,
+                "distinct_card_names": 1,
+                "distinct_printings": 1,
+                "section_card_quantities": {"mainboard": 4},
+                "requested_card_quantity": 4,
+                "unresolved_card_quantity": 0,
+            },
+            "resolution_issues": [],
+            "dry_run": True,
+            "imported_rows": [
+                {
+                    "decklist_line": 1,
+                    "section": "mainboard",
+                    "inventory": "personal",
+                    "card_name": "Lightning Bolt",
+                    "set_code": "lea",
+                    "set_name": "Limited Edition Alpha",
+                    "collector_number": "161",
+                    "scryfall_id": "card-1",
+                    "item_id": 1,
+                    "quantity": 4,
+                    "finish": "normal",
+                    "condition_code": "NM",
+                    "language_code": "en",
+                    "location": None,
+                    "acquisition_price": None,
+                    "acquisition_currency": None,
+                    "notes": None,
+                    "tags": [],
+                }
+            ],
+        }
+        deck_url_import_payload = {
+            "source_url": "https://archidekt.com/decks/123/test",
+            "provider": "archidekt",
+            "deck_name": "Imported Deck",
+            "default_inventory": "personal",
+            "rows_seen": 1,
+            "rows_written": 1,
+            "ready_to_commit": True,
+            "source_snapshot_token": "snapshot-token",
+            "summary": {
+                "total_card_quantity": 1,
+                "distinct_card_names": 1,
+                "distinct_printings": 1,
+                "section_card_quantities": {"commander": 1},
+                "requested_card_quantity": 1,
+                "unresolved_card_quantity": 0,
+            },
+            "resolution_issues": [],
+            "dry_run": True,
+            "imported_rows": [
+                {
+                    "source_position": 1,
+                    "section": "commander",
+                    "inventory": "personal",
+                    "card_name": "Lightning Bolt",
+                    "set_code": "lea",
+                    "set_name": "Limited Edition Alpha",
+                    "collector_number": "161",
+                    "scryfall_id": "card-1",
+                    "item_id": 1,
+                    "quantity": 1,
+                    "finish": "normal",
+                    "condition_code": "NM",
+                    "language_code": "en",
+                    "location": None,
+                    "acquisition_price": None,
+                    "acquisition_currency": None,
+                    "notes": None,
+                    "tags": [],
+                }
+            ],
+        }
         error_payload = api_error_payload(ValidationError("Bad request."))
 
         owned = OwnedInventoryRowResponse.model_validate(owned_payload)
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
         catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
         bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
+        csv_import = CsvImportResponse.model_validate(csv_import_payload)
+        decklist_import = DecklistImportResponse.model_validate(decklist_import_payload)
+        deck_url_import = DeckUrlImportResponse.model_validate(deck_url_import_payload)
         error = ApiErrorResponse.model_validate(error_payload)
 
         self.assertEqual("2.50", owned.acquisition_price)
@@ -242,6 +369,26 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
+        self.assertEqual("generic_csv", csv_import.detected_format)
+        self.assertTrue(csv_import.ready_to_commit)
+        self.assertEqual(4, csv_import.summary.total_card_quantity)
+        self.assertEqual(4, csv_import.summary.requested_card_quantity)
+        self.assertEqual(0, csv_import.summary.unresolved_card_quantity)
+        self.assertEqual(2, csv_import.imported_rows[0].csv_row)
+        self.assertTrue(decklist_import.ready_to_commit)
+        self.assertEqual({"mainboard": 4}, decklist_import.summary.section_card_quantities)
+        self.assertEqual(4, decklist_import.summary.requested_card_quantity)
+        self.assertEqual(0, decklist_import.summary.unresolved_card_quantity)
+        self.assertEqual("mainboard", decklist_import.imported_rows[0].section)
+        self.assertEqual(1, decklist_import.imported_rows[0].decklist_line)
+        self.assertEqual("archidekt", deck_url_import.provider)
+        self.assertTrue(deck_url_import.ready_to_commit)
+        self.assertEqual({"commander": 1}, deck_url_import.summary.section_card_quantities)
+        self.assertEqual(1, deck_url_import.summary.requested_card_quantity)
+        self.assertEqual(0, deck_url_import.summary.unresolved_card_quantity)
+        self.assertEqual("snapshot-token", deck_url_import.source_snapshot_token)
+        self.assertEqual(1, deck_url_import.imported_rows[0].source_position)
+        self.assertEqual("commander", deck_url_import.imported_rows[0].section)
         self.assertEqual("validation_error", error.error.code)
 
     def test_api_models_publish_defaults_and_canonical_value_guidance(self) -> None:
@@ -257,6 +404,29 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("inherits the resolved printing language", add_properties["language_code"]["description"])
         self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
         self.assertIn("prefers English mainstream-paper printings", add_properties["oracle_id"]["description"])
+
+        decklist_schema = DecklistImportRequest.model_json_schema()
+        decklist_properties = decklist_schema["properties"]
+        self.assertEqual(False, decklist_properties["dry_run"]["default"])
+        self.assertIn("4 Lightning Bolt", decklist_properties["deck_text"]["description"])
+        self.assertIn("About", decklist_properties["deck_text"]["description"])
+        self.assertIn("Target inventory slug", decklist_properties["default_inventory"]["description"])
+        self.assertEqual("array", decklist_properties["resolutions"]["type"])
+        self.assertIn("explicit row resolutions", decklist_properties["resolutions"]["description"])
+
+        deck_url_schema = DeckUrlImportRequest.model_json_schema()
+        deck_url_properties = deck_url_schema["properties"]
+        self.assertEqual(False, deck_url_properties["dry_run"]["default"])
+        self.assertIn("Archidekt", deck_url_properties["source_url"]["description"])
+        self.assertIn("AetherHub", deck_url_properties["source_url"]["description"])
+        self.assertIn("ManaBox", deck_url_properties["source_url"]["description"])
+        self.assertIn("Moxfield", deck_url_properties["source_url"]["description"])
+        self.assertIn("MTGGoldfish", deck_url_properties["source_url"]["description"])
+        self.assertIn("MTGTop8", deck_url_properties["source_url"]["description"])
+        self.assertIn("TappedOut", deck_url_properties["source_url"]["description"])
+        self.assertIn("Target inventory slug", deck_url_properties["default_inventory"]["description"])
+        self.assertEqual("array", deck_url_properties["resolutions"]["type"])
+        self.assertIn("normalized remote deck payload", deck_url_properties["source_snapshot_token"]["description"])
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]

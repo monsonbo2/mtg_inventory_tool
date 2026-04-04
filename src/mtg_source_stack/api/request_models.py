@@ -149,6 +149,34 @@ DUPLICATE_REQUEST_DESCRIPTION = (
 DUPLICATE_DESCRIPTION_FALLBACK = (
     "Optional description for the duplicated inventory. When omitted, the source inventory description is copied."
 )
+DECKLIST_IMPORT_TEXT_DESCRIPTION = (
+    "Pasted decklist text. Supported v1 forms include '4 Lightning Bolt', '4x Lightning Bolt', "
+    "'SB: 2 Pyroblast', exact-printing hints like '3 Verdant Catacombs (MH2) 260', "
+    "and exported deck text with preambles like 'About' / 'Name <deck>' from deck sites such as Moxfield."
+)
+DECKLIST_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = "Target inventory slug for the pasted decklist import."
+DECKLIST_IMPORT_DRY_RUN_DESCRIPTION = (
+    "When true, validate and resolve the import using the real add-card workflow but roll back before commit."
+)
+DECKLIST_IMPORT_RESOLUTIONS_DESCRIPTION = (
+    "Optional explicit row resolutions for ambiguous decklist lines. "
+    "Each item selects one suggested printing and finish for a specific decklist_line."
+)
+DECK_URL_IMPORT_SOURCE_URL_DESCRIPTION = (
+    "Public deck URL to import. V1 currently supports Archidekt, AetherHub, ManaBox, "
+    "Moxfield, MTGGoldfish, MTGTop8, and TappedOut deck URLs."
+)
+DECK_URL_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = "Target inventory slug for the remote deck URL import."
+DECK_URL_IMPORT_DRY_RUN_DESCRIPTION = DECKLIST_IMPORT_DRY_RUN_DESCRIPTION
+DECK_URL_IMPORT_RESOLUTIONS_DESCRIPTION = (
+    "Optional explicit row resolutions for ambiguous remote deck rows. "
+    "Each item selects one suggested printing and finish for a specific source_position."
+)
+DECK_URL_IMPORT_SOURCE_SNAPSHOT_TOKEN_DESCRIPTION = (
+    "Optional snapshot token returned by a prior dry-run deck URL import. "
+    "When supplied, the backend reuses the short-lived signed normalized remote deck payload "
+    "instead of refetching the provider."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -159,6 +187,42 @@ class InventoryCreateRequest(ApiBaseModel):
     slug: str
     display_name: str
     description: str | None = None
+
+
+class DecklistImportResolutionRequest(ApiBaseModel):
+    decklist_line: int
+    scryfall_id: str
+    finish: FinishInput = Field(description=FINISH_INPUT_DESCRIPTION)
+
+
+class DecklistImportRequest(ApiBaseModel):
+    deck_text: str = Field(description=DECKLIST_IMPORT_TEXT_DESCRIPTION)
+    default_inventory: str = Field(description=DECKLIST_IMPORT_DEFAULT_INVENTORY_DESCRIPTION)
+    dry_run: bool = Field(default=False, description=DECKLIST_IMPORT_DRY_RUN_DESCRIPTION)
+    resolutions: list[DecklistImportResolutionRequest] = Field(
+        default_factory=list,
+        description=DECKLIST_IMPORT_RESOLUTIONS_DESCRIPTION,
+    )
+
+
+class DeckUrlImportResolutionRequest(ApiBaseModel):
+    source_position: int
+    scryfall_id: str
+    finish: FinishInput = Field(description=FINISH_INPUT_DESCRIPTION)
+
+
+class DeckUrlImportRequest(ApiBaseModel):
+    source_url: str = Field(description=DECK_URL_IMPORT_SOURCE_URL_DESCRIPTION)
+    default_inventory: str = Field(description=DECK_URL_IMPORT_DEFAULT_INVENTORY_DESCRIPTION)
+    dry_run: bool = Field(default=False, description=DECK_URL_IMPORT_DRY_RUN_DESCRIPTION)
+    source_snapshot_token: str | None = Field(
+        default=None,
+        description=DECK_URL_IMPORT_SOURCE_SNAPSHOT_TOKEN_DESCRIPTION,
+    )
+    resolutions: list[DeckUrlImportResolutionRequest] = Field(
+        default_factory=list,
+        description=DECK_URL_IMPORT_RESOLUTIONS_DESCRIPTION,
+    )
 
 
 class AddInventoryItemRequest(ApiBaseModel):

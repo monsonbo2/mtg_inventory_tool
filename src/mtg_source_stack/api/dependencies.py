@@ -25,6 +25,7 @@ DEFAULT_RUNTIME_MODE: RuntimeMode = "local_demo"
 DEFAULT_AUTHENTICATED_ACTOR_HEADER = "X-Authenticated-User"
 DEFAULT_AUTHENTICATED_ROLES_HEADER = "X-Authenticated-Roles"
 DEFAULT_FORWARDED_ALLOW_IPS = "127.0.0.1"
+DEFAULT_LOCAL_DEMO_SNAPSHOT_SIGNING_SECRET = "local-demo-deck-url-snapshot-secret"
 APP_ROLES = frozenset({"editor", "admin"})
 
 
@@ -35,11 +36,21 @@ class ApiSettings:
     auto_migrate: bool
     host: str
     port: int
+    csv_import_max_bytes: int = 25 * 1024 * 1024
+    snapshot_signing_secret: str | None = None
     trust_actor_headers: bool = False
     authenticated_actor_header: str = DEFAULT_AUTHENTICATED_ACTOR_HEADER
     authenticated_roles_header: str = DEFAULT_AUTHENTICATED_ROLES_HEADER
     proxy_headers: bool = False
     forwarded_allow_ips: str = DEFAULT_FORWARDED_ALLOW_IPS
+
+    def __post_init__(self) -> None:
+        if self.snapshot_signing_secret is None and self.runtime_mode == "local_demo":
+            object.__setattr__(self, "snapshot_signing_secret", DEFAULT_LOCAL_DEMO_SNAPSHOT_SIGNING_SECRET)
+            return
+        if self.snapshot_signing_secret is not None:
+            normalized = self.snapshot_signing_secret.strip()
+            object.__setattr__(self, "snapshot_signing_secret", normalized or None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +81,10 @@ def auto_migrate_override_from_env() -> bool | None:
 
 def proxy_headers_override_from_env() -> bool | None:
     return _env_optional_bool("MTG_API_PROXY_HEADERS")
+
+
+def snapshot_signing_secret_from_env() -> str | None:
+    return os.getenv("MTG_API_SNAPSHOT_SIGNING_SECRET")
 
 
 def resolve_runtime_mode(raw: str | None) -> RuntimeMode:
@@ -131,6 +146,8 @@ def settings_from_env() -> ApiSettings:
         ),
         host=os.getenv("MTG_API_HOST", "127.0.0.1"),
         port=int(os.getenv("MTG_API_PORT", "8000")),
+        csv_import_max_bytes=int(os.getenv("MTG_API_CSV_IMPORT_MAX_BYTES", str(25 * 1024 * 1024))),
+        snapshot_signing_secret=os.getenv("MTG_API_SNAPSHOT_SIGNING_SECRET"),
         trust_actor_headers=_env_bool("MTG_API_TRUST_ACTOR_HEADERS", False),
         authenticated_actor_header=(
             os.getenv("MTG_API_AUTHENTICATED_ACTOR_HEADER", DEFAULT_AUTHENTICATED_ACTOR_HEADER).strip()

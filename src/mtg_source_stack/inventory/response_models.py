@@ -405,9 +405,22 @@ class InventoryHealthResult(ResponseModel):
 class ExportInventoryCsvResult(ResponseModel):
     inventory: str
     provider: str
+    profile: str
     output_path: str
     rows_exported: int
     filters_text: str
+    rows: list[OwnedInventoryRow]
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedInventoryCsvExportResult(ResponseModel):
+    inventory: str
+    provider: str
+    profile: str
+    filename: str
+    rows_exported: int
+    filters_text: str
+    csv_text: str
     rows: list[OwnedInventoryRow]
 
 

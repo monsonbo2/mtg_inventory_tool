@@ -35,6 +35,7 @@ from mtg_source_stack.inventory.service import (
     bulk_mutate_inventory_items,
     create_inventory,
     duplicate_inventory,
+    export_inventory_csv,
     inventory_health,
     inventory_report,
     list_card_printings_for_oracle,
@@ -45,6 +46,7 @@ from mtg_source_stack.inventory.service import (
     merge_rows,
     reconcile_prices,
     remove_card,
+    render_inventory_csv_export,
     resolve_card_row,
     search_card_names,
     search_cards,
@@ -5864,6 +5866,46 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("inventory,provider,item_id,scryfall_id,card_name", export_text)
             self.assertIn("Lightning Bolt", export_text)
             self.assertNotIn("Counterspell", export_text)
+
+            rendered_export = render_inventory_csv_export(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                profile="default",
+                query="Lightning",
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+                limit=None,
+            )
+            self.assertEqual("default", rendered_export.profile)
+            self.assertEqual("personal-default-export.csv", rendered_export.filename)
+            self.assertEqual(1, rendered_export.rows_exported)
+            self.assertIn("inventory,provider,item_id,scryfall_id,card_name", rendered_export.csv_text)
+            self.assertIn("Lightning Bolt", rendered_export.csv_text)
+            self.assertNotIn("Counterspell", rendered_export.csv_text)
+
+            with self.assertRaises(ValidationError):
+                export_inventory_csv(
+                    db_path,
+                    inventory_slug="personal",
+                    provider="tcgplayer",
+                    output_path=export_path,
+                    profile="unknown-profile",
+                    query=None,
+                    set_code=None,
+                    rarity=None,
+                    finish=None,
+                    condition_code=None,
+                    language_code=None,
+                    location=None,
+                    tags=None,
+                    limit=None,
+                )
 
             # The inventory report command emits the human-readable summary plus
             # machine-readable JSON/CSV artifacts for downstream tooling.

@@ -37,6 +37,7 @@ class ApiBaseModel(BaseModel):
 class ApiErrorBody(ApiBaseModel):
     code: str
     message: str
+    details: dict[str, Any] | None = None
 
 
 class ApiErrorResponse(ApiBaseModel):
@@ -201,6 +202,149 @@ class InventoryItemMutationBaseResponse(ApiBaseModel):
     acquisition_currency: str | None
     notes: str | None
     tags: list[str]
+
+
+class CsvImportRowResponse(InventoryItemMutationBaseResponse):
+    csv_row: int
+
+
+class ImportSummaryResponse(ApiBaseModel):
+    total_card_quantity: int
+    distinct_card_names: int
+    distinct_printings: int
+
+
+class DeckImportSummaryResponse(ImportSummaryResponse):
+    section_card_quantities: dict[str, int]
+
+
+class CsvImportSummaryResponse(ImportSummaryResponse):
+    requested_card_quantity: int
+    unresolved_card_quantity: int
+
+
+class DecklistImportSummaryResponse(DeckImportSummaryResponse):
+    requested_card_quantity: int
+    unresolved_card_quantity: int
+
+
+class DeckUrlImportSummaryResponse(DeckImportSummaryResponse):
+    requested_card_quantity: int
+    unresolved_card_quantity: int
+
+
+class DecklistImportRowResponse(InventoryItemMutationBaseResponse):
+    decklist_line: int
+    section: str
+
+
+class DecklistImportRequestedCardResponse(ApiBaseModel):
+    name: str
+    quantity: int
+    set_code: str | None
+    collector_number: str | None
+    finish: Literal["normal", "foil", "etched"] | None = Field(default=None, description=FINISH_RESPONSE_DESCRIPTION)
+
+
+class ImportResolutionOptionResponse(ApiBaseModel):
+    scryfall_id: str
+    finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
+    name: str
+    set_code: str
+    set_name: str
+    collector_number: str
+    lang: str = Field(description=SEARCH_LANG_RESPONSE_DESCRIPTION)
+    image_uri_small: str | None
+    image_uri_normal: str | None
+
+
+class DecklistImportResolutionIssueResponse(ApiBaseModel):
+    kind: Literal["ambiguous_card_name", "ambiguous_printing", "finish_required"]
+    decklist_line: int
+    section: str
+    requested: DecklistImportRequestedCardResponse
+    options: list[ImportResolutionOptionResponse]
+
+
+class CsvImportRequestedCardResponse(ApiBaseModel):
+    scryfall_id: str | None
+    oracle_id: str | None
+    tcgplayer_product_id: str | None
+    name: str | None
+    quantity: int
+    set_code: str | None
+    set_name: str | None
+    collector_number: str | None
+    lang: str | None = Field(default=None, description=SEARCH_LANG_RESPONSE_DESCRIPTION)
+    finish: Literal["normal", "foil", "etched"] | None = Field(default=None, description=FINISH_RESPONSE_DESCRIPTION)
+
+
+class CsvImportResolutionIssueResponse(ApiBaseModel):
+    kind: Literal["ambiguous_card_name", "ambiguous_printing", "finish_required"]
+    csv_row: int
+    requested: CsvImportRequestedCardResponse
+    options: list[ImportResolutionOptionResponse]
+
+
+class CsvImportResponse(ApiBaseModel):
+    csv_filename: str
+    detected_format: str
+    default_inventory: str | None
+    rows_seen: int
+    rows_written: int
+    ready_to_commit: bool
+    summary: CsvImportSummaryResponse
+    resolution_issues: list[CsvImportResolutionIssueResponse]
+    dry_run: bool
+    imported_rows: list[CsvImportRowResponse]
+
+
+class DecklistImportResponse(ApiBaseModel):
+    deck_name: str | None
+    default_inventory: str | None
+    rows_seen: int
+    rows_written: int
+    ready_to_commit: bool
+    summary: DecklistImportSummaryResponse
+    resolution_issues: list[DecklistImportResolutionIssueResponse]
+    dry_run: bool
+    imported_rows: list[DecklistImportRowResponse]
+
+
+class DeckUrlImportRowResponse(InventoryItemMutationBaseResponse):
+    source_position: int
+    section: str
+
+
+class DeckUrlImportRequestedCardResponse(ApiBaseModel):
+    name: str | None
+    quantity: int
+    set_code: str | None
+    collector_number: str | None
+    finish: Literal["normal", "foil", "etched"] | None = Field(default=None, description=FINISH_RESPONSE_DESCRIPTION)
+
+
+class DeckUrlImportResolutionIssueResponse(ApiBaseModel):
+    kind: Literal["ambiguous_card_name", "ambiguous_printing", "finish_required"]
+    source_position: int
+    section: str
+    requested: DeckUrlImportRequestedCardResponse
+    options: list[ImportResolutionOptionResponse]
+
+
+class DeckUrlImportResponse(ApiBaseModel):
+    source_url: str
+    provider: str
+    deck_name: str | None
+    default_inventory: str | None
+    rows_seen: int
+    rows_written: int
+    ready_to_commit: bool
+    source_snapshot_token: str | None
+    summary: DeckUrlImportSummaryResponse
+    resolution_issues: list[DeckUrlImportResolutionIssueResponse]
+    dry_run: bool
+    imported_rows: list[DeckUrlImportRowResponse]
 
 
 class AddInventoryItemResponse(InventoryItemMutationBaseResponse):
