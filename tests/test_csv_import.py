@@ -455,6 +455,76 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual("USD", item_row["acquisition_currency"])
             self.assertEqual('["misprint"]', item_row["tags_json"])
 
+    def test_import_csv_detects_mtggoldfish_collection_and_prefers_set_name_over_set_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "mtggoldfish_collection.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-mtggoldfish',
+                        'csv-oracle-mtggoldfish',
+                        'MTGGoldfish Product Card',
+                        '7ed',
+                        'Seventh Edition',
+                        '1',
+                        'en',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "Card,Set ID,Set Name,Quantity,Foil,Variation\n"
+                    "MTGGoldfish Product Card,7E,Seventh Edition,2,REGULAR,\n"
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory="personal",
+                dry_run=False,
+            )
+
+            self.assertEqual("mtggoldfish_collection_csv", report["detected_format"])
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("normal", report["imported_rows"][0]["finish"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT quantity, finish
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual(2, item_row["quantity"])
+            self.assertEqual("normal", item_row["finish"])
+
     def test_import_csv_accepts_oracle_id_and_infers_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

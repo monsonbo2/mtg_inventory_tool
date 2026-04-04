@@ -156,6 +156,7 @@ preserve for the first API-backed version of the project.
   - the current first-party format detectors are:
     - `generic_csv`
     - `manabox_collection_csv`
+    - `mtggoldfish_collection_csv`
     - `tcgplayer_legacy_collection_csv`
     - `tcgplayer_app_collection_csv`
   - TCGplayer collection-style CSV uploads are normalized on the backend
@@ -164,6 +165,10 @@ preserve for the first API-backed version of the project.
   - ManaBox collection CSV uploads are also normalized on the backend,
     including `Foil`, `Card Number`, `Purchase Currency`, and boolean metadata
     such as `Misprint` and `Altered`
+  - MTGGoldfish collection CSV uploads are normalized on the backend as well.
+    The adapter prefers `Set Name` for resolution because MTGGoldfish documents
+    that its `Set ID` uses MTGO-style set codes that may differ from other
+    ecosystems
   - unlike the CLI import flow, the HTTP route does not implicitly create new
     inventories from CSV display names; referenced inventories must already
     exist
