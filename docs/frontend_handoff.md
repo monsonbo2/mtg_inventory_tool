@@ -47,9 +47,11 @@ The current intended demo surface is:
 - card search
 - card-name search plus printing lookup
 - add card flow
+- multi-row bulk edit
 - CSV import preview/commit
 - pasted decklist import preview/commit
 - deck URL import preview/commit
+- inventory transfer / duplicate flows
 - CSV export download
 - owned rows table
 - quick edit for quantity, finish, location, notes, and tags
@@ -79,6 +81,15 @@ Use this as the first-pass UI-to-endpoint map:
   Accepts printing-level identifiers like `scryfall_id` and card-level
   `oracle_id`. When `language_code` is omitted, the backend stores the
   resolved printing language.
+- Multi-row bulk edit -> `POST /inventories/{inventory_slug}/items/bulk`
+  Request body is JSON.
+  - use exactly one bulk `operation` per request
+  - current operations are `add_tags`, `remove_tags`, `set_tags`,
+    `clear_tags`, `set_quantity`, `set_notes`, `set_acquisition`,
+    `set_finish`, `set_location`, and `set_condition`
+  - `set_location` and `set_condition` can merge rows when `merge=true`, so
+    the frontend should refetch the owned rows after successful merge-capable
+    bulk mutations instead of assuming all original `item_id`s still exist
 - CSV import preview/commit -> `POST /imports/csv`
   Request body is `multipart/form-data`.
   - use `dry_run=true` for preview
@@ -102,6 +113,18 @@ Use this as the first-pass UI-to-endpoint map:
     refetching the provider
   - current providers are `archidekt`, `aetherhub`, `manabox`, `moxfield`,
     `mtggoldfish`, `mtgtop8`, and `tappedout`
+- Inventory transfer -> `POST /inventories/{source_inventory_slug}/transfer`
+  Request body is JSON.
+  - supports selected `item_ids` or `all_items=true`
+  - use `mode=copy|move`
+  - use `dry_run=true` to preview `copy`, `move`, `merge`, or `fail` outcomes
+  - whole-inventory previews can truncate the returned per-row `results`, so
+    use the summary counts as the authoritative top-level signal
+- Duplicate inventory -> `POST /inventories/{source_inventory_slug}/duplicate`
+  Request body is JSON.
+  - creates a new inventory atomically and copies every source row into it
+  - the response includes both the created inventory and the stable transfer
+    summary payload
 - CSV export download -> `GET /inventories/{inventory_slug}/export.csv`
   Uses `profile=default` today and returns `text/csv`.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`

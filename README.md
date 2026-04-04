@@ -8,6 +8,8 @@ Use it to:
 - import a local MTG catalog and daily pricing snapshots
 - create and maintain one or more personal inventories
 - track condition, finish, language, location, tags, notes, and acquisition data
+- bulk-edit inventory rows through the API
+- copy, move, transfer, and duplicate inventory contents safely through the API
 - export reports and CSVs from the local SQLite database
 - keep a per-edit audit trail for inventory mutations
 
@@ -51,7 +53,9 @@ requests.
   synchronous SQLite-backed service layer. Shared-service identity resolution,
   SQLite WAL/busy-timeout posture, inventory-scoped memberships, and
   backup/restore recovery now exist in the supported single-host operating
-  model, while rollout validation and broader admin-surface policy are still
+  model. The current route surface also includes grouped bulk mutations,
+  inventory transfer / duplication, and import / export preview/commit flows,
+  while rollout validation and broader admin-surface policy are still
   follow-up work.
 
 ## Quick Start

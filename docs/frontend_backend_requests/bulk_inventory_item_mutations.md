@@ -1,10 +1,30 @@
 # Frontend Backend Request: Bulk Inventory Item Mutations
 
-Status: Accepted
-Owner: Unassigned
+Status: Done
+Owner: Boyd
 GitHub issue: Not linked yet
 Implementation PR: Not linked yet
-Last updated: 2026-04-02
+Last updated: 2026-04-04
+
+Resolved. The backend now exposes `POST /inventories/{inventory_slug}/items/bulk`
+on the final generic route shape, and the shipped operation set is broader than
+the original tag-only MVP:
+
+- `add_tags`
+- `remove_tags`
+- `set_tags`
+- `clear_tags`
+- `set_quantity`
+- `set_notes`
+- `set_acquisition`
+- `set_finish`
+- `set_location`
+- `set_condition`
+
+The live mutation remains transactional and all-or-nothing. Merge-capable
+operations reuse the same `merge` / `keep_acquisition` semantics as the
+single-item mutation paths, and frontend clients should refetch rows after
+successful merge-capable bulk updates.
 
 ## Frontend Backend Request
 

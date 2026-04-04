@@ -55,12 +55,22 @@ Current authz model:
   `admin`
 - `POST /inventories` still requires global `editor` / `admin`, and the creator
   becomes `owner`
-- `POST /inventories/{inventory_slug}/items/bulk` currently supports grouped tag
-  operations:
+- `POST /inventories/{inventory_slug}/items/bulk` now supports grouped:
   - `add_tags`
   - `remove_tags`
   - `set_tags`
   - `clear_tags`
+  - `set_quantity`
+  - `set_notes`
+  - `set_acquisition`
+  - `set_finish`
+  - `set_location`
+  - `set_condition`
+- `POST /inventories/{source_inventory_slug}/transfer` now supports atomic
+  selected-row and whole-inventory `copy` / `move` operations, `dry_run`
+  previews, `on_conflict=fail|merge`, and `keep_acquisition`
+- `POST /inventories/{source_inventory_slug}/duplicate` creates a new inventory
+  atomically, copies all source rows into it, and grants the caller `owner`
 - `POST /me/bootstrap` creates one personal `Collection` inventory per
   authenticated global `editor` / `admin`, grants `owner`, and returns that
   same inventory on repeated calls

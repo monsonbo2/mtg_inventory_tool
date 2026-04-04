@@ -5,7 +5,7 @@ from __future__ import annotations
 from io import TextIOWrapper
 import json
 import sqlite3
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from starlette.concurrency import run_in_threadpool
@@ -275,6 +275,28 @@ def _require_csv_import_inventory_write_access(
     )
 
 
+InventoryValidator = Callable[[sqlite3.Connection, str], None]
+
+
+def _build_import_inventory_validator(
+    settings: ApiSettings,
+    context: RequestContext,
+    *,
+    checker: Callable[..., None],
+) -> InventoryValidator | None:
+    if settings.runtime_mode != "shared_service":
+        return None
+
+    def inventory_validator(connection: sqlite3.Connection, inventory_slug: str) -> None:
+        checker(
+            connection,
+            inventory_slug=inventory_slug,
+            context=context,
+        )
+
+    return inventory_validator
+
+
 @router.get("/health", response_model=HealthResponse, responses=_error_responses(500))
 def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
     return {
@@ -393,17 +415,13 @@ async def imports_csv(
 ) -> Any:
     _validate_uploaded_csv_size(file, max_bytes=settings.csv_import_max_bytes)
     resolutions = _parse_resolutions_json_form(resolutions_json)
+    inventory_validator = _build_import_inventory_validator(
+        settings,
+        context,
+        checker=_require_csv_import_inventory_write_access,
+    )
     csv_handle = TextIOWrapper(file.file, encoding="utf-8-sig", newline="")
     try:
-        inventory_validator = None
-        if settings.runtime_mode == "shared_service":
-            def inventory_validator(connection: sqlite3.Connection, inventory_slug: str) -> None:
-                _require_csv_import_inventory_write_access(
-                    connection,
-                    inventory_slug=inventory_slug,
-                    context=context,
-                )
-
         try:
             result = await run_in_threadpool(
                 import_csv_stream,
@@ -442,15 +460,11 @@ async def imports_decklist(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
-    inventory_validator = None
-    if settings.runtime_mode == "shared_service":
-        def inventory_validator(connection: sqlite3.Connection, inventory_slug: str) -> None:
-            _require_import_inventory_write_access(
-                connection,
-                inventory_slug=inventory_slug,
-                context=context,
-            )
-
+    inventory_validator = _build_import_inventory_validator(
+        settings,
+        context,
+        checker=_require_import_inventory_write_access,
+    )
     result = await run_in_threadpool(
         import_decklist_text,
         settings.db_path,
@@ -476,15 +490,11 @@ async def imports_deck_url(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
-    inventory_validator = None
-    if settings.runtime_mode == "shared_service":
-        def inventory_validator(connection: sqlite3.Connection, inventory_slug: str) -> None:
-            _require_import_inventory_write_access(
-                connection,
-                inventory_slug=inventory_slug,
-                context=context,
-            )
-
+    inventory_validator = _build_import_inventory_validator(
+        settings,
+        context,
+        checker=_require_import_inventory_write_access,
+    )
     result = await run_in_threadpool(
         import_deck_url,
         settings.db_path,
