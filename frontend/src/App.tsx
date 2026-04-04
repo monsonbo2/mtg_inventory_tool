@@ -57,14 +57,14 @@ export default function App() {
   });
   const {
     collectionView,
-    expandedItemId,
+    focusedItemId,
     handleClearSelectedItems,
     handleClearVisibleSelectedItems,
     handleCollectionViewChange,
+    handleOpenItemDetails,
     handleSelectAllVisibleItems,
     handleToggleItemSelection,
     selectedItemIds,
-    setExpandedItemId,
     setTableFilters,
     setTableSort,
     tableFilterOptions,
@@ -138,7 +138,7 @@ export default function App() {
   const collectionPanelState = {
     collection: {
       busyItem,
-      expandedItemId,
+      focusedItemId,
       items,
       view: collectionView,
       viewError,
@@ -160,9 +160,9 @@ export default function App() {
     onClearVisibleSelectedItems: handleClearVisibleSelectedItems,
     onCollectionViewChange: handleCollectionViewChange,
     onDelete: handleDeleteItem,
-    onExpandedItemChange: setExpandedItemId,
     onNotice: reportNotice,
     onOpenActivity: () => setActivityOpen(true),
+    onOpenItemDetails: handleOpenItemDetails,
     onPatch: handlePatchItem,
     onSelectAllVisibleItems: handleSelectAllVisibleItems,
     onTableFiltersChange: setTableFilters,

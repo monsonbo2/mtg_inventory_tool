@@ -21,9 +21,9 @@ type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
   collection: {
     busyItem: { itemId: number; action: ItemMutationAction } | null;
-    expandedItemId: number | null;
+    focusedItemId: number | null;
     items: OwnedInventoryRow[];
-    view: "compact" | "table" | "detailed";
+    view: "browse" | "table" | "detailed";
     viewError: string | null;
     viewStatus: AsyncStatus;
   };
@@ -45,8 +45,8 @@ type OwnedCollectionPanelActions = {
   ) => Promise<void>;
   onDelete: (itemId: number, cardName: string) => Promise<void>;
   onNotice: (message: string, tone?: NoticeTone) => void;
-  onCollectionViewChange: (nextView: "compact" | "table" | "detailed") => void;
-  onExpandedItemChange: (itemId: number | null) => void;
+  onCollectionViewChange: (nextView: "browse" | "table" | "detailed") => void;
+  onOpenItemDetails: (itemId: number) => void;
   onTableSortChange: (nextSort: InventoryTableSortState) => void;
   onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
   onBulkTagsSubmit: (
@@ -86,16 +86,16 @@ export function OwnedCollectionPanel(props: {
         <div className="collection-header-controls">
           <div aria-label="Collection view" className="view-toggle" role="group">
             <button
-              aria-pressed={props.state.collection.view === "compact"}
+              aria-pressed={props.state.collection.view === "browse"}
               className={
-                props.state.collection.view === "compact"
+                props.state.collection.view === "browse"
                   ? "view-toggle-button view-toggle-button-active"
                   : "view-toggle-button"
               }
-              onClick={() => props.actions.onCollectionViewChange("compact")}
+              onClick={() => props.actions.onCollectionViewChange("browse")}
               type="button"
             >
-              Compact
+              Browse
             </button>
             <button
               aria-pressed={props.state.collection.view === "table"}
@@ -181,14 +181,11 @@ export function OwnedCollectionPanel(props: {
             variant="error"
           />
         ) : props.state.collection.items.length ? (
-          props.state.collection.view === "compact" ? (
+          props.state.collection.view === "browse" ? (
             <CompactInventoryList
               busyItem={props.state.collection.busyItem}
-              expandedItemId={props.state.collection.expandedItemId}
               items={props.state.collection.items}
-              onDelete={props.actions.onDelete}
-              onExpandedItemChange={props.actions.onExpandedItemChange}
-              onNotice={props.actions.onNotice}
+              onOpenDetails={props.actions.onOpenItemDetails}
               onPatch={props.actions.onPatch}
             />
           ) : props.state.collection.view === "table" ? (
@@ -218,6 +215,7 @@ export function OwnedCollectionPanel(props: {
                 }
                 item={item}
                 key={item.item_id}
+                focused={props.state.collection.focusedItemId === item.item_id}
                 onDelete={props.actions.onDelete}
                 onNotice={props.actions.onNotice}
                 onPatch={props.actions.onPatch}

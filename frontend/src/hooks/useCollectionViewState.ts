@@ -14,9 +14,9 @@ export function useCollectionViewState(options: {
   selectedInventory: string | null;
 }) {
   const [collectionView, setCollectionView] = useState<
-    "compact" | "table" | "detailed"
-  >("compact");
-  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+    "browse" | "table" | "detailed"
+  >("browse");
+  const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [tableSort, setTableSort] = useState<InventoryTableSortState>(null);
   const [tableFilters, setTableFilters] = useState<InventoryTableFilters>(
@@ -24,24 +24,28 @@ export function useCollectionViewState(options: {
   );
 
   useEffect(() => {
+    setFocusedItemId(null);
     setTableSort(null);
     setTableFilters(createDefaultInventoryTableFilters());
-    setExpandedItemId(null);
     setSelectedItemIds([]);
   }, [options.selectedInventory]);
 
   useEffect(() => {
     const visibleItemIds = new Set(options.items.map((item) => item.item_id));
+    setFocusedItemId((current) => (current !== null && visibleItemIds.has(current) ? current : null));
     setSelectedItemIds((current) =>
       current.filter((itemId) => visibleItemIds.has(itemId)),
     );
   }, [options.items]);
 
-  function handleCollectionViewChange(nextView: "compact" | "table" | "detailed") {
+  function handleCollectionViewChange(nextView: "browse" | "table" | "detailed") {
+    setFocusedItemId(null);
     setCollectionView(nextView);
-    if (nextView !== "compact") {
-      setExpandedItemId(null);
-    }
+  }
+
+  function handleOpenItemDetails(itemId: number) {
+    setFocusedItemId(itemId);
+    setCollectionView("detailed");
   }
 
   function handleToggleItemSelection(itemId: number) {
@@ -83,14 +87,14 @@ export function useCollectionViewState(options: {
 
   return {
     collectionView,
-    expandedItemId,
+    focusedItemId,
     handleClearSelectedItems,
     handleClearVisibleSelectedItems,
     handleCollectionViewChange,
+    handleOpenItemDetails,
     handleSelectAllVisibleItems,
     handleToggleItemSelection,
     selectedItemIds,
-    setExpandedItemId,
     setTableFilters,
     setTableSort,
     tableFilterOptions,

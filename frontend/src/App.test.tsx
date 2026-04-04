@@ -227,15 +227,13 @@ describe("App", () => {
 
     render(<App />);
 
+    await userEvent.click(await screen.findByRole("button", { name: "Detailed" }));
+
     const heading = await screen.findByRole("heading", { name: "Lightning Bolt" });
     const card = heading.closest("article");
     expect(card).not.toBeNull();
     const row = within(card!);
-    await userEvent.click(row.getByRole("button", { name: "Edit Lightning Bolt" }));
-
-    await waitFor(() => {
-      expect(row.getByRole("combobox")).toBeEnabled();
-    });
+    expect(row.getByRole("combobox")).toBeEnabled();
 
     await userEvent.selectOptions(row.getByRole("combobox"), "foil");
     await userEvent.click(row.getByRole("button", { name: "Save" }));
@@ -258,10 +256,10 @@ describe("App", () => {
 
     render(<App />);
 
+    await user.click(await screen.findByRole("button", { name: "Detailed" }));
+
     const row = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest("article");
     expect(row).not.toBeNull();
-
-    await user.click(within(row!).getByRole("button", { name: "Edit Lightning Bolt" }));
 
     expect(within(row!).getByRole("combobox")).toBeEnabled();
     expect(within(row!).getByText("Available: Normal, Foil.")).toBeInTheDocument();
@@ -550,7 +548,7 @@ describe("App", () => {
     expect(input).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("defaults to compact collection view and toggles detailed mode without refetching", async () => {
+  it("defaults to browse collection view and toggles detailed mode without refetching", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -575,8 +573,9 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: "Edit Lightning Bolt" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "true");
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.queryByText("Inline edits")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute("aria-pressed", "false");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
@@ -584,29 +583,617 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Detailed" }));
 
-    expect(screen.queryByRole("button", { name: "Edit Lightning Bolt" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Inline edits")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute("aria-pressed", "true");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "Compact" }));
+    await user.click(screen.getByRole("button", { name: "Browse" }));
 
-    expect(await screen.findByRole("button", { name: "Edit Lightning Bolt" })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.queryByText("Inline edits")).not.toBeInTheDocument();
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps one compact row open at a time and clears unsaved drafts when switching rows", async () => {
+  it("saves browse edits directly when a field blurs", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow();
+    const updatedBolt = buildOwnedRow({ quantity: 5, est_value: "10.00" });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 5,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_quantity",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 5,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_quantity: 2,
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeEnabled();
+    expect(
+      boltRowScope.queryByRole("textbox", { name: /Notes/ }),
+    ).not.toBeInTheDocument();
+    const boltQuantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
+    expect(boltRowScope.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+
+    await user.clear(boltQuantityInput);
+    await user.type(boltQuantityInput, "5");
+    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toHaveValue(5);
+    expect(boltRowScope.queryByText("Changes save automatically.")).not.toBeInTheDocument();
+    await user.tab();
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, { quantity: 5 });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedQuantityInput = refreshedBoltScope.getByRole("spinbutton", {
+      name: /Quantity/,
+    });
+    expect(refreshedQuantityInput).toHaveValue(5);
+    const refreshedQuantityField = refreshedQuantityInput.closest("label");
+    expect(refreshedQuantityField).not.toBeNull();
+    expect(within(refreshedQuantityField!).getByText("Saved")).toBeInTheDocument();
+  });
+
+  it("keeps browse validation feedback inside the quantity field instead of the row", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
+
+    await user.clear(quantityInput);
+    await user.type(quantityInput, "0");
+
+    const quantityField = quantityInput.closest("label");
+    expect(quantityField).not.toBeNull();
+    expect(
+      within(quantityField!).getByText("Enter a whole-number quantity greater than 0."),
+    ).toBeInTheDocument();
+    expect(boltRow!.querySelector(".compact-row-status")).toBeNull();
+  });
+
+  it("offers existing collection locations as browse suggestions", async () => {
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({ location: "Binder" }),
+        buildOwnedRow({
+          item_id: 11,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+        buildOwnedRow({
+          item_id: 15,
+          scryfall_id: "giant-growth-1",
+          name: "Giant Growth",
+          set_code: "lea",
+          set_name: "Limited Edition Alpha",
+          collector_number: "207",
+          quantity: 3,
+          location: "Binder",
+          tags: ["pump"],
+          est_value: "6.00",
+          unit_price: "2.00",
+          notes: null,
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const locationInput = within(boltRow!).getByRole("combobox", { name: /Location/ });
+    const listId = locationInput.getAttribute("list");
+    expect(listId).toBeTruthy();
+
+    const locationList = document.getElementById(listId!);
+    expect(locationList).not.toBeNull();
+    const optionValues = Array.from(locationList!.querySelectorAll("option")).map((option) =>
+      option.getAttribute("value"),
+    );
+    expect(optionValues).toEqual(["Binder", "Trade Binder"]);
+  });
+
+  it("updates browse finish from allowed options and refreshes the row value", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      allowed_finishes: ["normal", "foil"],
+      finish: "normal",
+      est_value: "4.00",
+      unit_price: "2.00",
+    });
+    const updatedBolt = buildOwnedRow({
+      allowed_finishes: ["normal", "foil"],
+      finish: "foil",
+      est_value: "9.00",
+      unit_price: "4.50",
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_finish",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "foil",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_finish: "normal",
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const finishSelect = boltRowScope.getByRole("combobox", { name: /Finish/ });
+    expect(finishSelect).toBeEnabled();
+    expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
+
+    await user.selectOptions(finishSelect, "foil");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, { finish: "foil" });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    expect(refreshedBoltScope.getByRole("combobox", { name: /Finish/ })).toHaveValue("foil");
+    expect(refreshedBoltScope.getByText("$9.00")).toBeInTheDocument();
+  });
+
+  it("adds a browse tag on Enter, saves it, clears the input, and keeps focus ready", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      tags: ["burn"],
+    });
+    const updatedBolt = buildOwnedRow({
+      tags: ["burn", "trade"],
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_tags",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn", "trade"],
+      old_tags: ["burn"],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.type(tagsInput, "trade{enter}");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, {
+        tags: ["burn", "trade"],
+      });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
+    expect(refreshedTagsInput).toHaveValue("");
+    await waitFor(() => {
+      expect(refreshedTagsInput).toHaveFocus();
+    });
+    expect(refreshedBoltScope.getByText("burn")).toBeInTheDocument();
+    expect(refreshedBoltScope.getByText("trade")).toBeInTheDocument();
+  });
+
+  it("removes a browse tag once the tags field is active and keeps the tag input focused", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      tags: ["burn", "trade"],
+    });
+    const updatedBolt = buildOwnedRow({
+      tags: ["burn"],
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_tags",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_tags: ["burn", "trade"],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.click(tagsInput);
+    expect(boltRowScope.getByText("Click a tag to remove it.")).toBeInTheDocument();
+    await user.click(boltRowScope.getByRole("button", { name: "Remove tag trade" }));
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, {
+        tags: ["burn"],
+      });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
+    await waitFor(() => {
+      expect(refreshedTagsInput).toHaveFocus();
+    });
+    expect(refreshedBoltScope.getByText("Removed trade.")).toBeInTheDocument();
+    expect(refreshedBoltScope.getByText("burn")).toBeInTheDocument();
+    expect(refreshedBoltScope.queryByText("trade")).not.toBeInTheDocument();
+  });
+
+  it("removes the last browse tag with Backspace when the tag input is empty", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      tags: ["burn", "trade"],
+    });
+    const updatedBolt = buildOwnedRow({
+      tags: ["burn"],
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_tags",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_tags: ["burn", "trade"],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.click(tagsInput);
+    expect(tagsInput).toHaveValue("");
+    await user.keyboard("{Backspace}");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, {
+        tags: ["burn"],
+      });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
+    await waitFor(() => {
+      expect(refreshedTagsInput).toHaveFocus();
+    });
+    expect(refreshedBoltScope.getByText("burn")).toBeInTheDocument();
+    expect(refreshedBoltScope.queryByText("trade")).not.toBeInTheDocument();
+  });
+
+  it("uses the first browse tag click to activate tag removal instead of removing immediately", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          tags: ["burn", "trade"],
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+
+    await user.click(boltRowScope.getByText("trade"));
+
+    expect(patchInventoryItem).not.toHaveBeenCalled();
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+    await waitFor(() => {
+      expect(tagsInput).toHaveFocus();
+    });
+    expect(boltRowScope.getByText("Click a tag to remove it.")).toBeInTheDocument();
+    expect(
+      boltRowScope.getByRole("button", { name: "Remove tag trade" }),
+    ).toBeInTheDocument();
+  });
+
+  it("exits browse tag edit mode on Escape", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          tags: ["burn", "trade"],
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.click(tagsInput);
+    expect(boltRowScope.getByText("Click a tag to remove it.")).toBeInTheDocument();
+    expect(boltRowScope.getByRole("button", { name: "Remove tag trade" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(tagsInput).not.toHaveFocus();
+    });
+    expect(boltRowScope.queryByText("Click a tag to remove it.")).not.toBeInTheDocument();
+    expect(
+      boltRowScope.queryByRole("button", { name: "Remove tag trade" }),
+    ).not.toBeInTheDocument();
+    expect(boltRowScope.getByText("trade")).toBeInTheDocument();
+  });
+
+  it("opens the matching row in detailed view from browse mode", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
       items: [
         buildOwnedRow(),
         buildOwnedRow({
-          item_id: 8,
+          item_id: 11,
           scryfall_id: "counterspell-1",
           name: "Counterspell",
           set_code: "7ed",
@@ -624,36 +1211,31 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: "Edit Lightning Bolt" }));
-
-    let boltRow = screen.getByRole("heading", { name: "Lightning Bolt" }).closest("article");
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
-    const boltQuantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
-
-    await user.clear(boltQuantityInput);
-    await user.type(boltQuantityInput, "5");
-    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toHaveValue(5);
-
-    const counterspellRow = screen.getByRole("heading", { name: "Counterspell" }).closest("article");
+    const counterspellRow = (await screen.findByRole("heading", { name: "Counterspell" })).closest(
+      "article",
+    );
     expect(counterspellRow).not.toBeNull();
-    await user.click(within(counterspellRow!).getByRole("button", { name: "Edit Counterspell" }));
 
-    boltRow = screen.getByRole("heading", { name: "Lightning Bolt" }).closest("article");
-    expect(boltRow).not.toBeNull();
-    expect(within(boltRow!).queryByRole("spinbutton", { name: /Quantity/ })).not.toBeInTheDocument();
+    await user.click(
+      within(counterspellRow!).getByRole("button", { name: "Open details" }),
+    );
 
-    await user.click(within(boltRow!).getByRole("button", { name: "Edit Lightning Bolt" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
 
-    boltRow = screen.getByRole("heading", { name: "Lightning Bolt" }).closest("article");
-    expect(boltRow).not.toBeNull();
-    expect(within(boltRow!).getByRole("spinbutton", { name: /Quantity/ })).toHaveValue(2);
-    expect(
-      within(screen.getByRole("heading", { name: "Counterspell" }).closest("article")!).queryByRole(
-        "spinbutton",
-        { name: /Quantity/ },
-      ),
-    ).not.toBeInTheDocument();
+    const detailedCounterspellRow = (await screen.findByRole("heading", {
+      name: "Counterspell",
+    })).closest("article");
+    expect(detailedCounterspellRow).not.toBeNull();
+    expect(detailedCounterspellRow).toHaveAttribute("data-focused", "true");
+    await waitFor(() => {
+      expect(detailedCounterspellRow).toHaveFocus();
+    });
+    expect(within(detailedCounterspellRow!).getByText("Inline edits")).toBeInTheDocument();
   });
 
   it("opens and closes the activity drawer while keeping audit off the main page by default", async () => {

@@ -16,12 +16,84 @@ export const FINISH_OPTIONS: Array<{ value: FinishValue; label: string }> = [
   { value: "etched", label: "Etched" },
 ];
 
+const TAG_COLOR_PALETTE = [
+  {
+    background: "rgba(248, 113, 113, 0.18)",
+    borderColor: "rgba(248, 113, 113, 0.34)",
+    color: "#fecaca",
+  },
+  {
+    background: "rgba(249, 115, 22, 0.18)",
+    borderColor: "rgba(249, 115, 22, 0.34)",
+    color: "#fed7aa",
+  },
+  {
+    background: "rgba(250, 204, 21, 0.18)",
+    borderColor: "rgba(250, 204, 21, 0.34)",
+    color: "#fde68a",
+  },
+  {
+    background: "rgba(163, 230, 53, 0.18)",
+    borderColor: "rgba(163, 230, 53, 0.34)",
+    color: "#d9f99d",
+  },
+  {
+    background: "rgba(74, 222, 128, 0.18)",
+    borderColor: "rgba(74, 222, 128, 0.34)",
+    color: "#bbf7d0",
+  },
+  {
+    background: "rgba(45, 212, 191, 0.18)",
+    borderColor: "rgba(45, 212, 191, 0.34)",
+    color: "#99f6e4",
+  },
+  {
+    background: "rgba(56, 189, 248, 0.18)",
+    borderColor: "rgba(56, 189, 248, 0.34)",
+    color: "#bae6fd",
+  },
+  {
+    background: "rgba(96, 165, 250, 0.18)",
+    borderColor: "rgba(96, 165, 250, 0.34)",
+    color: "#bfdbfe",
+  },
+  {
+    background: "rgba(129, 140, 248, 0.18)",
+    borderColor: "rgba(129, 140, 248, 0.34)",
+    color: "#d1d7ff",
+  },
+  {
+    background: "rgba(192, 132, 252, 0.18)",
+    borderColor: "rgba(192, 132, 252, 0.34)",
+    color: "#e9d5ff",
+  },
+  {
+    background: "rgba(244, 114, 182, 0.18)",
+    borderColor: "rgba(244, 114, 182, 0.34)",
+    color: "#fbcfe8",
+  },
+  {
+    background: "rgba(251, 146, 60, 0.16)",
+    borderColor: "rgba(251, 146, 60, 0.3)",
+    color: "#fdba74",
+  },
+];
+
 export function parseTags(value: string) {
   return value
     .split(",")
     .map((part) => part.trim().toLowerCase())
     .filter(Boolean)
     .filter((tag, index, tags) => tags.indexOf(tag) === index);
+}
+
+export function getTagChipStyle(tag: string) {
+  let hash = 0;
+  for (const character of tag) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+
+  return TAG_COLOR_PALETTE[hash % TAG_COLOR_PALETTE.length];
 }
 
 export function decimalToNumber(value: string | null) {
@@ -103,6 +175,42 @@ export function getBusyMessage(action: ItemMutationAction) {
 export function normalizeOptionalText(value: string | null | undefined) {
   const text = value?.trim();
   return text ? text : null;
+}
+
+export function getInventoryLocationSuggestions(items: OwnedInventoryRow[]) {
+  const locations = new Map<
+    string,
+    {
+      count: number;
+      label: string;
+    }
+  >();
+
+  for (const item of items) {
+    const location = item.location?.trim();
+    if (!location) {
+      continue;
+    }
+
+    const key = location.toLowerCase();
+    const current = locations.get(key);
+    if (current) {
+      current.count += 1;
+      continue;
+    }
+
+    locations.set(key, {
+      count: 1,
+      label: location,
+    });
+  }
+
+  return Array.from(locations.values())
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.label.localeCompare(right.label, "en", { sensitivity: "base" }),
+    )
+    .map((entry) => entry.label);
 }
 
 export function normalizeInventorySlugInput(value: string) {
