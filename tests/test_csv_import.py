@@ -10,7 +10,7 @@ from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.errors import NotFoundError
+from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.inventory.csv_import import (
     build_add_card_kwargs_from_csv_row,
     import_csv,
@@ -250,6 +250,174 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
                     default_inventory=None,
                     allow_inventory_auto_create=False,
                 )
+
+    def test_import_csv_stream_returns_resolution_issues_and_accepts_resolutions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name, description)
+                    VALUES ('personal', 'Personal', NULL)
+                    """
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json,
+                        is_default_add_searchable
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    [
+                        (
+                            "csv-amb-card-1",
+                            "csv-amb-oracle-1",
+                            "CSV Ambiguous Card",
+                            "tst",
+                            "Test Set",
+                            "1",
+                            "en",
+                            '["normal"]',
+                        ),
+                        (
+                            "csv-amb-card-2",
+                            "csv-amb-oracle-2",
+                            "CSV Ambiguous Card",
+                            "pls",
+                            "Plus Set",
+                            "2",
+                            "en",
+                            '["foil"]',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            csv_body = StringIO(
+                "Inventory,Name,Qty\n"
+                "personal,CSV Ambiguous Card,2\n"
+            )
+            preview = import_csv_stream(
+                db_path,
+                csv_handle=csv_body,
+                csv_filename="inventory_import.csv",
+                default_inventory=None,
+                dry_run=True,
+                allow_inventory_auto_create=False,
+            )
+
+            self.assertFalse(preview["ready_to_commit"])
+            self.assertEqual(1, preview["rows_seen"])
+            self.assertEqual(0, preview["rows_written"])
+            self.assertEqual(2, preview["summary"]["requested_card_quantity"])
+            self.assertEqual(2, preview["summary"]["unresolved_card_quantity"])
+            self.assertEqual(1, len(preview["resolution_issues"]))
+            issue = preview["resolution_issues"][0]
+            self.assertEqual("ambiguous_card_name", issue["kind"])
+            self.assertEqual(2, issue["csv_row"])
+            self.assertEqual("CSV Ambiguous Card", issue["requested"]["name"])
+            self.assertEqual(2, len(issue["options"]))
+
+            with self.assertRaises(ValidationError) as unresolved_commit:
+                import_csv_stream(
+                    db_path,
+                    csv_handle=StringIO("Inventory,Name,Qty\npersonal,CSV Ambiguous Card,2\n"),
+                    csv_filename="inventory_import.csv",
+                    default_inventory=None,
+                    dry_run=False,
+                    allow_inventory_auto_create=False,
+                )
+            self.assertIn("resolution_issues", unresolved_commit.exception.details)
+
+            committed = import_csv_stream(
+                db_path,
+                csv_handle=StringIO("Inventory,Name,Qty\npersonal,CSV Ambiguous Card,2\n"),
+                csv_filename="inventory_import.csv",
+                default_inventory=None,
+                dry_run=False,
+                resolutions=[
+                    {
+                        "csv_row": 2,
+                        "scryfall_id": issue["options"][0]["scryfall_id"],
+                        "finish": issue["options"][0]["finish"],
+                    }
+                ],
+                allow_inventory_auto_create=False,
+            )
+
+            self.assertTrue(committed["ready_to_commit"])
+            self.assertEqual([], committed["resolution_issues"])
+            self.assertEqual(1, committed["rows_written"])
+            self.assertEqual(2, committed["summary"]["total_card_quantity"])
+
+    def test_import_csv_stream_returns_finish_required_for_exact_rows_without_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name, description)
+                    VALUES ('personal', 'Personal', NULL)
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json,
+                        is_default_add_searchable
+                    )
+                    VALUES (
+                        'csv-finish-card',
+                        'csv-finish-oracle',
+                        'CSV Finish Card',
+                        'tst',
+                        'Test Set',
+                        '10',
+                        'en',
+                        '["normal", "foil"]',
+                        1
+                    )
+                    """
+                )
+                connection.commit()
+
+            preview = import_csv_stream(
+                db_path,
+                csv_handle=StringIO("Inventory,Scryfall ID,Qty\npersonal,csv-finish-card,1\n"),
+                csv_filename="inventory_import.csv",
+                default_inventory=None,
+                dry_run=True,
+                allow_inventory_auto_create=False,
+            )
+
+            self.assertFalse(preview["ready_to_commit"])
+            self.assertEqual(1, len(preview["resolution_issues"]))
+            issue = preview["resolution_issues"][0]
+            self.assertEqual("finish_required", issue["kind"])
+            self.assertEqual(2, issue["csv_row"])
+            self.assertEqual(2, len(issue["options"]))
+            self.assertEqual({"normal", "foil"}, {option["finish"] for option in issue["options"]})
 
     def test_import_csv_detects_tcgplayer_legacy_collection_csv(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -964,16 +1132,18 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             )
 
             with self.assertRaisesRegex(
-                ValueError,
-                "CSV row 2: finish is required for this printing when multiple finishes are available. "
-                "Available finishes: normal, foil.",
-            ):
+                ValidationError,
+                "Unresolved CSV import ambiguities remain.",
+            ) as exc_info:
                 import_csv(
                     db_path,
                     csv_path=csv_path,
                     default_inventory=None,
                     dry_run=False,
                 )
+            self.assertIn("resolution_issues", exc_info.exception.details)
+            self.assertEqual("finish_required", exc_info.exception.details["resolution_issues"][0]["kind"])
+            self.assertEqual(2, exc_info.exception.details["resolution_issues"][0]["csv_row"])
 
     def test_import_csv_dry_run_writes_report_and_leaves_db_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

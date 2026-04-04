@@ -934,6 +934,12 @@ class DeckUrlImportTest(unittest.TestCase):
                 self.assertEqual("Remote Deck", preview["deck_name"])
                 self.assertEqual(3, preview["rows_seen"])
                 self.assertEqual(3, preview["rows_written"])
+                self.assertTrue(preview["ready_to_commit"])
+                self.assertIsInstance(preview["source_snapshot_token"], str)
+                self.assertEqual([], preview["resolution_issues"])
+                self.assertEqual(6, preview["summary"]["requested_card_quantity"])
+                self.assertEqual(0, preview["summary"]["unresolved_card_quantity"])
+                self.assertEqual(1, preview["imported_rows"][0]["source_position"])
                 self.assertEqual("commander", preview["imported_rows"][0]["section"])
                 self.assertEqual("foil", preview["imported_rows"][1]["finish"])
                 self.assertEqual("etched", preview["imported_rows"][2]["finish"])
@@ -946,10 +952,13 @@ class DeckUrlImportTest(unittest.TestCase):
                     source_url="https://archidekt.com/decks/123/test",
                     default_inventory="personal",
                     dry_run=False,
+                    source_snapshot_token=preview["source_snapshot_token"],
                 )
 
             self.assertFalse(committed["dry_run"])
             self.assertEqual(3, committed["rows_written"])
+            self.assertTrue(committed["ready_to_commit"])
+            self.assertEqual([], committed["resolution_issues"])
 
             with connect(db_path) as connection:
                 rows = connection.execute(
@@ -1142,6 +1151,150 @@ class DeckUrlImportTest(unittest.TestCase):
                 [("cmd-card", 1), ("main-card-default", 2)],
                 [(row["scryfall_id"], row["quantity"]) for row in rows],
             )
+
+    def test_import_deck_url_returns_resolution_issues_and_accepts_snapshot_resolutions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="remote-ambiguous-main",
+                oracle_id="remote-ambiguous-main-oracle",
+                name="Remote Ambiguous Card",
+                collector_number="1",
+                finishes_json='["normal"]',
+            )
+            self._insert_card(
+                db_path,
+                scryfall_id="remote-ambiguous-other",
+                oracle_id="remote-ambiguous-other-oracle",
+                name="Remote Ambiguous Card",
+                collector_number="2",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="aetherhub",
+                source_url="https://aetherhub.com/Deck/test-ambiguous",
+                deck_name="Ambiguous Remote Deck",
+                cards=[
+                    RemoteDeckCard(
+                        7,
+                        3,
+                        "mainboard",
+                        None,
+                        "normal",
+                        name="Remote Ambiguous Card",
+                    )
+                ],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ):
+                preview = import_deck_url(
+                    db_path,
+                    source_url="https://aetherhub.com/Deck/test-ambiguous",
+                    default_inventory="personal",
+                    dry_run=True,
+                )
+
+            self.assertFalse(preview["ready_to_commit"])
+            self.assertEqual(0, preview["rows_written"])
+            self.assertEqual(3, preview["summary"]["requested_card_quantity"])
+            self.assertEqual(3, preview["summary"]["unresolved_card_quantity"])
+            self.assertEqual(1, len(preview["resolution_issues"]))
+            issue = preview["resolution_issues"][0]
+            self.assertEqual("ambiguous_card_name", issue["kind"])
+            self.assertEqual(7, issue["source_position"])
+            self.assertEqual("mainboard", issue["section"])
+            self.assertEqual(
+                {("remote-ambiguous-main", "normal"), ("remote-ambiguous-other", "normal")},
+                {(option["scryfall_id"], option["finish"]) for option in issue["options"]},
+            )
+
+            with self.assertRaisesRegex(ValidationError, "Unresolved remote deck import ambiguities remain."):
+                import_deck_url(
+                    db_path,
+                    source_url="https://aetherhub.com/Deck/test-ambiguous",
+                    default_inventory="personal",
+                    dry_run=False,
+                    source_snapshot_token=preview["source_snapshot_token"],
+                )
+
+            committed = import_deck_url(
+                db_path,
+                source_url="https://aetherhub.com/Deck/test-ambiguous",
+                default_inventory="personal",
+                dry_run=False,
+                source_snapshot_token=preview["source_snapshot_token"],
+                resolutions=[
+                    {
+                        "source_position": 7,
+                        "scryfall_id": "remote-ambiguous-other",
+                        "finish": "normal",
+                    }
+                ],
+            )
+            self.assertTrue(committed["ready_to_commit"])
+            self.assertEqual("remote-ambiguous-other", committed["imported_rows"][0]["scryfall_id"])
+            self.assertEqual(7, committed["imported_rows"][0]["source_position"])
+
+    def test_import_deck_url_snapshot_token_avoids_refetch_between_preview_and_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="snapshot-card",
+                oracle_id="snapshot-oracle",
+                name="Snapshot Card",
+                collector_number="9",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/456/test",
+                deck_name="Snapshot Deck",
+                cards=[RemoteDeckCard(3, 2, "mainboard", "snapshot-card", "normal")],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ) as fetch_remote_deck_source:
+                preview = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/456/test",
+                    default_inventory="personal",
+                    dry_run=True,
+                )
+                self.assertEqual(1, fetch_remote_deck_source.call_count)
+
+                committed = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/456/test",
+                    default_inventory="personal",
+                    dry_run=False,
+                    source_snapshot_token=preview["source_snapshot_token"],
+                )
+
+            self.assertEqual(1, fetch_remote_deck_source.call_count)
+            self.assertEqual(2, committed["imported_rows"][0]["quantity"])
 
     def test_import_deck_url_rejects_missing_inventory(self) -> None:
         remote_source = RemoteDeckSource(

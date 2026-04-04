@@ -37,3 +37,28 @@ def build_import_summary(imported_rows: list[Mapping[str, Any]]) -> dict[str, An
     if section_card_quantities:
         summary["section_card_quantities"] = section_card_quantities
     return summary
+
+
+def build_resolvable_import_summary(
+    imported_rows: list[Mapping[str, Any]],
+    *,
+    requested_card_quantity: int,
+) -> dict[str, Any]:
+    summary = build_import_summary(imported_rows)
+    imported_quantity = int(summary["total_card_quantity"])
+    summary["requested_card_quantity"] = requested_card_quantity
+    summary["unresolved_card_quantity"] = max(requested_card_quantity - imported_quantity, 0)
+    return summary
+
+
+def build_resolvable_deck_import_summary(
+    imported_rows: list[Mapping[str, Any]],
+    *,
+    requested_card_quantity: int,
+) -> dict[str, Any]:
+    summary = build_resolvable_import_summary(
+        imported_rows,
+        requested_card_quantity=requested_card_quantity,
+    )
+    summary.setdefault("section_card_quantities", {})
+    return summary

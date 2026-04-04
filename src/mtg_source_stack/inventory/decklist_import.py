@@ -18,7 +18,7 @@ from .catalog import (
 from ..db.connection import connect
 from ..db.schema import initialize_database
 from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
-from .import_summary import build_import_summary
+from .import_summary import build_resolvable_deck_import_summary
 from .import_resolution import (
     DecklistRequestedCard,
     DecklistResolutionIssue,
@@ -288,19 +288,6 @@ def _build_decklist_requested_card(entry: ParsedDecklistEntry) -> DecklistReques
         collector_number=entry.collector_number,
         finish=None,
     )
-
-
-def _build_decklist_summary(
-    imported_rows: list[dict[str, Any]],
-    *,
-    requested_card_quantity: int,
-) -> dict[str, Any]:
-    summary = build_import_summary(imported_rows)
-    summary.setdefault("section_card_quantities", {})
-    imported_quantity = int(summary["total_card_quantity"])
-    summary["requested_card_quantity"] = requested_card_quantity
-    summary["unresolved_card_quantity"] = max(requested_card_quantity - imported_quantity, 0)
-    return summary
 
 
 def _normalize_decklist_resolution_selections(
@@ -589,7 +576,7 @@ def import_decklist_text(
         "rows_seen": plan.rows_seen,
         "rows_written": len(imported_rows),
         "ready_to_commit": not plan.resolution_issues,
-        "summary": _build_decklist_summary(
+        "summary": build_resolvable_deck_import_summary(
             imported_rows,
             requested_card_quantity=plan.requested_card_quantity,
         ),

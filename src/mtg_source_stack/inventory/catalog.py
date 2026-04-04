@@ -582,6 +582,32 @@ def list_printing_candidate_rows(
     return rows
 
 
+def list_tcgplayer_product_candidate_rows(
+    connection: sqlite3.Connection,
+    *,
+    tcgplayer_product_id: str,
+    finish: str | None = None,
+) -> list[sqlite3.Row]:
+    product_id = text_or_none(tcgplayer_product_id)
+    if product_id is None:
+        raise ValidationError("tcgplayer_product_id is required.")
+
+    rows = _catalog_resolution_rows(
+        connection,
+        filters=["tcgplayer_product_id = ?"],
+        params=[product_id],
+    )
+    if not rows:
+        raise NotFoundError(f"No card found for tcgplayer_product_id '{product_id}'.")
+
+    rows, normalized_finish = _rows_matching_finish(rows, finish)
+    if normalized_finish is not None and not rows:
+        raise ValidationError(
+            f"No card found for tcgplayer_product_id '{product_id}' with finish '{normalized_finish}'."
+        )
+    return rows
+
+
 def resolve_default_card_row_for_name(
     connection: sqlite3.Connection,
     *,

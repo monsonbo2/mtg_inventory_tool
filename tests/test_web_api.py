@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import importlib.util
+import json
 import socket
 import tempfile
 import threading
@@ -265,6 +266,7 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(["file"], import_request_schema["required"])
             self.assertEqual("binary", import_request_schema["properties"]["file"]["format"])
             self.assertEqual("boolean", import_request_schema["properties"]["dry_run"]["type"])
+            self.assertEqual("string", import_request_schema["properties"]["resolutions_json"]["type"])
 
             import_response_schema = spec["paths"]["/imports/csv"]["post"]["responses"]["200"]["content"][
                 "application/json"
@@ -276,14 +278,24 @@ class WebApiSchemaTest(unittest.TestCase):
                 components[import_response_schema_name]["properties"]["detected_format"]["type"],
             )
             self.assertEqual(
+                "boolean",
+                components[import_response_schema_name]["properties"]["ready_to_commit"]["type"],
+            )
+            self.assertEqual(
                 "CsvImportRowResponse",
                 self._schema_name_from_ref(
                     components[import_response_schema_name]["properties"]["imported_rows"]["items"]["$ref"]
                 ),
             )
             self.assertEqual(
-                "ImportSummaryResponse",
+                "CsvImportSummaryResponse",
                 self._schema_name_from_ref(components[import_response_schema_name]["properties"]["summary"]["$ref"]),
+            )
+            self.assertEqual(
+                "CsvImportResolutionIssueResponse",
+                self._schema_name_from_ref(
+                    components[import_response_schema_name]["properties"]["resolution_issues"]["items"]["$ref"]
+                ),
             )
             decklist_request_schema = spec["paths"]["/imports/decklist"]["post"]["requestBody"]["content"][
                 "application/json"
@@ -338,11 +350,21 @@ class WebApiSchemaTest(unittest.TestCase):
                 ["source_url", "default_inventory"],
                 components[deck_url_request_schema_name]["required"],
             )
+            self.assertEqual(
+                "DeckUrlImportResolutionRequest",
+                self._schema_name_from_ref(
+                    components[deck_url_request_schema_name]["properties"]["resolutions"]["items"]["$ref"]
+                ),
+            )
             deck_url_response_schema = spec["paths"]["/imports/deck-url"]["post"]["responses"]["200"]["content"][
                 "application/json"
             ]["schema"]
             deck_url_response_schema_name = self._schema_name_from_ref(deck_url_response_schema["$ref"])
             self.assertEqual("DeckUrlImportResponse", deck_url_response_schema_name)
+            self.assertEqual(
+                "boolean",
+                components[deck_url_response_schema_name]["properties"]["ready_to_commit"]["type"],
+            )
             self.assertEqual(
                 "DeckUrlImportRowResponse",
                 self._schema_name_from_ref(
@@ -350,8 +372,14 @@ class WebApiSchemaTest(unittest.TestCase):
                 ),
             )
             self.assertEqual(
-                "DeckImportSummaryResponse",
+                "DeckUrlImportSummaryResponse",
                 self._schema_name_from_ref(components[deck_url_response_schema_name]["properties"]["summary"]["$ref"]),
+            )
+            self.assertEqual(
+                "DeckUrlImportResolutionIssueResponse",
+                self._schema_name_from_ref(
+                    components[deck_url_response_schema_name]["properties"]["resolution_issues"]["items"]["$ref"]
+                ),
             )
             export_csv_response = spec["paths"]["/inventories/{inventory_slug}/export.csv"]["get"]["responses"]["200"]
             self.assertIn("text/csv", export_csv_response["content"])
@@ -503,11 +531,17 @@ class WebApiImportHelperTest(unittest.TestCase):
                     "text/csv",
                 )
             },
-            data={"default_inventory": "personal", "dry_run": "true"},
+            data={
+                "default_inventory": "personal",
+                "dry_run": "true",
+                "resolutions_json": json.dumps(
+                    [{"csv_row": 2, "scryfall_id": "api-card-1", "finish": "normal"}]
+                ),
+            },
         )
         body = request.read()
 
-        csv_filename, default_inventory, dry_run, csv_handle = _parse_csv_import_form(
+        csv_filename, default_inventory, dry_run, resolutions, csv_handle = _parse_csv_import_form(
             request.headers["Content-Type"],
             body,
         )
@@ -515,6 +549,10 @@ class WebApiImportHelperTest(unittest.TestCase):
             self.assertEqual("inventory_import.csv", csv_filename)
             self.assertEqual("personal", default_inventory)
             self.assertTrue(dry_run)
+            self.assertEqual(
+                [{"csv_row": 2, "scryfall_id": "api-card-1", "finish": "normal"}],
+                resolutions,
+            )
             self.assertEqual(
                 "Inventory,Scryfall ID,Qty,Cond\npersonal,api-card-1,1,NM\n",
                 csv_handle.read(),
@@ -999,9 +1037,13 @@ class WebApiTest(unittest.TestCase):
                 self.assertTrue(preview_payload["dry_run"])
                 self.assertEqual(1, preview_payload["rows_seen"])
                 self.assertEqual(1, preview_payload["rows_written"])
+                self.assertTrue(preview_payload["ready_to_commit"])
                 self.assertEqual(2, preview_payload["summary"]["total_card_quantity"])
+                self.assertEqual(2, preview_payload["summary"]["requested_card_quantity"])
+                self.assertEqual(0, preview_payload["summary"]["unresolved_card_quantity"])
                 self.assertEqual(1, preview_payload["summary"]["distinct_card_names"])
                 self.assertEqual(1, preview_payload["summary"]["distinct_printings"])
+                self.assertEqual([], preview_payload["resolution_issues"])
                 self.assertEqual("personal", preview_payload["imported_rows"][0]["inventory"])
                 self.assertEqual("Imported by API", preview_payload["imported_rows"][0]["notes"])
                 self.assertEqual("req-import-preview", preview.headers["X-Request-Id"])
@@ -1022,7 +1064,11 @@ class WebApiTest(unittest.TestCase):
                 self.assertFalse(committed_payload["dry_run"])
                 self.assertEqual("generic_csv", committed_payload["detected_format"])
                 self.assertEqual(1, committed_payload["rows_written"])
+                self.assertTrue(committed_payload["ready_to_commit"])
                 self.assertEqual(2, committed_payload["summary"]["total_card_quantity"])
+                self.assertEqual(2, committed_payload["summary"]["requested_card_quantity"])
+                self.assertEqual(0, committed_payload["summary"]["unresolved_card_quantity"])
+                self.assertEqual([], committed_payload["resolution_issues"])
                 self.assertEqual(2, committed_payload["imported_rows"][0]["quantity"])
 
                 with connect(db_path) as connection:
@@ -1045,6 +1091,122 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("Blue Binder", item_row["location"])
                 self.assertEqual("Imported by API", item_row["notes"])
                 self.assertEqual(("api", "local-demo", "req-import-commit"), tuple(audit_row))
+
+    def test_demo_api_csv_import_returns_resolution_issues_and_accepts_resolutions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                with connect(db_path) as connection:
+                    connection.executemany(
+                        """
+                        INSERT INTO mtg_cards (
+                            scryfall_id,
+                            oracle_id,
+                            name,
+                            set_code,
+                            set_name,
+                            collector_number,
+                            lang,
+                            finishes_json,
+                            is_default_add_searchable
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                        """,
+                        [
+                            (
+                                "api-csv-amb-1",
+                                "api-csv-amb-oracle-1",
+                                "API CSV Ambiguous",
+                                "tst",
+                                "Test Set",
+                                "1",
+                                "en",
+                                '["normal"]',
+                            ),
+                            (
+                                "api-csv-amb-2",
+                                "api-csv-amb-oracle-2",
+                                "API CSV Ambiguous",
+                                "pls",
+                                "Plus Set",
+                                "2",
+                                "en",
+                                '["foil"]',
+                            ),
+                        ],
+                    )
+                    connection.commit()
+
+                csv_body = (
+                    "Inventory,Name,Qty\n"
+                    "personal,API CSV Ambiguous,3\n"
+                ).encode("utf-8")
+
+                preview = client.post(
+                    "/imports/csv",
+                    headers={"X-Request-Id": "req-csv-resolution-preview"},
+                    files={"file": ("inventory_import.csv", csv_body, "text/csv")},
+                    data={"dry_run": "true"},
+                )
+                self.assertEqual(200, preview.status_code)
+                preview_payload = preview.json()
+                self.assertFalse(preview_payload["ready_to_commit"])
+                self.assertEqual(3, preview_payload["summary"]["requested_card_quantity"])
+                self.assertEqual(3, preview_payload["summary"]["unresolved_card_quantity"])
+                self.assertEqual(1, len(preview_payload["resolution_issues"]))
+                issue = preview_payload["resolution_issues"][0]
+                self.assertEqual("ambiguous_card_name", issue["kind"])
+                self.assertEqual(2, issue["csv_row"])
+
+                unresolved_commit = client.post(
+                    "/imports/csv",
+                    files={"file": ("inventory_import.csv", csv_body, "text/csv")},
+                )
+                self.assertEqual(400, unresolved_commit.status_code)
+                self.assertIn("resolution_issues", unresolved_commit.json()["error"]["details"])
+
+                committed = client.post(
+                    "/imports/csv",
+                    headers={"X-Request-Id": "req-csv-resolution-commit"},
+                    files={"file": ("inventory_import.csv", csv_body, "text/csv")},
+                    data={
+                        "resolutions_json": json.dumps(
+                            [
+                                {
+                                    "csv_row": 2,
+                                    "scryfall_id": issue["options"][0]["scryfall_id"],
+                                    "finish": issue["options"][0]["finish"],
+                                }
+                            ]
+                        )
+                    },
+                )
+                self.assertEqual(200, committed.status_code)
+                committed_payload = committed.json()
+                self.assertTrue(committed_payload["ready_to_commit"])
+                self.assertEqual([], committed_payload["resolution_issues"])
+                self.assertEqual(1, committed_payload["rows_written"])
+                self.assertEqual(3, committed_payload["summary"]["total_card_quantity"])
+
+                with connect(db_path) as connection:
+                    item_row = connection.execute("SELECT quantity FROM inventory_items").fetchone()
+                    audit_row = connection.execute(
+                        """
+                        SELECT actor_type, actor_id, request_id
+                        FROM inventory_audit_log
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+
+                self.assertEqual(3, item_row["quantity"])
+                self.assertEqual(("api", "local-demo", "req-csv-resolution-commit"), tuple(audit_row))
 
     def test_demo_api_csv_import_detects_tcgplayer_app_collection_format(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1662,8 +1824,14 @@ class WebApiTest(unittest.TestCase):
                     self.assertEqual("Preview Deck", preview_payload["deck_name"])
                     self.assertEqual(1, preview_payload["rows_seen"])
                     self.assertEqual(1, preview_payload["rows_written"])
+                    self.assertTrue(preview_payload["ready_to_commit"])
+                    self.assertIsInstance(preview_payload["source_snapshot_token"], str)
                     self.assertEqual(4, preview_payload["summary"]["total_card_quantity"])
+                    self.assertEqual(4, preview_payload["summary"]["requested_card_quantity"])
+                    self.assertEqual(0, preview_payload["summary"]["unresolved_card_quantity"])
                     self.assertEqual({"mainboard": 4}, preview_payload["summary"]["section_card_quantities"])
+                    self.assertEqual([], preview_payload["resolution_issues"])
+                    self.assertEqual(1, preview_payload["imported_rows"][0]["source_position"])
                     self.assertEqual("mainboard", preview_payload["imported_rows"][0]["section"])
                     self.assertEqual("req-deck-url-preview", preview.headers["X-Request-Id"])
 
@@ -1679,16 +1847,22 @@ class WebApiTest(unittest.TestCase):
                         json={
                             "source_url": "https://archidekt.com/decks/123/test",
                             "default_inventory": "personal",
+                            "source_snapshot_token": preview_payload["source_snapshot_token"],
                         },
                     )
 
                 self.assertEqual(200, committed.status_code)
                 committed_payload = committed.json()
                 self.assertFalse(committed_payload["dry_run"])
-                self.assertEqual("Committed Deck", committed_payload["deck_name"])
-                self.assertEqual(1, committed_payload["summary"]["total_card_quantity"])
-                self.assertEqual({"commander": 1}, committed_payload["summary"]["section_card_quantities"])
-                self.assertEqual("commander", committed_payload["imported_rows"][0]["section"])
+                self.assertEqual("Preview Deck", committed_payload["deck_name"])
+                self.assertTrue(committed_payload["ready_to_commit"])
+                self.assertEqual(4, committed_payload["summary"]["total_card_quantity"])
+                self.assertEqual(4, committed_payload["summary"]["requested_card_quantity"])
+                self.assertEqual(0, committed_payload["summary"]["unresolved_card_quantity"])
+                self.assertEqual({"mainboard": 4}, committed_payload["summary"]["section_card_quantities"])
+                self.assertEqual([], committed_payload["resolution_issues"])
+                self.assertEqual(1, committed_payload["imported_rows"][0]["source_position"])
+                self.assertEqual("mainboard", committed_payload["imported_rows"][0]["section"])
 
                 with connect(db_path) as connection:
                     item_row = connection.execute("SELECT quantity FROM inventory_items").fetchone()
@@ -1701,8 +1875,115 @@ class WebApiTest(unittest.TestCase):
                         """
                     ).fetchone()
 
-                self.assertEqual(1, item_row["quantity"])
+                self.assertEqual(4, item_row["quantity"])
                 self.assertEqual(("api", "local-demo", "req-deck-url-commit"), tuple(audit_row))
+
+    def test_demo_api_deck_url_import_returns_resolution_issues_and_uses_snapshot_token(self) -> None:
+        from mtg_source_stack.inventory.deck_url_import import RemoteDeckCard, RemoteDeckSource
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-remote-main",
+                    oracle_id="api-remote-main-oracle",
+                    name="API Remote Ambiguous Card",
+                    set_code="lea",
+                    set_name="Limited Edition Alpha",
+                    collector_number="161",
+                    finishes_json='["normal"]',
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-remote-other",
+                    oracle_id="api-remote-other-oracle",
+                    name="API Remote Ambiguous Card",
+                    set_code="2ed",
+                    set_name="Unlimited Edition",
+                    collector_number="162",
+                    finishes_json='["normal"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                remote_source = RemoteDeckSource(
+                    provider="aetherhub",
+                    source_url="https://aetherhub.com/Deck/ambiguous",
+                    deck_name="Ambiguous URL Deck",
+                    cards=[
+                        RemoteDeckCard(
+                            9,
+                            2,
+                            "mainboard",
+                            None,
+                            "normal",
+                            name="API Remote Ambiguous Card",
+                        )
+                    ],
+                )
+
+                with patch(
+                    "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                    return_value=remote_source,
+                ) as fetch_remote_deck_source:
+                    preview = client.post(
+                        "/imports/deck-url",
+                        json={
+                            "source_url": "https://aetherhub.com/Deck/ambiguous",
+                            "default_inventory": "personal",
+                            "dry_run": True,
+                        },
+                    )
+                    self.assertEqual(200, preview.status_code)
+                    preview_payload = preview.json()
+                    self.assertFalse(preview_payload["ready_to_commit"])
+                    self.assertEqual(0, preview_payload["rows_written"])
+                    self.assertEqual(2, preview_payload["summary"]["requested_card_quantity"])
+                    self.assertEqual(2, preview_payload["summary"]["unresolved_card_quantity"])
+                    self.assertEqual(1, len(preview_payload["resolution_issues"]))
+                    self.assertEqual(9, preview_payload["resolution_issues"][0]["source_position"])
+                    self.assertIsInstance(preview_payload["source_snapshot_token"], str)
+
+                    unresolved_commit = client.post(
+                        "/imports/deck-url",
+                        json={
+                            "source_url": "https://aetherhub.com/Deck/ambiguous",
+                            "default_inventory": "personal",
+                            "source_snapshot_token": preview_payload["source_snapshot_token"],
+                        },
+                    )
+                    self.assertEqual(400, unresolved_commit.status_code)
+                    self.assertEqual("validation_error", unresolved_commit.json()["error"]["code"])
+                    self.assertIn("resolution_issues", unresolved_commit.json()["error"]["details"])
+                    self.assertIn("source_snapshot_token", unresolved_commit.json()["error"]["details"])
+
+                    committed = client.post(
+                        "/imports/deck-url",
+                        json={
+                            "source_url": "https://aetherhub.com/Deck/ambiguous",
+                            "default_inventory": "personal",
+                            "source_snapshot_token": preview_payload["source_snapshot_token"],
+                            "resolutions": [
+                                {
+                                    "source_position": 9,
+                                    "scryfall_id": "api-remote-other",
+                                    "finish": "normal",
+                                }
+                            ],
+                        },
+                    )
+
+                self.assertEqual(200, committed.status_code)
+                committed_payload = committed.json()
+                self.assertTrue(committed_payload["ready_to_commit"])
+                self.assertEqual([], committed_payload["resolution_issues"])
+                self.assertEqual("api-remote-other", committed_payload["imported_rows"][0]["scryfall_id"])
+                self.assertEqual(1, fetch_remote_deck_source.call_count)
 
     def test_demo_api_export_csv_route_returns_filtered_download(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

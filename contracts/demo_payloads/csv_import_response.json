@@ -4,11 +4,15 @@
   "default_inventory": "personal",
   "rows_seen": 1,
   "rows_written": 1,
+  "ready_to_commit": true,
   "summary": {
     "total_card_quantity": 2,
     "distinct_card_names": 1,
-    "distinct_printings": 1
+    "distinct_printings": 1,
+    "requested_card_quantity": 2,
+    "unresolved_card_quantity": 0
   },
+  "resolution_issues": [],
   "dry_run": true,
   "imported_rows": [
     {

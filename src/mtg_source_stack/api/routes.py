@@ -5,6 +5,7 @@ from __future__ import annotations
 from email.parser import BytesParser
 from email.policy import default as default_email_policy
 from io import StringIO
+import json
 import sqlite3
 from typing import Annotated, Any
 
@@ -107,6 +108,10 @@ CSV_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = (
 )
 CSV_IMPORT_DRY_RUN_DESCRIPTION = (
     "When true, validate and resolve the import using the real add-card workflow but roll back before commit."
+)
+CSV_IMPORT_RESOLUTIONS_JSON_DESCRIPTION = (
+    "Optional JSON array of explicit row resolutions for ambiguous CSV rows. "
+    "Each item selects one suggested printing and finish for a specific csv_row."
 )
 CSV_EXPORT_PROFILE_DESCRIPTION = (
     "CSV export profile. Omit this parameter or use `default` for the canonical inventory export format."
@@ -227,6 +232,10 @@ CSV_IMPORT_REQUEST_BODY = {
                         "default": False,
                         "description": CSV_IMPORT_DRY_RUN_DESCRIPTION,
                     },
+                    "resolutions_json": {
+                        "type": "string",
+                        "description": CSV_IMPORT_RESOLUTIONS_JSON_DESCRIPTION,
+                    },
                 },
             }
         }
@@ -254,7 +263,10 @@ def _decode_text_part(part, *, field_name: str) -> str:
         ) from exc
 
 
-def _parse_csv_import_form(content_type: str | None, body: bytes) -> tuple[str, str | None, bool, StringIO]:
+def _parse_csv_import_form(
+    content_type: str | None,
+    body: bytes,
+) -> tuple[str, str | None, bool, list[dict[str, Any]], StringIO]:
     if not content_type:
         raise ValidationError("Content-Type must be multipart/form-data.")
     media_type = content_type.split(";", 1)[0].strip().lower()
@@ -271,13 +283,14 @@ def _parse_csv_import_form(content_type: str | None, body: bytes) -> tuple[str, 
     csv_bytes: bytes | None = None
     default_inventory: str | None = None
     dry_run = False
+    resolutions: list[dict[str, Any]] = []
     seen_fields: set[str] = set()
 
     for part in message.iter_parts():
         field_name = part.get_param("name", header="content-disposition")
         if not field_name:
             raise ValidationError("Each multipart field must include a name.")
-        if field_name not in {"file", "default_inventory", "dry_run"}:
+        if field_name not in {"file", "default_inventory", "dry_run", "resolutions_json"}:
             raise ValidationError(f"Unexpected multipart field '{field_name}'.")
         if field_name in seen_fields:
             raise ValidationError(f"Multipart field '{field_name}' must not be repeated.")
@@ -291,8 +304,22 @@ def _parse_csv_import_form(content_type: str | None, body: bytes) -> tuple[str, 
         elif field_name == "default_inventory":
             default_inventory_text = _decode_text_part(part, field_name=field_name).strip()
             default_inventory = default_inventory_text or None
-        else:
+        elif field_name == "dry_run":
             dry_run = _parse_form_bool(field_name, _decode_text_part(part, field_name=field_name))
+        else:
+            raw_resolutions = _decode_text_part(part, field_name=field_name).strip()
+            if raw_resolutions:
+                try:
+                    parsed = json.loads(raw_resolutions)
+                except json.JSONDecodeError as exc:
+                    raise ValidationError("Multipart field 'resolutions_json' must be valid JSON.") from exc
+                if not isinstance(parsed, list):
+                    raise ValidationError("Multipart field 'resolutions_json' must decode to a JSON array.")
+                if not all(isinstance(item, dict) for item in parsed):
+                    raise ValidationError(
+                        "Multipart field 'resolutions_json' must decode to a JSON array of objects."
+                    )
+                resolutions = list(parsed)
 
     if csv_bytes is None:
         raise ValidationError("Multipart field 'file' is required.")
@@ -302,7 +329,7 @@ def _parse_csv_import_form(content_type: str | None, body: bytes) -> tuple[str, 
     except UnicodeError as exc:
         raise ValidationError("Uploaded CSV file must be UTF-8 encoded.") from exc
 
-    return csv_filename, default_inventory, dry_run, StringIO(csv_text, newline="")
+    return csv_filename, default_inventory, dry_run, resolutions, StringIO(csv_text, newline="")
 
 
 def _require_import_inventory_write_access(
@@ -414,7 +441,7 @@ async def imports_csv(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
-    csv_filename, default_inventory, dry_run, csv_handle = _parse_csv_import_form(
+    csv_filename, default_inventory, dry_run, resolutions, csv_handle = _parse_csv_import_form(
         request.headers.get("Content-Type"),
         await request.body(),
     )
@@ -435,6 +462,7 @@ async def imports_csv(
             csv_filename=csv_filename,
             default_inventory=default_inventory,
             dry_run=dry_run,
+            resolutions=resolutions,
             allow_inventory_auto_create=False,
             inventory_validator=inventory_validator,
             actor_type=context.actor_type,
@@ -505,6 +533,8 @@ async def imports_deck_url(
         source_url=payload.source_url,
         default_inventory=payload.default_inventory,
         dry_run=payload.dry_run,
+        source_snapshot_token=payload.source_snapshot_token,
+        resolutions=[selection.model_dump() for selection in payload.resolutions],
         inventory_validator=inventory_validator,
         actor_type=context.actor_type,
         actor_id=context.actor_id,

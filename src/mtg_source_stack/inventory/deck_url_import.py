@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 from html import unescape
 import json
 import logging
 from pathlib import Path
 import socket
-from typing import Any, Callable
+import time
+from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -17,11 +20,24 @@ import re
 from ..errors import MtgStackError, NotFoundError, ValidationError
 from ..db.connection import connect
 from ..db.schema import initialize_database
-from .catalog import resolve_default_card_row_for_name
+from .catalog import (
+    list_default_card_name_candidate_rows,
+    list_printing_candidate_rows,
+    resolve_card_row,
+    resolve_default_card_row_for_name,
+)
 from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
 from .decklist_import import ParsedDecklistEntry, parse_decklist_text
-from .import_summary import build_import_summary
+from .import_resolution import (
+    RemoteDeckRequestedCard,
+    RemoteDeckResolutionIssue,
+    RemoteDeckResolutionSelection,
+    build_resolution_options_for_catalog_row,
+)
+from .import_summary import build_resolvable_deck_import_summary
 from .normalize import DEFAULT_CONDITION_CODE, DEFAULT_FINISH, normalize_finish, text_or_none
+from .query_inventory import get_inventory_row
+from .response_models import serialize_response
 
 
 _ARCHIDEKT_HOSTS = {"archidekt.com", "www.archidekt.com"}
@@ -95,6 +111,8 @@ _EXPORTED_DECKLIST_SECTION_HEADERS = {"deck", "mainboard", "main deck", "command
 _REMOTE_FETCH_TIMEOUT_SECONDS = 15
 _REMOTE_FETCH_MAX_BYTES = 2 * 1024 * 1024
 _REMOTE_FETCH_CHUNK_BYTES = 64 * 1024
+_REMOTE_SOURCE_SNAPSHOT_VERSION = 1
+_REMOTE_SOURCE_SNAPSHOT_TTL_SECONDS = 3600
 _PROVIDER_DISPLAY_NAMES = {
     "archidekt": "Archidekt",
     "aetherhub": "AetherHub",
@@ -126,6 +144,16 @@ class RemoteDeckSource:
     source_url: str
     deck_name: str | None
     cards: list[RemoteDeckCard]
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedRemoteDeckImport:
+    source: RemoteDeckSource
+    rows_seen: int
+    requested_card_quantity: int
+    source_snapshot_token: str
+    pending_rows: list[PendingImportRow]
+    resolution_issues: list[RemoteDeckResolutionIssue]
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,6 +426,125 @@ def _fetch_json(url: str) -> Any:
             source_url=url,
             stage="fetch",
         ) from exc
+
+
+def _remote_snapshot_payload(source: RemoteDeckSource) -> dict[str, Any]:
+    return {
+        "version": _REMOTE_SOURCE_SNAPSHOT_VERSION,
+        "expires_at": int(time.time()) + _REMOTE_SOURCE_SNAPSHOT_TTL_SECONDS,
+        "source": {
+            "provider": source.provider,
+            "source_url": source.source_url,
+            "deck_name": source.deck_name,
+            "cards": [
+                {
+                    "source_position": card.source_position,
+                    "quantity": card.quantity,
+                    "section": card.section,
+                    "scryfall_id": card.scryfall_id,
+                    "finish": card.finish,
+                    "name": card.name,
+                    "set_code": card.set_code,
+                    "collector_number": card.collector_number,
+                }
+                for card in source.cards
+            ],
+        },
+    }
+
+
+def _encode_remote_source_snapshot_token(source: RemoteDeckSource) -> str:
+    payload = json.dumps(_remote_snapshot_payload(source), separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii")
+
+
+def _decode_remote_source_snapshot_token(
+    source_snapshot_token: str,
+    *,
+    source_url: str,
+) -> RemoteDeckSource:
+    token_text = text_or_none(source_snapshot_token)
+    if token_text is None:
+        raise ValidationError("source_snapshot_token is required.")
+    try:
+        padded_token = token_text + "=" * (-len(token_text) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded_token.encode("ascii")).decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError, binascii.Error) as exc:
+        raise ValidationError("source_snapshot_token is invalid.") from exc
+
+    if not isinstance(payload, dict):
+        raise ValidationError("source_snapshot_token is invalid.")
+    if payload.get("version") != _REMOTE_SOURCE_SNAPSHOT_VERSION:
+        raise ValidationError("source_snapshot_token version is unsupported. Re-run preview.")
+
+    expires_at = payload.get("expires_at")
+    if not isinstance(expires_at, int):
+        raise ValidationError("source_snapshot_token is invalid.")
+    if expires_at < int(time.time()):
+        raise ValidationError("source_snapshot_token has expired. Re-run preview.")
+
+    raw_source = payload.get("source")
+    if not isinstance(raw_source, dict):
+        raise ValidationError("source_snapshot_token is invalid.")
+    token_source_url = text_or_none(raw_source.get("source_url"))
+    if token_source_url != source_url:
+        raise ValidationError("source_snapshot_token does not match the requested source_url.")
+
+    provider = text_or_none(raw_source.get("provider"))
+    if provider is None:
+        raise ValidationError("source_snapshot_token is invalid.")
+    raw_cards = raw_source.get("cards")
+    if not isinstance(raw_cards, list):
+        raise ValidationError("source_snapshot_token is invalid.")
+
+    cards: list[RemoteDeckCard] = []
+    for raw_card in raw_cards:
+        if not isinstance(raw_card, dict):
+            raise ValidationError("source_snapshot_token is invalid.")
+        try:
+            source_position = int(raw_card.get("source_position"))
+            quantity = int(raw_card.get("quantity"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("source_snapshot_token is invalid.") from exc
+        section = text_or_none(raw_card.get("section"))
+        finish = text_or_none(raw_card.get("finish"))
+        if section is None or finish is None:
+            raise ValidationError("source_snapshot_token is invalid.")
+        cards.append(
+            RemoteDeckCard(
+                source_position=source_position,
+                quantity=quantity,
+                section=section,
+                scryfall_id=text_or_none(raw_card.get("scryfall_id")),
+                finish=normalize_finish(finish),
+                name=text_or_none(raw_card.get("name")),
+                set_code=text_or_none(raw_card.get("set_code")),
+                collector_number=text_or_none(raw_card.get("collector_number")),
+            )
+        )
+
+    return RemoteDeckSource(
+        provider=provider,
+        source_url=token_source_url,
+        deck_name=text_or_none(raw_source.get("deck_name")),
+        cards=cards,
+    )
+
+
+def _load_remote_source_for_import(
+    source_url: str,
+    *,
+    source_snapshot_token: str | None = None,
+) -> tuple[RemoteDeckSource, str]:
+    if text_or_none(source_snapshot_token) is not None:
+        source = _decode_remote_source_snapshot_token(
+            text_or_none(source_snapshot_token) or "",
+            source_url=source_url,
+        )
+        return source, text_or_none(source_snapshot_token) or ""
+
+    source = fetch_remote_deck_source(source_url)
+    return source, _encode_remote_source_snapshot_token(source)
 
 
 def _parse_remote_deck_url(source_url: str) -> Any:
@@ -1327,53 +1474,284 @@ def _build_pending_remote_row(
             card,
             default_inventory=default_inventory,
         ),
-        response_metadata={"section": card.section},
+        response_metadata={"source_position": card.source_position, "section": card.section},
         error_label="Remote deck card",
     )
 
 
-def _load_pending_remote_deck_rows(
-    db_path: str | Path,
-    source: RemoteDeckSource,
+def _remote_card_with_resolved_printing(
+    card: RemoteDeckCard,
     *,
+    scryfall_id: str,
+    finish: str | None = None,
+) -> RemoteDeckCard:
+    return RemoteDeckCard(
+        source_position=card.source_position,
+        quantity=card.quantity,
+        section=card.section,
+        scryfall_id=scryfall_id,
+        finish=finish or card.finish,
+    )
+
+
+def _build_remote_requested_card(card: RemoteDeckCard) -> RemoteDeckRequestedCard:
+    return RemoteDeckRequestedCard(
+        name=card.name,
+        quantity=card.quantity,
+        set_code=card.set_code,
+        collector_number=card.collector_number,
+        finish=card.finish,
+    )
+
+
+def _normalize_remote_resolution_selections(
+    resolutions: list[Mapping[str, Any]] | None,
+) -> dict[int, RemoteDeckResolutionSelection]:
+    if not resolutions:
+        return {}
+
+    normalized: dict[int, RemoteDeckResolutionSelection] = {}
+    for raw_selection in resolutions:
+        source_position = raw_selection.get("source_position")
+        if not isinstance(source_position, int):
+            raise ValidationError("Each remote deck resolution must include an integer source_position.")
+        if source_position in normalized:
+            raise ValidationError("remote deck resolutions must not repeat the same source_position.")
+        scryfall_id = text_or_none(raw_selection.get("scryfall_id"))
+        if scryfall_id is None:
+            raise ValidationError("Each remote deck resolution must include a scryfall_id.")
+        finish_raw = text_or_none(raw_selection.get("finish"))
+        if finish_raw is None:
+            raise ValidationError("Each remote deck resolution must include a finish.")
+        normalized[source_position] = RemoteDeckResolutionSelection(
+            source_position=source_position,
+            scryfall_id=scryfall_id,
+            finish=normalize_finish(finish_raw),
+        )
+    return normalized
+
+
+def _build_remote_resolution_issue(
+    kind: str,
+    card: RemoteDeckCard,
+    *,
+    options: list[Any],
+) -> RemoteDeckResolutionIssue:
+    return RemoteDeckResolutionIssue(
+        kind=kind,
+        source_position=card.source_position,
+        section=card.section,
+        requested=_build_remote_requested_card(card),
+        options=options,
+    )
+
+
+def _probe_remote_card_resolution(
+    connection: sqlite3.Connection,
+    *,
+    card: RemoteDeckCard,
     default_inventory: str | None,
-) -> list[PendingImportRow]:
-    pending_rows: list[PendingImportRow] = []
-    initialize_database(db_path)
-    with connect(db_path) as connection:
-        for card in source.cards:
-            if (
-                card.scryfall_id is None
-                and text_or_none(card.name) is not None
-                and text_or_none(card.set_code) is None
-                and text_or_none(card.collector_number) is None
-            ):
-                resolved_card = resolve_default_card_row_for_name(
+) -> tuple[PendingImportRow | None, RemoteDeckResolutionIssue | None]:
+    if card.scryfall_id is not None:
+        resolve_card_row(
+            connection,
+            scryfall_id=card.scryfall_id,
+            oracle_id=None,
+            tcgplayer_product_id=None,
+            name=None,
+            set_code=None,
+            collector_number=None,
+            lang=None,
+            finish=card.finish,
+        )
+        return _build_pending_remote_row(card, default_inventory=default_inventory), None
+
+    if text_or_none(card.name) is None:
+        raise ValidationError("Remote deck import requires either a printing id or a card name.")
+
+    if text_or_none(card.set_code) is None and text_or_none(card.collector_number) is None:
+        candidate_rows = list_default_card_name_candidate_rows(
+            connection,
+            name=card.name or "",
+            lang=None,
+            finish=card.finish,
+        )
+        oracle_ids = sorted({str(row["oracle_id"]) for row in candidate_rows})
+        if len(oracle_ids) > 1:
+            options: list[Any] = []
+            for oracle_id in oracle_ids:
+                resolved_card = resolve_card_row(
                     connection,
-                    name=card.name,
+                    scryfall_id=None,
+                    oracle_id=oracle_id,
+                    tcgplayer_product_id=None,
+                    name=None,
+                    set_code=None,
+                    collector_number=None,
+                    lang=None,
                     finish=card.finish,
                 )
+                row_options, _ = build_resolution_options_for_catalog_row(
+                    resolved_card,
+                    requested_finish=card.finish,
+                )
+                options.extend(row_options)
+            return None, _build_remote_resolution_issue("ambiguous_card_name", card, options=options)
+
+        resolved_card = resolve_default_card_row_for_name(
+            connection,
+            name=card.name or "",
+            lang=None,
+            finish=card.finish,
+        )
+        return _build_pending_remote_row(
+            _remote_card_with_resolved_printing(
+                card,
+                scryfall_id=str(resolved_card["scryfall_id"]),
+            ),
+            default_inventory=default_inventory,
+        ), None
+
+    candidate_rows = list_printing_candidate_rows(
+        connection,
+        name=card.name or "",
+        set_code=card.set_code,
+        set_name=None,
+        collector_number=card.collector_number,
+        lang=None,
+        finish=card.finish,
+    )
+    if len(candidate_rows) > 1:
+        options: list[Any] = []
+        for row in candidate_rows:
+            row_options, _ = build_resolution_options_for_catalog_row(
+                row,
+                requested_finish=card.finish,
+            )
+            options.extend(row_options)
+        return None, _build_remote_resolution_issue("ambiguous_printing", card, options=options)
+
+    return _build_pending_remote_row(
+        _remote_card_with_resolved_printing(
+            card,
+            scryfall_id=str(candidate_rows[0]["scryfall_id"]),
+        ),
+        default_inventory=default_inventory,
+    ), None
+
+
+def _build_pending_remote_row_from_selection(
+    connection: sqlite3.Connection,
+    *,
+    card: RemoteDeckCard,
+    default_inventory: str | None,
+    selection: RemoteDeckResolutionSelection,
+) -> PendingImportRow:
+    pending_row, resolution_issue = _probe_remote_card_resolution(
+        connection,
+        card=card,
+        default_inventory=default_inventory,
+    )
+    if resolution_issue is None:
+        raise ValidationError(f"Remote deck card {card.source_position} does not require an explicit resolution.")
+
+    valid_options = {
+        (option.scryfall_id, option.finish)
+        for option in resolution_issue.options
+    }
+    if (selection.scryfall_id, selection.finish) not in valid_options:
+        raise ValidationError(
+            f"Remote deck card {card.source_position} resolution does not match any suggested option.",
+            details={"resolution_issue": serialize_response(resolution_issue)},
+        )
+
+    resolve_card_row(
+        connection,
+        scryfall_id=selection.scryfall_id,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name=None,
+        set_code=None,
+        collector_number=None,
+        lang=None,
+        finish=selection.finish,
+    )
+    return _build_pending_remote_row(
+        _remote_card_with_resolved_printing(
+            card,
+            scryfall_id=selection.scryfall_id,
+            finish=selection.finish,
+        ),
+        default_inventory=default_inventory,
+    )
+
+
+def _plan_remote_deck_import(
+    db_path: str | Path,
+    *,
+    source_url: str,
+    source_snapshot_token: str | None,
+    resolutions: list[Mapping[str, Any]] | None,
+    inventory_validator: InventoryValidator | None,
+    default_inventory: str | None,
+) -> PlannedRemoteDeckImport:
+    inventory_slug = text_or_none(default_inventory)
+    if inventory_slug is None:
+        raise ValidationError("default_inventory is required for deck URL imports.")
+
+    initialize_database(db_path)
+    with connect(db_path) as connection:
+        if inventory_validator is not None:
+            inventory_validator(connection, inventory_slug)
+        get_inventory_row(connection, inventory_slug)
+
+    source, snapshot_token = _load_remote_source_for_import(
+        source_url,
+        source_snapshot_token=source_snapshot_token,
+    )
+    requested_card_quantity = sum(card.quantity for card in source.cards)
+    selection_map = _normalize_remote_resolution_selections(resolutions)
+    pending_rows: list[PendingImportRow] = []
+    resolution_issues: list[RemoteDeckResolutionIssue] = []
+
+    with connect(db_path) as connection:
+        for card in source.cards:
+            selection = selection_map.pop(card.source_position, None)
+            if selection is not None:
                 pending_rows.append(
-                    _build_pending_remote_row(
-                        RemoteDeckCard(
-                            source_position=card.source_position,
-                            quantity=card.quantity,
-                            section=card.section,
-                            scryfall_id=str(resolved_card["scryfall_id"]),
-                            finish=card.finish,
-                        ),
+                    _build_pending_remote_row_from_selection(
+                        connection,
+                        card=card,
                         default_inventory=default_inventory,
+                        selection=selection,
                     )
                 )
                 continue
 
-            pending_rows.append(
-                _build_pending_remote_row(
-                    card,
-                    default_inventory=default_inventory,
-                )
+            pending_row, resolution_issue = _probe_remote_card_resolution(
+                connection,
+                card=card,
+                default_inventory=default_inventory,
             )
-    return pending_rows
+            if resolution_issue is not None:
+                resolution_issues.append(resolution_issue)
+                continue
+            if pending_row is None:
+                raise AssertionError("Remote deck probe returned neither a pending row nor a resolution issue.")
+            pending_rows.append(pending_row)
+
+    if selection_map:
+        unknown_positions = ", ".join(str(position) for position in sorted(selection_map))
+        raise ValidationError(f"remote deck resolutions reference unknown source positions: {unknown_positions}.")
+
+    return PlannedRemoteDeckImport(
+        source=source,
+        rows_seen=len(source.cards),
+        requested_card_quantity=requested_card_quantity,
+        source_snapshot_token=snapshot_token,
+        pending_rows=pending_rows,
+        resolution_issues=resolution_issues,
+    )
 
 
 def import_deck_url(
@@ -1382,34 +1760,39 @@ def import_deck_url(
     source_url: str,
     default_inventory: str | None,
     dry_run: bool = False,
+    source_snapshot_token: str | None = None,
+    resolutions: list[Mapping[str, Any]] | None = None,
     before_write: Callable[[], Any] | None = None,
     inventory_validator: InventoryValidator | None = None,
     actor_type: str = "cli",
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
-    inventory_slug = text_or_none(default_inventory)
-    if inventory_slug is None:
-        raise ValidationError("default_inventory is required for deck URL imports.")
-    if inventory_validator is not None:
-        initialize_database(db_path)
-        with connect(db_path) as connection:
-            inventory_validator(connection, inventory_slug)
-
     logger.info(
         "remote_deck_import_start source_url=%s default_inventory=%s dry_run=%s",
         source_url,
         default_inventory,
         dry_run,
     )
-    source = fetch_remote_deck_source(source_url)
+    plan = _plan_remote_deck_import(
+        db_path,
+        source_url=source_url,
+        source_snapshot_token=source_snapshot_token,
+        resolutions=resolutions,
+        inventory_validator=inventory_validator,
+        default_inventory=default_inventory,
+    )
+    if plan.resolution_issues and not dry_run:
+        raise ValidationError(
+            "Unresolved remote deck import ambiguities remain.",
+            details={
+                "resolution_issues": serialize_response(plan.resolution_issues),
+                "source_snapshot_token": plan.source_snapshot_token,
+            },
+        )
     imported_rows = _import_pending_rows(
         db_path,
-        pending_rows=_load_pending_remote_deck_rows(
-            db_path,
-            source,
-            default_inventory=default_inventory,
-        ),
+        pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,
         allow_inventory_auto_create=False,
@@ -1420,21 +1803,27 @@ def import_deck_url(
     )
     logger.info(
         "remote_deck_import_complete provider=%s source_url=%s default_inventory=%s dry_run=%s rows_seen=%s rows_written=%s",
-        source.provider,
-        source.source_url,
+        plan.source.provider,
+        plan.source.source_url,
         default_inventory,
         dry_run,
-        len(source.cards),
+        plan.rows_seen,
         len(imported_rows),
     )
     return {
-        "source_url": source.source_url,
-        "provider": source.provider,
-        "deck_name": source.deck_name,
+        "source_url": plan.source.source_url,
+        "provider": plan.source.provider,
+        "deck_name": plan.source.deck_name,
         "default_inventory": default_inventory,
-        "rows_seen": len(source.cards),
+        "rows_seen": plan.rows_seen,
         "rows_written": len(imported_rows),
-        "summary": build_import_summary(imported_rows),
+        "ready_to_commit": not plan.resolution_issues,
+        "source_snapshot_token": plan.source_snapshot_token,
+        "summary": build_resolvable_deck_import_summary(
+            imported_rows,
+            requested_card_quantity=plan.requested_card_quantity,
+        ),
+        "resolution_issues": serialize_response(plan.resolution_issues),
         "dry_run": dry_run,
         "imported_rows": imported_rows,
     }

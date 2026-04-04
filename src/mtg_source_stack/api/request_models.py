@@ -94,6 +94,14 @@ DECK_URL_IMPORT_SOURCE_URL_DESCRIPTION = (
 )
 DECK_URL_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = "Target inventory slug for the remote deck URL import."
 DECK_URL_IMPORT_DRY_RUN_DESCRIPTION = DECKLIST_IMPORT_DRY_RUN_DESCRIPTION
+DECK_URL_IMPORT_RESOLUTIONS_DESCRIPTION = (
+    "Optional explicit row resolutions for ambiguous remote deck rows. "
+    "Each item selects one suggested printing and finish for a specific source_position."
+)
+DECK_URL_IMPORT_SOURCE_SNAPSHOT_TOKEN_DESCRIPTION = (
+    "Optional snapshot token returned by a prior dry-run deck URL import. "
+    "When supplied, the backend reuses the normalized remote deck payload instead of refetching the provider."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -122,10 +130,24 @@ class DecklistImportRequest(ApiBaseModel):
     )
 
 
+class DeckUrlImportResolutionRequest(ApiBaseModel):
+    source_position: int
+    scryfall_id: str
+    finish: FinishInput = Field(description=FINISH_INPUT_DESCRIPTION)
+
+
 class DeckUrlImportRequest(ApiBaseModel):
     source_url: str = Field(description=DECK_URL_IMPORT_SOURCE_URL_DESCRIPTION)
     default_inventory: str = Field(description=DECK_URL_IMPORT_DEFAULT_INVENTORY_DESCRIPTION)
     dry_run: bool = Field(default=False, description=DECK_URL_IMPORT_DRY_RUN_DESCRIPTION)
+    source_snapshot_token: str | None = Field(
+        default=None,
+        description=DECK_URL_IMPORT_SOURCE_SNAPSHOT_TOKEN_DESCRIPTION,
+    )
+    resolutions: list[DeckUrlImportResolutionRequest] = Field(
+        default_factory=list,
+        description=DECK_URL_IMPORT_RESOLUTIONS_DESCRIPTION,
+    )
 
 
 class AddInventoryItemRequest(ApiBaseModel):

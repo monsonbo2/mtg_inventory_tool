@@ -39,26 +39,33 @@ preserve for the first API-backed version of the project.
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
 - `POST /imports/csv` returns a stable import-report envelope with
   `csv_filename`, `detected_format`, `default_inventory`, `rows_seen`,
-  `rows_written`, `summary`, `dry_run`, and `imported_rows`.
+  `rows_written`, `ready_to_commit`, `summary`, `resolution_issues`,
+  `dry_run`, and `imported_rows`.
 - `POST /imports/decklist` returns a stable import-report envelope with
   `default_inventory`, `rows_seen`, `rows_written`, `ready_to_commit`,
   `summary`, `resolution_issues`, `dry_run`, and `imported_rows`.
 - `POST /imports/deck-url` returns a stable import-report envelope with
   `source_url`, `provider`, `deck_name`, `default_inventory`, `rows_seen`,
-  `rows_written`, `summary`, `dry_run`, and `imported_rows`.
+  `rows_written`, `ready_to_commit`, `source_snapshot_token`, `summary`,
+  `resolution_issues`, `dry_run`, and `imported_rows`.
 - `GET /inventories/{inventory_slug}/export.csv` returns `text/csv` rather
   than JSON and uses `Content-Disposition` for download semantics.
 - The current bulk tag implementation is transactional and all-or-nothing: if
   validation or item lookup fails, no rows in the batch are updated.
 - `POST /imports/csv` is also transactional and all-or-nothing: if one row
   fails validation or lookup, no rows from that upload are committed.
+  Unresolved ambiguity can be previewed in-band, but non-dry-run requests
+  still fail without committing any rows until every required resolution is
+  supplied.
 - `POST /imports/decklist` is also transactional and all-or-nothing:
   unresolved ambiguity can be previewed in-band, but non-dry-run requests
   still fail without committing any rows until every required resolution is
   supplied.
 - `POST /imports/deck-url` is also transactional and all-or-nothing: if one
   fetched deck card fails validation or lookup, no rows from that request are
-  committed.
+  committed. Unresolved ambiguity can be previewed in-band, but non-dry-run
+  requests still fail without committing any rows until every required
+  resolution is supplied.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,
@@ -147,10 +154,17 @@ preserve for the first API-backed version of the project.
   - multipart field `file` is required
   - multipart field `default_inventory` is optional
   - multipart field `dry_run` is optional and defaults to `false`
+  - multipart field `resolutions_json` is optional and accepts a JSON array of
+    `csv_row + scryfall_id + finish` resolutions for ambiguous rows
   - response field `detected_format` identifies whether the backend treated the
     upload as a known source CSV or as generic CSV
-  - response field `summary` includes total imported quantity plus distinct
-    card-name and printing counts
+  - response field `ready_to_commit` is `false` when one or more rows still
+    need explicit resolution
+  - response field `summary` includes total imported quantity, requested card
+    quantity, unresolved card quantity, and distinct card-name and printing
+    counts
+  - response field `resolution_issues` carries structured row-specific
+    ambiguity details during preview
   - `dry_run=true` uses the real add-card workflow but rolls the transaction
     back before commit
   - the route reuses the existing CSV normalization, identifier resolution,
@@ -185,6 +199,11 @@ preserve for the first API-backed version of the project.
     The adapter prefers `Set Name` for resolution because MTGGoldfish documents
     that its `Set ID` uses MTGO-style set codes that may differ from other
     ecosystems
+  - when an uploaded CSV row is ambiguous, the backend currently uses the same
+    issue kinds as the decklist and deck-url import flows:
+    `ambiguous_card_name`, `ambiguous_printing`, and `finish_required`
+  - non-dry-run requests that still have unresolved ambiguity return
+    `400 validation_error` with `error.details.resolution_issues`
   - unlike the CLI import flow, the HTTP route does not implicitly create new
     inventories from CSV display names; referenced inventories must already
     exist
@@ -230,8 +249,21 @@ preserve for the first API-backed version of the project.
   - `source_url` is required
   - `default_inventory` is required
   - `dry_run` is optional and defaults to `false`
-  - response field `summary` includes total imported quantity, distinct card
-    and printing counts, and per-section card quantities
+  - `source_snapshot_token` is optional on the request and lets the caller
+    commit the exact remote deck payload returned during preview without
+    re-fetching the provider page
+  - `resolutions` is optional and lets the caller choose one suggested
+    `scryfall_id + finish` pair for a specific `source_position`
+  - response field `ready_to_commit` is `false` when one or more remote rows
+    still need explicit resolution
+  - response field `source_snapshot_token` contains a short-lived normalized
+    snapshot of the fetched remote deck so preview and commit can stay in sync
+    without another provider fetch
+  - response field `summary` includes total imported quantity, requested card
+    quantity, unresolved card quantity, distinct card and printing counts, and
+    per-section card quantities
+  - response field `resolution_issues` carries structured row-specific
+    ambiguity details during preview
   - `dry_run=true` uses the real add-card workflow but rolls the transaction
     back before commit
   - v1 currently supports public Archidekt, AetherHub, ManaBox, Moxfield,
@@ -258,6 +290,11 @@ preserve for the first API-backed version of the project.
   - TappedOut imports use the public `MTG Arena` export block embedded in the
     deck page; those lines already include set code and collector number, so
     the backend can resolve exact printings through the same decklist importer
+  - each imported remote row exposes a stable `source_position` so the
+    frontend can map preview issues back to specific deck entries
+  - non-dry-run requests that still have unresolved ambiguity return
+    `400 validation_error` with `error.details.resolution_issues` and
+    `error.details.source_snapshot_token`
   - v1 deck URL import does not persist section semantics on inventory rows;
     section information is returned in the import report only
   - referenced inventories must already exist

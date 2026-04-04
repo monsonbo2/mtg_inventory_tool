@@ -5,6 +5,8 @@
   "default_inventory": "personal",
   "rows_seen": 2,
   "rows_written": 2,
+  "ready_to_commit": true,
+  "source_snapshot_token": "demo-snapshot-token",
   "summary": {
     "total_card_quantity": 2,
     "distinct_card_names": 2,
@@ -12,11 +14,15 @@
     "section_card_quantities": {
       "commander": 1,
       "mainboard": 1
-    }
+    },
+    "requested_card_quantity": 2,
+    "unresolved_card_quantity": 0
   },
+  "resolution_issues": [],
   "dry_run": true,
   "imported_rows": [
     {
+      "source_position": 1,
       "section": "commander",
       "inventory": "personal",
       "card_name": "Atraxa, Praetors' Voice",
@@ -36,6 +42,7 @@
       "tags": []
     },
     {
+      "source_position": 2,
       "section": "mainboard",
       "inventory": "personal",
       "card_name": "Sol Ring",

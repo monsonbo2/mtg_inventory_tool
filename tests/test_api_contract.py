@@ -231,11 +231,15 @@ class ApiContractTest(RepoSmokeTestCase):
             "default_inventory": "personal",
             "rows_seen": 1,
             "rows_written": 1,
+            "ready_to_commit": True,
             "summary": {
                 "total_card_quantity": 4,
                 "distinct_card_names": 1,
                 "distinct_printings": 1,
+                "requested_card_quantity": 4,
+                "unresolved_card_quantity": 0,
             },
+            "resolution_issues": [],
             "dry_run": True,
             "imported_rows": [
                 {
@@ -305,15 +309,21 @@ class ApiContractTest(RepoSmokeTestCase):
             "default_inventory": "personal",
             "rows_seen": 1,
             "rows_written": 1,
+            "ready_to_commit": True,
+            "source_snapshot_token": "snapshot-token",
             "summary": {
                 "total_card_quantity": 1,
                 "distinct_card_names": 1,
                 "distinct_printings": 1,
                 "section_card_quantities": {"commander": 1},
+                "requested_card_quantity": 1,
+                "unresolved_card_quantity": 0,
             },
+            "resolution_issues": [],
             "dry_run": True,
             "imported_rows": [
                 {
+                    "source_position": 1,
                     "section": "commander",
                     "inventory": "personal",
                     "card_name": "Lightning Bolt",
@@ -356,7 +366,10 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("generic_csv", csv_import.detected_format)
+        self.assertTrue(csv_import.ready_to_commit)
         self.assertEqual(4, csv_import.summary.total_card_quantity)
+        self.assertEqual(4, csv_import.summary.requested_card_quantity)
+        self.assertEqual(0, csv_import.summary.unresolved_card_quantity)
         self.assertEqual(2, csv_import.imported_rows[0].csv_row)
         self.assertTrue(decklist_import.ready_to_commit)
         self.assertEqual({"mainboard": 4}, decklist_import.summary.section_card_quantities)
@@ -365,7 +378,12 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("mainboard", decklist_import.imported_rows[0].section)
         self.assertEqual(1, decklist_import.imported_rows[0].decklist_line)
         self.assertEqual("archidekt", deck_url_import.provider)
+        self.assertTrue(deck_url_import.ready_to_commit)
         self.assertEqual({"commander": 1}, deck_url_import.summary.section_card_quantities)
+        self.assertEqual(1, deck_url_import.summary.requested_card_quantity)
+        self.assertEqual(0, deck_url_import.summary.unresolved_card_quantity)
+        self.assertEqual("snapshot-token", deck_url_import.source_snapshot_token)
+        self.assertEqual(1, deck_url_import.imported_rows[0].source_position)
         self.assertEqual("commander", deck_url_import.imported_rows[0].section)
         self.assertEqual("validation_error", error.error.code)
 
@@ -403,6 +421,8 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("MTGTop8", deck_url_properties["source_url"]["description"])
         self.assertIn("TappedOut", deck_url_properties["source_url"]["description"])
         self.assertIn("Target inventory slug", deck_url_properties["default_inventory"]["description"])
+        self.assertEqual("array", deck_url_properties["resolutions"]["type"])
+        self.assertIn("normalized remote deck payload", deck_url_properties["source_snapshot_token"]["description"])
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]

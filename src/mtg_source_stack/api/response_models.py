@@ -176,20 +176,19 @@ class DeckImportSummaryResponse(ImportSummaryResponse):
     section_card_quantities: dict[str, int]
 
 
+class CsvImportSummaryResponse(ImportSummaryResponse):
+    requested_card_quantity: int
+    unresolved_card_quantity: int
+
+
 class DecklistImportSummaryResponse(DeckImportSummaryResponse):
     requested_card_quantity: int
     unresolved_card_quantity: int
 
 
-class CsvImportResponse(ApiBaseModel):
-    csv_filename: str
-    detected_format: str
-    default_inventory: str | None
-    rows_seen: int
-    rows_written: int
-    summary: ImportSummaryResponse
-    dry_run: bool
-    imported_rows: list[CsvImportRowResponse]
+class DeckUrlImportSummaryResponse(DeckImportSummaryResponse):
+    requested_card_quantity: int
+    unresolved_card_quantity: int
 
 
 class DecklistImportRowResponse(InventoryItemMutationBaseResponse):
@@ -225,6 +224,39 @@ class DecklistImportResolutionIssueResponse(ApiBaseModel):
     options: list[ImportResolutionOptionResponse]
 
 
+class CsvImportRequestedCardResponse(ApiBaseModel):
+    scryfall_id: str | None
+    oracle_id: str | None
+    tcgplayer_product_id: str | None
+    name: str | None
+    quantity: int
+    set_code: str | None
+    set_name: str | None
+    collector_number: str | None
+    lang: str | None = Field(default=None, description=SEARCH_LANG_RESPONSE_DESCRIPTION)
+    finish: Literal["normal", "foil", "etched"] | None = Field(default=None, description=FINISH_RESPONSE_DESCRIPTION)
+
+
+class CsvImportResolutionIssueResponse(ApiBaseModel):
+    kind: Literal["ambiguous_card_name", "ambiguous_printing", "finish_required"]
+    csv_row: int
+    requested: CsvImportRequestedCardResponse
+    options: list[ImportResolutionOptionResponse]
+
+
+class CsvImportResponse(ApiBaseModel):
+    csv_filename: str
+    detected_format: str
+    default_inventory: str | None
+    rows_seen: int
+    rows_written: int
+    ready_to_commit: bool
+    summary: CsvImportSummaryResponse
+    resolution_issues: list[CsvImportResolutionIssueResponse]
+    dry_run: bool
+    imported_rows: list[CsvImportRowResponse]
+
+
 class DecklistImportResponse(ApiBaseModel):
     deck_name: str | None
     default_inventory: str | None
@@ -238,7 +270,24 @@ class DecklistImportResponse(ApiBaseModel):
 
 
 class DeckUrlImportRowResponse(InventoryItemMutationBaseResponse):
+    source_position: int
     section: str
+
+
+class DeckUrlImportRequestedCardResponse(ApiBaseModel):
+    name: str | None
+    quantity: int
+    set_code: str | None
+    collector_number: str | None
+    finish: Literal["normal", "foil", "etched"] | None = Field(default=None, description=FINISH_RESPONSE_DESCRIPTION)
+
+
+class DeckUrlImportResolutionIssueResponse(ApiBaseModel):
+    kind: Literal["ambiguous_card_name", "ambiguous_printing", "finish_required"]
+    source_position: int
+    section: str
+    requested: DeckUrlImportRequestedCardResponse
+    options: list[ImportResolutionOptionResponse]
 
 
 class DeckUrlImportResponse(ApiBaseModel):
@@ -248,7 +297,10 @@ class DeckUrlImportResponse(ApiBaseModel):
     default_inventory: str | None
     rows_seen: int
     rows_written: int
-    summary: DeckImportSummaryResponse
+    ready_to_commit: bool
+    source_snapshot_token: str | None
+    summary: DeckUrlImportSummaryResponse
+    resolution_issues: list[DeckUrlImportResolutionIssueResponse]
     dry_run: bool
     imported_rows: list[DeckUrlImportRowResponse]
 
