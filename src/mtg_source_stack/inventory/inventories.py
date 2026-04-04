@@ -10,7 +10,7 @@ from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import AuthorizationError, ConflictError, ValidationError
 from .access import grant_inventory_membership_with_connection, is_global_admin
-from .normalize import slugify_inventory_name, text_or_none
+from .normalize import normalize_inventory_slug, slugify_inventory_name, text_or_none
 from .response_models import DefaultInventoryBootstrapResult, InventoryCreateResult, InventoryListRow
 
 
@@ -100,30 +100,49 @@ def create_inventory(
 ) -> InventoryCreateResult:
     db_file = require_current_schema(db_path)
     with connect(db_file) as connection:
-        try:
-            cursor = connection.execute(
-                """
-                INSERT INTO inventories (slug, display_name, description)
-                VALUES (?, ?, ?)
-                """,
-                (slug, display_name, description),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise ConflictError(f"Inventory '{slug}' already exists.") from exc
-        if actor_id is not None:
-            grant_inventory_membership_with_connection(
-                connection,
-                inventory_id=int(cursor.lastrowid),
-                actor_id=actor_id,
-                role="owner",
-            )
-        connection.commit()
-        return InventoryCreateResult(
-            inventory_id=int(cursor.lastrowid),
+        created = create_inventory_with_connection(
+            connection,
             slug=slug,
             display_name=display_name,
-            description=text_or_none(description),
+            description=description,
+            actor_id=actor_id,
         )
+        connection.commit()
+        return created
+
+
+def create_inventory_with_connection(
+    connection: sqlite3.Connection,
+    *,
+    slug: str,
+    display_name: str,
+    description: str | None,
+    actor_id: str | None = None,
+) -> InventoryCreateResult:
+    slug = normalize_inventory_slug(slug)
+    try:
+        cursor = connection.execute(
+            """
+            INSERT INTO inventories (slug, display_name, description)
+            VALUES (?, ?, ?)
+            """,
+            (slug, display_name, description),
+        )
+    except sqlite3.IntegrityError as exc:
+        raise ConflictError(f"Inventory '{slug}' already exists.") from exc
+    if actor_id is not None:
+        grant_inventory_membership_with_connection(
+            connection,
+            inventory_id=int(cursor.lastrowid),
+            actor_id=actor_id,
+            role="owner",
+        )
+    return InventoryCreateResult(
+        inventory_id=int(cursor.lastrowid),
+        slug=slug,
+        display_name=display_name,
+        description=text_or_none(description),
+    )
 
 
 def ensure_default_inventory(

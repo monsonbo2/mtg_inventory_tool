@@ -1,0 +1,40 @@
+{
+  "csv_filename": "inventory_import.csv",
+  "detected_format": "generic_csv",
+  "default_inventory": "personal",
+  "rows_seen": 1,
+  "rows_written": 1,
+  "ready_to_commit": true,
+  "summary": {
+    "total_card_quantity": 2,
+    "distinct_card_names": 1,
+    "distinct_printings": 1,
+    "requested_card_quantity": 2,
+    "unresolved_card_quantity": 0
+  },
+  "resolution_issues": [],
+  "dry_run": true,
+  "imported_rows": [
+    {
+      "csv_row": 2,
+      "inventory": "personal",
+      "card_name": "Lightning Bolt",
+      "set_code": "lea",
+      "set_name": "Limited Edition Alpha",
+      "collector_number": "161",
+      "scryfall_id": "demo-bolt",
+      "item_id": 42,
+      "quantity": 2,
+      "finish": "normal",
+      "condition_code": "NM",
+      "language_code": "en",
+      "location": "Blue Binder",
+      "acquisition_price": null,
+      "acquisition_currency": null,
+      "notes": "CSV import row",
+      "tags": [
+        "bulk import"
+      ]
+    }
+  ]
+}

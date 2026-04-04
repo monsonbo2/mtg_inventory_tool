@@ -33,6 +33,7 @@ from .dependencies import (
     resolve_proxy_headers,
     resolve_runtime_mode,
     settings_from_env,
+    snapshot_signing_secret_from_env,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
@@ -88,6 +89,7 @@ def validate_runtime_settings(settings: ApiSettings) -> None:
     actor_header = settings.authenticated_actor_header.strip()
     roles_header = settings.authenticated_roles_header.strip()
     forwarded_allow_ips = settings.forwarded_allow_ips.strip()
+    snapshot_signing_secret = (settings.snapshot_signing_secret or "").strip()
 
     if settings.runtime_mode != "shared_service":
         return
@@ -105,6 +107,10 @@ def validate_runtime_settings(settings: ApiSettings) -> None:
         raise ValueError("shared_service cannot reuse X-Actor-Id for verified identity or roles.")
     if settings.proxy_headers and not forwarded_allow_ips:
         raise ValueError("shared_service requires a non-empty forwarded_allow_ips value when proxy headers are enabled.")
+    if not snapshot_signing_secret:
+        raise ValueError(
+            "shared_service requires a non-empty snapshot_signing_secret; configure MTG_API_SNAPSHOT_SIGNING_SECRET."
+        )
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -317,6 +323,7 @@ def settings_from_cli_args(args: argparse.Namespace) -> ApiSettings:
         ),
         host=args.host,
         port=int(args.port),
+        snapshot_signing_secret=snapshot_signing_secret_from_env(),
         trust_actor_headers=defaults.trust_actor_headers,
         authenticated_actor_header=defaults.authenticated_actor_header,
         authenticated_roles_header=defaults.authenticated_roles_header,

@@ -16,6 +16,8 @@ from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER
 from mtg_source_stack.inventory.response_models import (
     AddCardResult,
     BulkInventoryItemMutationResult,
+    InventoryDuplicateResult,
+    InventoryTransferResult,
     MergeRowsResult,
     RemoveCardResult,
     SetAcquisitionResult,
@@ -32,15 +34,19 @@ from mtg_source_stack.inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
     create_inventory,
+    duplicate_inventory,
+    export_inventory_csv,
     inventory_health,
     inventory_report,
     list_card_printings_for_oracle,
     list_inventory_audit_events,
+    list_inventory_memberships,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
     reconcile_prices,
     remove_card,
+    render_inventory_csv_export,
     resolve_card_row,
     search_card_names,
     search_cards,
@@ -52,6 +58,7 @@ from mtg_source_stack.inventory.service import (
     set_quantity,
     set_tags,
     split_row,
+    transfer_inventory_items,
     valuation_filtered,
 )
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
@@ -170,6 +177,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
         finish: str = "normal",
         language_code: str = "en",
         location: str = "",
+        acquisition_price: str | None = None,
+        acquisition_currency: str | None = None,
         notes: str | None = None,
         tags_json: str = "[]",
     ) -> None:
@@ -188,10 +197,12 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finish,
                     language_code,
                     location,
+                    acquisition_price,
+                    acquisition_currency,
                     notes,
                     tags_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -201,6 +212,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     finish,
                     language_code,
                     location,
+                    acquisition_price,
+                    acquisition_currency,
                     notes,
                     tags_json,
                 ),
@@ -1905,6 +1918,1632 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(1, audit_rows[0].metadata["bulk_count"])
             self.assertEqual("req-bulk-clear", audit_rows[0].request_id)
 
+    def test_bulk_mutate_inventory_items_applies_quantity_notes_and_acquisition_operations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=1,
+                location="Binder A",
+                notes="old note",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=3,
+                location="Binder B",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            quantity_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_quantity",
+                item_ids=item_ids,
+                tags=None,
+                quantity=4,
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-quantity",
+            )
+            self.assertEqual("set_quantity", quantity_result.operation)
+            self.assertEqual(item_ids, quantity_result.updated_item_ids)
+            self.assertEqual(2, quantity_result.updated_count)
+
+            notes_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_notes",
+                item_ids=item_ids,
+                tags=None,
+                notes="featured",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-notes",
+            )
+            self.assertEqual("set_notes", notes_result.operation)
+            self.assertEqual(item_ids, notes_result.updated_item_ids)
+
+            clear_notes_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_notes",
+                item_ids=[item_ids[1]],
+                tags=None,
+                clear_notes=True,
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-clear-notes",
+            )
+            self.assertEqual([item_ids[1]], clear_notes_result.updated_item_ids)
+
+            acquisition_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_acquisition",
+                item_ids=item_ids,
+                tags=None,
+                acquisition_price=Decimal("2.50"),
+                acquisition_currency="usd",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-acquisition",
+            )
+            self.assertEqual("set_acquisition", acquisition_result.operation)
+            self.assertEqual(item_ids, acquisition_result.updated_item_ids)
+
+            clear_acquisition_result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_acquisition",
+                item_ids=[item_ids[0]],
+                tags=None,
+                clear_acquisition=True,
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-clear-acquisition",
+            )
+            self.assertEqual([item_ids[0]], clear_acquisition_result.updated_item_ids)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual(4, row_by_id[item_ids[0]].quantity)
+            self.assertEqual(4, row_by_id[item_ids[1]].quantity)
+            self.assertEqual("featured", row_by_id[item_ids[0]].notes)
+            self.assertIsNone(row_by_id[item_ids[1]].notes)
+            self.assertIsNone(row_by_id[item_ids[0]].acquisition_price)
+            self.assertIsNone(row_by_id[item_ids[0]].acquisition_currency)
+            self.assertEqual(Decimal("2.50"), row_by_id[item_ids[1]].acquisition_price)
+            self.assertEqual("USD", row_by_id[item_ids[1]].acquisition_currency)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("set_acquisition", audit_rows[0].action)
+            self.assertTrue(audit_rows[0].metadata["bulk_operation"])
+            self.assertEqual("set_acquisition", audit_rows[0].metadata["bulk_kind"])
+            self.assertTrue(audit_rows[0].metadata["clear"])
+            self.assertEqual("req-bulk-clear-acquisition", audit_rows[0].request_id)
+
+    def test_bulk_mutate_inventory_items_applies_finish_and_skips_noop_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal","foil"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="normal",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="foil",
+                location="Binder B",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_finish",
+                item_ids=item_ids,
+                tags=None,
+                finish="foil",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-finish",
+            )
+            self.assertEqual("set_finish", result.operation)
+            self.assertEqual([item_ids[0]], result.updated_item_ids)
+            self.assertEqual(1, result.updated_count)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("foil", row_by_id[item_ids[0]].finish)
+            self.assertEqual("foil", row_by_id[item_ids[1]].finish)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("set_finish", audit_rows[0].action)
+            self.assertEqual("normal", audit_rows[0].metadata["old_finish"])
+            self.assertEqual("foil", audit_rows[0].metadata["new_finish"])
+            self.assertEqual("req-bulk-finish", audit_rows[0].request_id)
+
+    def test_bulk_mutate_inventory_items_set_finish_conflict_rolls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal","foil"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="normal",
+                location="",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="foil",
+                location="",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="normal",
+                location="Binder C",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            with self.assertRaisesRegex(ConflictError, "Changing finish would collide with an existing inventory row"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_finish",
+                    item_ids=[item_ids[2], item_ids[0]],
+                    tags=None,
+                    finish="foil",
+                )
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("normal", row_by_id[item_ids[0]].finish)
+            self.assertEqual("foil", row_by_id[item_ids[1]].finish)
+            self.assertEqual("normal", row_by_id[item_ids[2]].finish)
+
+    def test_bulk_mutate_inventory_items_set_finish_rejects_unsupported_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="normal",
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "Finish 'foil' is not available for this card printing",
+            ):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_finish",
+                    item_ids=[item_id],
+                    tags=None,
+                    finish="foil",
+                )
+
+    def test_bulk_mutate_inventory_items_applies_location_and_skips_noop_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal","foil"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="normal",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                finish="foil",
+                location="Binder B",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_location",
+                item_ids=item_ids,
+                tags=None,
+                location="Binder B",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-location",
+            )
+            self.assertEqual("set_location", result.operation)
+            self.assertEqual([item_ids[0]], result.updated_item_ids)
+            self.assertEqual(1, result.updated_count)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("Binder B", row_by_id[item_ids[0]].location)
+            self.assertEqual("Binder B", row_by_id[item_ids[1]].location)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("set_location", audit_rows[0].action)
+            self.assertEqual("Binder A", audit_rows[0].metadata["old_location"])
+            self.assertEqual("Binder B", audit_rows[0].metadata["new_location"])
+            self.assertEqual("req-bulk-location", audit_rows[0].request_id)
+
+    def test_bulk_mutate_inventory_items_clear_location_normalizes_to_none(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Binder A",
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_location",
+                item_ids=[item_id],
+                tags=None,
+                clear_location=True,
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-clear-location",
+            )
+            self.assertEqual([item_id], result.updated_item_ids)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertIsNone(rows[0].location)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("Binder A", audit_rows[0].metadata["old_location"])
+            self.assertIsNone(audit_rows[0].metadata["new_location"])
+            self.assertEqual("Binder A", audit_rows[0].before["location"])
+            self.assertIsNone(audit_rows[0].after["location"])
+
+    def test_bulk_mutate_inventory_items_set_location_conflict_rolls_back_without_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                location="Binder B",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="LP",
+                location="Binder C",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            with self.assertRaisesRegex(ConflictError, "Changing location would collide with an existing inventory row"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_location",
+                    item_ids=[item_ids[2], item_ids[0]],
+                    tags=None,
+                    location="Binder B",
+                )
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("Binder A", row_by_id[item_ids[0]].location)
+            self.assertEqual("Binder B", row_by_id[item_ids[1]].location)
+            self.assertEqual("Binder C", row_by_id[item_ids[2]].location)
+
+    def test_bulk_mutate_inventory_items_set_location_merge_succeeds_and_keeps_target_acquisition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=2,
+                location="Binder A",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+                notes="source note",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=3,
+                location="Binder B",
+                acquisition_price="2.50",
+                acquisition_currency="USD",
+                notes="target note",
+                tags_json='["trade"]',
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_location",
+                item_ids=[item_ids[0]],
+                tags=None,
+                location="Binder B",
+                merge=True,
+                keep_acquisition="target",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-location-merge",
+            )
+            self.assertEqual("set_location", result.operation)
+            self.assertEqual([item_ids[0]], result.updated_item_ids)
+            self.assertEqual(1, result.updated_count)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(rows))
+            self.assertEqual(5, rows[0].quantity)
+            self.assertEqual("Binder B", rows[0].location)
+            self.assertEqual(Decimal("2.50"), rows[0].acquisition_price)
+            self.assertEqual("USD", rows[0].acquisition_currency)
+            self.assertCountEqual(["deck", "trade"], rows[0].tags)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            location_audits = [row for row in audit_rows if row.action == "set_location"]
+            self.assertEqual(2, len(location_audits))
+            self.assertTrue(all(row.metadata["merged"] for row in location_audits))
+            self.assertTrue(all(row.metadata["keep_acquisition"] == "target" for row in location_audits))
+
+    def test_bulk_mutate_inventory_items_set_location_rejects_invalid_field_combinations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(ValidationError, "Use either location or clear_location for set_location"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_location",
+                    item_ids=[item_id],
+                    tags=None,
+                    location="Binder A",
+                    clear_location=True,
+                )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "keep_acquisition only applies when merge is true for set_location",
+            ):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_location",
+                    item_ids=[item_id],
+                    tags=None,
+                    location="Binder A",
+                    keep_acquisition="target",
+                )
+
+    def test_bulk_mutate_inventory_items_applies_condition_and_skips_noop_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, finishes_json='["normal","foil"]')
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                finish="normal",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="LP",
+                finish="foil",
+                location="Binder B",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_condition",
+                item_ids=item_ids,
+                tags=None,
+                condition_code="LP",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-condition",
+            )
+            self.assertEqual("set_condition", result.operation)
+            self.assertEqual([item_ids[0]], result.updated_item_ids)
+            self.assertEqual(1, result.updated_count)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("LP", row_by_id[item_ids[0]].condition_code)
+            self.assertEqual("LP", row_by_id[item_ids[1]].condition_code)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("set_condition", audit_rows[0].action)
+            self.assertEqual("NM", audit_rows[0].metadata["old_condition_code"])
+            self.assertEqual("LP", audit_rows[0].metadata["new_condition_code"])
+            self.assertEqual("req-bulk-condition", audit_rows[0].request_id)
+
+    def test_bulk_mutate_inventory_items_set_condition_conflict_rolls_back_without_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="LP",
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                condition_code="NM",
+                location="Binder B",
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            with self.assertRaisesRegex(ConflictError, "Changing condition would collide with an existing inventory row"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_condition",
+                    item_ids=[item_ids[2], item_ids[0]],
+                    tags=None,
+                    condition_code="LP",
+                )
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            row_by_id = {row.item_id: row for row in rows}
+            self.assertEqual("NM", row_by_id[item_ids[0]].condition_code)
+            self.assertEqual("LP", row_by_id[item_ids[1]].condition_code)
+            self.assertEqual("NM", row_by_id[item_ids[2]].condition_code)
+
+    def test_bulk_mutate_inventory_items_set_condition_merge_succeeds_and_keeps_source_acquisition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=2,
+                condition_code="NM",
+                location="Binder A",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=3,
+                condition_code="LP",
+                location="Binder A",
+                acquisition_price="2.50",
+                acquisition_currency="USD",
+                tags_json='["trade"]',
+            )
+            with connect(db_path) as connection:
+                item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_condition",
+                item_ids=[item_ids[0]],
+                tags=None,
+                condition_code="LP",
+                merge=True,
+                keep_acquisition="source",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-condition-merge",
+            )
+            self.assertEqual("set_condition", result.operation)
+            self.assertEqual([item_ids[0]], result.updated_item_ids)
+            self.assertEqual(1, result.updated_count)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(rows))
+            self.assertEqual(5, rows[0].quantity)
+            self.assertEqual("LP", rows[0].condition_code)
+            self.assertEqual(Decimal("1.25"), rows[0].acquisition_price)
+            self.assertEqual("USD", rows[0].acquisition_currency)
+            self.assertCountEqual(["deck", "trade"], rows[0].tags)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            condition_audits = [row for row in audit_rows if row.action == "set_condition"]
+            self.assertEqual(2, len(condition_audits))
+            self.assertTrue(all(row.metadata["merged"] for row in condition_audits))
+            self.assertTrue(all(row.metadata["keep_acquisition"] == "source" for row in condition_audits))
+
+    def test_bulk_mutate_inventory_items_set_condition_rejects_invalid_field_combinations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(ValidationError, "condition_code is required for set_condition"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_condition",
+                    item_ids=[item_id],
+                    tags=None,
+                )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "keep_acquisition only applies when merge is true for set_condition",
+            ):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_condition",
+                    item_ids=[item_id],
+                    tags=None,
+                    condition_code="LP",
+                    keep_acquisition="target",
+                )
+
+    def test_transfer_inventory_items_dry_run_reports_copy_merge_and_failure_without_mutating_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="merge-card", collector_number="2")
+            self._insert_test_card(db_path, scryfall_id="fail-card", collector_number="3")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="copy-card",
+                quantity=2,
+                location="Binder A",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="merge-card",
+                quantity=1,
+                location="Binder B",
+                acquisition_price="1.00",
+                acquisition_currency="USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="fail-card",
+                quantity=1,
+                location="Binder C",
+                acquisition_price="5.00",
+                acquisition_currency="USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="target",
+                scryfall_id="merge-card",
+                quantity=3,
+                location="Binder B",
+                acquisition_price="1.00",
+                acquisition_currency="USD",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="target",
+                scryfall_id="fail-card",
+                quantity=4,
+                location="Binder C",
+                acquisition_price="7.50",
+                acquisition_currency="USD",
+            )
+            with connect(db_path) as connection:
+                source_item_ids = [
+                    int(row["id"])
+                    for row in connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        ORDER BY ii.id
+                        """
+                    ).fetchall()
+                ]
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="move",
+                item_ids=source_item_ids,
+                on_conflict="merge",
+                dry_run=True,
+            )
+            self.assertIsInstance(result, InventoryTransferResult)
+            self.assertTrue(result.dry_run)
+            self.assertEqual("items", result.selection_kind)
+            self.assertEqual(source_item_ids, result.requested_item_ids)
+            self.assertEqual(0, result.copied_count)
+            self.assertEqual(1, result.moved_count)
+            self.assertEqual(1, result.merged_count)
+            self.assertEqual(1, result.failed_count)
+            self.assertEqual(3, result.results_returned)
+            self.assertFalse(result.results_truncated)
+            self.assertEqual(
+                ["would_move", "would_merge", "would_fail"],
+                [row.status for row in result.results],
+            )
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(3, len(source_rows))
+            self.assertEqual(2, len(target_rows))
+
+    def test_transfer_inventory_items_copy_mode_copies_rows_and_writes_grouped_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="copy-card",
+                quantity=2,
+                location="Binder A",
+                tags_json='["deck"]',
+            )
+            with connect(db_path) as connection:
+                source_item_id = int(
+                    connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        """
+                    ).fetchone()["id"]
+                )
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="copy",
+                item_ids=[source_item_id],
+                on_conflict="fail",
+                actor_type="api",
+                actor_id="transfer-user",
+                request_id="req-transfer-copy",
+            )
+            self.assertEqual(1, result.copied_count)
+            self.assertEqual(0, result.merged_count)
+            self.assertEqual("copied", result.results[0].status)
+            self.assertFalse(result.results[0].source_removed)
+            self.assertIsNotNone(result.results[0].target_item_id)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(source_rows))
+            self.assertEqual(1, len(target_rows))
+            self.assertEqual(2, target_rows[0].quantity)
+            self.assertEqual(["deck"], target_rows[0].tags)
+
+            source_audit = list_inventory_audit_events(db_path, inventory_slug="source", limit=10)
+            target_audit = list_inventory_audit_events(db_path, inventory_slug="target", limit=10)
+            self.assertEqual("transfer_items", source_audit[0].action)
+            self.assertEqual("transfer_items", target_audit[0].action)
+            self.assertEqual("source", source_audit[0].metadata["role"])
+            self.assertEqual("target", target_audit[0].metadata["role"])
+            self.assertEqual("copy", source_audit[0].metadata["mode"])
+            self.assertEqual("copied", target_audit[0].metadata["status"])
+            self.assertEqual("req-transfer-copy", source_audit[0].request_id)
+            self.assertEqual("req-transfer-copy", target_audit[0].request_id)
+
+    def test_transfer_inventory_items_move_mode_merges_rows_and_keeps_selected_acquisition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="merge-card")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="merge-card",
+                quantity=2,
+                location="Binder A",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+                notes="source note",
+                tags_json='["deck"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="target",
+                scryfall_id="merge-card",
+                quantity=3,
+                location="Binder A",
+                acquisition_price="2.50",
+                acquisition_currency="USD",
+                notes="target note",
+                tags_json='["trade"]',
+            )
+            with connect(db_path) as connection:
+                source_item_id = int(
+                    connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        """
+                    ).fetchone()["id"]
+                )
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="move",
+                item_ids=[source_item_id],
+                on_conflict="merge",
+                keep_acquisition="target",
+                actor_type="api",
+                actor_id="transfer-user",
+                request_id="req-transfer-merge",
+            )
+            self.assertEqual(1, result.merged_count)
+            self.assertEqual("merged", result.results[0].status)
+            self.assertTrue(result.results[0].source_removed)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], source_rows)
+            self.assertEqual(1, len(target_rows))
+            self.assertEqual(5, target_rows[0].quantity)
+            self.assertEqual(Decimal("2.50"), target_rows[0].acquisition_price)
+            self.assertEqual("USD", target_rows[0].acquisition_currency)
+            self.assertCountEqual(["deck", "trade"], target_rows[0].tags)
+            self.assertIn("source note", target_rows[0].notes)
+            self.assertIn("target note", target_rows[0].notes)
+
+    def test_transfer_inventory_items_fail_conflict_rolls_back_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="conflict-card", collector_number="2")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", location="Binder A")
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="conflict-card", location="Binder B")
+            self._insert_inventory_item(db_path, inventory_slug="target", scryfall_id="conflict-card", location="Binder B")
+            with connect(db_path) as connection:
+                source_item_ids = [
+                    int(row["id"])
+                    for row in connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        ORDER BY ii.id
+                        """
+                    ).fetchall()
+                ]
+
+            with self.assertRaisesRegex(ConflictError, "would collide with an existing row in inventory 'target'"):
+                transfer_inventory_items(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_inventory_slug="target",
+                    mode="move",
+                    item_ids=source_item_ids,
+                    on_conflict="fail",
+                )
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(2, len(source_rows))
+            self.assertEqual(1, len(target_rows))
+            self.assertEqual([], list_inventory_audit_events(db_path, inventory_slug="source", limit=10))
+            self.assertEqual([], list_inventory_audit_events(db_path, inventory_slug="target", limit=10))
+
+    def test_transfer_inventory_items_rejects_invalid_request_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card")
+            with connect(db_path) as connection:
+                source_item_id = int(
+                    connection.execute(
+                        """
+                        SELECT ii.id
+                        FROM inventory_items ii
+                        JOIN inventories i ON i.id = ii.inventory_id
+                        WHERE i.slug = 'source'
+                        """
+                    ).fetchone()["id"]
+                )
+
+            with self.assertRaisesRegex(ValidationError, "target_inventory_slug must be different"):
+                transfer_inventory_items(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_inventory_slug="source",
+                    mode="copy",
+                    item_ids=[source_item_id],
+                    on_conflict="fail",
+                )
+
+            with self.assertRaisesRegex(ValidationError, "keep_acquisition only applies when on_conflict is merge"):
+                transfer_inventory_items(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_inventory_slug="target",
+                    mode="copy",
+                    item_ids=[source_item_id],
+                    on_conflict="fail",
+                    keep_acquisition="target",
+                )
+
+    def test_transfer_inventory_items_all_items_moves_entire_source_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="other-card", collector_number="2")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", location="Binder A")
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="other-card", location="Binder B")
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="move",
+                item_ids=None,
+                all_items=True,
+                on_conflict="fail",
+            )
+            self.assertEqual("all_items", result.selection_kind)
+            self.assertIsNone(result.requested_item_ids)
+            self.assertEqual(2, result.requested_count)
+            self.assertEqual(2, result.moved_count)
+            self.assertEqual(2, result.results_returned)
+            self.assertFalse(result.results_truncated)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], source_rows)
+            self.assertEqual(2, len(target_rows))
+
+    def test_transfer_inventory_items_all_items_dry_run_truncates_preview_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            for index in range(101):
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="copy-card",
+                    location=f"Binder {index}",
+                )
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug="source",
+                target_inventory_slug="target",
+                mode="copy",
+                item_ids=None,
+                all_items=True,
+                on_conflict="fail",
+                dry_run=True,
+            )
+            self.assertEqual("all_items", result.selection_kind)
+            self.assertEqual(101, result.requested_count)
+            self.assertEqual(101, result.copied_count)
+            self.assertEqual(100, result.results_returned)
+            self.assertTrue(result.results_truncated)
+            self.assertEqual("would_copy", result.results[0].status)
+
+    def test_create_inventory_trims_slug_and_conflicts_after_trim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            created = create_inventory(
+                db_path,
+                slug=" source-copy ",
+                display_name="Source Copy",
+                description=None,
+            )
+            self.assertEqual("source-copy", created.slug)
+
+            with self.assertRaisesRegex(ConflictError, "Inventory 'source-copy' already exists"):
+                create_inventory(
+                    db_path,
+                    slug="source-copy",
+                    display_name="Duplicate",
+                    description=None,
+                )
+
+    def test_transfer_inventory_items_normalizes_padded_source_and_target_slugs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(db_path, slug="source", display_name="Source", description=None)
+            create_inventory(db_path, slug="target", display_name="Target", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", location="Binder A")
+
+            result = transfer_inventory_items(
+                db_path,
+                source_inventory_slug=" source ",
+                target_inventory_slug=" target ",
+                mode="move",
+                item_ids=None,
+                all_items=True,
+                on_conflict="fail",
+            )
+
+            self.assertEqual("source", result.source_inventory)
+            self.assertEqual("target", result.target_inventory)
+            self.assertEqual(1, result.moved_count)
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            target_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="target",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], source_rows)
+            self.assertEqual(1, len(target_rows))
+
+    def test_duplicate_inventory_copies_all_rows_and_grants_owner_to_actor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            self._insert_test_card(db_path, scryfall_id="other-card", collector_number="2")
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="other-card", quantity=1)
+
+            result = duplicate_inventory(
+                db_path,
+                source_inventory_slug="source",
+                target_slug="source-copy",
+                target_display_name="Source Copy",
+                actor_type="api",
+                actor_id="duplicator-user",
+                request_id="req-duplicate",
+            )
+            self.assertIsInstance(result, InventoryDuplicateResult)
+            self.assertEqual("source", result.source_inventory)
+            self.assertEqual("source-copy", result.inventory.slug)
+            self.assertEqual("Original description", result.inventory.description)
+            self.assertEqual("all_items", result.transfer.selection_kind)
+            self.assertEqual(2, result.transfer.copied_count)
+
+            duplicated_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source-copy",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(2, len(duplicated_rows))
+            memberships = list_inventory_memberships(db_path, inventory_slug="source-copy")
+            self.assertEqual(["duplicator-user"], [membership.actor_id for membership in memberships])
+            self.assertEqual(["owner"], [membership.role for membership in memberships])
+
+    def test_duplicate_inventory_rolls_back_new_inventory_when_target_slug_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(db_path, slug="source", display_name="Source Collection", description=None)
+            create_inventory(db_path, slug="existing", display_name="Existing Collection", description=None)
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
+
+            with self.assertRaisesRegex(ConflictError, "Inventory 'existing' already exists"):
+                duplicate_inventory(
+                    db_path,
+                    source_inventory_slug="source",
+                    target_slug="existing",
+                    target_display_name="Existing Copy",
+                )
+
+            source_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            existing_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="existing",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(source_rows))
+            self.assertEqual([], existing_rows)
+
+    def test_duplicate_inventory_creates_empty_inventory_and_uses_explicit_description_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+
+            result = duplicate_inventory(
+                db_path,
+                source_inventory_slug="source",
+                target_slug="source-copy",
+                target_display_name="Source Copy",
+                target_description="Override description",
+                actor_type="api",
+                actor_id="duplicator-user",
+                request_id="req-duplicate-empty",
+            )
+
+            self.assertEqual("Override description", result.inventory.description)
+            self.assertEqual(0, result.transfer.requested_count)
+            self.assertEqual(0, result.transfer.copied_count)
+            self.assertEqual([], result.transfer.results)
+
+            duplicated_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source-copy",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual([], duplicated_rows)
+
+    def test_duplicate_inventory_normalizes_padded_target_slug(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+            self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
+
+            result = duplicate_inventory(
+                db_path,
+                source_inventory_slug=" source ",
+                target_slug=" source-copy ",
+                target_display_name="Source Copy",
+                actor_type="api",
+                actor_id="duplicator-user",
+                request_id="req-duplicate-normalized",
+            )
+
+            self.assertEqual("source", result.source_inventory)
+            self.assertEqual("source-copy", result.inventory.slug)
+            self.assertEqual("source-copy", result.transfer.target_inventory)
+
+            duplicated_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source-copy",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(duplicated_rows))
+
     def test_bulk_mutate_inventory_items_rolls_back_when_audit_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -1997,6 +3636,77 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     operation="add_tags",
                     item_ids=[foreign_item_id],
                     tags=["trade"],
+                )
+
+    def test_bulk_mutate_inventory_items_validates_quantity_and_acquisition_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(ValidationError, "quantity is required for set_quantity"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_quantity",
+                    item_ids=[item_id],
+                    tags=None,
+                )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "Cannot store an acquisition currency without an acquisition price",
+            ):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="set_acquisition",
+                    item_ids=[item_id],
+                    tags=None,
+                    acquisition_currency="USD",
+                )
+
+    def test_bulk_mutate_inventory_items_rejects_unrelated_fields_for_tag_operations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                tags_json='["deck"]',
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(ValidationError, "quantity is not valid for add_tags"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="add_tags",
+                    item_ids=[item_id],
+                    tags=["trade"],
+                    quantity=2,
                 )
 
     def test_service_facade_raises_domain_errors_for_not_found_validation_and_conflict_cases(self) -> None:
@@ -4156,6 +5866,46 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertIn("inventory,provider,item_id,scryfall_id,card_name", export_text)
             self.assertIn("Lightning Bolt", export_text)
             self.assertNotIn("Counterspell", export_text)
+
+            rendered_export = render_inventory_csv_export(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                profile="default",
+                query="Lightning",
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+                limit=None,
+            )
+            self.assertEqual("default", rendered_export.profile)
+            self.assertEqual("personal-default-export.csv", rendered_export.filename)
+            self.assertEqual(1, rendered_export.rows_exported)
+            self.assertIn("inventory,provider,item_id,scryfall_id,card_name", rendered_export.csv_text)
+            self.assertIn("Lightning Bolt", rendered_export.csv_text)
+            self.assertNotIn("Counterspell", rendered_export.csv_text)
+
+            with self.assertRaises(ValidationError):
+                export_inventory_csv(
+                    db_path,
+                    inventory_slug="personal",
+                    provider="tcgplayer",
+                    output_path=export_path,
+                    profile="unknown-profile",
+                    query=None,
+                    set_code=None,
+                    rarity=None,
+                    finish=None,
+                    condition_code=None,
+                    language_code=None,
+                    location=None,
+                    tags=None,
+                    limit=None,
+                )
 
             # The inventory report command emits the human-readable summary plus
             # machine-readable JSON/CSV artifacts for downstream tooling.
