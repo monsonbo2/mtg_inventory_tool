@@ -346,6 +346,51 @@
         "title": "ApiErrorResponse",
         "type": "object"
       },
+      "Body_imports_csv_imports_csv_post": {
+        "properties": {
+          "default_inventory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional default inventory slug when the CSV does not include an inventory column.",
+            "title": "Default Inventory"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "When true, validate and resolve the import using the real add-card workflow but roll back before commit.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "CSV file to import.",
+            "title": "File",
+            "type": "string"
+          },
+          "resolutions_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional JSON array of explicit row resolutions for ambiguous CSV rows. Each item selects one suggested printing and finish for a specific csv_row.",
+            "title": "Resolutions Json"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_imports_csv_imports_csv_post",
+        "type": "object"
+      },
       "BulkInventoryItemMutationRequest": {
         "additionalProperties": false,
         "description": "Specify exactly one bulk mutation operation per request. The first shipped bulk route supports only tag operations: add_tags, remove_tags, set_tags, or clear_tags.",
@@ -4248,30 +4293,7 @@
           "content": {
             "multipart/form-data": {
               "schema": {
-                "properties": {
-                  "default_inventory": {
-                    "description": "Optional default inventory slug when the CSV does not include an inventory column.",
-                    "type": "string"
-                  },
-                  "dry_run": {
-                    "default": false,
-                    "description": "When true, validate and resolve the import using the real add-card workflow but roll back before commit.",
-                    "type": "boolean"
-                  },
-                  "file": {
-                    "description": "CSV file to import.",
-                    "format": "binary",
-                    "type": "string"
-                  },
-                  "resolutions_json": {
-                    "description": "Optional JSON array of explicit row resolutions for ambiguous CSV rows. Each item selects one suggested printing and finish for a specific csv_row.",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "file"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/Body_imports_csv_imports_csv_post"
               }
             }
           },

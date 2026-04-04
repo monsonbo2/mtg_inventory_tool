@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from email.parser import BytesParser
-from email.policy import default as default_email_policy
-from io import StringIO
+from io import TextIOWrapper
 import json
 import sqlite3
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from starlette.concurrency import run_in_threadpool
 
 from ..errors import AuthorizationError, ValidationError
@@ -210,126 +208,30 @@ def _patch_operation(payload: PatchInventoryItemRequest) -> str:
     return operation
 
 
-CSV_IMPORT_REQUEST_BODY = {
-    "required": True,
-    "content": {
-        "multipart/form-data": {
-            "schema": {
-                "type": "object",
-                "required": ["file"],
-                "properties": {
-                    "file": {
-                        "type": "string",
-                        "format": "binary",
-                        "description": CSV_IMPORT_FILE_DESCRIPTION,
-                    },
-                    "default_inventory": {
-                        "type": "string",
-                        "description": CSV_IMPORT_DEFAULT_INVENTORY_DESCRIPTION,
-                    },
-                    "dry_run": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": CSV_IMPORT_DRY_RUN_DESCRIPTION,
-                    },
-                    "resolutions_json": {
-                        "type": "string",
-                        "description": CSV_IMPORT_RESOLUTIONS_JSON_DESCRIPTION,
-                    },
-                },
-            }
-        }
-    },
-}
-
-
-def _parse_form_bool(field_name: str, raw_value: str) -> bool:
-    normalized = raw_value.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off", ""}:
-        return False
-    raise ValidationError(f"Multipart field '{field_name}' must be a boolean form value.")
-
-
-def _decode_text_part(part, *, field_name: str) -> str:
-    payload = part.get_payload(decode=True) or b""
-    charset = part.get_content_charset() or "utf-8"
+def _parse_resolutions_json_form(raw_value: str | None) -> list[dict[str, Any]]:
+    if raw_value is None or not raw_value.strip():
+        return []
     try:
-        return payload.decode(charset)
-    except UnicodeError as exc:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ValidationError("Multipart field 'resolutions_json' must be valid JSON.") from exc
+    if not isinstance(parsed, list):
+        raise ValidationError("Multipart field 'resolutions_json' must decode to a JSON array.")
+    if not all(isinstance(item, dict) for item in parsed):
         raise ValidationError(
-            f"Multipart field '{field_name}' could not be decoded as {charset}."
-        ) from exc
+            "Multipart field 'resolutions_json' must decode to a JSON array of objects."
+        )
+    return list(parsed)
 
 
-def _parse_csv_import_form(
-    content_type: str | None,
-    body: bytes,
-) -> tuple[str, str | None, bool, list[dict[str, Any]], StringIO]:
-    if not content_type:
-        raise ValidationError("Content-Type must be multipart/form-data.")
-    media_type = content_type.split(";", 1)[0].strip().lower()
-    if media_type != "multipart/form-data":
-        raise ValidationError("Content-Type must be multipart/form-data.")
-
-    message = BytesParser(policy=default_email_policy).parsebytes(
-        f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + body
-    )
-    if not message.is_multipart():
-        raise ValidationError("Content-Type must be multipart/form-data with a valid boundary.")
-
-    csv_filename = "upload.csv"
-    csv_bytes: bytes | None = None
-    default_inventory: str | None = None
-    dry_run = False
-    resolutions: list[dict[str, Any]] = []
-    seen_fields: set[str] = set()
-
-    for part in message.iter_parts():
-        field_name = part.get_param("name", header="content-disposition")
-        if not field_name:
-            raise ValidationError("Each multipart field must include a name.")
-        if field_name not in {"file", "default_inventory", "dry_run", "resolutions_json"}:
-            raise ValidationError(f"Unexpected multipart field '{field_name}'.")
-        if field_name in seen_fields:
-            raise ValidationError(f"Multipart field '{field_name}' must not be repeated.")
-        seen_fields.add(field_name)
-
-        if field_name == "file":
-            csv_filename = (
-                part.get_param("filename", header="content-disposition") or "upload.csv"
-            ).strip() or "upload.csv"
-            csv_bytes = part.get_payload(decode=True) or b""
-        elif field_name == "default_inventory":
-            default_inventory_text = _decode_text_part(part, field_name=field_name).strip()
-            default_inventory = default_inventory_text or None
-        elif field_name == "dry_run":
-            dry_run = _parse_form_bool(field_name, _decode_text_part(part, field_name=field_name))
-        else:
-            raw_resolutions = _decode_text_part(part, field_name=field_name).strip()
-            if raw_resolutions:
-                try:
-                    parsed = json.loads(raw_resolutions)
-                except json.JSONDecodeError as exc:
-                    raise ValidationError("Multipart field 'resolutions_json' must be valid JSON.") from exc
-                if not isinstance(parsed, list):
-                    raise ValidationError("Multipart field 'resolutions_json' must decode to a JSON array.")
-                if not all(isinstance(item, dict) for item in parsed):
-                    raise ValidationError(
-                        "Multipart field 'resolutions_json' must decode to a JSON array of objects."
-                    )
-                resolutions = list(parsed)
-
-    if csv_bytes is None:
-        raise ValidationError("Multipart field 'file' is required.")
-
-    try:
-        csv_text = csv_bytes.decode("utf-8-sig")
-    except UnicodeError as exc:
-        raise ValidationError("Uploaded CSV file must be UTF-8 encoded.") from exc
-
-    return csv_filename, default_inventory, dry_run, resolutions, StringIO(csv_text, newline="")
+def _validate_uploaded_csv_size(upload: UploadFile, *, max_bytes: int) -> None:
+    handle = upload.file
+    current_position = handle.tell()
+    handle.seek(0, 2)
+    size = handle.tell()
+    handle.seek(current_position)
+    if size > max_bytes:
+        raise ValidationError(f"CSV upload must not exceed {max_bytes} bytes.")
 
 
 def _require_import_inventory_write_access(
@@ -434,17 +336,27 @@ def bootstrap_default_inventory(
     "/imports/csv",
     response_model=CsvImportResponse,
     responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
-    openapi_extra={"requestBody": CSV_IMPORT_REQUEST_BODY},
 )
 async def imports_csv(
-    request: Request,
+    file: Annotated[UploadFile, File(description=CSV_IMPORT_FILE_DESCRIPTION)],
     settings: Annotated[ApiSettings, Depends(get_settings)],
     context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+    default_inventory: Annotated[
+        str | None,
+        Form(description=CSV_IMPORT_DEFAULT_INVENTORY_DESCRIPTION),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        Form(description=CSV_IMPORT_DRY_RUN_DESCRIPTION),
+    ] = False,
+    resolutions_json: Annotated[
+        str | None,
+        Form(description=CSV_IMPORT_RESOLUTIONS_JSON_DESCRIPTION),
+    ] = None,
 ) -> Any:
-    csv_filename, default_inventory, dry_run, resolutions, csv_handle = _parse_csv_import_form(
-        request.headers.get("Content-Type"),
-        await request.body(),
-    )
+    _validate_uploaded_csv_size(file, max_bytes=settings.csv_import_max_bytes)
+    resolutions = _parse_resolutions_json_form(resolutions_json)
+    csv_handle = TextIOWrapper(file.file, encoding="utf-8-sig", newline="")
     try:
         inventory_validator = None
         if settings.runtime_mode == "shared_service":
@@ -455,22 +367,29 @@ async def imports_csv(
                     context=context,
                 )
 
-        result = await run_in_threadpool(
-            import_csv_stream,
-            settings.db_path,
-            csv_handle=csv_handle,
-            csv_filename=csv_filename,
-            default_inventory=default_inventory,
-            dry_run=dry_run,
-            resolutions=resolutions,
-            allow_inventory_auto_create=False,
-            inventory_validator=inventory_validator,
-            actor_type=context.actor_type,
-            actor_id=context.actor_id,
-            request_id=context.request_id,
-        )
+        try:
+            result = await run_in_threadpool(
+                import_csv_stream,
+                settings.db_path,
+                csv_handle=csv_handle,
+                csv_filename=(file.filename or "upload.csv").strip() or "upload.csv",
+                default_inventory=default_inventory,
+                dry_run=dry_run,
+                resolutions=resolutions,
+                allow_inventory_auto_create=False,
+                inventory_validator=inventory_validator,
+                actor_type=context.actor_type,
+                actor_id=context.actor_id,
+                request_id=context.request_id,
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
     finally:
-        csv_handle.close()
+        try:
+            csv_handle.detach()
+        except Exception:
+            pass
+        await file.close()
     return _serialize(result)
 
 

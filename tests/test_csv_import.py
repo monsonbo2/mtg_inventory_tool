@@ -17,10 +17,42 @@ from mtg_source_stack.inventory.csv_import import (
     import_csv_stream,
     normalize_csv_row,
 )
+from mtg_source_stack.inventory.report_io import flatten_import_csv_rows
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryCsvImportTest(RepoSmokeTestCase):
+    def test_flatten_import_csv_rows_accepts_stream_result_shape(self) -> None:
+        flattened = flatten_import_csv_rows(
+            {
+                "csv_filename": "inventory_import.csv",
+                "dry_run": True,
+                "default_inventory": "personal",
+                "imported_rows": [
+                    {
+                        "csv_row": 2,
+                        "inventory": "personal",
+                        "card_name": "Preview Bolt",
+                        "set_code": "lea",
+                        "set_name": "Limited Edition Alpha",
+                        "collector_number": "161",
+                        "quantity": 1,
+                        "finish": "normal",
+                        "condition_code": "NM",
+                        "language_code": "en",
+                        "location": None,
+                        "tags": [],
+                        "item_id": 7,
+                        "scryfall_id": "preview-bolt",
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(1, len(flattened))
+        self.assertEqual("inventory_import.csv", flattened[0]["csv_path"])
+        self.assertEqual("Preview Bolt", flattened[0]["card_name"])
+
     def test_build_add_card_kwargs_normalizes_headers_and_derives_inventory_slug(self) -> None:
         # This mirrors the kind of mixed-header export a user is likely to hand
         # us from another tool, so the assertions focus on normalization rather
@@ -1144,6 +1176,104 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertIn("resolution_issues", exc_info.exception.details)
             self.assertEqual("finish_required", exc_info.exception.details["resolution_issues"][0]["kind"])
             self.assertEqual(2, exc_info.exception.details["resolution_issues"][0]["csv_row"])
+
+    def test_import_csv_cli_accepts_resolutions_file_for_ambiguous_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "inventory_import.csv"
+            resolutions_path = tmp / "csv_resolutions.json"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name, description)
+                    VALUES ('personal', 'Personal Collection', NULL)
+                    """
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json,
+                        is_default_add_searchable
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    [
+                        (
+                            "cli-csv-amb-1",
+                            "cli-csv-amb-oracle-1",
+                            "CLI CSV Ambiguous",
+                            "tst",
+                            "Test Set",
+                            "1",
+                            "en",
+                            '["normal"]',
+                        ),
+                        (
+                            "cli-csv-amb-2",
+                            "cli-csv-amb-oracle-2",
+                            "CLI CSV Ambiguous",
+                            "pls",
+                            "Plus Set",
+                            "2",
+                            "en",
+                            '["foil"]',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                "Inventory,Name,Qty\n"
+                "personal,CLI CSV Ambiguous,2\n",
+                encoding="utf-8",
+            )
+            resolutions_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "csv_row": 2,
+                            "scryfall_id": "cli-csv-amb-2",
+                            "finish": "foil",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            output = self.run_cli(
+                "import-csv",
+                "--db",
+                str(db_path),
+                "--csv",
+                str(csv_path),
+                "--resolutions-file",
+                str(resolutions_path),
+            )
+
+            self.assertIn("Rows imported: 1", output)
+            self.assertIn("CLI CSV Ambiguous", output)
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT scryfall_id, quantity, finish
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual("cli-csv-amb-2", item_row["scryfall_id"])
+            self.assertEqual(2, item_row["quantity"])
+            self.assertEqual("foil", item_row["finish"])
 
     def test_import_csv_dry_run_writes_report_and_leaves_db_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

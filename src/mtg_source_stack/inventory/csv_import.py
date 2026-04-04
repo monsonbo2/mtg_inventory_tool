@@ -771,6 +771,7 @@ def import_csv(
     csv_path: str | Path,
     default_inventory: str | None,
     dry_run: bool = False,
+    resolutions: list[Mapping[str, Any]] | None = None,
     before_write: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     try:
@@ -780,6 +781,7 @@ def import_csv(
                 csv_handle=handle,
                 csv_filename=str(csv_path),
                 default_inventory=default_inventory,
+                resolutions=resolutions,
             )
     except OSError as exc:
         raise ValueError(f"Could not read CSV file '{csv_path}'.") from exc

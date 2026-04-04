@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -97,6 +98,35 @@ def build_snapshot_callback(
     return ensure_snapshot, current_snapshot
 
 
+def _load_resolution_selections(
+    *,
+    resolutions_json: str | None,
+    resolutions_file: str | None,
+    field_label: str,
+) -> list[dict[str, Any]] | None:
+    if resolutions_json is None and resolutions_file is None:
+        return None
+
+    raw_json: str
+    if resolutions_json is not None:
+        raw_json = resolutions_json
+    else:
+        try:
+            raw_json = Path(resolutions_file or "").read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"Could not read {field_label} file '{resolutions_file}'.") from exc
+
+    try:
+        parsed = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_label} must be valid JSON.") from exc
+    if not isinstance(parsed, list):
+        raise ValueError(f"{field_label} must decode to a JSON array.")
+    if not all(isinstance(item, dict) for item in parsed):
+        raise ValueError(f"{field_label} must decode to a JSON array of objects.")
+    return list(parsed)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Thin personal inventory CLI for the isolated MTG MVP database.",
@@ -179,6 +209,15 @@ def build_parser() -> argparse.ArgumentParser:
     csv_import_parser.add_argument("--csv", required=True, help="CSV file to import.")
     csv_import_parser.add_argument("--inventory", help="Default inventory slug if the CSV does not include one.")
     csv_import_parser.add_argument("--dry-run", action="store_true", help="Preview the import without saving any changes.")
+    csv_import_resolution_group = csv_import_parser.add_mutually_exclusive_group()
+    csv_import_resolution_group.add_argument(
+        "--resolutions-json",
+        help="Optional JSON array of explicit row resolutions for ambiguous CSV rows.",
+    )
+    csv_import_resolution_group.add_argument(
+        "--resolutions-file",
+        help="Optional path to a JSON file containing explicit row resolutions for ambiguous CSV rows.",
+    )
     csv_import_parser.add_argument("--report-out", help="Optional path to save the import report text.")
     csv_import_parser.add_argument("--report-out-json", help="Optional path to save the structured import report JSON.")
     csv_import_parser.add_argument("--report-out-csv", help="Optional path to save a flattened per-row import CSV report.")
@@ -568,6 +607,11 @@ def main() -> None:
         if args.command == "import-csv":
             snapshot = None
             before_write = None
+            resolutions = _load_resolution_selections(
+                resolutions_json=args.resolutions_json,
+                resolutions_file=args.resolutions_file,
+                field_label="CSV resolutions",
+            )
             if not args.dry_run:
                 before_write, get_snapshot = build_snapshot_callback(
                     args.db,
@@ -578,6 +622,7 @@ def main() -> None:
                 csv_path=args.csv,
                 default_inventory=args.inventory,
                 dry_run=args.dry_run,
+                resolutions=resolutions,
                 before_write=before_write,
             )
             if not args.dry_run:

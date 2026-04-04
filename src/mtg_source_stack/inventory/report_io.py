@@ -38,12 +38,21 @@ def write_rows_csv(path: str | Path, rows: list[dict[str, Any]], fieldnames: lis
     return report_path
 
 
+def _import_source_label(result: dict[str, Any]) -> str:
+    for key in ("csv_path", "csv_filename"):
+        source = result.get(key)
+        if source:
+            return str(source)
+    return ""
+
+
 def flatten_import_csv_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
     flattened: list[dict[str, Any]] = []
+    import_source = _import_source_label(result)
     for row in result.get("imported_rows", []):
         flattened.append(
             {
-                "csv_path": result["csv_path"],
+                "csv_path": import_source,
                 "dry_run": result.get("dry_run", False),
                 "default_inventory": result.get("default_inventory") or "",
                 "csv_row": row["csv_row"],

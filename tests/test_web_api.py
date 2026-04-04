@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import importlib.util
+import io
 import json
 import socket
 import tempfile
@@ -31,7 +32,11 @@ if FASTAPI_TESTING_AVAILABLE:
 
     from mtg_source_stack.api.app import create_app
     from mtg_source_stack.api.dependencies import ApiSettings, RequestContext
-    from mtg_source_stack.api.routes import _parse_csv_import_form, _require_csv_import_inventory_write_access
+    from mtg_source_stack.api.routes import (
+        _parse_resolutions_json_form,
+        _require_csv_import_inventory_write_access,
+        _validate_uploaded_csv_size,
+    )
     from mtg_source_stack.errors import AuthorizationError, ValidationError
 
 
@@ -263,10 +268,19 @@ class WebApiSchemaTest(unittest.TestCase):
             import_request_schema = spec["paths"]["/imports/csv"]["post"]["requestBody"]["content"][
                 "multipart/form-data"
             ]["schema"]
-            self.assertEqual(["file"], import_request_schema["required"])
-            self.assertEqual("binary", import_request_schema["properties"]["file"]["format"])
-            self.assertEqual("boolean", import_request_schema["properties"]["dry_run"]["type"])
-            self.assertEqual("string", import_request_schema["properties"]["resolutions_json"]["type"])
+            import_request_schema_name = self._schema_name_from_ref(import_request_schema["$ref"])
+            import_request_component = components[import_request_schema_name]
+            self.assertEqual(["file"], import_request_component["required"])
+            self.assertEqual("string", import_request_component["properties"]["file"]["type"])
+            self.assertEqual(
+                "application/octet-stream",
+                import_request_component["properties"]["file"]["contentMediaType"],
+            )
+            self.assertEqual("boolean", import_request_component["properties"]["dry_run"]["type"])
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                import_request_component["properties"]["resolutions_json"]["anyOf"],
+            )
 
             import_response_schema = spec["paths"]["/imports/csv"]["post"]["responses"]["200"]["content"][
                 "application/json"
@@ -520,56 +534,19 @@ class WebApiSchemaTest(unittest.TestCase):
     "fastapi/httpx/uvicorn are not installed in this environment; API shell tests are skipped.",
 )
 class WebApiImportHelperTest(unittest.TestCase):
-    def test_parse_csv_import_form_extracts_file_and_form_fields(self) -> None:
-        request = httpx.Request(
-            "POST",
-            "http://example.test/imports/csv",
-            files={
-                "file": (
-                    "inventory_import.csv",
-                    b"Inventory,Scryfall ID,Qty,Cond\npersonal,api-card-1,1,NM\n",
-                    "text/csv",
-                )
-            },
-            data={
-                "default_inventory": "personal",
-                "dry_run": "true",
-                "resolutions_json": json.dumps(
-                    [{"csv_row": 2, "scryfall_id": "api-card-1", "finish": "normal"}]
-                ),
-            },
+    def test_parse_resolutions_json_form_accepts_array_of_objects(self) -> None:
+        self.assertEqual(
+            [{"csv_row": 2, "scryfall_id": "api-card-1", "finish": "normal"}],
+            _parse_resolutions_json_form(
+                json.dumps([{"csv_row": 2, "scryfall_id": "api-card-1", "finish": "normal"}])
+            ),
         )
-        body = request.read()
 
-        csv_filename, default_inventory, dry_run, resolutions, csv_handle = _parse_csv_import_form(
-            request.headers["Content-Type"],
-            body,
-        )
-        try:
-            self.assertEqual("inventory_import.csv", csv_filename)
-            self.assertEqual("personal", default_inventory)
-            self.assertTrue(dry_run)
-            self.assertEqual(
-                [{"csv_row": 2, "scryfall_id": "api-card-1", "finish": "normal"}],
-                resolutions,
-            )
-            self.assertEqual(
-                "Inventory,Scryfall ID,Qty,Cond\npersonal,api-card-1,1,NM\n",
-                csv_handle.read(),
-            )
-        finally:
-            csv_handle.close()
+    def test_validate_uploaded_csv_size_rejects_oversized_files(self) -> None:
+        upload = type("UploadStub", (), {"file": io.BytesIO(b"x" * 65)})()
 
-    def test_parse_csv_import_form_rejects_missing_file(self) -> None:
-        request = httpx.Request(
-            "POST",
-            "http://example.test/imports/csv",
-            data={"dry_run": "true"},
-        )
-        body = request.read()
-
-        with self.assertRaisesRegex(ValueError, "multipart/form-data"):
-            _parse_csv_import_form(request.headers.get("Content-Type"), body)
+        with self.assertRaisesRegex(ValidationError, "CSV upload must not exceed 64 bytes."):
+            _validate_uploaded_csv_size(upload, max_bytes=64)
 
     def test_shared_service_csv_import_write_access_helper_requires_membership_or_admin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -647,6 +624,7 @@ class WebApiTest(unittest.TestCase):
         trust_actor_headers: bool = False,
         runtime_mode: str = "local_demo",
         auto_migrate: bool = True,
+        csv_import_max_bytes: int = 25 * 1024 * 1024,
         snapshot_signing_secret: str | None = None,
     ):
         settings_kwargs = {
@@ -655,6 +633,7 @@ class WebApiTest(unittest.TestCase):
             "auto_migrate": auto_migrate,
             "host": "127.0.0.1",
             "port": 8000,
+            "csv_import_max_bytes": csv_import_max_bytes,
             "trust_actor_headers": trust_actor_headers,
             "proxy_headers": runtime_mode == "shared_service",
         }
@@ -1212,6 +1191,24 @@ class WebApiTest(unittest.TestCase):
 
                 self.assertEqual(3, item_row["quantity"])
                 self.assertEqual(("api", "local-demo", "req-csv-resolution-commit"), tuple(audit_row))
+
+    def test_demo_api_csv_import_rejects_oversized_uploads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path, csv_import_max_bytes=64) as client:
+                csv_body = (
+                    "Inventory,Scryfall ID,Qty,Cond,Notes\n"
+                    "personal,api-card-1,1,NM,This CSV body is intentionally too large.\n"
+                ).encode("utf-8")
+
+                response = client.post(
+                    "/imports/csv",
+                    files={"file": ("inventory_import.csv", csv_body, "text/csv")},
+                )
+
+            self.assertEqual(400, response.status_code)
+            self.assertEqual("validation_error", response.json()["error"]["code"])
+            self.assertIn("CSV upload must not exceed 64 bytes.", response.json()["error"]["message"])
 
     def test_demo_api_csv_import_detects_tcgplayer_app_collection_format(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
