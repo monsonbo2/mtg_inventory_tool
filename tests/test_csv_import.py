@@ -379,6 +379,82 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual(3, item_row["quantity"])
             self.assertEqual("normal", item_row["finish"])
 
+    def test_import_csv_detects_manabox_collection_and_resolves_by_set_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "manabox_collection.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        finishes_json
+                    )
+                    VALUES (
+                        'csv-card-manabox',
+                        'csv-oracle-manabox',
+                        'ManaBox Product Card',
+                        'tst',
+                        'Test Set',
+                        '208',
+                        'en',
+                        '["normal","foil"]'
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "Card Name,Set Name,Card Number,Scryfall ID,Quantity,Foil,Language,Condition,"
+                    "Purchase Price,Purchase Currency,Misprint,Altered,Binder Name\n"
+                    "ManaBox Product Card,Test Set,208,,2,Yes,English,Near Mint,3.25,USD,Yes,No,Commander Binder\n"
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory="personal",
+                dry_run=False,
+            )
+
+            self.assertEqual("manabox_collection_csv", report["detected_format"])
+            self.assertEqual(1, report["rows_written"])
+            self.assertEqual("foil", report["imported_rows"][0]["finish"])
+            self.assertEqual(["misprint"], report["imported_rows"][0]["tags"])
+            self.assertEqual("3.25", report["imported_rows"][0]["acquisition_price"])
+            self.assertEqual("USD", report["imported_rows"][0]["acquisition_currency"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    """
+                    SELECT quantity, finish, acquisition_currency, tags_json
+                    FROM inventory_items
+                    """
+                ).fetchone()
+
+            self.assertEqual(2, item_row["quantity"])
+            self.assertEqual("foil", item_row["finish"])
+            self.assertEqual("USD", item_row["acquisition_currency"])
+            self.assertEqual('["misprint"]', item_row["tags_json"])
+
     def test_import_csv_accepts_oracle_id_and_infers_resolved_printing_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

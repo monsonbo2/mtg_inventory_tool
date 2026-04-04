@@ -566,6 +566,7 @@ def resolve_card_row(
     tcgplayer_product_id: str | None,
     name: str | None,
     set_code: str | None,
+    set_name: str | None = None,
     collector_number: str | None,
     lang: str | None,
     finish: str | None = None,
@@ -616,6 +617,9 @@ def resolve_card_row(
         if set_code:
             filters.append("LOWER(set_code) = LOWER(?)")
             params.append(set_code)
+        if set_name:
+            filters.append("LOWER(set_name) = LOWER(?)")
+            params.append(set_name)
         if collector_number:
             filters.append("collector_number = ?")
             params.append(collector_number)
@@ -651,6 +655,9 @@ def resolve_card_row(
     if set_code:
         filters.append("LOWER(set_code) = LOWER(?)")
         params.append(set_code)
+    if set_name:
+        filters.append("LOWER(set_name) = LOWER(?)")
+        params.append(set_name)
     if collector_number:
         filters.append("collector_number = ?")
         params.append(collector_number)

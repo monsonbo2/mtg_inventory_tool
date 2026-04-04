@@ -10,6 +10,7 @@ from .normalize import text_or_none
 GENERIC_CSV_FORMAT = "generic_csv"
 TCGPLAYER_LEGACY_COLLECTION_CSV_FORMAT = "tcgplayer_legacy_collection_csv"
 TCGPLAYER_APP_COLLECTION_CSV_FORMAT = "tcgplayer_app_collection_csv"
+MANABOX_COLLECTION_CSV_FORMAT = "manabox_collection_csv"
 
 CsvRow = dict[str, str | None]
 CsvRowNormalizer = Callable[[CsvRow], CsvRow]
@@ -63,6 +64,91 @@ def _normalize_tcgplayer_collection_row(row: CsvRow) -> CsvRow:
     return normalized
 
 
+def _normalize_manabox_finish(value: str | None) -> str | None:
+    text = text_or_none(value)
+    if text is None:
+        return None
+
+    normalized = " ".join(text.strip().lower().replace("-", " ").split())
+    mapping = {
+        "foil": "foil",
+        "true": "foil",
+        "yes": "foil",
+        "y": "foil",
+        "1": "foil",
+        "etched": "etched",
+        "etched foil": "etched",
+        "nonfoil": "normal",
+        "non foil": "normal",
+        "normal": "normal",
+        "false": "normal",
+        "no": "normal",
+        "n": "normal",
+        "0": "normal",
+    }
+    return mapping.get(normalized)
+
+
+def _csv_flag_enabled(value: str | None) -> bool:
+    text = text_or_none(value)
+    if text is None:
+        return False
+    normalized = " ".join(text.strip().lower().replace("-", " ").split())
+    return normalized in {"true", "yes", "y", "1", "foil", "etched", "etched foil"}
+
+
+def _merge_csv_tags(existing_tags: str | None, *new_tags: str) -> str | None:
+    normalized_tags: list[str] = []
+    for raw_value in (existing_tags, *new_tags):
+        text = text_or_none(raw_value)
+        if text is None:
+            continue
+        for piece in text.split(","):
+            normalized = text_or_none(piece)
+            if normalized is None:
+                continue
+            tag = normalized.lower()
+            if tag not in normalized_tags:
+                normalized_tags.append(tag)
+    if not normalized_tags:
+        return None
+    return ", ".join(normalized_tags)
+
+
+def _normalize_manabox_collection_row(row: CsvRow) -> CsvRow:
+    normalized = dict(row)
+
+    if text_or_none(normalized.get("collector_number")) is None:
+        for source_key in ("card_number", "number_in_set"):
+            source_value = text_or_none(normalized.get(source_key))
+            if source_value is not None:
+                normalized["collector_number"] = source_value
+                break
+
+    if text_or_none(normalized.get("finish")) is None:
+        normalized_finish = _normalize_manabox_finish(normalized.get("foil"))
+        if normalized_finish is not None:
+            normalized["finish"] = normalized_finish
+
+    if text_or_none(normalized.get("acquisition_price")) is not None:
+        purchase_currency = text_or_none(normalized.get("purchase_currency"))
+        if (
+            purchase_currency is not None
+            and text_or_none(normalized.get("acquisition_currency")) is None
+        ):
+            normalized["acquisition_currency"] = purchase_currency
+
+    derived_tags: list[str] = []
+    if _csv_flag_enabled(normalized.get("misprint")):
+        derived_tags.append("misprint")
+    if _csv_flag_enabled(normalized.get("altered")):
+        derived_tags.append("altered")
+    if derived_tags:
+        normalized["tags"] = _merge_csv_tags(normalized.get("tags"), *derived_tags)
+
+    return normalized
+
+
 def _matches_tcgplayer_legacy_collection(headers: set[str]) -> bool:
     return {
         "inventory_name",
@@ -92,6 +178,26 @@ def _matches_tcgplayer_app_collection(headers: set[str]) -> bool:
     )
 
 
+def _matches_manabox_collection(headers: set[str]) -> bool:
+    if "quantity" not in headers or "foil" not in headers:
+        return False
+    if not {"name", "scryfall_id"} & headers:
+        return False
+    if not {"set_code", "set_name", "card_number", "collector_number", "scryfall_id"} & headers:
+        return False
+    return bool(
+        {
+            "misprint",
+            "altered",
+            "purchase_currency",
+            "binder_name",
+            "list_name",
+            "binder_list_name",
+        }
+        & headers
+    )
+
+
 _CSV_IMPORT_FORMAT_ADAPTERS = (
     CsvImportFormatAdapter(
         key=TCGPLAYER_LEGACY_COLLECTION_CSV_FORMAT,
@@ -102,6 +208,11 @@ _CSV_IMPORT_FORMAT_ADAPTERS = (
         key=TCGPLAYER_APP_COLLECTION_CSV_FORMAT,
         matches=_matches_tcgplayer_app_collection,
         normalize_row=_normalize_tcgplayer_collection_row,
+    ),
+    CsvImportFormatAdapter(
+        key=MANABOX_COLLECTION_CSV_FORMAT,
+        matches=_matches_manabox_collection,
+        normalize_row=_normalize_manabox_collection_row,
     ),
 )
 

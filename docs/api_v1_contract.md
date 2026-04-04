@@ -155,11 +155,15 @@ preserve for the first API-backed version of the project.
     import path
   - the current first-party format detectors are:
     - `generic_csv`
+    - `manabox_collection_csv`
     - `tcgplayer_legacy_collection_csv`
     - `tcgplayer_app_collection_csv`
   - TCGplayer collection-style CSV uploads are normalized on the backend
     before row import so the frontend does not need to translate fields such as
     `Printing` into the backend's canonical finish columns
+  - ManaBox collection CSV uploads are also normalized on the backend,
+    including `Foil`, `Card Number`, `Purchase Currency`, and boolean metadata
+    such as `Misprint` and `Altered`
   - unlike the CLI import flow, the HTTP route does not implicitly create new
     inventories from CSV display names; referenced inventories must already
     exist

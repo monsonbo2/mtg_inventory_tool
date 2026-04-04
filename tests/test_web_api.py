@@ -1080,6 +1080,73 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("tcgplayer_app_collection_csv", committed.json()["detected_format"])
                 self.assertEqual("normal", committed.json()["imported_rows"][0]["finish"])
 
+    def test_demo_api_csv_import_detects_manabox_collection_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                with connect(db_path) as connection:
+                    connection.execute(
+                        """
+                        INSERT INTO mtg_cards (
+                            scryfall_id,
+                            oracle_id,
+                            name,
+                            set_code,
+                            set_name,
+                            collector_number,
+                            lang,
+                            finishes_json,
+                            image_uris_json
+                        )
+                        VALUES (
+                            'api-card-manabox',
+                            'api-oracle-manabox',
+                            'ManaBox API Card',
+                            'tst',
+                            'Test Set',
+                            '208',
+                            'en',
+                            '["normal","foil"]',
+                            '{"small":"https://example.test/cards/api-card-manabox-small.jpg","normal":"https://example.test/cards/api-card-manabox-normal.jpg"}'
+                        )
+                        """
+                    )
+                    connection.commit()
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                csv_body = (
+                    "Card Name,Set Name,Card Number,Scryfall ID,Quantity,Foil,Language,Condition,"
+                    "Purchase Price,Purchase Currency,Misprint,Altered,Binder Name\n"
+                    "ManaBox API Card,Test Set,208,,2,Yes,English,Near Mint,3.25,USD,Yes,No,Commander Binder\n"
+                ).encode("utf-8")
+
+                preview = client.post(
+                    "/imports/csv",
+                    files={"file": ("manabox_collection.csv", csv_body, "text/csv")},
+                    data={"default_inventory": "personal", "dry_run": "true"},
+                )
+                self.assertEqual(200, preview.status_code)
+                preview_payload = preview.json()
+                self.assertEqual("manabox_collection_csv", preview_payload["detected_format"])
+                self.assertEqual("foil", preview_payload["imported_rows"][0]["finish"])
+                self.assertEqual(["misprint"], preview_payload["imported_rows"][0]["tags"])
+
+                committed = client.post(
+                    "/imports/csv",
+                    files={"file": ("manabox_collection.csv", csv_body, "text/csv")},
+                    data={"default_inventory": "personal"},
+                )
+                self.assertEqual(200, committed.status_code)
+                committed_payload = committed.json()
+                self.assertEqual("manabox_collection_csv", committed_payload["detected_format"])
+                self.assertEqual("foil", committed_payload["imported_rows"][0]["finish"])
+                self.assertEqual(["misprint"], committed_payload["imported_rows"][0]["tags"])
+
     def test_demo_api_decklist_import_supports_preview_and_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
