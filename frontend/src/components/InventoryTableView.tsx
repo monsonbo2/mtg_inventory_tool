@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type {
-  BulkInventoryItemOperation,
+  BulkTagMutationOperation,
   ConditionCode,
   FinishValue,
   LanguageCode,
@@ -74,7 +74,7 @@ export function InventoryTableView(props: {
   onSortChange: (nextSort: InventoryTableSortState) => void;
   onFiltersChange: (nextFilters: InventoryTableFilters) => void;
   onBulkTagsSubmit: (
-    operation: BulkInventoryItemOperation,
+    operation: BulkTagMutationOperation,
     tags: string[],
   ) => Promise<boolean>;
   onToggleItemSelection: (itemId: number) => void;
@@ -129,7 +129,7 @@ export function InventoryTableView(props: {
     setActiveColumn((current) => (current === column ? null : column));
   }
 
-  async function handleBulkAction(operation: BulkInventoryItemOperation) {
+  async function handleBulkAction(operation: BulkTagMutationOperation) {
     const didApply = await props.onBulkTagsSubmit(operation, parsedBulkTags);
     if (didApply) {
       setBulkTagsInput("");

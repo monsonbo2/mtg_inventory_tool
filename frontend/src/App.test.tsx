@@ -1526,6 +1526,56 @@ describe("App", () => {
     expect(listInventoryAudit).toHaveBeenCalledTimes(2);
   });
 
+  it("submits clear-tags bulk actions without sending a tags payload", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "clear_tags",
+      requested_item_ids: [7, 8],
+      updated_item_ids: [7, 8],
+      updated_count: 2,
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+    await user.type(screen.getByRole("textbox", { name: "Bulk tags" }), "burn, staples");
+    await user.click(screen.getByRole("button", { name: "Clear tags" }));
+
+    await waitFor(() => {
+      expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
+        operation: "clear_tags",
+        item_ids: [7, 8],
+      });
+    });
+
+    expect(screen.getByRole("textbox", { name: "Bulk tags" })).toHaveValue("");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Cleared tags on 2 rows in Personal Collection.",
+    );
+  });
+
   it("clears table selection when the selected inventory changes", async () => {
     const user = userEvent.setup();
 

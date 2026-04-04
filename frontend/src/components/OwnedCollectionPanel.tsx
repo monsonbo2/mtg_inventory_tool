@@ -1,5 +1,5 @@
 import type {
-  BulkInventoryItemOperation,
+  BulkTagMutationOperation,
   InventorySummary,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
@@ -50,7 +50,7 @@ type OwnedCollectionPanelActions = {
   onTableSortChange: (nextSort: InventoryTableSortState) => void;
   onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
   onBulkTagsSubmit: (
-    operation: BulkInventoryItemOperation,
+    operation: BulkTagMutationOperation,
     tags: string[],
   ) => Promise<boolean>;
   onOpenActivity: () => void;

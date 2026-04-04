@@ -342,6 +342,18 @@ export function getBulkMutationSuccessMessage(
       return `Replaced tags on ${rowLabel} in ${inventoryLabel}.`;
     case "clear_tags":
       return `Cleared tags on ${rowLabel} in ${inventoryLabel}.`;
+    case "set_quantity":
+      return `Updated quantity on ${rowLabel} in ${inventoryLabel}.`;
+    case "set_notes":
+      return `Updated notes on ${rowLabel} in ${inventoryLabel}.`;
+    case "set_acquisition":
+      return `Updated acquisition details on ${rowLabel} in ${inventoryLabel}.`;
+    case "set_finish":
+      return `Updated finish on ${rowLabel} in ${inventoryLabel}.`;
+    case "set_location":
+      return `Updated location on ${rowLabel} in ${inventoryLabel}.`;
+    case "set_condition":
+      return `Updated condition on ${rowLabel} in ${inventoryLabel}.`;
   }
 }
 

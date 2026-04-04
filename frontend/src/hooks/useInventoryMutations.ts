@@ -10,7 +10,7 @@ import {
 } from "../api";
 import type {
   AddInventoryItemRequest,
-  BulkInventoryItemOperation,
+  BulkTagMutationOperation,
   InventoryCreateRequest,
   PatchInventoryItemRequest,
 } from "../types";
@@ -49,6 +49,19 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   const [bulkTagsBusy, setBulkTagsBusy] = useState(false);
   const [createInventoryBusy, setCreateInventoryBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+
+  function getAddRequestBusyId(payload: AddInventoryItemRequest) {
+    if ("scryfall_id" in payload) {
+      return payload.scryfall_id;
+    }
+    if ("oracle_id" in payload) {
+      return payload.oracle_id;
+    }
+    if ("tcgplayer_product_id" in payload) {
+      return payload.tcgplayer_product_id;
+    }
+    return payload.name;
+  }
 
   useEffect(() => {
     if (!notice || notice.tone !== "success") {
@@ -106,7 +119,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       return false;
     }
 
-    setBusyAddCardId(payload.scryfall_id);
+    setBusyAddCardId(getAddRequestBusyId(payload));
     clearNotice();
 
     try {
@@ -206,7 +219,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   }
 
   async function handleBulkTagMutation(
-    operation: BulkInventoryItemOperation,
+    operation: BulkTagMutationOperation,
     tags: string[],
   ) {
     const inventorySlug = requireSelectedInventory(
@@ -238,11 +251,17 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     clearNotice();
 
     try {
-      const response = await bulkMutateInventoryItems(inventorySlug, {
-        operation,
-        item_ids: options.selectedItemIds,
-        ...(operation === "clear_tags" ? {} : { tags }),
-      });
+      const response =
+        operation === "clear_tags"
+          ? await bulkMutateInventoryItems(inventorySlug, {
+              operation,
+              item_ids: options.selectedItemIds,
+            })
+          : await bulkMutateInventoryItems(inventorySlug, {
+              operation,
+              item_ids: options.selectedItemIds,
+              tags,
+            });
       await refreshAfterMutation(
         inventorySlug,
         getBulkMutationSuccessMessage(
