@@ -197,6 +197,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "est_value": Decimal("12.00"),
                 "price_date": None,
                 "notes": None,
+                "printing_selection_mode": "explicit",
             }
         )
         catalog_payload = {
@@ -264,6 +265,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "acquisition_currency": None,
                     "notes": None,
                     "tags": [],
+                    "printing_selection_mode": "explicit",
                 }
             ],
         }
@@ -303,6 +305,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "acquisition_currency": None,
                     "notes": None,
                     "tags": [],
+                    "printing_selection_mode": "explicit",
                 }
             ],
         }
@@ -345,6 +348,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "acquisition_currency": None,
                     "notes": None,
                     "tags": [],
+                    "printing_selection_mode": "explicit",
                 }
             ],
         }
@@ -363,6 +367,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("3.00", owned.unit_price)
         self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
         self.assertEqual(["normal", "foil"], owned.allowed_finishes)
+        self.assertEqual("explicit", owned.printing_selection_mode)
         self.assertIsNone(owned.price_date)
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
@@ -434,6 +439,13 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["normal", "foil", "etched"], owned_properties["allowed_finishes"]["items"]["enum"])
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
         self.assertIn("Canonical language codes: en, ja, de, fr", owned_properties["language_code"]["description"])
+        self.assertEqual(["explicit", "defaulted"], owned_properties["printing_selection_mode"]["enum"])
+
+        set_finish_schema = SetFinishResponse.model_json_schema()
+        self.assertEqual(
+            ["explicit", "defaulted"],
+            set_finish_schema["properties"]["printing_selection_mode"]["enum"],
+        )
 
         catalog_schema = CatalogSearchRowResponse.model_json_schema()
         catalog_properties = catalog_schema["properties"]
@@ -642,6 +654,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "acquisition_currency": "USD",
                 "notes": None,
                 "tags": ["commander", "artifact"],
+                "printing_selection_mode": "explicit",
                 "old_acquisition_price": None,
                 "old_acquisition_currency": None,
             }

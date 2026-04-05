@@ -22,6 +22,11 @@ LANGUAGE_CODE_RESPONSE_DESCRIPTION = (
     f"Canonical language codes: {_CANONICAL_LANGUAGE_CODES_TEXT}. "
     "Stored rows are normally normalized to these values."
 )
+PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION = (
+    "How the concrete printing was chosen. "
+    "`explicit` means the caller directly identified the printing. "
+    "`defaulted` means backend resolution selected the printing."
+)
 SEARCH_LANG_RESPONSE_DESCRIPTION = (
     f"Catalog language code. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
 )
@@ -169,6 +174,9 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     est_value: str | None
     price_date: str | None
     notes: str | None
+    printing_selection_mode: Literal["explicit", "defaulted"] = Field(
+        description=PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION
+    )
 
 
 class InventoryAuditEventResponse(ApiBaseModel):
@@ -202,6 +210,9 @@ class InventoryItemMutationBaseResponse(ApiBaseModel):
     acquisition_currency: str | None
     notes: str | None
     tags: list[str]
+    printing_selection_mode: Literal["explicit", "defaulted"] = Field(
+        description=PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION
+    )
 
 
 class CsvImportRowResponse(InventoryItemMutationBaseResponse):

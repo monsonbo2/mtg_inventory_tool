@@ -1389,12 +1389,15 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             default_rows = list_card_printings_for_oracle(db_path, "lookup-oracle")
             self.assertEqual(["lookup-en-new", "lookup-en-old"], [row.scryfall_id for row in default_rows])
+            self.assertEqual([True, False], [row.is_default_add_choice for row in default_rows])
 
             all_rows = list_card_printings_for_oracle(db_path, "lookup-oracle", lang="all")
-            self.assertEqual(["lookup-ja", "lookup-en-new", "lookup-en-old"], [row.scryfall_id for row in all_rows])
+            self.assertEqual(["lookup-en-new", "lookup-en-old", "lookup-ja"], [row.scryfall_id for row in all_rows])
+            self.assertEqual([True, False, False], [row.is_default_add_choice for row in all_rows])
 
             japanese_rows = list_card_printings_for_oracle(db_path, "lookup-oracle", lang="ja")
             self.assertEqual(["lookup-ja"], [row.scryfall_id for row in japanese_rows])
+            self.assertEqual([True], [row.is_default_add_choice for row in japanese_rows])
 
             with connect(db_path) as connection:
                 connection.executemany(
@@ -1437,9 +1440,103 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 ["lookup-no-english-ja", "lookup-no-english-de"],
                 [row.scryfall_id for row in fallback_rows],
             )
+            self.assertEqual([True, False], [row.is_default_add_choice for row in fallback_rows])
 
             with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'missing-oracle'"):
                 list_card_printings_for_oracle(db_path, "missing-oracle")
+
+    def test_list_card_printings_for_oracle_matches_default_add_policy_and_marks_one_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-policy-mainstream-en",
+                oracle_id="lookup-policy-oracle",
+                name="Lookup Policy Card",
+                collector_number="61",
+                lang="en",
+                released_at="2024-01-01",
+                booster=1,
+                promo_types_json="[]",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-policy-mainstream-ja",
+                oracle_id="lookup-policy-oracle",
+                name="Lookup Policy Card",
+                collector_number="62",
+                lang="ja",
+                released_at="2024-03-01",
+                booster=1,
+                promo_types_json="[]",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-policy-promo-en",
+                oracle_id="lookup-policy-oracle",
+                name="Lookup Policy Card",
+                collector_number="63",
+                lang="en",
+                released_at="2024-04-01",
+                booster=0,
+                promo_types_json='["promo-pack"]',
+                is_default_add_searchable=1,
+            )
+
+            default_rows = list_card_printings_for_oracle(db_path, "lookup-policy-oracle")
+            self.assertEqual(
+                ["lookup-policy-mainstream-en", "lookup-policy-promo-en"],
+                [row.scryfall_id for row in default_rows],
+            )
+            self.assertEqual([True, False], [row.is_default_add_choice for row in default_rows])
+
+            all_rows = list_card_printings_for_oracle(db_path, "lookup-policy-oracle", lang="all")
+            self.assertEqual(
+                [
+                    "lookup-policy-mainstream-en",
+                    "lookup-policy-promo-en",
+                    "lookup-policy-mainstream-ja",
+                ],
+                [row.scryfall_id for row in all_rows],
+            )
+            self.assertEqual([True, False, False], [row.is_default_add_choice for row in all_rows])
+
+            resolved = resolve_card_row(
+                connect(db_path),
+                scryfall_id=None,
+                oracle_id="lookup-policy-oracle",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                finish="normal",
+            )
+            self.assertEqual("lookup-policy-mainstream-en", resolved["scryfall_id"])
+
+    def test_list_card_printings_for_oracle_has_no_default_when_normal_would_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-foil-only-en",
+                oracle_id="lookup-foil-only-oracle",
+                name="Lookup Foil Only Card",
+                collector_number="71",
+                lang="en",
+                finishes_json='["foil"]',
+                is_default_add_searchable=1,
+            )
+
+            rows = list_card_printings_for_oracle(db_path, "lookup-foil-only-oracle")
+            self.assertEqual(["lookup-foil-only-en"], [row.scryfall_id for row in rows])
+            self.assertEqual([False], [row.is_default_add_choice for row in rows])
 
     def test_list_card_printings_for_oracle_filters_to_default_add_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -4309,6 +4406,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertIsInstance(add_result, AddCardResult)
             self.assertEqual(["commander", "trade"], add_result.tags)
+            self.assertEqual("explicit", add_result.printing_selection_mode)
 
             # The direct service API should accept actor/request metadata once
             # and preserve it all the way into the audit table.
@@ -4550,6 +4648,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(["normal", "foil"], owned_rows[0].allowed_finishes)
             self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
             self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)
+            self.assertEqual("explicit", owned_rows[0].printing_selection_mode)
             self.assertIsNone(owned_rows[0].acquisition_price)
             self.assertIsNone(owned_rows[0].acquisition_currency)
             self.assertIsNone(owned_rows[0].notes)

@@ -142,7 +142,8 @@ def get_inventory_item_row(connection: sqlite3.Connection, inventory_slug: str, 
             ii.acquisition_price,
             ii.acquisition_currency,
             ii.notes,
-            COALESCE(ii.tags_json, '[]') AS tags_json
+            COALESCE(ii.tags_json, '[]') AS tags_json,
+            ii.printing_selection_mode
         FROM inventory_items ii
         JOIN inventories i ON i.id = ii.inventory_id
         JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
@@ -174,6 +175,7 @@ def inventory_item_result_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "acquisition_currency": text_or_none(row["acquisition_currency"]),
         "notes": text_or_none(row["notes"]),
         "tags": load_tags_json(row["tags_json"]),
+        "printing_selection_mode": row["printing_selection_mode"],
     }
 
 
@@ -208,7 +210,8 @@ def find_inventory_item_collision(
             ii.acquisition_price,
             ii.acquisition_currency,
             ii.notes,
-            COALESCE(ii.tags_json, '[]') AS tags_json
+            COALESCE(ii.tags_json, '[]') AS tags_json,
+            ii.printing_selection_mode
         FROM inventory_items ii
         JOIN inventories i ON i.id = ii.inventory_id
         JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id

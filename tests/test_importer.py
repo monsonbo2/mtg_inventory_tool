@@ -247,10 +247,15 @@ class ImporterTest(RepoSmokeTestCase):
             migrated = sqlite3.connect(db_path)
             columns = {row[1] for row in migrated.execute("PRAGMA table_info(inventory_items)")}
             tags_value = migrated.execute("SELECT tags_json FROM inventory_items").fetchone()[0]
+            printing_selection_mode = migrated.execute(
+                "SELECT printing_selection_mode FROM inventory_items"
+            ).fetchone()[0]
             migrated.close()
 
             self.assertIn("tags_json", columns)
+            self.assertIn("printing_selection_mode", columns)
             self.assertEqual("[]", tags_value)
+            self.assertEqual("explicit", printing_selection_mode)
 
     def test_import_scryfall_uses_face_oracle_id_when_top_level_oracle_id_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -25,7 +25,7 @@ from .normalize import (
     validate_limit_value,
 )
 from .query_catalog import add_catalog_filters, add_catalog_scope_filter, build_catalog_search_fts_query, catalog_scope_filter_sql
-from .response_models import CatalogNameSearchRow, CatalogSearchRow
+from .response_models import CatalogNameSearchRow, CatalogPrintingLookupRow, CatalogSearchRow
 
 
 _LANGUAGE_ORDER = {code: index for index, code in enumerate(CANONICAL_LANGUAGE_CODES)}
@@ -39,21 +39,32 @@ _PREFERRED_ORACLE_DEFAULT_SET_TYPES = {
 }
 
 
-def _catalog_search_row_from_payload(payload: Mapping[str, Any]) -> CatalogSearchRow:
+def _catalog_search_row_kwargs_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     item = dict(payload)
     image_uri_small, image_uri_normal = extract_image_uri_fields(item.pop("image_uris_json", None))
-    return CatalogSearchRow(
-        scryfall_id=item["scryfall_id"],
-        name=item["name"],
-        set_code=item["set_code"],
-        set_name=item["set_name"],
-        collector_number=item["collector_number"],
-        lang=item["lang"],
-        rarity=item["rarity"],
-        finishes=normalized_catalog_finish_list(item.pop("finishes_json", None)),
-        tcgplayer_product_id=item["tcgplayer_product_id"],
-        image_uri_small=image_uri_small,
-        image_uri_normal=image_uri_normal,
+    return {
+        "scryfall_id": item["scryfall_id"],
+        "name": item["name"],
+        "set_code": item["set_code"],
+        "set_name": item["set_name"],
+        "collector_number": item["collector_number"],
+        "lang": item["lang"],
+        "rarity": item["rarity"],
+        "finishes": normalized_catalog_finish_list(item.pop("finishes_json", None)),
+        "tcgplayer_product_id": item["tcgplayer_product_id"],
+        "image_uri_small": image_uri_small,
+        "image_uri_normal": image_uri_normal,
+    }
+
+
+def _catalog_search_row_from_payload(payload: Mapping[str, Any]) -> CatalogSearchRow:
+    return CatalogSearchRow(**_catalog_search_row_kwargs_from_payload(payload))
+
+
+def _catalog_printing_lookup_row_from_payload(payload: Mapping[str, Any]) -> CatalogPrintingLookupRow:
+    return CatalogPrintingLookupRow(
+        **_catalog_search_row_kwargs_from_payload(payload),
+        is_default_add_choice=bool(dict(payload).get("is_default_add_choice", False)),
     )
 
 
@@ -181,6 +192,28 @@ def _oracle_default_printing_sort_key(row: sqlite3.Row, *, prefer_english: bool)
         text_or_none(row["collector_number"]) or "",
         str(row["scryfall_id"]),
     )
+
+
+def _rank_oracle_default_printing_rows(
+    rows: list[sqlite3.Row],
+    *,
+    prefer_english: bool,
+) -> list[sqlite3.Row]:
+    return sorted(
+        rows,
+        key=lambda row: _oracle_default_printing_sort_key(row, prefer_english=prefer_english),
+    )
+
+
+def _default_add_choice_row_for_printings(
+    rows: list[sqlite3.Row],
+    *,
+    prefer_english: bool,
+) -> sqlite3.Row | None:
+    normal_rows, _normalized_finish = _rows_matching_finish(rows, "normal")
+    if not normal_rows:
+        return None
+    return _rank_oracle_default_printing_rows(normal_rows, prefer_english=prefer_english)[0]
 
 
 def search_cards(
@@ -464,7 +497,7 @@ def list_card_printings_for_oracle(
     *,
     lang: str | None = None,
     scope: str | None = None,
-) -> list[CatalogSearchRow]:
+) -> list[CatalogPrintingLookupRow]:
     oracle_id_text = text_or_none(oracle_id)
     if oracle_id_text is None:
         raise ValidationError("oracle_id is required.")
@@ -485,7 +518,11 @@ def list_card_printings_for_oracle(
                 rarity,
                 finishes_json,
                 tcgplayer_product_id,
-                image_uris_json
+                image_uris_json,
+                released_at,
+                set_type,
+                booster,
+                promo_types_json
             FROM mtg_cards
             WHERE oracle_id = ?
               AND {scope_filter_sql}
@@ -509,8 +546,26 @@ def list_card_printings_for_oracle(
     else:
         normalized_lang = normalize_language_code(requested_lang)
         selected_rows = [row for row in rows if normalize_language_code(row["lang"]) == normalized_lang]
+    prefer_english = requested_lang is None or requested_lang.lower() == "all"
+    ranked_rows = _rank_oracle_default_printing_rows(
+        selected_rows,
+        prefer_english=prefer_english,
+    )
+    default_choice = _default_add_choice_row_for_printings(
+        selected_rows,
+        prefer_english=prefer_english,
+    )
+    default_choice_id = str(default_choice["scryfall_id"]) if default_choice is not None else None
 
-    return [_catalog_search_row_from_payload(row) for row in selected_rows]
+    return [
+        _catalog_printing_lookup_row_from_payload(
+            {
+                **dict(row),
+                "is_default_add_choice": str(row["scryfall_id"]) == default_choice_id,
+            }
+        )
+        for row in ranked_rows
+    ]
 
 
 def list_default_card_name_candidate_rows(
@@ -732,12 +787,9 @@ def resolve_card_row(
             raise ValidationError(
                 f"No printing found for oracle_id '{oracle_id}' with finish '{normalized_finish}'."
             )
-        ranked_rows = sorted(
+        ranked_rows = _rank_oracle_default_printing_rows(
             rows,
-            key=lambda row: _oracle_default_printing_sort_key(
-                row,
-                prefer_english=normalized_lang is None,
-            ),
+            prefer_english=normalized_lang is None,
         )
         return ranked_rows[0]
 

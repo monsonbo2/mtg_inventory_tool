@@ -59,6 +59,7 @@ def inventory_item_response_kwargs(payload: Mapping[str, Any]) -> dict[str, Any]
         "acquisition_currency": payload["acquisition_currency"],
         "notes": payload["notes"],
         "tags": list(payload["tags"]),
+        "printing_selection_mode": payload["printing_selection_mode"],
     }
 
 
@@ -75,6 +76,11 @@ class CatalogSearchRow(ResponseModel):
     tcgplayer_product_id: str | None
     image_uri_small: str | None
     image_uri_normal: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogPrintingLookupRow(CatalogSearchRow):
+    is_default_add_choice: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +199,7 @@ class OwnedInventoryRow(ResponseModel):
     est_value: Decimal | None
     price_date: str | None
     notes: str | None
+    printing_selection_mode: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +220,7 @@ class InventoryItemMutationRow(ResponseModel):
     acquisition_currency: str | None
     notes: str | None
     tags: list[str]
+    printing_selection_mode: str
 
 
 @dataclass(frozen=True, slots=True)

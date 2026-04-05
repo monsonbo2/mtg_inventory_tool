@@ -22,6 +22,9 @@ preserve for the first API-backed version of the project.
   list.
 - Owned inventory rows include `allowed_finishes` so edit UIs can constrain
   finish changes without doing an extra catalog lookup.
+- Owned inventory rows and inventory write/import responses include
+  `printing_selection_mode` so clients can distinguish between an explicitly
+  chosen printing and a concrete printing the backend selected by default.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
   explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one

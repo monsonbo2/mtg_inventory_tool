@@ -114,6 +114,7 @@ def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
         est_value=(unit_price * Decimal(quantity) if unit_price is not None else None),
         price_date=text_or_none(row.get("price_date")),
         notes=text_or_none(row.get("notes")),
+        printing_selection_mode=row["printing_selection_mode"],
     )
 
 
@@ -439,7 +440,8 @@ def list_owned_filtered(
                 lp.price_value AS unit_price,
                 ROUND(ii.quantity * lp.price_value, 2) AS est_value,
                 lp.snapshot_date AS price_date,
-                ii.notes
+                ii.notes,
+                ii.printing_selection_mode
             FROM inventory_items ii
             JOIN inventories i ON i.id = ii.inventory_id
             JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id

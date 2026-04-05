@@ -257,6 +257,15 @@
             ],
             "title": "Notes"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -297,7 +306,8 @@
           "acquisition_price",
           "acquisition_currency",
           "notes",
-          "tags"
+          "tags",
+          "printing_selection_mode"
         ],
         "title": "AddInventoryItemResponse",
         "type": "object"
@@ -1105,6 +1115,15 @@
             ],
             "title": "Notes"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1146,6 +1165,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "csv_row"
         ],
         "title": "CsvImportRowResponse",
@@ -1549,6 +1569,15 @@
             ],
             "title": "Notes"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -1598,6 +1627,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "source_position",
           "section"
         ],
@@ -1973,6 +2003,15 @@
             ],
             "title": "Notes"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -2018,6 +2057,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "decklist_line",
           "section"
         ],
@@ -2829,6 +2869,15 @@
             ],
             "title": "Price Date"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -2898,7 +2947,8 @@
           "unit_price",
           "est_value",
           "price_date",
-          "notes"
+          "notes",
+          "printing_selection_mode"
         ],
         "title": "OwnedInventoryRowResponse",
         "type": "object"
@@ -3135,6 +3185,15 @@
             ],
             "title": "Notes"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -3175,7 +3234,8 @@
           "acquisition_price",
           "acquisition_currency",
           "notes",
-          "tags"
+          "tags",
+          "printing_selection_mode"
         ],
         "title": "RemoveInventoryItemResponse",
         "type": "object"
@@ -3290,6 +3350,15 @@
             "title": "Operation",
             "type": "string"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -3331,6 +3400,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "operation",
           "old_acquisition_price",
           "old_acquisition_currency"
@@ -3445,6 +3515,15 @@
             "title": "Operation",
             "type": "string"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -3486,6 +3565,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "operation",
           "old_condition_code",
           "merged"
@@ -3585,6 +3665,15 @@
             "title": "Operation",
             "type": "string"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -3626,6 +3715,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "operation",
           "old_finish"
         ],
@@ -3746,6 +3836,15 @@
             "title": "Operation",
             "type": "string"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -3787,6 +3886,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "operation",
           "old_location",
           "merged"
@@ -3893,6 +3993,15 @@
             "title": "Operation",
             "type": "string"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -3934,6 +4043,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "operation",
           "old_notes"
         ],
@@ -4032,6 +4142,15 @@
             "title": "Operation",
             "type": "string"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -4073,6 +4192,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "operation",
           "old_quantity"
         ],
@@ -4174,6 +4294,15 @@
             "title": "Operation",
             "type": "string"
           },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
           "quantity": {
             "title": "Quantity",
             "type": "integer"
@@ -4215,6 +4344,7 @@
           "acquisition_currency",
           "notes",
           "tags",
+          "printing_selection_mode",
           "operation",
           "old_tags"
         ],

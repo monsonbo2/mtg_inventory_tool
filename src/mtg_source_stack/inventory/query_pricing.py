@@ -138,6 +138,7 @@ def query_price_gaps(
         ii.acquisition_currency,
         ii.notes,
         COALESCE(ii.tags_json, '[]') AS tags_json,
+        ii.printing_selection_mode,
         GROUP_CONCAT(DISTINCT cp.finish) AS available_finishes
     FROM inventory_items ii
     JOIN inventories i ON i.id = ii.inventory_id
@@ -162,7 +163,8 @@ def query_price_gaps(
         ii.acquisition_price,
         ii.acquisition_currency,
         ii.notes,
-        ii.tags_json
+        ii.tags_json,
+        ii.printing_selection_mode
     HAVING SUM(CASE WHEN LOWER(COALESCE(cp.finish, '')) = LOWER(ii.finish) THEN 1 ELSE 0 END) = 0
     ORDER BY c.name, c.set_code, c.collector_number
     """

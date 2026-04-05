@@ -455,7 +455,8 @@ def _load_bulk_inventory_item_rows(
             ii.acquisition_price,
             ii.acquisition_currency,
             ii.notes,
-            COALESCE(ii.tags_json, '[]') AS tags_json
+            COALESCE(ii.tags_json, '[]') AS tags_json,
+            ii.printing_selection_mode
         FROM inventory_items ii
         JOIN inventories i ON i.id = ii.inventory_id
         JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id

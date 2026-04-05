@@ -258,6 +258,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 ["normal", "foil", "etched"],
                 owned_properties["allowed_finishes"]["items"]["enum"],
             )
+            self.assertEqual(
+                ["explicit", "defaulted"],
+                owned_properties["printing_selection_mode"]["enum"],
+            )
 
             bootstrap_schema = spec["paths"]["/me/bootstrap"]["post"]["responses"]["200"]["content"][
                 "application/json"
@@ -990,6 +994,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(201, added.status_code)
                 added_payload = added.json()
                 self.assertEqual(["demo", "web"], added_payload["tags"])
+                self.assertEqual("explicit", added_payload["printing_selection_mode"])
                 self.assertEqual("req-add", added.headers["X-Request-Id"])
 
                 listed = client.get("/inventories/personal/items")
@@ -997,6 +1002,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(listed.json()))
                 self.assertEqual(2, listed.json()[0]["quantity"])
                 self.assertEqual(["normal", "foil"], listed.json()[0]["allowed_finishes"])
+                self.assertEqual("explicit", listed.json()[0]["printing_selection_mode"])
                 self.assertEqual(
                     "https://example.test/cards/api-card-1-small.jpg",
                     listed.json()[0]["image_uri_small"],
@@ -2214,7 +2220,7 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(200, all_printings.status_code)
                 self.assertEqual(
-                    ["api-printing-ja", "api-printing-en-new", "api-printing-en-old"],
+                    ["api-printing-en-new", "api-printing-en-old", "api-printing-ja"],
                     [row["scryfall_id"] for row in all_printings.json()],
                 )
 
