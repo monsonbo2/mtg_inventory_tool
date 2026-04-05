@@ -15,6 +15,7 @@ vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
     ...actual,
+    bootstrapDefaultInventory: vi.fn(),
     listInventories: vi.fn(),
     listInventoryItems: vi.fn(),
     listInventoryAudit: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("./api", async () => {
 
 import {
   addInventoryItem,
+  bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
   listCardPrintings,
@@ -173,6 +175,129 @@ describe("App", () => {
 
     expect(searchCardNames).not.toHaveBeenCalled();
     expect(screen.getByText("Run a search")).toBeInTheDocument();
+  });
+
+  it("classifies unauthenticated inventory loads as an auth-required shell state", async () => {
+    vi.mocked(listInventories).mockRejectedValue(
+      new ApiClientError("Authentication required.", {
+        code: "authentication_required",
+        status: 401,
+      }),
+    );
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findAllByText("Authentication required")).toHaveLength(3);
+    expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+  });
+
+  it("classifies forbidden inventory loads as an access-blocked shell state", async () => {
+    vi.mocked(listInventories).mockRejectedValue(
+      new ApiClientError("Forbidden.", {
+        code: "forbidden",
+        status: 403,
+      }),
+    );
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findAllByText("Collection access blocked")).toHaveLength(3);
+    expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+  });
+
+  it("classifies an empty visible inventory list without opening create-collection flow", async () => {
+    vi.mocked(listInventories).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findAllByText("No visible collections")).toHaveLength(3);
+    expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+  });
+
+  it("bootstraps the default collection from the empty inventory state", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          slug: "collection",
+          display_name: "Collection",
+          description: "Default personal collection",
+          item_rows: 0,
+          total_cards: 0,
+        },
+      ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bootstrapDefaultInventory).mockResolvedValue({
+      created: true,
+      inventory: {
+        inventory_id: 9,
+        slug: "collection",
+        display_name: "Collection",
+        description: "Default personal collection",
+      },
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Set Up My Collection" }));
+
+    await waitFor(() => {
+      expect(bootstrapDefaultInventory).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Set up Collection.");
+    expect(await screen.findByText("Current collection: Collection")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledWith("collection");
+      expect(listInventoryAudit).toHaveBeenCalledWith("collection");
+    });
+  });
+
+  it("keeps the onboarding state visible when bootstrap fails", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories).mockResolvedValue([]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bootstrapDefaultInventory).mockRejectedValue(
+      new ApiClientError("Editor access is required to set up a collection.", {
+        code: "forbidden",
+        status: 403,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Set Up My Collection" }));
+
+    await waitFor(() => {
+      expect(bootstrapDefaultInventory).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Editor access is required to set up a collection.",
+    );
+    expect(screen.getByRole("button", { name: "Set Up My Collection" })).toBeInTheDocument();
+    expect(screen.queryByText("Current collection: Collection")).not.toBeInTheDocument();
+    expect(listInventoryItems).not.toHaveBeenCalled();
+    expect(listInventoryAudit).not.toHaveBeenCalled();
   });
 
   it("surfaces backend patch errors as a notice", async () => {

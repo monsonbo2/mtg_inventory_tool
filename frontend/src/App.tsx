@@ -4,6 +4,7 @@ import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AuditFeed } from "./components/AuditFeed";
 import { InventorySidebar } from "./components/InventorySidebar";
 import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
+import { PanelState } from "./components/ui/PanelState";
 import { SearchPanel } from "./components/SearchPanel";
 import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
@@ -13,6 +14,73 @@ import { useCollectionViewState } from "./hooks/useCollectionViewState";
 import { useInventoryOverview } from "./hooks/useInventoryOverview";
 import { useInventoryMutations } from "./hooks/useInventoryMutations";
 import { decimalToNumber, formatUsd } from "./uiHelpers";
+import type { AppShellState } from "./uiTypes";
+
+function getAppShellState(options: {
+  inventoryCount: number;
+  inventoryErrorStatus: number | null;
+  inventoryStatus: "idle" | "loading" | "ready" | "error";
+}): AppShellState {
+  if (options.inventoryCount > 0) {
+    return "ready";
+  }
+
+  if (options.inventoryStatus === "idle" || options.inventoryStatus === "loading") {
+    return "loading";
+  }
+
+  if (options.inventoryStatus === "error") {
+    if (options.inventoryErrorStatus === 401) {
+      return "auth_required";
+    }
+
+    if (options.inventoryErrorStatus === 403) {
+      return "forbidden";
+    }
+
+    return "error";
+  }
+
+  return "no_visible_inventories";
+}
+
+function getShellStatePanelContent(
+  appShellState: Exclude<AppShellState, "ready">,
+  inventoryError: string | null,
+) {
+  switch (appShellState) {
+    case "loading":
+      return {
+        body: "Checking collection access and loading the workspace.",
+        title: "Loading workspace",
+        variant: "loading" as const,
+      };
+    case "auth_required":
+      return {
+        body: "Sign in through the shared-service deployment before loading collections or card data.",
+        title: "Authentication required",
+        variant: "error" as const,
+      };
+    case "forbidden":
+      return {
+        body: "This account is signed in but does not currently have permission to view any collections.",
+        title: "Collection access blocked",
+        variant: "error" as const,
+      };
+    case "no_visible_inventories":
+      return {
+        body: "A visible collection is required before search, collection, and activity views can load.",
+        title: "No visible collections",
+        variant: "idle" as const,
+      };
+    case "error":
+      return {
+        body: inventoryError || "Could not load collections right now.",
+        title: "Workspace unavailable",
+        variant: "error" as const,
+      };
+  }
+}
 
 export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
@@ -21,6 +89,7 @@ export default function App() {
     describeInventory,
     inventories,
     inventoryError,
+    inventoryErrorStatus,
     inventoryStatus,
     items,
     loadInventoryOverview,
@@ -77,11 +146,13 @@ export default function App() {
   });
   const {
     busyAddCardId,
+    bootstrapInventoryBusy,
     bulkTagsBusy,
     busyItem,
     clearNotice,
     createInventoryBusy,
     handleAddCard,
+    handleBootstrapInventory,
     handleBulkTagMutation,
     handleCreateInventory,
     handleDeleteItem,
@@ -171,17 +242,26 @@ export default function App() {
   };
   const bannerNotice = notice && notice.tone !== "success" ? notice : null;
   const toastNotice = notice?.tone === "success" ? notice : null;
+  const appShellState = getAppShellState({
+    inventoryCount: inventories.length,
+    inventoryErrorStatus,
+    inventoryStatus,
+  });
+  const shellStatePanel =
+    appShellState === "ready"
+      ? null
+      : getShellStatePanelContent(appShellState, inventoryError);
 
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Local Demo Frontend</p>
+          <p className="eyebrow">Shared-Service Frontend</p>
           <h1>MTG Collection Studio</h1>
           <p className="hero-copy">
-            A local collection workbench for the demo app. The frontend now
-            tracks the current HTTP contract, supports seeded multi-collection
-            states, and is ready for a final Stage 1 signoff pass.
+            The frontend tracks the current HTTP contract and now classifies
+            shared-service loading, access, and empty-workspace states before
+            the next onboarding pass lands.
           </p>
         </div>
         <div className="hero-metrics">
@@ -201,10 +281,13 @@ export default function App() {
         <div className="workspace-top-grid">
           <aside className="sidebar-column">
             <InventorySidebar
+              appShellState={appShellState}
+              bootstrapInventoryBusy={bootstrapInventoryBusy}
               createInventoryBusy={createInventoryBusy}
               inventories={inventories}
               inventoryError={inventoryError}
               inventoryStatus={inventoryStatus}
+              onBootstrapInventory={handleBootstrapInventory}
               onCreateInventory={handleCreateInventory}
               onSelectInventory={setSelectedInventory}
               selectedInventory={selectedInventory}
@@ -213,15 +296,31 @@ export default function App() {
           </aside>
 
           <div className="workspace-search-column">
-            <SearchPanel actions={searchPanelActions} state={searchPanelState} />
+            {appShellState === "ready" ? (
+              <SearchPanel actions={searchPanelActions} state={searchPanelState} />
+            ) : (
+              <PanelState
+                body={shellStatePanel!.body}
+                title={shellStatePanel!.title}
+                variant={shellStatePanel!.variant}
+              />
+            )}
           </div>
         </div>
 
         <main className="workspace-main-row">
-          <OwnedCollectionPanel
-            actions={collectionPanelActions}
-            state={collectionPanelState}
-          />
+          {appShellState === "ready" ? (
+            <OwnedCollectionPanel
+              actions={collectionPanelActions}
+              state={collectionPanelState}
+            />
+          ) : (
+            <PanelState
+              body={shellStatePanel!.body}
+              title={shellStatePanel!.title}
+              variant={shellStatePanel!.variant}
+            />
+          )}
         </main>
       </div>
 

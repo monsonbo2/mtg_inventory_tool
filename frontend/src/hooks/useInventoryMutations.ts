@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   addInventoryItem,
   ApiClientError,
+  bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
@@ -46,6 +47,7 @@ type UseInventoryMutationsOptions = {
 export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
+  const [bootstrapInventoryBusy, setBootstrapInventoryBusy] = useState(false);
   const [bulkTagsBusy, setBulkTagsBusy] = useState(false);
   const [createInventoryBusy, setCreateInventoryBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -166,6 +168,35 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
+  async function handleBootstrapInventory() {
+    setBootstrapInventoryBusy(true);
+    clearNotice();
+
+    try {
+      const response = await bootstrapDefaultInventory();
+      const refreshed = await options.reloadInventorySummaries(response.inventory.slug);
+      const successMessage = response.created
+        ? `Set up ${response.inventory.display_name}.`
+        : `Opened ${response.inventory.display_name}.`;
+
+      showNotice(
+        refreshed
+          ? successMessage
+          : `${successMessage} The collection list could not refresh automatically.`,
+        refreshed ? "success" : "error",
+      );
+      return true;
+    } catch (error) {
+      showNotice(
+        toUserMessage(error, "Could not set up your collection."),
+        "error",
+      );
+      return false;
+    } finally {
+      setBootstrapInventoryBusy(false);
+    }
+  }
+
   async function handlePatchItem(
     itemId: number,
     action: ItemMutationAction,
@@ -282,11 +313,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
   return {
     busyAddCardId,
+    bootstrapInventoryBusy,
     bulkTagsBusy,
     busyItem,
     clearNotice,
     createInventoryBusy,
     handleAddCard,
+    handleBootstrapInventory,
     handleBulkTagMutation,
     handleCreateInventory,
     handleDeleteItem,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+  ApiClientError,
   listInventories,
   listInventoryAudit,
   listInventoryItems,
@@ -26,6 +27,7 @@ export function useInventoryOverview() {
   const [inventoryStatus, setInventoryStatus] = useState<AsyncStatus>("loading");
   const [viewStatus, setViewStatus] = useState<AsyncStatus>("idle");
   const [inventoryError, setInventoryError] = useState<string | null>(null);
+  const [inventoryErrorStatus, setInventoryErrorStatus] = useState<number | null>(null);
   const [viewError, setViewError] = useState<string | null>(null);
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
@@ -48,6 +50,7 @@ export function useInventoryOverview() {
         }
         setInventories(nextInventories);
         setInventoryError(null);
+        setInventoryErrorStatus(null);
         setSelectedInventory((current) =>
           resolveSelectedInventorySlug(nextInventories, current),
         );
@@ -57,6 +60,9 @@ export function useInventoryOverview() {
           return;
         }
         setInventoryError(toUserMessage(error, "Could not load collections."));
+        setInventoryErrorStatus(
+          error instanceof ApiClientError ? error.status : null,
+        );
         setInventoryStatus("error");
       }
     }
@@ -86,6 +92,7 @@ export function useInventoryOverview() {
       const nextInventories = await listInventories();
       setInventories(nextInventories);
       setInventoryError(null);
+      setInventoryErrorStatus(null);
       setInventoryStatus("ready");
 
       const nextSelectedInventory = resolveSelectedInventorySlug(
@@ -101,6 +108,7 @@ export function useInventoryOverview() {
       return true;
     } catch (error) {
       setInventoryError(toUserMessage(error, "Could not refresh collection totals."));
+      setInventoryErrorStatus(error instanceof ApiClientError ? error.status : null);
       setInventoryStatus("error");
       return false;
     }
@@ -171,6 +179,7 @@ export function useInventoryOverview() {
     describeInventory,
     inventories,
     inventoryError,
+    inventoryErrorStatus,
     inventoryStatus,
     items,
     loadInventoryOverview,

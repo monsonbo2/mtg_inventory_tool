@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { InventoryCreateRequest, InventorySummary } from "../types";
 import { normalizeInventorySlugInput, normalizeOptionalText } from "../uiHelpers";
-import type { AsyncStatus, InventoryCreateResult } from "../uiTypes";
+import type { AppShellState, AsyncStatus, InventoryCreateResult } from "../uiTypes";
 import { ModalDialog } from "./ui/ModalDialog";
 import { PanelState } from "./ui/PanelState";
 
@@ -50,12 +50,15 @@ function InventorySwitcherOption(props: {
 }
 
 export function InventorySidebar(props: {
+  appShellState: AppShellState;
+  bootstrapInventoryBusy: boolean;
   createInventoryBusy: boolean;
   inventories: InventorySummary[];
   selectedInventory: string | null;
   selectedInventoryRow: InventorySummary | null;
   inventoryStatus: AsyncStatus;
   inventoryError: string | null;
+  onBootstrapInventory: () => Promise<boolean>;
   onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
   onSelectInventory: (inventorySlug: string) => void;
 }) {
@@ -81,10 +84,12 @@ export function InventorySidebar(props: {
   }, [props.selectedInventory]);
 
   useEffect(() => {
-    if (!currentInventory && props.inventoryStatus === "ready") {
-      setCreateFormOpen(true);
+    if (props.appShellState !== "ready") {
+      setCreateFormOpen(false);
+      setChangeCollectionOpen(false);
+      resetCreateForm();
     }
-  }, [currentInventory, props.inventoryStatus]);
+  }, [props.appShellState]);
 
   function resetCreateForm() {
     setDisplayName("");
@@ -249,18 +254,32 @@ export function InventorySidebar(props: {
 
   return (
     <section className="panel inventory-sidebar-panel">
-      {props.inventoryError && props.inventories.length ? (
+      {props.inventoryError && props.inventories.length && props.appShellState === "ready" ? (
         <p className="panel-error">{props.inventoryError}</p>
       ) : null}
 
-      {props.inventoryStatus === "loading" && props.inventories.length === 0 ? (
+      {props.appShellState === "loading" && props.inventories.length === 0 ? (
         <PanelState
-          body="Looking for available local demo collections."
+          body="Checking which collections are available to this workspace."
           compact
           title="Loading collections"
           variant="loading"
         />
-      ) : props.inventoryStatus === "error" && props.inventories.length === 0 ? (
+      ) : props.appShellState === "auth_required" ? (
+        <PanelState
+          body="Sign in through the shared-service deployment before loading collections."
+          compact
+          title="Authentication required"
+          variant="error"
+        />
+      ) : props.appShellState === "forbidden" ? (
+        <PanelState
+          body="This account is signed in but does not currently have permission to view any collections."
+          compact
+          title="Collection access blocked"
+          variant="error"
+        />
+      ) : props.appShellState === "error" && props.inventories.length === 0 ? (
         <PanelState
           body={props.inventoryError || "Could not load collections right now."}
           compact
@@ -312,20 +331,31 @@ export function InventorySidebar(props: {
       ) : (
         <>
           <PanelState
-            body="Create or seed a collection to start the local demo."
+            body="Set up your default collection to unlock search, collection, and activity views for this account."
             compact
-            title="No collections yet"
+            title="No visible collections"
           />
           <div className="inventory-sidebar-actions inventory-sidebar-actions-empty">
             <button
               className="primary-button inventory-sidebar-action inventory-sidebar-action-create"
-              onClick={openCreateForm}
+              disabled={props.bootstrapInventoryBusy}
+              onClick={() => {
+                void props.onBootstrapInventory();
+              }}
               type="button"
             >
-              <span aria-hidden="true" className="inventory-action-icon inventory-action-icon-create" />
-              <span className="inventory-sidebar-action-create-label">Create Collection</span>
+              <span
+                aria-hidden="true"
+                className="inventory-action-icon inventory-action-icon-create"
+              />
+              <span className="inventory-sidebar-action-create-label">
+                {props.bootstrapInventoryBusy ? "Setting Up..." : "Set Up My Collection"}
+              </span>
             </button>
           </div>
+          <p className="panel-hint inventory-sidebar-note">
+            This creates or reopens your personal default collection for the current signed-in account.
+          </p>
         </>
       )}
 
