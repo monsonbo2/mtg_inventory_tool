@@ -155,12 +155,18 @@ export function SearchResultCard(props: {
       parsedTags.length ? `${parsedTags.length} tag${parsedTags.length === 1 ? "" : "s"}` : null,
       trimmedNotes ? "Note ready" : null,
     ].filter(Boolean).join(" · ") || "No optional details yet";
+  const needsPrintingSelection = props.canAdd && !activePrinting;
+  const printingsAvailableLabel = `${props.group.printingsCount} printing${
+    props.group.printingsCount === 1 ? "" : "s"
+  } available`;
   const addButtonLabel = busy
     ? "Adding..."
     : recentlyAdded
       ? "Added"
       : !props.canAdd
         ? "Select collection"
+        : needsPrintingSelection
+          ? "Select printing first"
         : quantityIsValid
           ? "Add to collection"
           : "Enter valid qty";
@@ -169,7 +175,7 @@ export function SearchResultCard(props: {
   );
   const selectedPrintingSummary = activePrinting
     ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}`
-    : "Choose a printing below to add this card.";
+    : "Select a printing below before this card can be added.";
 
   async function loadPrintings() {
     if (printingStatus === "loading") {
@@ -229,36 +235,40 @@ export function SearchResultCard(props: {
 
   return (
     <article className="result-card">
-      <div className="card-hero">
-        <CardThumbnail
-          imageUrl={activePrinting?.image_uri_small || props.group.image_uri_small}
-          imageUrlLarge={activePrinting?.image_uri_normal || props.group.image_uri_normal}
-          name={props.group.name}
-          variant="search"
-        />
+      <form className="add-card-form" onSubmit={handleSubmit}>
+        <div className="card-hero">
+          <CardThumbnail
+            imageUrl={activePrinting?.image_uri_small || props.group.image_uri_small}
+            imageUrlLarge={activePrinting?.image_uri_normal || props.group.image_uri_normal}
+            name={props.group.name}
+            variant="search"
+          />
 
-        <div className="card-hero-body">
-          <div className="result-card-header">
-            <div>
-              <h3>{props.group.name}</h3>
-              <p className="result-card-subtitle">{selectedPrintingSummary}</p>
+          <div className="card-hero-body">
+            <div className="result-card-header">
+              <div>
+                <h3>{props.group.name}</h3>
+                <p className="result-card-subtitle">{selectedPrintingSummary}</p>
+              </div>
             </div>
-            <span className="rarity-pill">
-              {props.group.printingsCount} printing{props.group.printingsCount === 1 ? "" : "s"}
-            </span>
+
+            <p className="search-result-summary">{summarizeSearchGroup(props.group)}</p>
           </div>
 
-          <p className="search-result-summary">{summarizeSearchGroup(props.group)}</p>
+          <div className="search-result-hero-actions">
+            <button
+              className="primary-button search-result-add-button"
+              disabled={busy || !props.canAdd || !quantityIsValid || !activePrinting}
+              type="submit"
+            >
+              {addButtonLabel}
+            </button>
+          </div>
         </div>
-      </div>
 
-      <form className="add-card-form" onSubmit={handleSubmit}>
         <div className="form-section">
           <div className="form-section-header">
             <strong>Quick add</strong>
-            <span>
-              {props.group.printingsCount} printing{props.group.printingsCount === 1 ? "" : "s"} available
-            </span>
           </div>
 
           <div className="search-result-quick-add-grid">
@@ -276,7 +286,7 @@ export function SearchResultCard(props: {
                 onFocus={ensurePrintingsLoaded}
                 value={selectedPrintingId}
               >
-                <option value="">Choose printing</option>
+                <option value="">{printingsAvailableLabel}</option>
                 {visiblePrintings.map((printing) => (
                   <option key={printing.scryfall_id} value={printing.scryfall_id}>
                     {formatPrintingOptionLabel(printing)}
@@ -448,14 +458,6 @@ export function SearchResultCard(props: {
             Added successfully. You can keep this group open and add another printing.
           </p>
         ) : null}
-
-        <button
-          className="primary-button"
-          disabled={busy || !props.canAdd || !quantityIsValid || !activePrinting}
-          type="submit"
-        >
-          {addButtonLabel}
-        </button>
       </form>
     </article>
   );

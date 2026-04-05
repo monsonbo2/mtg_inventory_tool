@@ -4,6 +4,10 @@
     grid-template-columns: 1fr;
   }
 
+  .search-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
   .compact-row-main {
     flex-direction: column;
     gap: 16px;
@@ -43,9 +47,40 @@
     grid-template-columns: 1fr;
   }
 
+  .result-card .card-hero {
+    --search-result-thumb-height: auto;
+  }
+
+  .search-workspace {
+    margin-top: 16px;
+    padding-top: 16px;
+  }
+
+  .search-workspace-header {
+    grid-template-columns: 1fr;
+  }
+
+  .search-workspace-header-actions {
+    justify-self: start;
+  }
+
+  .search-workspace-count,
+  .search-results-close {
+    justify-self: start;
+  }
+
+  .result-card .card-hero-body {
+    min-height: 0;
+    padding-right: 0;
+  }
+
   .card-thumb-search,
   .card-thumb-owned {
     width: min(180px, 44vw);
+  }
+
+  .search-workspace-result .card-thumb-search {
+    width: min(84px, 28vw);
   }
 
   .panel,
@@ -82,10 +117,23 @@
   .compact-row-titlebar,
   .activity-drawer-header,
   .collection-header-controls,
+  .result-card-header,
   .table-toolbar,
   .table-query-panel-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .search-result-hero-actions {
+    justify-content: stretch;
+    min-width: 0;
+    position: static;
+    transform: none;
+  }
+
+  .search-result-add-button {
+    width: 100%;
+    min-width: 0;
   }
 
   .table-toolbar-actions,

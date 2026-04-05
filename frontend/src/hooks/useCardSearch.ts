@@ -15,8 +15,10 @@ import type { AsyncStatus } from "../uiTypes";
 
 const AUTOCOMPLETE_MIN_QUERY_LENGTH = 2;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
-const AUTOCOMPLETE_LIMIT = 5;
-const SEARCH_GROUP_LIMIT = 8;
+const AUTOCOMPLETE_LIMIT = 8;
+const SEARCH_GROUP_INITIAL_LIMIT = 8;
+const SEARCH_GROUP_PAGE_SIZE = 10;
+const SEARCH_GROUP_PREFETCH_LIMIT = SEARCH_GROUP_INITIAL_LIMIT + SEARCH_GROUP_PAGE_SIZE;
 
 type UseCardSearchOptions = {
   onSearchActivity?: () => void;
@@ -29,6 +31,13 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CatalogNameSearchRow[]>([]);
+  const [searchGroupVisibleLimit, setSearchGroupVisibleLimit] = useState(SEARCH_GROUP_INITIAL_LIMIT);
+  const [searchRequestedLimit, setSearchRequestedLimit] = useState(SEARCH_GROUP_PREFETCH_LIMIT);
+  const [searchCanLoadMore, setSearchCanLoadMore] = useState(false);
+  const [searchLoadMoreBusy, setSearchLoadMoreBusy] = useState(false);
+  const [activeSearchGroupId, setActiveSearchGroupId] = useState<string | null>(null);
+  const [searchResultsVisible, setSearchResultsVisible] = useState(false);
+  const [searchWorkspaceMode, setSearchWorkspaceMode] = useState<"browse" | "focus">("browse");
   const [suggestionResults, setSuggestionResults] = useState<CatalogNameSearchRow[]>([]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
@@ -105,13 +114,24 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     setHighlightedSuggestionIndex(-1);
   }
 
+  function resetSearchPagination() {
+    setSearchGroupVisibleLimit(SEARCH_GROUP_INITIAL_LIMIT);
+    setSearchRequestedLimit(SEARCH_GROUP_PREFETCH_LIMIT);
+    setSearchCanLoadMore(false);
+    setSearchLoadMoreBusy(false);
+  }
+
   function resetSearchWorkspace() {
     suggestionLookupRequestIdRef.current += 1;
     skipSuggestionFetchQueryRef.current = null;
     setSearchQuery("");
     setSearchResults([]);
+    setActiveSearchGroupId(null);
+    setSearchResultsVisible(false);
+    setSearchWorkspaceMode("browse");
     setSearchStatus("idle");
     setSearchError(null);
+    resetSearchPagination();
     setSuggestionStatus("idle");
     setSuggestionError(null);
     setSuggestionResults([]);
@@ -143,47 +163,90 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         return -1;
       }
       if (current === -1) {
-        return direction > 0 ? 0 : suggestionResults.length - 1;
+        return direction > 0 ? 0 : -1;
       }
 
       const nextIndex = current + direction;
       if (nextIndex < 0) {
-        return suggestionResults.length - 1;
+        return -1;
       }
       if (nextIndex >= suggestionResults.length) {
-        return 0;
+        return suggestionResults.length - 1;
       }
       return nextIndex;
     });
   }
 
-  async function runCardSearch(query: string) {
+  async function runCardSearch(
+    query: string,
+    runOptions: {
+      loadingMore?: boolean;
+      requestLimit?: number;
+      visibleLimit?: number;
+    } = {},
+  ) {
     const trimmed = query.trim();
+    const loadingMore = runOptions.loadingMore ?? false;
+    const requestLimit = runOptions.requestLimit ?? SEARCH_GROUP_PREFETCH_LIMIT;
+    const visibleLimit = runOptions.visibleLimit ?? SEARCH_GROUP_INITIAL_LIMIT;
     if (!trimmed) {
       setSearchResults([]);
+      setActiveSearchGroupId(null);
+      setSearchResultsVisible(false);
+      setSearchWorkspaceMode("browse");
       setSearchStatus("idle");
       setSearchError(null);
+      resetSearchPagination();
       return;
     }
 
-    options.onSearchActivity?.();
-    suggestionLookupRequestIdRef.current += 1;
-    closeSuggestionList();
-
-    setSearchStatus("loading");
-    setSearchError(null);
+    if (!loadingMore) {
+      options.onSearchActivity?.();
+      suggestionLookupRequestIdRef.current += 1;
+      closeSuggestionList();
+      setSearchStatus("loading");
+      setSearchError(null);
+      setSearchResultsVisible(false);
+      setSearchWorkspaceMode("browse");
+      setSearchLoadMoreBusy(false);
+    } else {
+      setSearchLoadMoreBusy(true);
+    }
 
     try {
       const results = await searchCardNames({
         query: trimmed,
-        limit: SEARCH_GROUP_LIMIT,
+        limit: requestLimit,
       });
+      const nextVisibleLimit = Math.min(visibleLimit, results.length);
+      const nextActiveSearchGroupId =
+        activeSearchGroupId && results.slice(0, nextVisibleLimit).some((result) => result.oracle_id === activeSearchGroupId)
+          ? activeSearchGroupId
+          : results[0]?.oracle_id || null;
       setSearchResults(results);
+      setSearchGroupVisibleLimit(nextVisibleLimit);
+      setSearchRequestedLimit(requestLimit);
+      setSearchCanLoadMore(results.length >= requestLimit);
+      setActiveSearchGroupId(nextActiveSearchGroupId);
+      setSearchResultsVisible(results.length > 0);
+      setSearchWorkspaceMode("browse");
       setSearchStatus("ready");
     } catch (error) {
-      setSearchResults([]);
-      setSearchError(toUserMessage(error, "Card search failed."));
-      setSearchStatus("error");
+      if (loadingMore) {
+        setSearchError(toUserMessage(error, "More matching cards could not load."));
+      } else {
+        setSearchResults([]);
+        setActiveSearchGroupId(null);
+        setSearchResultsVisible(false);
+        setSearchWorkspaceMode("browse");
+        setSearchError(toUserMessage(error, "Card search failed."));
+        setSearchStatus("error");
+        resetSearchPagination();
+      }
+    } finally {
+      if (loadingMore) {
+        setSearchLoadMoreBusy(false);
+      }
     }
   }
 
@@ -195,6 +258,13 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   function handleSearchQueryChange(value: string) {
     skipSuggestionFetchQueryRef.current = null;
     setSearchQuery(value);
+    setSearchResults([]);
+    setActiveSearchGroupId(null);
+    setSearchResultsVisible(false);
+    setSearchWorkspaceMode("browse");
+    setSearchStatus("idle");
+    setSearchError(null);
+    resetSearchPagination();
     setSuggestionOpen(value.trim().length >= AUTOCOMPLETE_MIN_QUERY_LENGTH);
     setHighlightedSuggestionIndex(-1);
   }
@@ -213,9 +283,71 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     skipSuggestionFetchQueryRef.current = query.toLowerCase();
     setSearchQuery(query);
     setSearchResults([result]);
+    setSearchGroupVisibleLimit(1);
+    setSearchRequestedLimit(1);
+    setSearchCanLoadMore(false);
+    setSearchLoadMoreBusy(false);
+    setActiveSearchGroupId(result.oracle_id);
+    setSearchResultsVisible(true);
+    setSearchWorkspaceMode("focus");
     setSearchError(null);
     setSearchStatus("ready");
     closeSuggestionList();
+  }
+
+  function dismissSearchResults() {
+    setSearchResultsVisible(false);
+    setSearchLoadMoreBusy(false);
+  }
+
+  function handleSearchGroupSelect(groupId: string) {
+    setActiveSearchGroupId(groupId);
+    setSearchResultsVisible(true);
+    setSearchWorkspaceMode("focus");
+  }
+
+  function handleSearchWorkspaceBrowse() {
+    setSearchWorkspaceMode("browse");
+    setSearchResultsVisible(true);
+  }
+
+  function handleSearchResultsLoadMore() {
+    const hiddenLoadedResultCount = Math.max(0, searchResults.length - searchGroupVisibleLimit);
+    const nextVisibleLimit = searchGroupVisibleLimit + SEARCH_GROUP_PAGE_SIZE;
+
+    if (hiddenLoadedResultCount > 0) {
+      setSearchGroupVisibleLimit(Math.min(nextVisibleLimit, searchResults.length));
+      return;
+    }
+
+    if (!searchCanLoadMore || searchLoadMoreBusy) {
+      return;
+    }
+
+    void runCardSearch(searchQuery, {
+      loadingMore: true,
+      requestLimit: searchRequestedLimit + SEARCH_GROUP_PAGE_SIZE,
+      visibleLimit: nextVisibleLimit,
+    });
+  }
+
+  function moveSearchGroupSelection(direction: 1 | -1) {
+    const visibleSearchResults = searchResults.slice(0, searchGroupVisibleLimit);
+    if (!searchResultsVisible || searchWorkspaceMode !== "browse" || visibleSearchResults.length <= 1) {
+      return;
+    }
+
+    const currentIndex = Math.max(
+      0,
+      visibleSearchResults.findIndex((result) => result.oracle_id === activeSearchGroupId),
+    );
+    const nextIndex = Math.min(
+      visibleSearchResults.length - 1,
+      Math.max(0, currentIndex + direction),
+    );
+    setActiveSearchGroupId(
+      visibleSearchResults[nextIndex]?.oracle_id || visibleSearchResults[0]?.oracle_id || null,
+    );
   }
 
   function handleSearchInputKeyDown(
@@ -224,11 +356,19 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        moveSuggestionHighlight(1);
+        if (suggestionOpen) {
+          moveSuggestionHighlight(1);
+          break;
+        }
+        moveSearchGroupSelection(1);
         break;
       case "ArrowUp":
         event.preventDefault();
-        moveSuggestionHighlight(-1);
+        if (suggestionOpen) {
+          moveSuggestionHighlight(-1);
+          break;
+        }
+        moveSearchGroupSelection(-1);
         break;
       case "Escape":
         if (suggestionOpen) {
@@ -244,6 +384,17 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         if (activeSuggestion) {
           event.preventDefault();
           handleSuggestionSelect(activeSuggestion);
+          break;
+        }
+
+        if (
+          searchResultsVisible &&
+          searchWorkspaceMode === "browse" &&
+          searchResults.slice(0, searchGroupVisibleLimit).length > 1 &&
+          activeSearchGroupId
+        ) {
+          event.preventDefault();
+          handleSearchGroupSelect(activeSearchGroupId);
         }
         break;
       }
@@ -279,21 +430,33 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     return request;
   }
 
-  const searchGroups = createSearchCardGroups(searchResults).slice(0, SEARCH_GROUP_LIMIT);
+  const searchHiddenResultCount = Math.max(0, searchResults.length - searchGroupVisibleLimit);
+  const visibleSearchResults = searchResults.slice(0, searchGroupVisibleLimit);
+  const searchGroups = createSearchCardGroups(visibleSearchResults);
 
   return {
     handleSearchFieldFocus,
     handleSearchInputKeyDown,
     handleSearchQueryChange,
+    handleSearchResultsLoadMore,
     handleSearchSubmit,
+    dismissSearchResults,
+    handleSearchGroupSelect,
+    handleSearchWorkspaceBrowse,
     handleSuggestionRequestClose,
     handleSuggestionSelect,
+    activeSearchGroupId,
     highlightedSuggestionIndex,
     loadSearchGroupPrintings,
     resetSearchWorkspace,
     searchError,
+    searchCanLoadMore: searchHiddenResultCount > 0 || searchCanLoadMore,
     searchGroups,
+    searchHiddenResultCount,
+    searchLoadMoreBusy,
     searchQuery,
+    searchResultsVisible,
+    searchWorkspaceMode,
     searchStatus,
     setHighlightedSuggestionIndex,
     suggestionError,

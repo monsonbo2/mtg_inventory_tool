@@ -435,10 +435,160 @@ describe("App", () => {
 
     await user.keyboard("{Enter}");
 
-    expect(searchCardNames).toHaveBeenCalledWith({ query: "Fo", limit: 5 });
+    expect(searchCardNames).toHaveBeenCalledWith({ query: "Fo", limit: 8 });
     expect(input).toHaveValue("Force of Will");
     expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Force of Will" })).toBeInTheDocument();
+    expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
+  });
+
+  it("lets arrow-up return keyboard focus to the search input so Enter submits the full search", async () => {
+    const user = userEvent.setup();
+    const forest = buildNameSearchRow({
+      oracle_id: "forest-oracle",
+      name: "Forest",
+      printings_count: 1,
+    });
+    const forceOfWill = buildNameSearchRow({
+      oracle_id: "force-oracle",
+      name: "Force of Will",
+      printings_count: 4,
+      available_languages: ["en", "de"],
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Fo") {
+        return [forest, forceOfWill];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.clear(input);
+    await user.type(input, "Fo");
+
+    await screen.findByRole("option", { name: /Forest/i });
+    expect(input).toHaveAttribute("aria-activedescendant", expect.stringContaining("-option-0"));
+
+    await user.keyboard("{ArrowUp}");
+
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{Enter}");
+
+    expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Fo", limit: 18 });
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Forest" })).toBeInTheDocument();
+    expect(screen.getByText("Matching cards")).toBeInTheDocument();
+  });
+
+  it("uses arrow keys to move through matching cards after a submitted search and Enter selects the card", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "lightn") {
+        return [
+          buildNameSearchRow({
+            oracle_id: "lightning-bolt-oracle",
+            name: "Lightning Bolt",
+            printings_count: 3,
+          }),
+          buildNameSearchRow({
+            oracle_id: "lightning-angel-oracle",
+            name: "Lightning Angel",
+            printings_count: 5,
+          }),
+          buildNameSearchRow({
+            oracle_id: "lightning-axe-oracle",
+            name: "Lightning Axe",
+            printings_count: 9,
+          }),
+        ];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "lightn");
+    await screen.findByRole("option", { name: /Lightning Angel/i });
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByText("Matching cards")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("heading", { name: "Lightning Angel" })).toBeInTheDocument();
+    expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
+  });
+
+  it("scrolls matching-card navigation into view as keyboard selection moves", async () => {
+    const user = userEvent.setup();
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return [
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-axe-oracle",
+              name: "Lightning Axe",
+              printings_count: 9,
+            }),
+          ];
+        }
+        return [];
+      });
+
+      render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Search query" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+
+      await user.keyboard("{ArrowUp}");
+      await user.keyboard("{Enter}");
+
+      await screen.findByText("Matching cards");
+      scrollIntoViewSpy.mockClear();
+
+      await user.keyboard("{ArrowDown}");
+
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    }
   });
 
   it("preserves backend ordering for name-search suggestions and grouped results", async () => {
@@ -494,11 +644,12 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Search cards" }));
 
-    await screen.findByRole("heading", { name: "Lightning Angel" });
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.getByText("Matching cards")).toBeInTheDocument();
 
     const resultNames = Array.from(
-      container.querySelectorAll(".search-results-grid article h3"),
-    ).map((heading) => heading.textContent);
+      container.querySelectorAll(".search-workspace-result-copy strong"),
+    ).map((name) => name.textContent);
 
     expect(resultNames).toEqual([
       "Lightning Bolt",
@@ -506,6 +657,74 @@ describe("App", () => {
       "Lightning Axe",
       "Lightning Blast",
     ]);
+
+    const blastResult = screen.getByText("Lightning Blast").closest("button");
+    expect(blastResult).not.toBeNull();
+
+    await user.click(blastResult!);
+
+    expect(await screen.findByRole("heading", { name: "Lightning Blast" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Lightning Angel" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back to matches" }));
+
+    expect(screen.getByText("Matching cards")).toBeInTheDocument();
+  });
+
+  it("loads more matching cards from the browse list in 10-card steps", async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 21 }, (_, index) =>
+      buildNameSearchRow({
+        oracle_id: `cloud-${index + 1}`,
+        name: `Cloud Result ${String(index + 1).padStart(2, "0")}`,
+        printings_count: index + 1,
+      }),
+    );
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Cloud") {
+        return rows.slice(0, params.limit ?? rows.length);
+      }
+      return [];
+    });
+
+    const { container } = render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "Cloud");
+    await screen.findByRole("option", { name: /Cloud Result 01/i });
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    await screen.findByRole("heading", { name: "Cloud Result 01" });
+    expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Cloud", limit: 18 });
+
+    const visibleResultNames = () =>
+      Array.from(container.querySelectorAll(".search-workspace-result-copy strong")).map(
+        (name) => name.textContent,
+      );
+
+    expect(visibleResultNames()).toHaveLength(8);
+
+    const initialCallCount = vi.mocked(searchCardNames).mock.calls.length;
+    await user.click(
+      screen.getByRole("button", { name: "Show 10 more of 10 additional matches" }),
+    );
+
+    expect(visibleResultNames()).toHaveLength(18);
+    expect(vi.mocked(searchCardNames).mock.calls).toHaveLength(initialCallCount);
+
+    await user.click(screen.getByRole("button", { name: "Load 10 more matches" }));
+
+    await waitFor(() => {
+      expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Cloud", limit: 28 });
+    });
+    await waitFor(() => {
+      expect(visibleResultNames()).toHaveLength(21);
+    });
+    expect(screen.queryByRole("button", { name: /more matches/i })).not.toBeInTheDocument();
   });
 
   it("groups name-first search results and clears the quick-add workspace after a successful add", async () => {
@@ -574,7 +793,7 @@ describe("App", () => {
     const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest("article");
     expect(boltCard).not.toBeNull();
     expect(screen.getAllByRole("heading", { name: "Lightning Bolt" })).toHaveLength(1);
-    expect(screen.getByRole("heading", { name: "Lightning Blast" })).toBeInTheDocument();
+    expect(screen.getByText("Lightning Blast")).toBeInTheDocument();
 
     const printingSelect = within(boltCard!).getByRole("combobox", { name: "Printing" });
     const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
@@ -586,6 +805,13 @@ describe("App", () => {
     await waitFor(() => {
       expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
     });
+
+    expect(
+      within(boltCard!).getByRole("button", { name: "Select printing first" }),
+    ).toBeDisabled();
+    expect(
+      within(printingSelect).getByRole("option", { name: "3 printings available" }),
+    ).toBeInTheDocument();
 
     expect(
       within(boltCard!).getByRole("button", { name: "Other languages available" }),
@@ -671,6 +897,50 @@ describe("App", () => {
       expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
     });
     expect(input).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps the add-card pane open on outside click and closes it from the explicit close button", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
+        return [
+          buildNameSearchRow({
+            oracle_id: "bolt-oracle",
+            name: "Lightning Bolt",
+            printings_count: 3,
+          }),
+        ];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "Lightning");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    expect(input).toHaveValue("Lightning");
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+
+    await user.click(input);
+
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+
+    await user.click(document.body);
+
+    expect(screen.getByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    expect(input).toHaveValue("Lightning");
+
+    await user.click(screen.getByRole("button", { name: "Close add card pane" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Lightning Bolt" })).not.toBeInTheDocument();
+    });
+    expect(input).toHaveValue("Lightning");
   });
 
   it("defaults to browse collection view and toggles detailed mode without refetching", async () => {
