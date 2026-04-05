@@ -276,13 +276,25 @@ def format_merge_rows_result(result: dict[str, Any]) -> str:
 
 
 def format_import_csv_result(result: dict[str, Any]) -> str:
+    file_label = result.get("csv_path") or result.get("csv_filename") or ""
     lines = [
         "Imported inventory rows from CSV",
         "",
-        f"File: {result['csv_path']}",
+        f"File: {file_label}",
+        f"Detected format: {result.get('detected_format', 'generic_csv')}",
         f"Rows seen: {result['rows_seen']}",
         f"Rows imported: {result['rows_written']}",
     ]
+
+    summary = result.get("summary") or {}
+    if summary:
+        lines.extend(
+            [
+                f"Total card quantity: {summary.get('total_card_quantity', 0)}",
+                f"Distinct card names: {summary.get('distinct_card_names', 0)}",
+                f"Distinct printings: {summary.get('distinct_printings', 0)}",
+            ]
+        )
 
     if result.get("dry_run"):
         lines.append("Mode: dry run (no changes saved)")
@@ -397,6 +409,7 @@ def format_export_csv_result(result: dict[str, Any]) -> str:
         "",
         f"Inventory: {result['inventory']}",
         f"Provider: {result['provider']}",
+        f"Profile: {result['profile']}",
         f"Filters: {result['filters_text']}",
         f"Rows exported: {result['rows_exported']}",
         f"Output: {result['output_path']}",

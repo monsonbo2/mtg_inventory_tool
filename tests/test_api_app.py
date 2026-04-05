@@ -95,6 +95,8 @@ class ApiAppTest(unittest.TestCase):
             "port": 8000,
             "proxy_headers": runtime_mode == "shared_service",
         }
+        if runtime_mode == "shared_service":
+            settings_kwargs["snapshot_signing_secret"] = "test-shared-snapshot-secret"
         settings_kwargs.update(setting_overrides)
         app = create_app(
             ApiSettings(**settings_kwargs)
@@ -214,7 +216,23 @@ class ApiAppTest(unittest.TestCase):
                         auto_migrate=False,
                         host="127.0.0.1",
                         port=8000,
+                        snapshot_signing_secret="test-shared-snapshot-secret",
                         trust_actor_headers=True,
+                    )
+                )
+
+    def test_shared_service_requires_snapshot_signing_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+
+            with self.assertRaisesRegex(ValueError, "snapshot_signing_secret"):
+                create_app(
+                    ApiSettings(
+                        db_path=db_path,
+                        runtime_mode="shared_service",
+                        auto_migrate=False,
+                        host="127.0.0.1",
+                        port=8000,
                     )
                 )
 
@@ -237,6 +255,7 @@ class ApiAppTest(unittest.TestCase):
                                 auto_migrate=False,
                                 host="127.0.0.1",
                                 port=8000,
+                                snapshot_signing_secret="test-shared-snapshot-secret",
                                 **overrides,
                             )
                         )

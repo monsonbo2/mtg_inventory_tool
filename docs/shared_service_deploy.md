@@ -105,6 +105,7 @@ Why this matters:
 Then run the API in `shared_service` mode behind the reverse proxy:
 
 ```bash
+MTG_API_SNAPSHOT_SIGNING_SECRET="replace-with-a-long-random-secret" \
 mtg-web-api \
   --db "var/db/mtg_mvp.db" \
   --runtime-mode shared_service \
@@ -117,11 +118,16 @@ Notes:
 - `shared_service` enables proxy-header handling by default.
 - `shared_service` disables auto-migrate by default.
 - `shared_service` rejects `MTG_API_TRUST_ACTOR_HEADERS=true`.
+- `shared_service` now also requires `MTG_API_SNAPSHOT_SIGNING_SECRET` so
+  deck URL preview tokens stay tamper-evident across the preview/commit flow.
+- rotating `MTG_API_SNAPSHOT_SIGNING_SECRET` invalidates in-flight deck URL
+  preview tokens that were signed with the previous secret
 - wildcard public bind addresses should be treated as an explicit operator
   choice, not the default posture.
 
 Useful environment settings:
 
+- `MTG_API_SNAPSHOT_SIGNING_SECRET`
 - `MTG_API_AUTHENTICATED_ACTOR_HEADER`
 - `MTG_API_AUTHENTICATED_ROLES_HEADER`
 - `MTG_API_PROXY_HEADERS`

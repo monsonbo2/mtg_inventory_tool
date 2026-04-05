@@ -41,6 +41,10 @@ If you're preparing a separate frontend sandbox, also read
 - `frontend_demo_refinement_handoff.md`
   Current branch/worktree handoff note for the next frontend demo-refinement
   pass.
+- `import_export_followups.md`
+  Remaining import/export follow-up work and quality-of-life improvements after
+  the current backend import/export/API slice, including the still-missing
+  narrative import/export guide.
 - `frontend_backend_requests/`
   Folder of frontend-requested backend/API changes, with
   `frontend_backend_requests/README.md` as the process guide and template.

@@ -10,12 +10,14 @@ from typing import Any
 from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import ValidationError
+from .export_profiles import build_inventory_export_filename, get_csv_export_profile
 from .money import coerce_decimal
 from .normalize import (
     extract_image_uri_fields,
     MAX_OWNED_ROWS_LIMIT,
     format_finishes,
     load_tags_json,
+    normalize_inventory_slug,
     normalized_catalog_finish_list,
     text_or_none,
     truncate,
@@ -36,6 +38,7 @@ from .report_helpers import (
     summarize_filters,
 )
 from .report_io import (
+    render_inventory_export_csv,
     write_inventory_export_csv,
 )
 from .response_models import (
@@ -50,6 +53,7 @@ from .response_models import (
     MissingPricePreviewRow,
     OwnedInventoryRow,
     PriceGapRow,
+    RenderedInventoryCsvExportResult,
     ReconcilePricesResult,
     StalePricePreviewRow,
     TopValueRow,
@@ -189,6 +193,7 @@ def list_price_gaps(
     provider: str,
     limit: int | None,
 ) -> list[PriceGapRow]:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = query_price_gaps(
@@ -207,6 +212,7 @@ def reconcile_prices(
     provider: str,
     apply_changes: bool,
 ) -> ReconcilePricesResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if apply_changes:
         raise ValidationError(
             "reconcile-prices is suggestion-only and no longer changes inventory finish values. "
@@ -255,6 +261,7 @@ def inventory_health(
     stale_days: int,
     preview_limit: int,
 ) -> InventoryHealthResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if stale_days < 0:
         raise ValidationError("--stale-days must be zero or greater.")
     if preview_limit <= 0:
@@ -382,6 +389,7 @@ def list_owned_filtered(
     tags: list[str] | None,
 ) -> list[OwnedInventoryRow]:
     validate_limit_value(limit, maximum=MAX_OWNED_ROWS_LIMIT, allow_none=True)
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -454,6 +462,7 @@ def export_inventory_csv(
     inventory_slug: str,
     provider: str,
     output_path: str | Path,
+    profile: str = "default",
     query: str | None,
     set_code: str | None,
     rarity: str | None,
@@ -464,6 +473,58 @@ def export_inventory_csv(
     tags: list[str] | None,
     limit: int | None,
 ) -> ExportInventoryCsvResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
+    rendered = render_inventory_csv_export(
+        db_path,
+        inventory_slug=inventory_slug,
+        provider=provider,
+        profile=profile,
+        query=query,
+        set_code=set_code,
+        rarity=rarity,
+        finish=finish,
+        condition_code=condition_code,
+        language_code=language_code,
+        location=location,
+        tags=tags,
+        limit=limit,
+    )
+    output = write_inventory_export_csv(
+        output_path,
+        serialize_response(rendered.rows),
+        inventory_slug=inventory_slug,
+        provider=provider,
+        profile=rendered.profile,
+    )
+    return ExportInventoryCsvResult(
+        inventory=inventory_slug,
+        provider=provider,
+        profile=rendered.profile,
+        output_path=str(output),
+        rows_exported=rendered.rows_exported,
+        filters_text=rendered.filters_text,
+        rows=rendered.rows,
+    )
+
+
+def render_inventory_csv_export(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    provider: str,
+    profile: str = "default",
+    query: str | None,
+    set_code: str | None,
+    rarity: str | None,
+    finish: str | None,
+    condition_code: str | None,
+    language_code: str | None,
+    location: str | None,
+    tags: list[str] | None,
+    limit: int | None,
+) -> RenderedInventoryCsvExportResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
+    resolved_profile = get_csv_export_profile(profile)
     rows = list_owned_filtered(
         db_path,
         inventory_slug=inventory_slug,
@@ -478,16 +539,17 @@ def export_inventory_csv(
         location=location,
         tags=tags,
     )
-    output = write_inventory_export_csv(
-        output_path,
+    csv_text = render_inventory_export_csv(
         serialize_response(rows),
         inventory_slug=inventory_slug,
         provider=provider,
+        profile=resolved_profile.key,
     )
-    return ExportInventoryCsvResult(
+    return RenderedInventoryCsvExportResult(
         inventory=inventory_slug,
         provider=provider,
-        output_path=str(output),
+        profile=resolved_profile.key,
+        filename=build_inventory_export_filename(inventory_slug, resolved_profile.key),
         rows_exported=len(rows),
         filters_text=summarize_filters(
             query=query,
@@ -499,6 +561,7 @@ def export_inventory_csv(
             location=location,
             tags=tags,
         ),
+        csv_text=csv_text,
         rows=rows,
     )
 
@@ -533,6 +596,7 @@ def valuation_filtered(
     location: str | None,
     tags: list[str] | None,
 ) -> list[ValuationRow]:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     require_current_schema(db_path)
     with connect(db_path) as connection:
         get_inventory_row(connection, inventory_slug)
@@ -691,6 +755,7 @@ def inventory_report(
     limit: int,
     stale_days: int,
 ) -> InventoryReportResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     rows = list_owned_filtered(
         db_path,
         inventory_slug=inventory_slug,

@@ -84,8 +84,8 @@ class SchemaMigrationTest(unittest.TestCase):
                     for row in connection.execute("PRAGMA table_info(mtg_cards)").fetchall()
                 }
 
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8], versions)
-            self.assertEqual(8, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9], versions)
+            self.assertEqual(9, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
             self.assertEqual(1, inventory_memberships_exists)
@@ -99,6 +99,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "oversized",
                     "booster",
                     "promo_types_json",
+                    "edhrec_rank",
                     "is_default_add_searchable",
                 }.issubset(mtg_card_columns)
             )
@@ -115,7 +116,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(8, len(rows))
+            self.assertEqual(9, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -126,6 +127,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (6, "add inventory memberships"),
                     (7, "add actor default inventories"),
                     (8, "add catalog classification fields"),
+                    (9, "add catalog relevance rank"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -189,7 +191,7 @@ class SchemaMigrationTest(unittest.TestCase):
 
             self.assertIn("tags_json", columns)
             self.assertEqual("[]", tags_value)
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
@@ -271,7 +273,7 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9], versions)
 
     def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
         for type_line, expected in (
@@ -299,6 +301,7 @@ class SchemaMigrationTest(unittest.TestCase):
                             oversized,
                             booster,
                             promo_types_json,
+                            edhrec_rank,
                             is_default_add_searchable
                         FROM mtg_cards
                         WHERE scryfall_id = 'legacy-card-1'
@@ -312,4 +315,5 @@ class SchemaMigrationTest(unittest.TestCase):
                 self.assertEqual(0, row["oversized"])
                 self.assertEqual(0, row["booster"])
                 self.assertEqual("[]", row["promo_types_json"])
+                self.assertIsNone(row["edhrec_rank"])
                 self.assertEqual(expected, row["is_default_add_searchable"])

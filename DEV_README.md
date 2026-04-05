@@ -55,12 +55,22 @@ Current authz model:
   `admin`
 - `POST /inventories` still requires global `editor` / `admin`, and the creator
   becomes `owner`
-- `POST /inventories/{inventory_slug}/items/bulk` currently supports grouped tag
-  operations:
+- `POST /inventories/{inventory_slug}/items/bulk` now supports grouped:
   - `add_tags`
   - `remove_tags`
   - `set_tags`
   - `clear_tags`
+  - `set_quantity`
+  - `set_notes`
+  - `set_acquisition`
+  - `set_finish`
+  - `set_location`
+  - `set_condition`
+- `POST /inventories/{source_inventory_slug}/transfer` now supports atomic
+  selected-row and whole-inventory `copy` / `move` operations, `dry_run`
+  previews, `on_conflict=fail|merge`, and `keep_acquisition`
+- `POST /inventories/{source_inventory_slug}/duplicate` creates a new inventory
+  atomically, copies all source rows into it, and grants the caller `owner`
 - `POST /me/bootstrap` creates one personal `Collection` inventory per
   authenticated global `editor` / `admin`, grants `owner`, and returns that
   same inventory on repeated calls
@@ -142,6 +152,44 @@ Rules of thumb:
   - `oracle_id`
   - optional `lang`
   - optional `finish`
+
+## Import / Export Route Notes
+
+Current import surfaces:
+
+- `POST /imports/csv`
+- `POST /imports/decklist`
+- `POST /imports/deck-url`
+
+Current shared-service auth shape:
+
+- `_require_import_inventory_write_access(...)` in
+  `src/mtg_source_stack/api/routes.py` is the real shared write-access rule for
+  import routes.
+- `_require_csv_import_inventory_write_access(...)` is currently a naming seam
+  on top of that shared helper, not separate policy.
+- Each import route currently builds its own `inventory_validator` closure
+  before calling the service-layer import function.
+
+Why this matters:
+
+- The layering is reasonable if CSV import later needs stricter or different
+  auth behavior than decklist or deck-URL imports.
+- Today, though, the CSV-specific wrapper and the repeated inline validator
+  closures are mostly structure rather than behavior.
+- If future cleanup touches this area, keep one shared source of truth for the
+  actual write-access rule and only keep route-specific wrappers if they are
+  buying real policy separation or clearer intent.
+
+Multipart caveat:
+
+- `POST /imports/csv` uses FastAPI `UploadFile` + `File(...)` + `Form(...)`.
+- FastAPI checks for `python-multipart` when that route is registered, not only
+  when a request reaches the route.
+- That means app import, route registration, and OpenAPI generation can all
+  fail if `python-multipart` is unavailable, even for unrelated tests or routes.
+- Treat that as an app-startup coupling, not just a CSV-upload runtime detail,
+  when changing import-route wiring.
 
 ## File Map
 

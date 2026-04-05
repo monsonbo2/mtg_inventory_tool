@@ -10,7 +10,7 @@ from typing import Any
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
-from .normalize import DEFAULT_AUDIT_EVENT_LIMIT, MAX_AUDIT_EVENT_LIMIT, validate_limit_value
+from .normalize import DEFAULT_AUDIT_EVENT_LIMIT, MAX_AUDIT_EVENT_LIMIT, normalize_inventory_slug, validate_limit_value
 from .query_inventory import get_inventory_item_row, inventory_item_result_from_row
 from .query_inventory import get_inventory_row
 from .response_models import InventoryAuditEvent, serialize_response
@@ -107,6 +107,7 @@ def list_inventory_audit_events(
     limit: int = DEFAULT_AUDIT_EVENT_LIMIT,
     item_id: int | None = None,
 ) -> list[InventoryAuditEvent]:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     validate_limit_value(limit, maximum=MAX_AUDIT_EVENT_LIMIT)
     db_file = require_current_schema(db_path)
     with connect(db_file) as connection:

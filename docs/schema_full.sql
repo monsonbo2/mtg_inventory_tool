@@ -1,7 +1,9 @@
 -- Future-target normalized schema for a later backend migration.
--- This file is a design reference only.
--- The current web-v1 runtime contract uses docs/schema_mvp.sql and
--- src/mtg_source_stack/mtg_mvp_schema.sql instead.
+-- This file is a design reference only, not the live web-v1 app schema.
+-- The current runtime uses docs/schema_mvp.sql, src/mtg_source_stack/mtg_mvp_schema.sql,
+-- and migrations under src/mtg_source_stack/db/migrations/.
+-- For example, current search tuning stores `edhrec_rank` on `mtg_cards`,
+-- not in the future-state `oracle_cards` table defined below.
 
 PRAGMA foreign_keys = ON;
 

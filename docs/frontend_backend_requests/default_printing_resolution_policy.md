@@ -1,10 +1,27 @@
 # Frontend Backend Request: Default Printing Resolution Policy
 
-Status: Proposed
-Owner: Unassigned
+Status: Done
+Owner: Boyd
 GitHub issue: [#23](https://github.com/monsonbo2/mtg_inventory_tool/issues/23)
-Implementation PR: Not linked yet
-Last updated: 2026-04-02
+Implementation PR: Commits `3a1cfca`, `3c7aff1`
+Last updated: 2026-04-04
+
+Resolved. The backend now publishes the `oracle_id` quick-add default printing
+policy as stable contract behavior.
+
+Current implemented behavior:
+
+- quick-add by `oracle_id` stays inside the default add-flow catalog scope
+- when `lang` is omitted, the resolver prefers English printings first
+- within that pool, it prefers mainstream paper printings before newer
+  promo-like rows
+- omitted `finish` still defaults to `normal`
+- explicit `language_code`, `set_code`, `collector_number`, and `finish`
+  overrides still narrow resolution as before
+
+The policy is now documented in the API contract and request-model field
+descriptions, so the frontend can safely build a simplified quick-add path on
+top of it.
 
 ## Frontend Backend Request
 

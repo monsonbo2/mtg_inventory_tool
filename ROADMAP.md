@@ -20,6 +20,14 @@ probably comes next” notes can live without crowding `AGENTS.md`.
 - `3c7aff1` Document oracle-id default printing policy
 - `c88f80a` Make full-catalog demo bootstrap resolver-driven
 - `4d8e97f` Fix grouped card-name search parameter ordering
+- `65fea2d` Add bulk finish mutation support
+- `2d002c6` Add bulk location mutation support
+- `ec20433` Add bulk condition mutation support
+- `c8c042f` Add whole-inventory transfer support
+- `537de8e` Add inventory duplication API
+- `f1220fa` Canonicalize inventory slug usage
+- `485f937` Merge import/export backend tools into this branch
+- `869717c` Fix CSV import multipart dependency handling
 
 ## Working Assumption
 
@@ -39,14 +47,17 @@ state.
 
 1. Shared-service rollout validation behind the real reverse proxy and verified
    auth headers.
-2. Issue and runbook hygiene around recently landed work such as:
+2. Frontend integration and handoff follow-through for:
+   - generalized bulk mutations
+   - transfer / duplicate inventory flows
+   - import / export preview and commit paths
+3. Issue and runbook hygiene around recently landed work such as:
    - full-catalog demo bootstrap
    - playable-card default search scope
    - documented `oracle_id` default printing policy
-3. Membership/bootstrap follow-through, especially the `POST /me/bootstrap`
+   - import / export operational notes
+4. Membership/bootstrap follow-through, especially the `POST /me/bootstrap`
    first-run flow and operator runbooks.
-4. Next product features such as bulk add or pasted list import, likely
-   building on the existing `oracle_id` resolver and bulk tag mutation shape.
 5. Later reporting/performance work once rollout behavior is stable.
 
 ## Active Questions To Watch
@@ -56,6 +67,7 @@ state.
 - Are GitHub issue states and local request docs aligned with the actual branch
   state?
 - What is the next product feature branch after Phase 2 merge:
-  bulk add, pasted list import, or something else?
+  frontend integration of the current bulk / transfer features, pasted list
+  import, or something else?
 - Are there any remaining operator runbook gaps around memberships, bootstrap,
-  or catalog refresh expectations?
+  catalog refresh expectations, or import/export dependencies?

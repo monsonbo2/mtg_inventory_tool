@@ -33,12 +33,13 @@ def api_error_status(exc: Exception) -> int:
 
 def api_error_payload(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, MtgStackError):
-        return {
-            "error": {
-                "code": exc.error_code,
-                "message": str(exc),
-            }
+        error_payload: dict[str, Any] = {
+            "code": exc.error_code,
+            "message": str(exc),
         }
+        if exc.details is not None:
+            error_payload["details"] = exc.details
+        return {"error": error_payload}
     return {
         "error": {
             "code": "internal_error",

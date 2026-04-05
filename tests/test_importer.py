@@ -30,6 +30,7 @@ class ImporterTest(RepoSmokeTestCase):
             "oversized": False,
             "booster": True,
             "promo_types": ["promo-pack"],
+            "edhrec_rank": 123,
             "rarity": "rare",
             "released_at": "2026-04-01",
             "type_line": "Instant",
@@ -335,7 +336,21 @@ class ImporterTest(RepoSmokeTestCase):
         self.assertEqual(0, row["oversized"])
         self.assertEqual(1, row["booster"])
         self.assertEqual('["promo-pack"]', row["promo_types_json"])
+        self.assertEqual(123, row["edhrec_rank"])
         self.assertEqual(1, row["is_default_add_searchable"])
+
+    def test_import_scryfall_stores_null_edhrec_rank_when_scryfall_omits_it(self) -> None:
+        stats, row = self._import_single_scryfall_card(
+            self._build_scryfall_card_payload(
+                id="import-no-rank-1",
+                oracle_id="import-no-rank-oracle-1",
+                name="Import Unranked Card",
+                edhrec_rank=None,
+            )
+        )
+
+        self.assertEqual(1, stats.rows_written)
+        self.assertIsNone(row["edhrec_rank"])
 
     def test_import_scryfall_marks_token_like_layouts_as_not_default_add_searchable(self) -> None:
         for layout, type_line, set_type in (

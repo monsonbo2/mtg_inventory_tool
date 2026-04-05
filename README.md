@@ -8,6 +8,8 @@ Use it to:
 - import a local MTG catalog and daily pricing snapshots
 - create and maintain one or more personal inventories
 - track condition, finish, language, location, tags, notes, and acquisition data
+- bulk-edit inventory rows through the API
+- copy, move, transfer, and duplicate inventory contents safely through the API
 - export reports and CSVs from the local SQLite database
 - keep a per-edit audit trail for inventory mutations
 
@@ -51,7 +53,9 @@ requests.
   synchronous SQLite-backed service layer. Shared-service identity resolution,
   SQLite WAL/busy-timeout posture, inventory-scoped memberships, and
   backup/restore recovery now exist in the supported single-host operating
-  model, while rollout validation and broader admin-surface policy are still
+  model. The current route surface also includes grouped bulk mutations,
+  inventory transfer / duplication, and import / export preview/commit flows,
+  while rollout validation and broader admin-surface policy are still
   follow-up work.
 
 ## Quick Start
@@ -95,6 +99,10 @@ authenticated app user. The default verified identity header is
 `X-Authenticated-User`, and you can override it with
 `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
 
+Deck URL preview/commit flows also use a short-lived signed snapshot token.
+`local_demo` ships with a built-in default signing secret for that flow.
+`shared_service` requires an explicit `MTG_API_SNAPSHOT_SIGNING_SECRET`.
+
 `shared_service` also supports a normalized roles header,
 `X-Authenticated-Roles` by default, with `editor` and `admin` as the current
 recognized global app roles. If the verified user header is present and no
@@ -137,6 +145,7 @@ mtg-web-api --db "var/db/mtg_mvp.db"
 Run the safer shared-service startup mode against a pre-migrated DB:
 
 ```bash
+MTG_API_SNAPSHOT_SIGNING_SECRET="replace-with-a-long-random-secret" \
 mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
 ```
 
@@ -147,6 +156,8 @@ If you need to override startup migration behavior explicitly, use
 
 - `--proxy-headers` / `--no-proxy-headers`
 - `--forwarded-allow-ips`
+- `MTG_API_SNAPSHOT_SIGNING_SECRET` as a required shared-service environment
+  variable for signed deck URL snapshot tokens
 
 The current recommended deployment runbook lives in
 [`docs/shared_service_deploy.md`](docs/shared_service_deploy.md).
@@ -351,7 +362,8 @@ For the current shared-service phase, the intended deployment shape is:
 - one SQLite database file
 - one host
 - local disk storage
-- a pre-migrated database started with `--runtime-mode shared_service`
+- a pre-migrated database started with `--runtime-mode shared_service` and an
+  explicit `MTG_API_SNAPSHOT_SIGNING_SECRET`
 
 Operational expectations:
 
@@ -385,6 +397,7 @@ A typical startup flow is:
 
 ```bash
 mtg-mvp-importer migrate-db --db "var/db/mtg_mvp.db"
+MTG_API_SNAPSHOT_SIGNING_SECRET="replace-with-a-long-random-secret" \
 mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
 ```
 

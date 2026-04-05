@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from ..db.connection import DEFAULT_DB_PATH
 from ..errors import AuthenticationError, AuthorizationError
+from ..inventory.normalize import normalize_inventory_slug
 
 if TYPE_CHECKING:  # pragma: no cover - typing-only import
     from fastapi import Request
@@ -24,6 +25,7 @@ DEFAULT_RUNTIME_MODE: RuntimeMode = "local_demo"
 DEFAULT_AUTHENTICATED_ACTOR_HEADER = "X-Authenticated-User"
 DEFAULT_AUTHENTICATED_ROLES_HEADER = "X-Authenticated-Roles"
 DEFAULT_FORWARDED_ALLOW_IPS = "127.0.0.1"
+DEFAULT_LOCAL_DEMO_SNAPSHOT_SIGNING_SECRET = "local-demo-deck-url-snapshot-secret"
 APP_ROLES = frozenset({"editor", "admin"})
 
 
@@ -34,11 +36,21 @@ class ApiSettings:
     auto_migrate: bool
     host: str
     port: int
+    csv_import_max_bytes: int = 25 * 1024 * 1024
+    snapshot_signing_secret: str | None = None
     trust_actor_headers: bool = False
     authenticated_actor_header: str = DEFAULT_AUTHENTICATED_ACTOR_HEADER
     authenticated_roles_header: str = DEFAULT_AUTHENTICATED_ROLES_HEADER
     proxy_headers: bool = False
     forwarded_allow_ips: str = DEFAULT_FORWARDED_ALLOW_IPS
+
+    def __post_init__(self) -> None:
+        if self.snapshot_signing_secret is None and self.runtime_mode == "local_demo":
+            object.__setattr__(self, "snapshot_signing_secret", DEFAULT_LOCAL_DEMO_SNAPSHOT_SIGNING_SECRET)
+            return
+        if self.snapshot_signing_secret is not None:
+            normalized = self.snapshot_signing_secret.strip()
+            object.__setattr__(self, "snapshot_signing_secret", normalized or None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +81,10 @@ def auto_migrate_override_from_env() -> bool | None:
 
 def proxy_headers_override_from_env() -> bool | None:
     return _env_optional_bool("MTG_API_PROXY_HEADERS")
+
+
+def snapshot_signing_secret_from_env() -> str | None:
+    return os.getenv("MTG_API_SNAPSHOT_SIGNING_SECRET")
 
 
 def resolve_runtime_mode(raw: str | None) -> RuntimeMode:
@@ -130,6 +146,8 @@ def settings_from_env() -> ApiSettings:
         ),
         host=os.getenv("MTG_API_HOST", "127.0.0.1"),
         port=int(os.getenv("MTG_API_PORT", "8000")),
+        csv_import_max_bytes=int(os.getenv("MTG_API_CSV_IMPORT_MAX_BYTES", str(25 * 1024 * 1024))),
+        snapshot_signing_secret=os.getenv("MTG_API_SNAPSHOT_SIGNING_SECRET"),
         trust_actor_headers=_env_bool("MTG_API_TRUST_ACTOR_HEADERS", False),
         authenticated_actor_header=(
             os.getenv("MTG_API_AUTHENTICATED_ACTOR_HEADER", DEFAULT_AUTHENTICATED_ACTOR_HEADER).strip()
@@ -260,6 +278,7 @@ def get_inventory_read_request_context(
     inventory_slug: str,
     request: "Request",
 ) -> RequestContext:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     context = get_authenticated_request_context(request)
     settings = get_settings(request)
     if settings.runtime_mode != "shared_service":
@@ -276,14 +295,15 @@ def get_inventory_read_request_context(
     raise AuthorizationError(f"Read access to inventory '{inventory_slug}' is required for this shared_service request.")
 
 
-def get_inventory_write_request_context(
+def require_inventory_write_access(
+    settings: ApiSettings,
+    context: RequestContext,
+    *,
     inventory_slug: str,
-    request: "Request",
-) -> RequestContext:
-    context = get_authenticated_request_context(request)
-    settings = get_settings(request)
+) -> None:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
     if settings.runtime_mode != "shared_service":
-        return context
+        return
     from ..inventory.service import actor_can_write_inventory
 
     if actor_can_write_inventory(
@@ -292,5 +312,15 @@ def get_inventory_write_request_context(
         actor_id=context.actor_id,
         actor_roles=context.roles,
     ):
-        return context
+        return
     raise AuthorizationError(f"Write access to inventory '{inventory_slug}' is required for this shared_service request.")
+
+
+def get_inventory_write_request_context(
+    inventory_slug: str,
+    request: "Request",
+) -> RequestContext:
+    context = get_authenticated_request_context(request)
+    settings = get_settings(request)
+    require_inventory_write_access(settings, context, inventory_slug=inventory_slug)
+    return context

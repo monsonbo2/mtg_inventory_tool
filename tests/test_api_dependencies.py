@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from mtg_source_stack.api.dependencies import (
+    DEFAULT_LOCAL_DEMO_SNAPSHOT_SIGNING_SECRET,
     ApiSettings,
     get_admin_request_context,
     get_authenticated_request_context,
@@ -27,6 +28,7 @@ class ApiDependenciesTest(unittest.TestCase):
         self.assertEqual("local_demo", settings.runtime_mode)
         self.assertTrue(settings.auto_migrate)
         self.assertFalse(settings.trust_actor_headers)
+        self.assertEqual(DEFAULT_LOCAL_DEMO_SNAPSHOT_SIGNING_SECRET, settings.snapshot_signing_secret)
 
     def test_settings_from_env_uses_shared_service_default_auto_migrate_false(self) -> None:
         with patch.dict(os.environ, {"MTG_API_RUNTIME_MODE": "shared_service"}, clear=True):
@@ -35,6 +37,17 @@ class ApiDependenciesTest(unittest.TestCase):
         self.assertEqual("shared_service", settings.runtime_mode)
         self.assertFalse(settings.auto_migrate)
         self.assertTrue(settings.proxy_headers)
+        self.assertIsNone(settings.snapshot_signing_secret)
+
+    def test_settings_from_env_reads_snapshot_signing_secret_override(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"MTG_API_RUNTIME_MODE": "shared_service", "MTG_API_SNAPSHOT_SIGNING_SECRET": "shared-secret"},
+            clear=True,
+        ):
+            settings = settings_from_env()
+
+        self.assertEqual("shared-secret", settings.snapshot_signing_secret)
 
     def test_settings_from_env_explicit_auto_migrate_override_wins(self) -> None:
         scenarios = (

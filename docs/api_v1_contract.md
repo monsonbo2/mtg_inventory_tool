@@ -33,12 +33,57 @@ preserve for the first API-backed version of the project.
   `set_finish` or `set_quantity`; clients should branch on `operation` instead
   of inferring the result type from optional fields alone.
 - `POST /inventories/{inventory_slug}/items/bulk` accepts exactly one bulk
-  mutation operation per request and currently supports tag operations only:
-  `add_tags`, `remove_tags`, `set_tags`, and `clear_tags`.
+  mutation operation per request and currently supports:
+  `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
+  `set_notes`, `set_acquisition`, `set_finish`, `set_location`, and
+  `set_condition`.
 - Bulk item mutation responses use a stable envelope with `inventory`,
   `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
-- The current bulk tag implementation is transactional and all-or-nothing: if
+- The current bulk implementation is transactional and all-or-nothing: if
   validation or item lookup fails, no rows in the batch are updated.
+- `POST /imports/csv` returns a stable import-report envelope with
+  `csv_filename`, `detected_format`, `default_inventory`, `rows_seen`,
+  `rows_written`, `ready_to_commit`, `summary`, `resolution_issues`,
+  `dry_run`, and `imported_rows`.
+- `POST /imports/decklist` returns a stable import-report envelope with
+  `default_inventory`, `rows_seen`, `rows_written`, `ready_to_commit`,
+  `summary`, `resolution_issues`, `dry_run`, and `imported_rows`.
+- `POST /imports/deck-url` returns a stable import-report envelope with
+  `source_url`, `provider`, `deck_name`, `default_inventory`, `rows_seen`,
+  `rows_written`, `ready_to_commit`, `source_snapshot_token`, `summary`,
+  `resolution_issues`, `dry_run`, and `imported_rows`.
+- `GET /inventories/{inventory_slug}/export.csv` returns `text/csv` rather
+  than JSON and uses `Content-Disposition` for download semantics.
+- `POST /inventories/{source_inventory_slug}/transfer` returns a stable
+  transfer envelope with source/target inventory slugs, summary counts,
+  selection metadata, and ordered per-item results.
+- Transfer `dry_run=true` previews the planned copy, move, merge, or failure
+  outcome for each requested source row without mutating either inventory.
+- Transfer responses distinguish between selected-row requests and whole-source
+  requests with `selection_kind`.
+- Whole-inventory transfer responses may truncate the returned `results` list
+  while still reporting full `requested_count` and summary counts.
+- Live transfer requests are transactional and all-or-nothing: if any planned
+  row would fail, neither the source nor target inventory is mutated.
+- `POST /imports/csv` is also transactional and all-or-nothing: if one row
+  fails validation or lookup, no rows from that upload are committed.
+  Unresolved ambiguity can be previewed in-band, but non-dry-run requests
+  still fail without committing any rows until every required resolution is
+  supplied.
+- `POST /imports/decklist` is also transactional and all-or-nothing:
+  unresolved ambiguity can be previewed in-band, but non-dry-run requests
+  still fail without committing any rows until every required resolution is
+  supplied.
+- `POST /imports/deck-url` is also transactional and all-or-nothing: if one
+  fetched deck card fails validation or lookup, no rows from that request are
+  committed. Unresolved ambiguity can be previewed in-band, but non-dry-run
+  requests still fail without committing any rows until every required
+  resolution is supplied.
+- `POST /inventories/{source_inventory_slug}/duplicate` creates a new
+  inventory and returns the created inventory together with the stable transfer
+  summary for the all-items copy it performs.
+- Duplicate requests are transactional and all-or-nothing: if duplication
+  fails, the new inventory is not created.
 - Audit event `before`, `after`, and `metadata` fields remain intentionally
   loose JSON objects in web-v1.
 - `GET /health` returns mode-oriented fields such as `status`,
@@ -104,6 +149,8 @@ preserve for the first API-backed version of the project.
   - blank or whitespace-only search queries return `400 validation_error`
 - `GET /cards/search/names`
   - groups results by `oracle_id`
+  - keeps lexical match buckets first, then uses backend-owned popularity
+    metadata such as `edhrec_rank` as an additive tie-breaker when available
   - prefers an English representative row and image when available
   - includes `available_languages` for the matched card
 - `GET /cards/oracle/{oracle_id}/printings`
@@ -116,12 +163,242 @@ preserve for the first API-backed version of the project.
   - accepts `lang=all` to include all available catalog languages
   - accepts specific language codes such as `lang=ja` to request one language
 - `POST /inventories/{inventory_slug}/items/bulk`
-  - current supported operations: `add_tags`, `remove_tags`, `set_tags`,
-    `clear_tags`
+  - current supported operations:
+    `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
+    `set_notes`, `set_acquisition`, `set_finish`, `set_location`,
+    `set_condition`
   - `item_ids` must be non-empty and unique
   - `tags` is required for `add_tags`, `remove_tags`, and `set_tags`
   - `tags` must be omitted for `clear_tags`
   - use `clear_tags` instead of sending an empty tag list
+  - `quantity` is required for `set_quantity`
+  - `notes` is used by `set_notes`
+  - `clear_notes=true` clears notes for `set_notes` and requires `notes` to be
+    omitted
+  - `set_acquisition` accepts `acquisition_price`,
+    `acquisition_currency`, or both
+  - `clear_acquisition=true` clears acquisition data for `set_acquisition` and
+    requires acquisition fields to be omitted
+  - `finish` is required for `set_finish`
+  - `set_finish` uses the same finish-compatibility rules as the single-item
+    patch route
+  - if any requested finish change would collide with an existing inventory row,
+    the batch returns `409 conflict` and no rows in the batch are updated
+  - `location` is used by `set_location`
+  - `clear_location=true` clears location for `set_location` and requires
+    `location` to be omitted
+  - `merge=true` only applies to `set_location`
+  - `keep_acquisition` only applies to merged `set_location` changes
+  - `set_location` uses the same location normalization and merge rules as the
+    single-item patch route
+  - if any requested location change would collide with an existing inventory
+    row, the batch returns `409 conflict` unless `merge=true`; on conflict, no
+    rows in the batch are updated
+  - `condition_code` is required for `set_condition`
+  - `merge=true` also applies to `set_condition`
+  - `keep_acquisition` also applies to merged `set_condition` changes
+  - `set_condition` uses the same condition normalization and merge rules as
+    the single-item patch route
+  - if any requested condition change would collide with an existing inventory
+    row, the batch returns `409 conflict` unless `merge=true`; on conflict, no
+    rows in the batch are updated
+- `POST /inventories/{source_inventory_slug}/transfer`
+  - transfers selected source inventory rows, or the entire source inventory,
+    into `target_inventory_slug`
+  - `mode` accepts `copy` or `move`
+  - use exactly one of:
+    - `item_ids`, which must be non-empty and unique
+    - `all_items=true`, which selects every row in the source inventory
+  - `on_conflict` accepts `fail` or `merge`
+  - `keep_acquisition` only applies when `on_conflict=merge`
+  - `dry_run=true` returns the planned per-row outcomes without mutating either
+    inventory
+  - when `all_items=true`, an empty source inventory returns `200` with zero
+    counts rather than an error
+  - `copy` leaves source rows in place
+  - `move` removes source rows only after the target-side work succeeds
+  - `on_conflict=fail` returns `409 conflict` when a transferred row would
+    collide with an existing row identity in the target inventory
+  - `on_conflict=merge` uses the existing row merge rules:
+    quantity adds, tags merge, notes merge, and acquisition may require an
+    explicit `keep_acquisition` choice
+  - live transfer requests are atomic across both inventories; on conflict or
+    validation failure, no source rows are removed and no target rows are
+    created or updated
+  - responses include:
+    - `selection_kind` of `items` or `all_items`
+    - full summary counts
+    - `results_returned` and `results_truncated` so large whole-inventory
+      previews can stay bounded without losing summary accuracy
+- `POST /inventories/{source_inventory_slug}/duplicate`
+  - creates a brand-new target inventory and copies every source row into it
+  - requires the same inventory-creation permission as `POST /inventories`
+  - also requires write access to the source inventory in shared-service mode
+  - `target_description` is optional; when omitted, the source inventory
+    description is copied to the new inventory
+  - source inventory memberships are not copied to the new inventory
+- `POST /imports/csv`
+  - request body is `multipart/form-data`, not JSON
+  - multipart field `file` is required
+  - multipart field `default_inventory` is optional
+  - multipart field `dry_run` is optional and defaults to `false`
+  - multipart field `resolutions_json` is optional and accepts a JSON array of
+    `csv_row + scryfall_id + finish` resolutions for ambiguous rows
+  - response field `detected_format` identifies whether the backend treated the
+    upload as a known source CSV or as generic CSV
+  - response field `ready_to_commit` is `false` when one or more rows still
+    need explicit resolution
+  - response field `summary` includes total imported quantity, requested card
+    quantity, unresolved card quantity, and distinct card-name and printing
+    counts
+  - response field `resolution_issues` carries structured row-specific
+    ambiguity details during preview
+  - `dry_run=true` uses the real add-card workflow but rolls the transaction
+    back before commit
+  - the route reuses the existing CSV normalization, identifier resolution,
+    finish inference, and row-number-specific validation behavior from the CLI
+    import path
+  - the current first-party format detectors are:
+    - `deckbox_collection_csv`
+    - `deckstats_collection_csv`
+    - `generic_csv`
+    - `manabox_collection_csv`
+    - `mtggoldfish_collection_csv`
+    - `mtgstocks_collection_csv`
+    - `tcgplayer_legacy_collection_csv`
+    - `tcgplayer_app_collection_csv`
+  - Deckstats collection CSV uploads are normalized on the backend, including
+    mapping `amount` to quantity, `is_foil` to finish, and preserving
+    `is_pinned` as a tag
+  - MTGStocks collection CSV uploads are normalized on the backend, including
+    treating the source `Set` column as a set name and preserving `Signed` as a
+    tag. The adapter does not currently persist the source `Price` field as an
+    acquisition price
+  - Deckbox collection CSV uploads are normalized on the backend, including
+    mapping `Count` to quantity, `Edition` to `Set Name`, and source flags such
+    as `Signed`, `Artist Proof`, `Altered Art`, and `Mis` into tags
+  - TCGplayer collection-style CSV uploads are normalized on the backend
+    before row import so the frontend does not need to translate fields such as
+    `Printing` into the backend's canonical finish columns
+  - ManaBox collection CSV uploads are also normalized on the backend,
+    including `Foil`, `Card Number`, `Purchase Currency`, and boolean metadata
+    such as `Misprint` and `Altered`
+  - MTGGoldfish collection CSV uploads are normalized on the backend as well.
+    The adapter prefers `Set Name` for resolution because MTGGoldfish documents
+    that its `Set ID` uses MTGO-style set codes that may differ from other
+    ecosystems
+  - when an uploaded CSV row is ambiguous, the backend currently uses the same
+    issue kinds as the decklist and deck-url import flows:
+    `ambiguous_card_name`, `ambiguous_printing`, and `finish_required`
+  - non-dry-run requests that still have unresolved ambiguity return
+    `400 validation_error` with `error.details.resolution_issues`
+  - unlike the CLI import flow, the HTTP route does not implicitly create new
+    inventories from CSV display names; referenced inventories must already
+    exist
+- `POST /imports/decklist`
+  - request body is JSON
+  - `deck_text` is required
+  - `default_inventory` is required
+  - `dry_run` is optional and defaults to `false`
+  - `resolutions` is optional and lets the caller choose one suggested
+    `scryfall_id + finish` pair for a specific `decklist_line`
+  - response field `ready_to_commit` is `false` when one or more lines still
+    need explicit resolution
+  - response field `summary` includes total imported quantity, requested card
+    quantity, unresolved card quantity, distinct card and printing counts, and
+    per-section card quantities
+  - response field `resolution_issues` carries structured row-specific
+    ambiguity details during preview
+  - `dry_run=true` uses the real add-card workflow but rolls the transaction
+    back before commit
+  - supported v1 pasted-list forms include:
+    - `4 Lightning Bolt`
+    - `4x Lightning Bolt`
+    - `4 x Lightning Bolt`
+    - section headers such as `Commander` or `Sideboard (15)`
+    - inline section prefixes such as `SB: 2 Pyroblast`
+    - exact-printing hints such as `3 Verdant Catacombs (MH2) 260`
+    - exported deck text with `About` / `Name <deck>` preambles from deck
+      sites such as Moxfield
+  - when a line includes set code and collector number, the backend resolves
+    that exact printing
+  - when a line includes only an exact card name, the backend resolves that
+    name to one Oracle group and then applies the existing default-printing
+    policy used by the add-card flow
+  - if an exact name matches multiple Oracle groups, `dry_run=true` returns a
+    structured `resolution_issues` entry instead of guessing
+  - non-dry-run requests that still have unresolved ambiguity return
+    `400 validation_error` with `error.details.resolution_issues`
+  - v1 decklist import does not persist section semantics on inventory rows;
+    section information is returned in the import report only
+  - referenced inventories must already exist
+- `POST /imports/deck-url`
+  - request body is JSON
+  - `source_url` is required
+  - `default_inventory` is required
+  - `dry_run` is optional and defaults to `false`
+  - `source_snapshot_token` is optional on the request and lets the caller
+    commit the exact remote deck payload returned during preview without
+    re-fetching the provider page
+  - `resolutions` is optional and lets the caller choose one suggested
+    `scryfall_id + finish` pair for a specific `source_position`
+  - response field `ready_to_commit` is `false` when one or more remote rows
+    still need explicit resolution
+  - response field `source_snapshot_token` contains a short-lived signed
+    normalized snapshot of the fetched remote deck so preview and commit can
+    stay in sync without another provider fetch
+  - a tampered, expired, or wrong-URL `source_snapshot_token` returns
+    `400 validation_error` and the caller should re-run preview
+  - response field `summary` includes total imported quantity, requested card
+    quantity, unresolved card quantity, distinct card and printing counts, and
+    per-section card quantities
+  - response field `resolution_issues` carries structured row-specific
+    ambiguity details during preview
+  - `dry_run=true` uses the real add-card workflow but rolls the transaction
+    back before commit
+  - v1 currently supports public Archidekt, AetherHub, ManaBox, Moxfield,
+    MTGGoldfish, MTGTop8, and TappedOut deck URLs
+  - the backend fetches the public deck payload, keeps importable deck
+    sections such as mainboard, commander, companion, and sideboard, and skips
+    cards that are only in excluded or non-deck groups such as Maybeboard or
+    token helper lists
+  - AetherHub imports parse the visible public deck page and resolve name-only
+    rows through the backend's default-add printing policy because AetherHub's
+    public deck pages do not consistently expose exact printing identifiers
+  - ManaBox imports parse the structured deck payload embedded in the public
+    shared deck page, preserving supported sections and exact-printing hints
+    such as set code and collector number
+  - Archidekt and Moxfield card printings are imported by exact printing
+    identifier rather than by name-only fallback
+  - if Moxfield blocks automated URL fetches, the recommended fallback is to
+    export the deck text from Moxfield and paste it into `POST /imports/decklist`
+  - MTGGoldfish imports use its public deck downloads: section information
+    comes from the Arena export, while set code, collector-number hints, and
+    finish markers come from the Exact Card Versions text export
+  - MTGTop8 imports use the site's public `.dec` export, which supplies deck
+    name, sideboard markers, and set-code hints but not collector numbers
+  - TappedOut imports use the public `MTG Arena` export block embedded in the
+    deck page; those lines already include set code and collector number, so
+    the backend can resolve exact printings through the same decklist importer
+  - each imported remote row exposes a stable `source_position` so the
+    frontend can map preview issues back to specific deck entries
+  - non-dry-run requests that still have unresolved ambiguity return
+    `400 validation_error` with `error.details.resolution_issues` and
+    `error.details.source_snapshot_token`
+  - v1 deck URL import does not persist section semantics on inventory rows;
+    section information is returned in the import report only
+  - referenced inventories must already exist
+- `GET /inventories/{inventory_slug}/export.csv`
+  - query `profile` selects the CSV export profile
+  - the first shipped value is `default`
+  - omitting `profile` is the same as `profile=default`
+  - export profiles are intended to be first-class so future website-specific
+    CSV formats can reuse the same route boundary
+  - current filters align with the existing inventory read/export surface:
+    `provider`, `query`, `set_code`, `rarity`, `finish`, `condition_code`,
+    `language_code`, `location`, repeated `tag`, and `limit`
+  - the current `default` profile matches the existing canonical inventory CSV
+    export column set used by the CLI
 
 OpenAPI publishes these defaults and canonical values directly. For `finish`,
 the request contract is strict enough to advertise the accepted input set. For
@@ -141,6 +418,10 @@ The API layer should return errors in this shape:
   }
 }
 ```
+
+- domain errors may also include optional structured `details` when the
+  backend has machine-readable follow-up context, such as unresolved decklist
+  resolution issues
 
 ## HTTP Error Mapping
 
@@ -175,8 +456,9 @@ before the generic 500 envelope is returned.
   - `local_demo`, the default local-first posture for UI and contract work
   - `shared_service`, a safer startup posture for a pre-migrated, single-host
     SQLite deployment
-- The HTTP route boundary now uses sync route handlers to match the current
-  synchronous inventory and SQLite-backed service layer.
+- The HTTP route boundary is still aligned to the current synchronous
+  inventory and SQLite-backed service layer, though upload endpoints may use
+  async request-body parsing before delegating into that sync service layer.
 - Broader transport/runtime guarantees are still intentionally modest and
   single-host scoped in web-v1.
 - `shared_service` assumes a single-host SQLite deployment with WAL and
@@ -192,6 +474,10 @@ before the generic 500 envelope is returned.
   values to flow into audit attribution.
 - `shared_service` disables auto-migrate by default. It should be started
   against a pre-migrated database and a single app process for now.
+- `local_demo` uses a stable built-in deck URL snapshot signing secret so
+  preview/commit flows work without extra setup.
+- `shared_service` requires an explicit non-empty deck URL snapshot signing
+  secret via `MTG_API_SNAPSHOT_SIGNING_SECRET`.
 - In `shared_service`, every current app route except `/health` requires a
   verified upstream user header. The default header name is
   `X-Authenticated-User`, and it can be overridden with
@@ -215,13 +501,29 @@ before the generic 500 envelope is returned.
   `GET /cards/oracle/{oracle_id}/printings` require a caller who can read at
   least one inventory, or a global `admin`.
 - `GET /inventories/{inventory_slug}/items` and
-  `GET /inventories/{inventory_slug}/audit` require inventory read access.
+  `GET /inventories/{inventory_slug}/audit`, and
+  `GET /inventories/{inventory_slug}/export.csv` require inventory read access.
 - `POST /inventories/{inventory_slug}/items`,
   `PATCH /inventories/{inventory_slug}/items/{item_id}`, and
-  `DELETE /inventories/{inventory_slug}/items/{item_id}` require inventory
-  write access.
+  `DELETE /inventories/{inventory_slug}/items/{item_id}`,
+  `POST /imports/csv`, `POST /imports/decklist`, and
+  `POST /imports/deck-url` require inventory write access.
+- `POST /inventories/{source_inventory_slug}/transfer` requires write access to
+  both the source inventory in the path and the target inventory in the
+  request body; global `admin` bypasses both checks.
+- `POST /inventories/{source_inventory_slug}/duplicate` requires the same
+  global `editor` or `admin` permission as `POST /inventories`, plus write
+  access to the source inventory; global `admin` bypasses the inventory
+  membership check.
+- In `shared_service`, `POST /imports/csv`, `POST /imports/decklist`, and
+  `POST /imports/deck-url` validate write access against every referenced
+  inventory before committing any rows. For `POST /imports/deck-url`, the
+  target inventory is validated before the backend fetches the remote deck.
 - `POST /inventories` still requires a global `editor` or `admin`, and the
   creator is automatically granted `owner` membership on the new inventory.
+  Inventory slugs are trimmed before create-time uniqueness checks and
+  storage, and inventory path/body slugs are resolved using that same trimmed
+  canonical value.
 - `POST /me/bootstrap` requires a global `editor` or `admin`, creates one
   personal default inventory named `Collection` for that actor, grants
   `owner`, and returns the same inventory on repeated calls.
