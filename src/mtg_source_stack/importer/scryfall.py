@@ -72,6 +72,14 @@ def _bool_to_int(value: Any) -> int:
     return 1 if bool(value) else 0
 
 
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
 def default_add_searchable_from_scryfall_card(card: dict[str, Any]) -> bool:
     layout = _normalized_text(card.get("layout"))
     set_type = _normalized_text(card.get("set_type"))
@@ -142,13 +150,14 @@ def import_scryfall_cards(
         oversized,
         booster,
         promo_types_json,
+        edhrec_rank,
         is_default_add_searchable,
         tcgplayer_product_id,
         cardkingdom_id,
         cardmarket_id,
         cardsphere_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(scryfall_id) DO UPDATE SET
         oracle_id = excluded.oracle_id,
         name = excluded.name,
@@ -174,6 +183,7 @@ def import_scryfall_cards(
         oversized = excluded.oversized,
         booster = excluded.booster,
         promo_types_json = excluded.promo_types_json,
+        edhrec_rank = excluded.edhrec_rank,
         is_default_add_searchable = excluded.is_default_add_searchable,
         mtgjson_uuid = COALESCE(excluded.mtgjson_uuid, mtg_cards.mtgjson_uuid),
         tcgplayer_product_id = COALESCE(excluded.tcgplayer_product_id, mtg_cards.tcgplayer_product_id),
@@ -230,6 +240,7 @@ def import_scryfall_cards(
                     _bool_to_int(card.get("oversized")),
                     _bool_to_int(card.get("booster")),
                     compact_json(_json_list_or_empty(card.get("promo_types"))),
+                    _int_or_none(card.get("edhrec_rank")),
                     _bool_to_int(default_add_searchable_from_scryfall_card(card)),
                     text_or_none(card.get("tcgplayer_id")),
                     None,

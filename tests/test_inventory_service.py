@@ -113,6 +113,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
         set_type: str | None = None,
         booster: int = 0,
         promo_types_json: str = "[]",
+        edhrec_rank: int | None = None,
         is_default_add_searchable: int = 1,
     ) -> None:
         if image_uris_json is None:
@@ -142,9 +143,10 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     set_type,
                     booster,
                     promo_types_json,
+                    edhrec_rank,
                     is_default_add_searchable
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scryfall_id,
@@ -161,6 +163,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     set_type,
                     booster,
                     promo_types_json,
+                    edhrec_rank,
                     is_default_add_searchable,
                 ),
             )
@@ -1229,6 +1232,60 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(1, len(rows))
             self.assertEqual("substring-group-oracle", rows[0].oracle_id)
             self.assertEqual("Lightning Bolt", rows[0].name)
+
+    def test_search_card_names_prefers_popular_prefix_matches_within_lexical_buckets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lightning-angel",
+                oracle_id="lightning-angel-oracle",
+                name="Lightning Angel",
+                collector_number="51",
+                edhrec_rank=5000,
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lightning-bolt",
+                oracle_id="lightning-bolt-oracle",
+                name="Lightning Bolt",
+                collector_number="52",
+                edhrec_rank=100,
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lightning-cloud",
+                oracle_id="lightning-cloud-oracle",
+                name="Lightning Cloud",
+                collector_number="53",
+                edhrec_rank=None,
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="thunder-lightning",
+                oracle_id="thunder-lightning-oracle",
+                name="Thunder Lightning",
+                collector_number="54",
+                edhrec_rank=1,
+                is_default_add_searchable=1,
+            )
+
+            rows = search_card_names(db_path, query="lightn", exact=False, limit=10)
+
+            self.assertEqual(
+                [
+                    "Lightning Bolt",
+                    "Lightning Angel",
+                    "Lightning Cloud",
+                    "Thunder Lightning",
+                ],
+                [row.name for row in rows],
+            )
 
     def test_search_card_names_scope_all_includes_auxiliary_group_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

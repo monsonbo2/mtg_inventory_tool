@@ -734,6 +734,7 @@ class WebApiTest(unittest.TestCase):
         set_type: str | None = None,
         booster: int = 0,
         promo_types_json: str = "[]",
+        edhrec_rank: int | None = None,
         is_default_add_searchable: int = 1,
     ) -> None:
         if image_uris_json is None:
@@ -763,9 +764,10 @@ class WebApiTest(unittest.TestCase):
                     set_type,
                     booster,
                     promo_types_json,
+                    edhrec_rank,
                     is_default_add_searchable
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scryfall_id,
@@ -782,6 +784,7 @@ class WebApiTest(unittest.TestCase):
                     set_type,
                     booster,
                     promo_types_json,
+                    edhrec_rank,
                     is_default_add_searchable,
                 ),
             )
@@ -2418,6 +2421,59 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(substring.json()))
                 self.assertEqual("api-lightning-bolt-oracle", substring.json()[0]["oracle_id"])
                 self.assertEqual("Lightning Bolt", substring.json()[0]["name"])
+
+    def test_demo_api_grouped_name_search_uses_popularity_within_lexical_buckets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-lightning-angel",
+                    oracle_id="api-lightning-angel-oracle",
+                    name="Lightning Angel",
+                    collector_number="71",
+                    edhrec_rank=5000,
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-lightning-bolt-ranked",
+                    oracle_id="api-lightning-bolt-ranked-oracle",
+                    name="Lightning Bolt",
+                    collector_number="72",
+                    edhrec_rank=100,
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-lightning-cloud",
+                    oracle_id="api-lightning-cloud-oracle",
+                    name="Lightning Cloud",
+                    collector_number="73",
+                    edhrec_rank=None,
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-thunder-lightning",
+                    oracle_id="api-thunder-lightning-oracle",
+                    name="Thunder Lightning",
+                    collector_number="74",
+                    edhrec_rank=1,
+                    is_default_add_searchable=1,
+                )
+
+                response = client.get("/cards/search/names", params={"query": "lightn"})
+                self.assertEqual(200, response.status_code)
+                self.assertEqual(
+                    [
+                        "Lightning Bolt",
+                        "Lightning Angel",
+                        "Lightning Cloud",
+                        "Thunder Lightning",
+                    ],
+                    [row["name"] for row in response.json()],
+                )
 
     def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

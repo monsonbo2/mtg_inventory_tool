@@ -149,6 +149,8 @@ preserve for the first API-backed version of the project.
   - blank or whitespace-only search queries return `400 validation_error`
 - `GET /cards/search/names`
   - groups results by `oracle_id`
+  - keeps lexical match buckets first, then uses backend-owned popularity
+    metadata such as `edhrec_rank` as an additive tie-breaker when available
   - prefers an English representative row and image when available
   - includes `available_languages` for the matched card
 - `GET /cards/oracle/{oracle_id}/printings`

@@ -345,7 +345,8 @@ def search_card_names(
                         WHEN search_match.scryfall_id IS NOT NULL THEN 2
                         ELSE 3
                     END AS match_order,
-                    COALESCE(search_match.search_rank, 0) AS search_rank
+                    COALESCE(search_match.search_rank, 0) AS search_rank,
+                    mtg_cards.edhrec_rank
                 FROM mtg_cards
                 {search_join}
                 WHERE {' AND '.join(where_parts)}
@@ -354,6 +355,8 @@ def search_card_names(
                 SELECT
                     oracle_id,
                     MIN(match_order) AS match_order,
+                    MIN(CASE WHEN edhrec_rank IS NULL THEN 1 ELSE 0 END) AS edhrec_rank_missing,
+                    MIN(edhrec_rank) AS best_edhrec_rank,
                     MIN(search_rank) AS best_search_rank
                 FROM matched_printings
                 GROUP BY oracle_id
@@ -405,6 +408,8 @@ def search_card_names(
             WHERE representative_rows.row_number = 1
             ORDER BY
                 matched_groups.match_order,
+                matched_groups.edhrec_rank_missing,
+                COALESCE(matched_groups.best_edhrec_rank, 2147483647),
                 matched_groups.best_search_rank,
                 LOWER(representative_rows.name),
                 COALESCE(representative_rows.released_at, '') DESC,
