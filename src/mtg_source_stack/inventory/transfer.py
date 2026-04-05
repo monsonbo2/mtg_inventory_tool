@@ -321,9 +321,10 @@ def _insert_transferred_row(
             acquisition_price,
             acquisition_currency,
             notes,
-            tags_json
+            tags_json,
+            printing_selection_mode
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
         """,
         (
@@ -338,6 +339,7 @@ def _insert_transferred_row(
             source_row["acquisition_currency"],
             source_row["notes"],
             source_row["tags_json"],
+            source_row["printing_selection_mode"],
         ),
     )
     inserted = cursor.fetchone()

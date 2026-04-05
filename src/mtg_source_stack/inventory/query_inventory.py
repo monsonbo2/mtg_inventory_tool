@@ -262,6 +262,7 @@ def merge_inventory_item_rows(
             acquisition_currency = ?,
             notes = ?,
             tags_json = ?,
+            printing_selection_mode = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
@@ -271,6 +272,7 @@ def merge_inventory_item_rows(
             merged_update["acquisition_currency"],
             merged_update["notes"],
             merged_update["tags_json"],
+            merged_update["printing_selection_mode"],
             target_item["item_id"],
         ),
     )

@@ -29,7 +29,12 @@ from .normalize import (
     text_or_none,
     validate_supported_finish,
 )
-from .policies import ensure_add_card_metadata_compatible, resolve_merge_acquisition, row_matches_identity
+from .policies import (
+    ensure_add_card_metadata_compatible,
+    merge_printing_selection_mode,
+    resolve_merge_acquisition,
+    row_matches_identity,
+)
 from .query_inventory import (
     find_inventory_item_collision,
     get_inventory_item_row,
@@ -66,12 +71,6 @@ def _normalize_printing_selection_mode(mode: str | None) -> str | None:
     if normalized not in {"explicit", "defaulted"}:
         raise ValidationError("printing_selection_mode must be 'explicit' or 'defaulted'.")
     return normalized
-
-
-def _merge_printing_selection_mode(existing_mode: str, incoming_mode: str) -> str:
-    if existing_mode == "explicit" or incoming_mode == "explicit":
-        return "explicit"
-    return "defaulted"
 
 
 def _prepared_db_path(db_path: str | Path) -> Path:
@@ -1387,7 +1386,7 @@ def add_card_with_connection(
         )
 
         updated_quantity = int(existing_row["quantity"]) + quantity
-        updated_printing_selection_mode = _merge_printing_selection_mode(
+        updated_printing_selection_mode = merge_printing_selection_mode(
             str(existing_row["printing_selection_mode"]),
             normalized_printing_selection_mode,
         )
@@ -2129,9 +2128,10 @@ def split_row(
                         acquisition_price,
                         acquisition_currency,
                         notes,
-                        tags_json
+                        tags_json,
+                        printing_selection_mode
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     RETURNING id
                     """,
                     (
@@ -2146,6 +2146,7 @@ def split_row(
                         text_or_none(source_item["acquisition_currency"]),
                         text_or_none(source_item["notes"]),
                         source_item["tags_json"],
+                        source_item["printing_selection_mode"],
                     ),
                 )
             except sqlite3.IntegrityError as exc:

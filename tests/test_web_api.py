@@ -905,6 +905,7 @@ class WebApiTest(unittest.TestCase):
         acquisition_currency: str | None = None,
         notes: str | None = None,
         tags_json: str = "[]",
+        printing_selection_mode: str = "explicit",
     ) -> None:
         with connect(db_path) as connection:
             inventory = connection.execute(
@@ -924,9 +925,10 @@ class WebApiTest(unittest.TestCase):
                     acquisition_price,
                     acquisition_currency,
                     notes,
-                    tags_json
+                    tags_json,
+                    printing_selection_mode
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -940,6 +942,7 @@ class WebApiTest(unittest.TestCase):
                     acquisition_currency,
                     notes,
                     tags_json,
+                    printing_selection_mode,
                 ),
             )
             connection.commit()
@@ -3355,6 +3358,7 @@ class WebApiTest(unittest.TestCase):
                     quantity=2,
                     location="Binder A",
                     tags_json='["deck"]',
+                    printing_selection_mode="defaulted",
                 )
                 with connect(db_path) as connection:
                     source_item_id = int(
@@ -3409,6 +3413,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(target_rows.json()))
                 self.assertEqual(2, target_rows.json()[0]["quantity"])
                 self.assertEqual(["deck"], target_rows.json()[0]["tags"])
+                self.assertEqual("defaulted", target_rows.json()[0]["printing_selection_mode"])
 
                 source_audit = client.get("/inventories/source/audit")
                 target_audit = client.get("/inventories/target/audit")
@@ -3552,6 +3557,7 @@ class WebApiTest(unittest.TestCase):
                     quantity=2,
                     location="Binder A",
                     tags_json='["deck"]',
+                    printing_selection_mode="defaulted",
                 )
 
                 duplicated = client.post(
@@ -3575,6 +3581,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(target_rows.json()))
                 self.assertEqual(2, target_rows.json()[0]["quantity"])
                 self.assertEqual(["deck"], target_rows.json()[0]["tags"])
+                self.assertEqual("defaulted", target_rows.json()[0]["printing_selection_mode"])
 
     def test_demo_api_inventory_create_trims_slug_and_rejects_trimmed_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
