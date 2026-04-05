@@ -168,6 +168,10 @@ preserve for the first API-backed version of the project.
   - defaults to English printings when available
   - accepts `lang=all` to include all available catalog languages
   - accepts specific language codes such as `lang=ja` to request one language
+  - includes `is_default_add_choice` so the frontend can preselect the exact
+    printing the backend would choose for omitted-finish quick-add
+  - marks exactly one row when omitted-finish quick-add resolves successfully;
+    foil-only or otherwise incompatible quick-add cases leave every row unmarked
 - `POST /inventories/{inventory_slug}/items/bulk`
   - current supported operations:
     `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,

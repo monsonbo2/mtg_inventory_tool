@@ -692,6 +692,114 @@
         "title": "CatalogNameSearchRowResponse",
         "type": "object"
       },
+      "CatalogPrintingLookupRowResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "collector_number": {
+            "title": "Collector Number",
+            "type": "string"
+          },
+          "finishes": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "items": {
+              "enum": [
+                "normal",
+                "foil",
+                "etched"
+              ],
+              "type": "string"
+            },
+            "title": "Finishes",
+            "type": "array"
+          },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
+          "is_default_add_choice": {
+            "description": "True when this printing matches the backend's current default quick-add choice for the same oracle_id. When omitted-finish quick-add would fail, every row is false.",
+            "title": "Is Default Add Choice",
+            "type": "boolean"
+          },
+          "lang": {
+            "description": "Catalog language code. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph.",
+            "title": "Lang",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rarity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rarity"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          },
+          "set_code": {
+            "title": "Set Code",
+            "type": "string"
+          },
+          "set_name": {
+            "title": "Set Name",
+            "type": "string"
+          },
+          "tcgplayer_product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcgplayer Product Id"
+          }
+        },
+        "required": [
+          "scryfall_id",
+          "name",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "lang",
+          "rarity",
+          "finishes",
+          "tcgplayer_product_id",
+          "image_uri_small",
+          "image_uri_normal",
+          "is_default_add_choice"
+        ],
+        "title": "CatalogPrintingLookupRowResponse",
+        "type": "object"
+      },
       "CatalogSearchRowResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4419,7 +4527,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/CatalogSearchRowResponse"
+                    "$ref": "#/components/schemas/CatalogPrintingLookupRowResponse"
                   },
                   "title": "Response Card Printings Lookup Cards Oracle  Oracle Id  Printings Get",
                   "type": "array"

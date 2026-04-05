@@ -214,8 +214,13 @@ class WebApiSchemaTest(unittest.TestCase):
             ]["application/json"]["schema"]
             self.assertEqual("array", printings_schema["type"])
             self.assertEqual(
-                "CatalogSearchRowResponse",
+                "CatalogPrintingLookupRowResponse",
                 self._schema_name_from_ref(printings_schema["items"]["$ref"]),
+            )
+            printings_schema_name = self._schema_name_from_ref(printings_schema["items"]["$ref"])
+            self.assertEqual(
+                "boolean",
+                components[printings_schema_name]["properties"]["is_default_add_choice"]["type"],
             )
             printings_parameters = {
                 parameter["name"]: parameter
@@ -2216,6 +2221,7 @@ class WebApiTest(unittest.TestCase):
                     ["api-printing-en-new", "api-printing-en-old"],
                     [row["scryfall_id"] for row in default_printings.json()],
                 )
+                self.assertEqual([True, False], [row["is_default_add_choice"] for row in default_printings.json()])
 
                 all_printings = client.get(
                     "/cards/oracle/api-oracle-lookup/printings",
@@ -2226,6 +2232,7 @@ class WebApiTest(unittest.TestCase):
                     ["api-printing-en-new", "api-printing-en-old", "api-printing-ja"],
                     [row["scryfall_id"] for row in all_printings.json()],
                 )
+                self.assertEqual([True, False, False], [row["is_default_add_choice"] for row in all_printings.json()])
 
                 japanese_printings = client.get(
                     "/cards/oracle/api-oracle-lookup/printings",
@@ -2233,10 +2240,34 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(200, japanese_printings.status_code)
                 self.assertEqual(["api-printing-ja"], [row["scryfall_id"] for row in japanese_printings.json()])
+                self.assertEqual([True], [row["is_default_add_choice"] for row in japanese_printings.json()])
 
                 missing = client.get("/cards/oracle/missing-oracle/printings")
                 self.assertEqual(404, missing.status_code)
                 self.assertEqual("not_found", missing.json()["error"]["code"])
+
+    def test_demo_api_oracle_printings_lookup_leaves_default_choice_unset_when_normal_quick_add_would_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-foil-only-printing",
+                    oracle_id="api-foil-only-oracle",
+                    name="API Foil Only Card",
+                    set_code="neo",
+                    set_name="Kamigawa: Neon Dynasty",
+                    collector_number="99",
+                    lang="en",
+                    finishes_json='["foil"]',
+                    set_type="expansion",
+                    booster=1,
+                )
+
+                printings = client.get("/cards/oracle/api-foil-only-oracle/printings")
+                self.assertEqual(200, printings.status_code)
+                self.assertEqual(["api-foil-only-printing"], [row["scryfall_id"] for row in printings.json()])
+                self.assertEqual([False], [row["is_default_add_choice"] for row in printings.json()])
 
     def test_demo_api_filters_default_add_scope_for_catalog_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

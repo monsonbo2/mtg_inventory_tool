@@ -22,7 +22,7 @@ from ..inventory.normalize import (
     MAX_OWNED_ROWS_LIMIT,
     MAX_SEARCH_LIMIT,
 )
-from ..inventory.response_models import CatalogSearchRow, serialize_response
+from ..inventory.response_models import serialize_response
 from ..inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
@@ -80,6 +80,7 @@ from .response_models import (
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
+    CatalogPrintingLookupRowResponse,
     CatalogSearchRowResponse,
     CsvImportResponse,
     DecklistImportResponse,
@@ -160,22 +161,6 @@ def _csv_success_response(description: str = "Successful Response") -> dict[int,
 
 def _serialize(payload: Any) -> Any:
     return serialize_response(payload)
-
-
-def _catalog_search_row_for_api(row: Any) -> CatalogSearchRow:
-    return CatalogSearchRow(
-        scryfall_id=row.scryfall_id,
-        name=row.name,
-        set_code=row.set_code,
-        set_name=row.set_name,
-        collector_number=row.collector_number,
-        lang=row.lang,
-        rarity=row.rarity,
-        finishes=list(row.finishes),
-        tcgplayer_product_id=row.tcgplayer_product_id,
-        image_uri_small=row.image_uri_small,
-        image_uri_normal=row.image_uri_normal,
-    )
 
 
 def _csv_download_response(csv_text: str, filename: str) -> Response:
@@ -592,7 +577,7 @@ def card_names_search(
 
 @router.get(
     "/cards/oracle/{oracle_id}/printings",
-    response_model=list[CatalogSearchRowResponse],
+    response_model=list[CatalogPrintingLookupRowResponse],
     responses=_error_responses(401, 403, 400, 404, 503, 500),
 )
 def card_printings_lookup(
@@ -611,9 +596,7 @@ def card_printings_lookup(
         lang=lang,
         scope=scope,
     )
-    return _serialize(
-        [_catalog_search_row_for_api(row) for row in rows]
-    )
+    return _serialize(rows)
 
 
 @router.get(

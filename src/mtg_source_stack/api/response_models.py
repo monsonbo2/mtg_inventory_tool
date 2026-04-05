@@ -33,6 +33,10 @@ SEARCH_LANG_RESPONSE_DESCRIPTION = (
 AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION = (
     f"Catalog language codes available for the matched card. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
 )
+DEFAULT_ADD_CHOICE_RESPONSE_DESCRIPTION = (
+    "True when this printing matches the backend's current default quick-add choice for the same oracle_id. "
+    "When omitted-finish quick-add would fail, every row is false."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -137,6 +141,10 @@ class CatalogSearchRowResponse(ApiBaseModel):
     tcgplayer_product_id: str | None
     image_uri_small: str | None
     image_uri_normal: str | None
+
+
+class CatalogPrintingLookupRowResponse(CatalogSearchRowResponse):
+    is_default_add_choice: bool = Field(description=DEFAULT_ADD_CHOICE_RESPONSE_DESCRIPTION)
 
 
 class CatalogNameSearchRowResponse(ApiBaseModel):
