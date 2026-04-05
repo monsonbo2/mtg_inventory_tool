@@ -209,6 +209,7 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual(2, imported_row["csv_row"])
             self.assertEqual("trade-binder", imported_row["inventory"])
             self.assertEqual("CSV Test Card", imported_row["card_name"])
+            self.assertEqual("explicit", imported_row["printing_selection_mode"])
             self.assertEqual("1.25", imported_row["acquisition_price"])
             self.assertEqual("USD", imported_row["acquisition_currency"])
             self.assertEqual(["burn"], imported_row["tags"])
@@ -1017,17 +1018,107 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual(1, report["rows_written"])
             self.assertEqual("csv-oracle-ja", report["imported_rows"][0]["scryfall_id"])
             self.assertEqual("ja", report["imported_rows"][0]["language_code"])
+            self.assertEqual("explicit", report["imported_rows"][0]["printing_selection_mode"])
 
             with connect(db_path) as connection:
                 item_row = connection.execute(
                     """
-                    SELECT scryfall_id, language_code
+                    SELECT scryfall_id, language_code, printing_selection_mode
                     FROM inventory_items
                     """
                 ).fetchone()
 
             self.assertEqual("csv-oracle-ja", item_row["scryfall_id"])
             self.assertEqual("ja", item_row["language_code"])
+            self.assertEqual("explicit", item_row["printing_selection_mode"])
+
+    def test_import_csv_marks_defaulted_rows_when_backend_chooses_oracle_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            csv_path = tmp / "inventory_import.csv"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json,
+                        set_type,
+                        booster,
+                        promo_types_json,
+                        is_default_add_searchable
+                    )
+                    VALUES (?, 'csv-default-oracle', 'CSV Defaulted Card', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    [
+                        (
+                            "csv-default-mainstream-en",
+                            "bro",
+                            "The Brothers' War",
+                            "81",
+                            "en",
+                            "2023-11-18",
+                            '["nonfoil","foil"]',
+                            "expansion",
+                            1,
+                            "[]",
+                        ),
+                        (
+                            "csv-default-promo-en",
+                            "pneo",
+                            "Kamigawa: Neon Dynasty Promos",
+                            "82",
+                            "en",
+                            "2024-03-01",
+                            '["nonfoil","foil"]',
+                            "expansion",
+                            0,
+                            '["promo_pack"]',
+                        ),
+                    ],
+                )
+                connection.execute(
+                    """
+                    INSERT INTO inventories (slug, display_name)
+                    VALUES ('personal', 'Personal Collection')
+                    """
+                )
+                connection.commit()
+
+            csv_path.write_text(
+                (
+                    "Inventory,Oracle ID,Qty,Cond,Finish\n"
+                    "personal,csv-default-oracle,1,Near Mint,normal\n"
+                ),
+                encoding="utf-8",
+            )
+
+            report = import_csv(
+                db_path,
+                csv_path=csv_path,
+                default_inventory=None,
+                dry_run=False,
+            )
+
+            self.assertEqual("csv-default-mainstream-en", report["imported_rows"][0]["scryfall_id"])
+            self.assertEqual("defaulted", report["imported_rows"][0]["printing_selection_mode"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    "SELECT scryfall_id, printing_selection_mode FROM inventory_items"
+                ).fetchone()
+
+            self.assertEqual("csv-default-mainstream-en", item_row["scryfall_id"])
+            self.assertEqual("defaulted", item_row["printing_selection_mode"])
 
     def test_import_csv_reports_invalid_acquisition_values_with_row_number(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

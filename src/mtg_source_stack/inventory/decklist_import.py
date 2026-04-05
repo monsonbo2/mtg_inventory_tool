@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping
 
 from ..errors import ValidationError
 from .catalog import (
+    determine_printing_selection_mode,
     list_default_card_name_candidate_rows,
     list_printing_candidate_rows,
     resolve_card_row,
@@ -254,6 +255,7 @@ def build_add_card_kwargs_from_decklist_entry(
     resolved_card: sqlite3.Row,
     default_inventory: str | None,
     finish: str,
+    printing_selection_mode: str = "explicit",
 ) -> dict[str, Any]:
     inventory_slug = text_or_none(default_inventory)
     if inventory_slug is None:
@@ -277,6 +279,7 @@ def build_add_card_kwargs_from_decklist_entry(
         "acquisition_currency": None,
         "notes": None,
         "tags": None,
+        "printing_selection_mode": printing_selection_mode,
     }
 
 
@@ -323,6 +326,7 @@ def _build_pending_decklist_row(
     resolved_card: sqlite3.Row,
     default_inventory: str | None,
     finish: str,
+    printing_selection_mode: str,
 ) -> PendingImportRow:
     return PendingImportRow(
         row_number=entry.line_number,
@@ -331,6 +335,7 @@ def _build_pending_decklist_row(
             resolved_card=resolved_card,
             default_inventory=default_inventory,
             finish=finish,
+            printing_selection_mode=printing_selection_mode,
         ),
         response_metadata={
             "decklist_line": entry.line_number,
@@ -386,6 +391,7 @@ def _probe_decklist_resolution(
             resolved_card=candidate_rows[0],
             default_inventory=default_inventory,
             finish=row_options[0].finish,
+            printing_selection_mode="explicit",
         ), None
 
     candidate_rows = list_default_card_name_candidate_rows(
@@ -422,11 +428,24 @@ def _probe_decklist_resolution(
     row_options, requires_choice = build_resolution_options_for_catalog_row(resolved_card)
     if requires_choice:
         return None, _build_decklist_issue("finish_required", entry, options=row_options)
+    printing_selection_mode = determine_printing_selection_mode(
+        connection,
+        scryfall_id=None,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name=entry.name,
+        set_code=None,
+        set_name=None,
+        collector_number=None,
+        lang=None,
+        finish=None,
+    )
     return _build_pending_decklist_row(
         entry,
         resolved_card=resolved_card,
         default_inventory=default_inventory,
         finish=row_options[0].finish,
+        printing_selection_mode=printing_selection_mode,
     ), None
 
 
@@ -471,6 +490,7 @@ def _build_pending_decklist_row_from_selection(
         resolved_card=resolved_card,
         default_inventory=default_inventory,
         finish=selection.finish,
+        printing_selection_mode="explicit",
     )
 
 

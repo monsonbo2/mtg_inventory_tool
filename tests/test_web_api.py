@@ -3651,6 +3651,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(201, added.status_code)
                 self.assertEqual("api-add-ja", added.json()["scryfall_id"])
                 self.assertEqual("ja", added.json()["language_code"])
+                self.assertEqual("explicit", added.json()["printing_selection_mode"])
 
                 conflict = client.post(
                     "/inventories/personal/items",
@@ -3733,6 +3734,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(201, added.status_code)
                 self.assertEqual("api-policy-mainstream-en", added.json()["scryfall_id"])
                 self.assertEqual("en", added.json()["language_code"])
+                self.assertEqual("defaulted", added.json()["printing_selection_mode"])
 
     def test_demo_api_returns_409_for_concurrent_add_item_identity_collision(self) -> None:
         from mtg_source_stack.inventory.service import add_card as service_add_card

@@ -12,7 +12,7 @@ from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import ConflictError, NotFoundError, ValidationError
 from .audit import load_inventory_item_snapshot, write_inventory_audit_event
-from .catalog import resolve_card_row
+from .catalog import determine_printing_selection_mode, resolve_card_row
 from .money import coerce_decimal
 from .normalize import (
     load_tags_json,
@@ -57,6 +57,21 @@ from .response_models import (
 
 def _build_add_card_result(payload: dict[str, Any]) -> AddCardResult:
     return AddCardResult(**inventory_item_response_kwargs(payload))
+
+
+def _normalize_printing_selection_mode(mode: str | None) -> str | None:
+    normalized = text_or_none(mode)
+    if normalized is None:
+        return None
+    if normalized not in {"explicit", "defaulted"}:
+        raise ValidationError("printing_selection_mode must be 'explicit' or 'defaulted'.")
+    return normalized
+
+
+def _merge_printing_selection_mode(existing_mode: str, incoming_mode: str) -> str:
+    if existing_mode == "explicit" or incoming_mode == "explicit":
+        return "explicit"
+    return "defaulted"
 
 
 def _prepared_db_path(db_path: str | Path) -> Path:
@@ -1244,6 +1259,7 @@ def add_card_with_connection(
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
+    printing_selection_mode: str | None = None,
     resolved_card: sqlite3.Row | None = None,
     inventory_cache: dict[str, sqlite3.Row] | None = None,
     before_write: Callable[[], Any] | None = None,
@@ -1294,6 +1310,20 @@ def add_card_with_connection(
             lang=lang,
             finish=normalized_finish,
         )
+    normalized_printing_selection_mode = _normalize_printing_selection_mode(printing_selection_mode)
+    if normalized_printing_selection_mode is None:
+        normalized_printing_selection_mode = determine_printing_selection_mode(
+            connection,
+            scryfall_id=scryfall_id,
+            oracle_id=oracle_id,
+            tcgplayer_product_id=normalize_external_id(tcgplayer_product_id),
+            name=name,
+            set_code=set_code,
+            set_name=set_name,
+            collector_number=collector_number,
+            lang=lang,
+            finish=normalized_finish,
+        )
     validate_supported_finish(card["finishes_json"], normalized_finish)
     resolved_language = normalize_language_code(card["lang"])
     if explicit_language is None:
@@ -1317,7 +1347,8 @@ def add_card_with_connection(
             tags_json,
             acquisition_price,
             acquisition_currency,
-            notes
+            notes,
+            printing_selection_mode
         FROM inventory_items
         WHERE inventory_id = ?
           AND scryfall_id = ?
@@ -1356,17 +1387,22 @@ def add_card_with_connection(
         )
 
         updated_quantity = int(existing_row["quantity"]) + quantity
+        updated_printing_selection_mode = _merge_printing_selection_mode(
+            str(existing_row["printing_selection_mode"]),
+            normalized_printing_selection_mode,
+        )
         if before_write is not None:
             before_write()
         connection.execute(
             """
             UPDATE inventory_items
-            SET quantity = ?, tags_json = ?, updated_at = CURRENT_TIMESTAMP
+            SET quantity = ?, tags_json = ?, printing_selection_mode = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
             (
                 updated_quantity,
                 tags_to_json(merged_tags),
+                updated_printing_selection_mode,
                 existing_row["id"],
             ),
         )
@@ -1407,9 +1443,10 @@ def add_card_with_connection(
                     acquisition_price,
                     acquisition_currency,
                     notes,
-                    tags_json
+                    tags_json,
+                    printing_selection_mode
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id, quantity
                 """,
                 (
@@ -1424,6 +1461,7 @@ def add_card_with_connection(
                     normalized_acquisition_currency,
                     normalized_notes,
                     tags_to_json(merged_tags),
+                    normalized_printing_selection_mode,
                 ),
             )
         except sqlite3.IntegrityError as exc:
@@ -1474,6 +1512,7 @@ def add_card(
     acquisition_currency: str | None,
     notes: str | None,
     tags: str | None = None,
+    printing_selection_mode: str | None = None,
     before_write: Callable[[], Any] | None = None,
     actor_type: str = "cli",
     actor_id: str | None = None,
@@ -1503,6 +1542,7 @@ def add_card(
             acquisition_currency=acquisition_currency,
             notes=notes,
             tags=tags,
+            printing_selection_mode=printing_selection_mode,
             before_write=before_write,
             actor_type=actor_type,
             actor_id=actor_id,

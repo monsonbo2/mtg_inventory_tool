@@ -23,6 +23,7 @@ from ..errors import MtgStackError, NotFoundError, ValidationError
 from ..db.connection import connect
 from ..db.schema import initialize_database
 from .catalog import (
+    determine_printing_selection_mode,
     list_default_card_name_candidate_rows,
     list_printing_candidate_rows,
     resolve_card_row,
@@ -1484,6 +1485,7 @@ def _build_add_card_kwargs_from_remote_card(
     card: RemoteDeckCard,
     *,
     default_inventory: str | None,
+    printing_selection_mode: str = "explicit",
 ) -> dict[str, Any]:
     inventory_slug = text_or_none(default_inventory)
     if inventory_slug is None:
@@ -1509,6 +1511,7 @@ def _build_add_card_kwargs_from_remote_card(
         "acquisition_currency": None,
         "notes": None,
         "tags": None,
+        "printing_selection_mode": printing_selection_mode,
     }
 
 
@@ -1516,12 +1519,14 @@ def _build_pending_remote_row(
     card: RemoteDeckCard,
     *,
     default_inventory: str | None,
+    printing_selection_mode: str,
 ) -> PendingImportRow:
     return PendingImportRow(
         row_number=card.source_position,
         add_kwargs=_build_add_card_kwargs_from_remote_card(
             card,
             default_inventory=default_inventory,
+            printing_selection_mode=printing_selection_mode,
         ),
         response_metadata={"source_position": card.source_position, "section": card.section},
         error_label="Remote deck card",
@@ -1613,7 +1618,11 @@ def _probe_remote_card_resolution(
             lang=None,
             finish=card.finish,
         )
-        return _build_pending_remote_row(card, default_inventory=default_inventory), None
+        return _build_pending_remote_row(
+            card,
+            default_inventory=default_inventory,
+            printing_selection_mode="explicit",
+        ), None
 
     if text_or_none(card.name) is None:
         raise ValidationError("Remote deck import requires either a printing id or a card name.")
@@ -1659,6 +1668,18 @@ def _probe_remote_card_resolution(
                 scryfall_id=str(resolved_card["scryfall_id"]),
             ),
             default_inventory=default_inventory,
+            printing_selection_mode=determine_printing_selection_mode(
+                connection,
+                scryfall_id=None,
+                oracle_id=None,
+                tcgplayer_product_id=None,
+                name=card.name or "",
+                set_code=None,
+                set_name=None,
+                collector_number=None,
+                lang=None,
+                finish=card.finish,
+            ),
         ), None
 
     candidate_rows = list_printing_candidate_rows(
@@ -1686,6 +1707,7 @@ def _probe_remote_card_resolution(
             scryfall_id=str(candidate_rows[0]["scryfall_id"]),
         ),
         default_inventory=default_inventory,
+        printing_selection_mode="explicit",
     ), None
 
 
@@ -1732,6 +1754,7 @@ def _build_pending_remote_row_from_selection(
             finish=selection.finish,
         ),
         default_inventory=default_inventory,
+        printing_selection_mode="explicit",
     )
 
 

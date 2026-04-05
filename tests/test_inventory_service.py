@@ -771,6 +771,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual("add-oracle-ja", added.scryfall_id)
             self.assertEqual("ja", added.language_code)
+            self.assertEqual("explicit", added.printing_selection_mode)
 
     def test_add_card_with_oracle_id_prefers_mainstream_default_printing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -852,6 +853,107 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual("add-policy-mainstream-en", added.scryfall_id)
             self.assertEqual("en", added.language_code)
+            self.assertEqual("defaulted", added.printing_selection_mode)
+
+    def test_add_card_promotes_defaulted_row_to_explicit_when_readded_by_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="promotion-mainstream-en",
+                oracle_id="promotion-oracle",
+                name="Promotion Policy Card",
+                set_code="bro",
+                set_name="The Brothers' War",
+                collector_number="141",
+                lang="en",
+                released_at="2023-11-18",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="promotion-promo-en",
+                oracle_id="promotion-oracle",
+                name="Promotion Policy Card",
+                set_code="pneo",
+                set_name="Kamigawa: Neon Dynasty Promos",
+                collector_number="142",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=0,
+                promo_types_json='["promo_pack"]',
+            )
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            defaulted = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id=None,
+                oracle_id="promotion-oracle",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code=None,
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+            self.assertEqual("defaulted", defaulted.printing_selection_mode)
+
+            explicit = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="promotion-mainstream-en",
+                oracle_id=None,
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertEqual(defaulted.item_id, explicit.item_id)
+            self.assertEqual(2, explicit.quantity)
+            self.assertEqual("explicit", explicit.printing_selection_mode)
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    "SELECT quantity, printing_selection_mode FROM inventory_items WHERE id = ?",
+                    (explicit.item_id,),
+                ).fetchone()
+
+            self.assertEqual(2, row["quantity"])
+            self.assertEqual("explicit", row["printing_selection_mode"])
 
     def test_add_card_with_oracle_id_rejects_default_normal_when_only_foil_candidates_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -322,6 +322,7 @@ class DecklistImportTest(unittest.TestCase):
             self.assertEqual(5, preview["imported_rows"][0]["decklist_line"])
             self.assertEqual("mainboard", preview["imported_rows"][0]["section"])
             self.assertEqual(4, preview["imported_rows"][0]["quantity"])
+            self.assertEqual("explicit", preview["imported_rows"][0]["printing_selection_mode"])
             self.assertEqual(0, preview["summary"]["unresolved_card_quantity"])
 
             with connect(db_path) as connection:
@@ -340,13 +341,69 @@ class DecklistImportTest(unittest.TestCase):
             self.assertEqual([], committed["resolution_issues"])
             self.assertEqual(4, committed["summary"]["requested_card_quantity"])
             self.assertEqual(0, committed["summary"]["unresolved_card_quantity"])
+            self.assertEqual("explicit", committed["imported_rows"][0]["printing_selection_mode"])
 
             with connect(db_path) as connection:
                 item_row = connection.execute(
-                    "SELECT quantity, finish FROM inventory_items"
+                    "SELECT quantity, finish, printing_selection_mode FROM inventory_items"
                 ).fetchone()
             self.assertEqual(4, item_row["quantity"])
             self.assertEqual("normal", item_row["finish"])
+            self.assertEqual("explicit", item_row["printing_selection_mode"])
+
+    def test_import_decklist_text_marks_name_only_default_rows_as_defaulted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="deck-default-mainstream-en",
+                oracle_id="deck-default-oracle",
+                name="Deck Defaulted Card",
+                set_code="bro",
+                collector_number="81",
+                released_at="2023-11-18",
+                finishes_json='["normal"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_card(
+                db_path,
+                scryfall_id="deck-default-promo-en",
+                oracle_id="deck-default-oracle",
+                name="Deck Defaulted Card",
+                set_code="pneo",
+                collector_number="82",
+                released_at="2024-03-01",
+                finishes_json='["normal"]',
+                set_type="expansion",
+                booster=0,
+                promo_types_json='["promo_pack"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            committed = import_decklist_text(
+                db_path,
+                deck_text="2 Deck Defaulted Card",
+                default_inventory="personal",
+                dry_run=False,
+            )
+
+            self.assertEqual("deck-default-mainstream-en", committed["imported_rows"][0]["scryfall_id"])
+            self.assertEqual("defaulted", committed["imported_rows"][0]["printing_selection_mode"])
+
+            with connect(db_path) as connection:
+                item_row = connection.execute(
+                    "SELECT scryfall_id, printing_selection_mode FROM inventory_items"
+                ).fetchone()
+
+            self.assertEqual("deck-default-mainstream-en", item_row["scryfall_id"])
+            self.assertEqual("defaulted", item_row["printing_selection_mode"])
 
     def test_import_decklist_text_returns_structured_ambiguity_preview_and_accepts_resolution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

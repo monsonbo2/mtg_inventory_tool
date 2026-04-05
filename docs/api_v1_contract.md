@@ -25,6 +25,9 @@ preserve for the first API-backed version of the project.
 - Owned inventory rows and inventory write/import responses include
   `printing_selection_mode` so clients can distinguish between an explicitly
   chosen printing and a concrete printing the backend selected by default.
+  Typical examples: direct `scryfall_id` adds stay `explicit`, while bare
+  `oracle_id` or name-only imports become `defaulted` when the backend had to
+  choose among multiple valid printings.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
   explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one

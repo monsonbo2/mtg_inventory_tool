@@ -944,6 +944,7 @@ class DeckUrlImportTest(unittest.TestCase):
                 self.assertEqual("commander", preview["imported_rows"][0]["section"])
                 self.assertEqual("foil", preview["imported_rows"][1]["finish"])
                 self.assertEqual("etched", preview["imported_rows"][2]["finish"])
+                self.assertEqual("explicit", preview["imported_rows"][0]["printing_selection_mode"])
 
                 with connect(db_path) as connection:
                     self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0])
@@ -963,16 +964,127 @@ class DeckUrlImportTest(unittest.TestCase):
 
             with connect(db_path) as connection:
                 rows = connection.execute(
-                    "SELECT scryfall_id, quantity, finish FROM inventory_items ORDER BY scryfall_id"
+                    "SELECT scryfall_id, quantity, finish, printing_selection_mode FROM inventory_items ORDER BY scryfall_id"
                 ).fetchall()
             self.assertEqual(
                 [
-                    ("cmd-card", 1, "normal"),
-                    ("main-card", 4, "foil"),
-                    ("side-card", 1, "etched"),
+                    ("cmd-card", 1, "normal", "explicit"),
+                    ("main-card", 4, "foil", "explicit"),
+                    ("side-card", 1, "etched", "explicit"),
                 ],
-                [(row["scryfall_id"], row["quantity"], row["finish"]) for row in rows],
+                [
+                    (
+                        row["scryfall_id"],
+                        row["quantity"],
+                        row["finish"],
+                        row["printing_selection_mode"],
+                    )
+                    for row in rows
+                ],
             )
+
+    def test_import_deck_url_marks_name_only_default_rows_as_defaulted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="remote-default-mainstream-en",
+                oracle_id="remote-default-oracle",
+                name="Remote Defaulted Card",
+                collector_number="1",
+                finishes_json='["normal"]',
+            )
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    UPDATE mtg_cards
+                    SET set_code = 'bro',
+                        set_name = 'The Brothers'' War',
+                        released_at = '2023-11-18',
+                        set_type = 'expansion',
+                        booster = 1,
+                        promo_types_json = '[]'
+                    WHERE scryfall_id = 'remote-default-mainstream-en'
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json,
+                        set_type,
+                        booster,
+                        promo_types_json
+                    )
+                    VALUES (
+                        'remote-default-promo-en',
+                        'remote-default-oracle',
+                        'Remote Defaulted Card',
+                        'pneo',
+                        'Kamigawa: Neon Dynasty Promos',
+                        '2',
+                        'en',
+                        '2024-03-01',
+                        '["normal"]',
+                        'expansion',
+                        0,
+                        '["promo_pack"]'
+                    )
+                    """
+                )
+                connection.commit()
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/123/test",
+                deck_name="Remote Defaulted Deck",
+                cards=[
+                    RemoteDeckCard(
+                        1,
+                        2,
+                        "mainboard",
+                        None,
+                        "normal",
+                        name="Remote Defaulted Card",
+                    )
+                ],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ):
+                committed = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/123/test",
+                    default_inventory="personal",
+                    dry_run=False,
+                )
+
+            self.assertEqual("remote-default-mainstream-en", committed["imported_rows"][0]["scryfall_id"])
+            self.assertEqual("defaulted", committed["imported_rows"][0]["printing_selection_mode"])
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    "SELECT scryfall_id, printing_selection_mode FROM inventory_items"
+                ).fetchone()
+
+            self.assertEqual("remote-default-mainstream-en", row["scryfall_id"])
+            self.assertEqual("defaulted", row["printing_selection_mode"])
 
     def test_import_deck_url_supports_exact_printing_name_resolution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
