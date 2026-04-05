@@ -22,11 +22,20 @@ LANGUAGE_CODE_RESPONSE_DESCRIPTION = (
     f"Canonical language codes: {_CANONICAL_LANGUAGE_CODES_TEXT}. "
     "Stored rows are normally normalized to these values."
 )
+PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION = (
+    "How the concrete printing was chosen. "
+    "`explicit` means the caller directly identified the printing. "
+    "`defaulted` means backend resolution selected the printing."
+)
 SEARCH_LANG_RESPONSE_DESCRIPTION = (
     f"Catalog language code. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
 )
 AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION = (
     f"Catalog language codes available for the matched card. Common values include: {_CANONICAL_LANGUAGE_CODES_TEXT}."
+)
+DEFAULT_ADD_CHOICE_RESPONSE_DESCRIPTION = (
+    "True when this printing matches the backend's current default quick-add choice for the same oracle_id. "
+    "When omitted-finish quick-add would fail, every row is false."
 )
 
 
@@ -134,6 +143,10 @@ class CatalogSearchRowResponse(ApiBaseModel):
     image_uri_normal: str | None
 
 
+class CatalogPrintingLookupRowResponse(CatalogSearchRowResponse):
+    is_default_add_choice: bool = Field(description=DEFAULT_ADD_CHOICE_RESPONSE_DESCRIPTION)
+
+
 class CatalogNameSearchRowResponse(ApiBaseModel):
     oracle_id: str
     name: str
@@ -169,6 +182,9 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     est_value: str | None
     price_date: str | None
     notes: str | None
+    printing_selection_mode: Literal["explicit", "defaulted"] = Field(
+        description=PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION
+    )
 
 
 class InventoryAuditEventResponse(ApiBaseModel):
@@ -202,6 +218,9 @@ class InventoryItemMutationBaseResponse(ApiBaseModel):
     acquisition_currency: str | None
     notes: str | None
     tags: list[str]
+    printing_selection_mode: Literal["explicit", "defaulted"] = Field(
+        description=PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION
+    )
 
 
 class CsvImportRowResponse(InventoryItemMutationBaseResponse):

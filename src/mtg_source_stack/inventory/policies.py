@@ -18,6 +18,18 @@ def canonical_acquisition(price: Any, currency: Any) -> tuple[Decimal, str | Non
     return decimal_price, text_or_none(currency)
 
 
+def merge_printing_selection_mode(source_mode: Any, target_mode: Any) -> str:
+    normalized_source = text_or_none(source_mode) or "explicit"
+    normalized_target = text_or_none(target_mode) or "explicit"
+    if normalized_source not in {"explicit", "defaulted"}:
+        raise ValidationError("source printing_selection_mode must be 'explicit' or 'defaulted'.")
+    if normalized_target not in {"explicit", "defaulted"}:
+        raise ValidationError("target printing_selection_mode must be 'explicit' or 'defaulted'.")
+    if normalized_source == "explicit" or normalized_target == "explicit":
+        return "explicit"
+    return "defaulted"
+
+
 def resolve_merge_acquisition(
     source_item: sqlite3.Row,
     target_item: sqlite3.Row,
@@ -76,6 +88,10 @@ def build_merged_inventory_item_update(
         "acquisition_currency": merged_acquisition_currency,
         "notes": merged_notes,
         "tags_json": tags_to_json(merged_tags),
+        "printing_selection_mode": merge_printing_selection_mode(
+            source_item["printing_selection_mode"],
+            target_item["printing_selection_mode"],
+        ),
     }
 
 

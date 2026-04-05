@@ -12,6 +12,7 @@ from ..db.connection import connect
 from ..db.schema import initialize_database
 from ..errors import MtgStackError, ValidationError
 from .catalog import (
+    determine_printing_selection_mode,
     list_default_card_name_candidate_rows,
     list_printing_candidate_rows,
     list_tcgplayer_product_candidate_rows,
@@ -299,6 +300,7 @@ def _resolved_csv_pending_row(
     *,
     resolved_card: sqlite3.Row,
     finish: str,
+    printing_selection_mode: str,
 ) -> PendingImportRow:
     add_kwargs = dict(pending_row.add_kwargs)
     add_kwargs["scryfall_id"] = str(resolved_card["scryfall_id"])
@@ -311,6 +313,7 @@ def _resolved_csv_pending_row(
     add_kwargs["lang"] = None
     add_kwargs["finish"] = finish
     add_kwargs["_finish_source"] = "finish"
+    add_kwargs["printing_selection_mode"] = printing_selection_mode
     return PendingImportRow(
         row_number=pending_row.row_number,
         add_kwargs=add_kwargs,
@@ -353,6 +356,7 @@ def _probe_csv_row_resolution(
             pending_row,
             resolved_card=resolved_card,
             finish=row_options[0].finish,
+            printing_selection_mode="explicit",
         ), None
 
     tcgplayer_product_id = normalize_external_id(add_kwargs.get("tcgplayer_product_id"))
@@ -384,6 +388,7 @@ def _probe_csv_row_resolution(
             pending_row,
             resolved_card=candidate_rows[0],
             finish=row_options[0].finish,
+            printing_selection_mode="explicit",
         ), None
 
     oracle_id = text_or_none(add_kwargs.get("oracle_id"))
@@ -407,10 +412,23 @@ def _probe_csv_row_resolution(
         )
         if requires_choice:
             return None, _build_csv_issue("finish_required", pending_row, options=row_options)
+        printing_selection_mode = determine_printing_selection_mode(
+            connection,
+            scryfall_id=None,
+            oracle_id=oracle_id,
+            tcgplayer_product_id=None,
+            name=None,
+            set_code=text_or_none(add_kwargs.get("set_code")),
+            set_name=text_or_none(add_kwargs.get("set_name")),
+            collector_number=text_or_none(add_kwargs.get("collector_number")),
+            lang=text_or_none(add_kwargs.get("lang")),
+            finish=requested_finish,
+        )
         return _resolved_csv_pending_row(
             pending_row,
             resolved_card=resolved_card,
             finish=row_options[0].finish,
+            printing_selection_mode=printing_selection_mode,
         ), None
 
     name = text_or_none(add_kwargs.get("name"))
@@ -453,6 +471,7 @@ def _probe_csv_row_resolution(
             pending_row,
             resolved_card=candidate_rows[0],
             finish=row_options[0].finish,
+            printing_selection_mode="explicit",
         ), None
 
     candidate_rows = list_default_card_name_candidate_rows(
@@ -498,10 +517,23 @@ def _probe_csv_row_resolution(
     )
     if requires_choice:
         return None, _build_csv_issue("finish_required", pending_row, options=row_options)
+    printing_selection_mode = determine_printing_selection_mode(
+        connection,
+        scryfall_id=None,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name=name,
+        set_code=None,
+        set_name=None,
+        collector_number=None,
+        lang=lang,
+        finish=requested_finish,
+    )
     return _resolved_csv_pending_row(
         pending_row,
         resolved_card=resolved_card,
         finish=row_options[0].finish,
+        printing_selection_mode=printing_selection_mode,
     ), None
 
 
@@ -543,6 +575,7 @@ def _build_pending_csv_row_from_selection(
         pending_row,
         resolved_card=resolved_card,
         finish=selection.finish,
+        printing_selection_mode="explicit",
     )
 
 

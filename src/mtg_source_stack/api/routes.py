@@ -80,6 +80,7 @@ from .response_models import (
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
+    CatalogPrintingLookupRowResponse,
     CatalogSearchRowResponse,
     CsvImportResponse,
     DecklistImportResponse,
@@ -576,7 +577,7 @@ def card_names_search(
 
 @router.get(
     "/cards/oracle/{oracle_id}/printings",
-    response_model=list[CatalogSearchRowResponse],
+    response_model=list[CatalogPrintingLookupRowResponse],
     responses=_error_responses(401, 403, 400, 404, 503, 500),
 )
 def card_printings_lookup(
@@ -589,14 +590,13 @@ def card_printings_lookup(
         Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
     ] = None,
 ) -> Any:
-    return _serialize(
-        list_card_printings_for_oracle(
-            settings.db_path,
-            oracle_id=oracle_id,
-            lang=lang,
-            scope=scope,
-        )
+    rows = list_card_printings_for_oracle(
+        settings.db_path,
+        oracle_id=oracle_id,
+        lang=lang,
+        scope=scope,
     )
+    return _serialize(rows)
 
 
 @router.get(

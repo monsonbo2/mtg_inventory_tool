@@ -1,0 +1,1 @@
+-- Add the printing_selection_mode column when inventory_items exists.

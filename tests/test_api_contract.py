@@ -26,6 +26,7 @@ from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
     CatalogNameSearchRowResponse,
+    CatalogPrintingLookupRowResponse,
     CatalogSearchRowResponse,
     CsvImportResponse,
     DecklistImportResponse,
@@ -197,6 +198,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "est_value": Decimal("12.00"),
                 "price_date": None,
                 "notes": None,
+                "printing_selection_mode": "explicit",
             }
         )
         catalog_payload = {
@@ -211,6 +213,10 @@ class ApiContractTest(RepoSmokeTestCase):
             "tcgplayer_product_id": None,
             "image_uri_small": "https://example.test/cards/card-1-small.jpg",
             "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
+        }
+        printing_lookup_payload = {
+            **catalog_payload,
+            "is_default_add_choice": True,
         }
         catalog_name_payload = {
             "oracle_id": "oracle-lightning-bolt",
@@ -264,6 +270,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "acquisition_currency": None,
                     "notes": None,
                     "tags": [],
+                    "printing_selection_mode": "explicit",
                 }
             ],
         }
@@ -303,6 +310,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "acquisition_currency": None,
                     "notes": None,
                     "tags": [],
+                    "printing_selection_mode": "explicit",
                 }
             ],
         }
@@ -345,6 +353,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "acquisition_currency": None,
                     "notes": None,
                     "tags": [],
+                    "printing_selection_mode": "explicit",
                 }
             ],
         }
@@ -352,6 +361,7 @@ class ApiContractTest(RepoSmokeTestCase):
 
         owned = OwnedInventoryRowResponse.model_validate(owned_payload)
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
+        printing_lookup = CatalogPrintingLookupRowResponse.model_validate(printing_lookup_payload)
         catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
         bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
         csv_import = CsvImportResponse.model_validate(csv_import_payload)
@@ -363,9 +373,11 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("3.00", owned.unit_price)
         self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
         self.assertEqual(["normal", "foil"], owned.allowed_finishes)
+        self.assertEqual("explicit", owned.printing_selection_mode)
         self.assertIsNone(owned.price_date)
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
+        self.assertTrue(printing_lookup.is_default_add_choice)
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
@@ -434,6 +446,13 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["normal", "foil", "etched"], owned_properties["allowed_finishes"]["items"]["enum"])
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
         self.assertIn("Canonical language codes: en, ja, de, fr", owned_properties["language_code"]["description"])
+        self.assertEqual(["explicit", "defaulted"], owned_properties["printing_selection_mode"]["enum"])
+
+        set_finish_schema = SetFinishResponse.model_json_schema()
+        self.assertEqual(
+            ["explicit", "defaulted"],
+            set_finish_schema["properties"]["printing_selection_mode"]["enum"],
+        )
 
         catalog_schema = CatalogSearchRowResponse.model_json_schema()
         catalog_properties = catalog_schema["properties"]
@@ -442,6 +461,13 @@ class ApiContractTest(RepoSmokeTestCase):
             catalog_properties["finishes"]["items"]["enum"],
         )
         self.assertIn("Catalog language code", catalog_properties["lang"]["description"])
+
+        printing_lookup_schema = CatalogPrintingLookupRowResponse.model_json_schema()
+        self.assertEqual("boolean", printing_lookup_schema["properties"]["is_default_add_choice"]["type"])
+        self.assertIn(
+            "default quick-add choice",
+            printing_lookup_schema["properties"]["is_default_add_choice"]["description"],
+        )
 
         catalog_name_schema = CatalogNameSearchRowResponse.model_json_schema()
         catalog_name_properties = catalog_name_schema["properties"]
@@ -642,6 +668,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "acquisition_currency": "USD",
                 "notes": None,
                 "tags": ["commander", "artifact"],
+                "printing_selection_mode": "explicit",
                 "old_acquisition_price": None,
                 "old_acquisition_currency": None,
             }

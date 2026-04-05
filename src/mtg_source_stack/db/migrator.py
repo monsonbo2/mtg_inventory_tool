@@ -108,6 +108,18 @@ def _prepare_migration(connection: sqlite3.Connection, migration: MigrationFile)
             ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'
             """
         )
+    if (
+        migration.version == 10
+        and table_exists(connection, "inventory_items")
+        and not column_exists(connection, "inventory_items", "printing_selection_mode")
+    ):
+        connection.execute(
+            """
+            ALTER TABLE inventory_items
+            ADD COLUMN printing_selection_mode TEXT NOT NULL DEFAULT 'explicit'
+            CHECK (printing_selection_mode IN ('explicit', 'defaulted'))
+            """
+        )
 
 
 def migrate_connection(connection: sqlite3.Connection) -> list[MigrationFile]:

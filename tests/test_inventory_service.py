@@ -184,6 +184,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
         acquisition_currency: str | None = None,
         notes: str | None = None,
         tags_json: str = "[]",
+        printing_selection_mode: str = "explicit",
     ) -> None:
         with connect(db_path) as connection:
             inventory = connection.execute(
@@ -203,9 +204,10 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     acquisition_price,
                     acquisition_currency,
                     notes,
-                    tags_json
+                    tags_json,
+                    printing_selection_mode
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     inventory["id"],
@@ -219,6 +221,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     acquisition_currency,
                     notes,
                     tags_json,
+                    printing_selection_mode,
                 ),
             )
             connection.commit()
@@ -771,6 +774,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual("add-oracle-ja", added.scryfall_id)
             self.assertEqual("ja", added.language_code)
+            self.assertEqual("explicit", added.printing_selection_mode)
 
     def test_add_card_with_oracle_id_prefers_mainstream_default_printing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -852,6 +856,107 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertEqual("add-policy-mainstream-en", added.scryfall_id)
             self.assertEqual("en", added.language_code)
+            self.assertEqual("defaulted", added.printing_selection_mode)
+
+    def test_add_card_promotes_defaulted_row_to_explicit_when_readded_by_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="promotion-mainstream-en",
+                oracle_id="promotion-oracle",
+                name="Promotion Policy Card",
+                set_code="bro",
+                set_name="The Brothers' War",
+                collector_number="141",
+                lang="en",
+                released_at="2023-11-18",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="promotion-promo-en",
+                oracle_id="promotion-oracle",
+                name="Promotion Policy Card",
+                set_code="pneo",
+                set_name="Kamigawa: Neon Dynasty Promos",
+                collector_number="142",
+                lang="en",
+                released_at="2024-03-01",
+                finishes_json='["nonfoil","foil"]',
+                set_type="expansion",
+                booster=0,
+                promo_types_json='["promo_pack"]',
+            )
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            defaulted = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id=None,
+                oracle_id="promotion-oracle",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code=None,
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+            self.assertEqual("defaulted", defaulted.printing_selection_mode)
+
+            explicit = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="promotion-mainstream-en",
+                oracle_id=None,
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertEqual(defaulted.item_id, explicit.item_id)
+            self.assertEqual(2, explicit.quantity)
+            self.assertEqual("explicit", explicit.printing_selection_mode)
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    "SELECT quantity, printing_selection_mode FROM inventory_items WHERE id = ?",
+                    (explicit.item_id,),
+                ).fetchone()
+
+            self.assertEqual(2, row["quantity"])
+            self.assertEqual("explicit", row["printing_selection_mode"])
 
     def test_add_card_with_oracle_id_rejects_default_normal_when_only_foil_candidates_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1389,12 +1494,15 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             default_rows = list_card_printings_for_oracle(db_path, "lookup-oracle")
             self.assertEqual(["lookup-en-new", "lookup-en-old"], [row.scryfall_id for row in default_rows])
+            self.assertEqual([True, False], [row.is_default_add_choice for row in default_rows])
 
             all_rows = list_card_printings_for_oracle(db_path, "lookup-oracle", lang="all")
-            self.assertEqual(["lookup-ja", "lookup-en-new", "lookup-en-old"], [row.scryfall_id for row in all_rows])
+            self.assertEqual(["lookup-en-new", "lookup-en-old", "lookup-ja"], [row.scryfall_id for row in all_rows])
+            self.assertEqual([True, False, False], [row.is_default_add_choice for row in all_rows])
 
             japanese_rows = list_card_printings_for_oracle(db_path, "lookup-oracle", lang="ja")
             self.assertEqual(["lookup-ja"], [row.scryfall_id for row in japanese_rows])
+            self.assertEqual([True], [row.is_default_add_choice for row in japanese_rows])
 
             with connect(db_path) as connection:
                 connection.executemany(
@@ -1437,9 +1545,103 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 ["lookup-no-english-ja", "lookup-no-english-de"],
                 [row.scryfall_id for row in fallback_rows],
             )
+            self.assertEqual([True, False], [row.is_default_add_choice for row in fallback_rows])
 
             with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'missing-oracle'"):
                 list_card_printings_for_oracle(db_path, "missing-oracle")
+
+    def test_list_card_printings_for_oracle_matches_default_add_policy_and_marks_one_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-policy-mainstream-en",
+                oracle_id="lookup-policy-oracle",
+                name="Lookup Policy Card",
+                collector_number="61",
+                lang="en",
+                released_at="2024-01-01",
+                booster=1,
+                promo_types_json="[]",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-policy-mainstream-ja",
+                oracle_id="lookup-policy-oracle",
+                name="Lookup Policy Card",
+                collector_number="62",
+                lang="ja",
+                released_at="2024-03-01",
+                booster=1,
+                promo_types_json="[]",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-policy-promo-en",
+                oracle_id="lookup-policy-oracle",
+                name="Lookup Policy Card",
+                collector_number="63",
+                lang="en",
+                released_at="2024-04-01",
+                booster=0,
+                promo_types_json='["promo-pack"]',
+                is_default_add_searchable=1,
+            )
+
+            default_rows = list_card_printings_for_oracle(db_path, "lookup-policy-oracle")
+            self.assertEqual(
+                ["lookup-policy-mainstream-en", "lookup-policy-promo-en"],
+                [row.scryfall_id for row in default_rows],
+            )
+            self.assertEqual([True, False], [row.is_default_add_choice for row in default_rows])
+
+            all_rows = list_card_printings_for_oracle(db_path, "lookup-policy-oracle", lang="all")
+            self.assertEqual(
+                [
+                    "lookup-policy-mainstream-en",
+                    "lookup-policy-promo-en",
+                    "lookup-policy-mainstream-ja",
+                ],
+                [row.scryfall_id for row in all_rows],
+            )
+            self.assertEqual([True, False, False], [row.is_default_add_choice for row in all_rows])
+
+            resolved = resolve_card_row(
+                connect(db_path),
+                scryfall_id=None,
+                oracle_id="lookup-policy-oracle",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                finish="normal",
+            )
+            self.assertEqual("lookup-policy-mainstream-en", resolved["scryfall_id"])
+
+    def test_list_card_printings_for_oracle_has_no_default_when_normal_would_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="lookup-foil-only-en",
+                oracle_id="lookup-foil-only-oracle",
+                name="Lookup Foil Only Card",
+                collector_number="71",
+                lang="en",
+                finishes_json='["foil"]',
+                is_default_add_searchable=1,
+            )
+
+            rows = list_card_printings_for_oracle(db_path, "lookup-foil-only-oracle")
+            self.assertEqual(["lookup-foil-only-en"], [row.scryfall_id for row in rows])
+            self.assertEqual([False], [row.is_default_add_choice for row in rows])
 
     def test_list_card_printings_for_oracle_filters_to_default_add_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2972,6 +3174,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 quantity=2,
                 location="Binder A",
                 tags_json='["deck"]',
+                printing_selection_mode="defaulted",
             )
             with connect(db_path) as connection:
                 source_item_id = int(
@@ -3034,6 +3237,8 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(1, len(target_rows))
             self.assertEqual(2, target_rows[0].quantity)
             self.assertEqual(["deck"], target_rows[0].tags)
+            self.assertEqual("defaulted", source_rows[0].printing_selection_mode)
+            self.assertEqual("defaulted", target_rows[0].printing_selection_mode)
 
             source_audit = list_inventory_audit_events(db_path, inventory_slug="source", limit=10)
             target_audit = list_inventory_audit_events(db_path, inventory_slug="target", limit=10)
@@ -3139,6 +3344,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertCountEqual(["deck", "trade"], target_rows[0].tags)
             self.assertIn("source note", target_rows[0].notes)
             self.assertIn("target note", target_rows[0].notes)
+            self.assertEqual("explicit", target_rows[0].printing_selection_mode)
 
     def test_transfer_inventory_items_fail_conflict_rolls_back_atomically(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3461,9 +3667,58 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 tags=None,
             )
             self.assertEqual(2, len(duplicated_rows))
+            self.assertEqual(["explicit", "explicit"], [row.printing_selection_mode for row in duplicated_rows])
             memberships = list_inventory_memberships(db_path, inventory_slug="source-copy")
             self.assertEqual(["duplicator-user"], [membership.actor_id for membership in memberships])
             self.assertEqual(["owner"], [membership.role for membership in memberships])
+
+    def test_duplicate_inventory_preserves_defaulted_printing_selection_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path, scryfall_id="copy-card", collector_number="1")
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description="Original description",
+                actor_id="owner-user",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="source",
+                scryfall_id="copy-card",
+                quantity=2,
+                printing_selection_mode="defaulted",
+            )
+
+            result = duplicate_inventory(
+                db_path,
+                source_inventory_slug="source",
+                target_slug="source-copy",
+                target_display_name="Source Copy",
+                actor_type="api",
+                actor_id="duplicator-user",
+                request_id="req-duplicate",
+            )
+
+            self.assertEqual(1, result.transfer.copied_count)
+            duplicated_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="source-copy",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(duplicated_rows))
+            self.assertEqual("defaulted", duplicated_rows[0].printing_selection_mode)
 
     def test_duplicate_inventory_rolls_back_new_inventory_when_target_slug_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -4309,6 +4564,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertIsInstance(add_result, AddCardResult)
             self.assertEqual(["commander", "trade"], add_result.tags)
+            self.assertEqual("explicit", add_result.printing_selection_mode)
 
             # The direct service API should accept actor/request metadata once
             # and preserve it all the way into the audit table.
@@ -4346,6 +4602,92 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     for row in audit_rows
                 ],
             )
+
+    def test_split_row_preserves_printing_selection_mode_and_merge_rows_promotes_to_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=3,
+                location="Binder A",
+                printing_selection_mode="defaulted",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                quantity=1,
+                location="Binder C",
+                printing_selection_mode="explicit",
+            )
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT id, location, printing_selection_mode
+                    FROM inventory_items
+                    ORDER BY location
+                    """
+                ).fetchall()
+            source_item_id = int(rows[0]["id"])
+            explicit_target_id = int(rows[1]["id"])
+
+            split_result = split_row(
+                db_path,
+                inventory_slug="personal",
+                item_id=source_item_id,
+                quantity=1,
+                condition_code=None,
+                finish=None,
+                language_code=None,
+                location="Binder B",
+            )
+
+            self.assertEqual("defaulted", split_result.printing_selection_mode)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            modes_by_location = {row.location: row.printing_selection_mode for row in owned_rows}
+            self.assertEqual("defaulted", modes_by_location["Binder A"])
+            self.assertEqual("defaulted", modes_by_location["Binder B"])
+            self.assertEqual("explicit", modes_by_location["Binder C"])
+
+            merge_result = merge_rows(
+                db_path,
+                inventory_slug="personal",
+                source_item_id=split_result.item_id,
+                target_item_id=explicit_target_id,
+            )
+
+            self.assertEqual("explicit", merge_result.printing_selection_mode)
+            with connect(db_path) as connection:
+                merged_row = connection.execute(
+                    "SELECT printing_selection_mode FROM inventory_items WHERE id = ?",
+                    (explicit_target_id,),
+                ).fetchone()
+
+            self.assertEqual("explicit", merged_row["printing_selection_mode"])
 
     def test_price_gaps_and_reconcile_use_latest_snapshot_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -4550,6 +4892,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(["normal", "foil"], owned_rows[0].allowed_finishes)
             self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
             self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)
+            self.assertEqual("explicit", owned_rows[0].printing_selection_mode)
             self.assertIsNone(owned_rows[0].acquisition_price)
             self.assertIsNone(owned_rows[0].acquisition_currency)
             self.assertIsNone(owned_rows[0].notes)

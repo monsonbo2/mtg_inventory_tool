@@ -84,8 +84,8 @@ class SchemaMigrationTest(unittest.TestCase):
                     for row in connection.execute("PRAGMA table_info(mtg_cards)").fetchall()
                 }
 
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9], versions)
-            self.assertEqual(9, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], versions)
+            self.assertEqual(10, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
             self.assertEqual(1, inventory_memberships_exists)
@@ -116,7 +116,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(9, len(rows))
+            self.assertEqual(10, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -128,6 +128,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (7, "add actor default inventories"),
                     (8, "add catalog classification fields"),
                     (9, "add catalog relevance rank"),
+                    (10, "add inventory printing selection mode"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -174,6 +175,9 @@ class SchemaMigrationTest(unittest.TestCase):
             with connect(db_path) as migrated:
                 columns = {row["name"] for row in migrated.execute("PRAGMA table_info(inventory_items)")}
                 tags_value = migrated.execute("SELECT tags_json FROM inventory_items").fetchone()[0]
+                printing_selection_mode = migrated.execute(
+                    "SELECT printing_selection_mode FROM inventory_items"
+                ).fetchone()[0]
                 versions = [
                     row["version"]
                     for row in migrated.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
@@ -190,8 +194,10 @@ class SchemaMigrationTest(unittest.TestCase):
                 ).fetchone()[0]
 
             self.assertIn("tags_json", columns)
+            self.assertIn("printing_selection_mode", columns)
             self.assertEqual("[]", tags_value)
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9], versions)
+            self.assertEqual("explicit", printing_selection_mode)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
@@ -273,7 +279,7 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], versions)
 
     def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
         for type_line, expected in (

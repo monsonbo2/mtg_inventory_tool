@@ -159,7 +159,8 @@ def _load_transfer_source_rows(
                 ii.acquisition_price,
                 ii.acquisition_currency,
                 ii.notes,
-                COALESCE(ii.tags_json, '[]') AS tags_json
+                COALESCE(ii.tags_json, '[]') AS tags_json,
+                ii.printing_selection_mode
             FROM inventory_items ii
             JOIN inventories i ON i.id = ii.inventory_id
             JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
@@ -320,9 +321,10 @@ def _insert_transferred_row(
             acquisition_price,
             acquisition_currency,
             notes,
-            tags_json
+            tags_json,
+            printing_selection_mode
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
         """,
         (
@@ -337,6 +339,7 @@ def _insert_transferred_row(
             source_row["acquisition_currency"],
             source_row["notes"],
             source_row["tags_json"],
+            source_row["printing_selection_mode"],
         ),
     )
     inserted = cursor.fetchone()
