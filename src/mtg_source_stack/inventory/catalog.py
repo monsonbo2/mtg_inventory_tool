@@ -25,7 +25,7 @@ from .normalize import (
     validate_limit_value,
 )
 from .query_catalog import add_catalog_filters, add_catalog_scope_filter, build_catalog_search_fts_query, catalog_scope_filter_sql
-from .response_models import CatalogNameSearchRow, CatalogPrintingLookupRow, CatalogSearchRow
+from .response_models import CatalogNameSearchResult, CatalogNameSearchRow, CatalogPrintingLookupRow, CatalogSearchRow
 
 
 _LANGUAGE_ORDER = {code: index for index, code in enumerate(CANONICAL_LANGUAGE_CODES)}
@@ -320,7 +320,7 @@ def search_card_names(
     exact: bool = False,
     limit: int = DEFAULT_SEARCH_LIMIT,
     scope: str | None = None,
-) -> list[CatalogNameSearchRow]:
+) -> CatalogNameSearchResult:
     if not query.strip():
         raise ValidationError("query is required.")
     normalized_scope = normalize_catalog_search_scope(scope)
@@ -434,7 +434,8 @@ def search_card_names(
                 representative_rows.name,
                 representative_rows.image_uris_json,
                 representative_rows.released_at,
-                group_counts.printings_count
+                group_counts.printings_count,
+                COUNT(*) OVER () AS total_count
             FROM matched_groups
             INNER JOIN representative_rows ON representative_rows.oracle_id = matched_groups.oracle_id
             INNER JOIN group_counts ON group_counts.oracle_id = matched_groups.oracle_id
@@ -452,7 +453,7 @@ def search_card_names(
             params,
         ).fetchall()
         if not rows:
-            return []
+            return CatalogNameSearchResult(items=[], total_count=0, has_more=False)
 
         oracle_ids = [row["oracle_id"] for row in rows]
         placeholders = ", ".join("?" for _ in oracle_ids)
@@ -475,10 +476,10 @@ def search_card_names(
     for row in language_rows:
         languages_by_oracle.setdefault(row["oracle_id"], []).append(row["lang"])
 
-    results: list[CatalogNameSearchRow] = []
+    items: list[CatalogNameSearchRow] = []
     for row in rows:
         image_uri_small, image_uri_normal = extract_image_uri_fields(row["image_uris_json"])
-        results.append(
+        items.append(
             CatalogNameSearchRow(
                 oracle_id=row["oracle_id"],
                 name=row["name"],
@@ -488,7 +489,12 @@ def search_card_names(
                 image_uri_normal=image_uri_normal,
             )
         )
-    return results
+    total_count = int(rows[0]["total_count"])
+    return CatalogNameSearchResult(
+        items=items,
+        total_count=total_count,
+        has_more=total_count > len(items),
+    )
 
 
 def list_card_printings_for_oracle(

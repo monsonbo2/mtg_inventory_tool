@@ -189,8 +189,18 @@ class WebApiSchemaTest(unittest.TestCase):
             card_names_schema = spec["paths"]["/cards/search/names"]["get"]["responses"]["200"]["content"][
                 "application/json"
             ]["schema"]
-            self.assertEqual("array", card_names_schema["type"])
-            card_name_schema_name = self._schema_name_from_ref(card_names_schema["items"]["$ref"])
+            self.assertEqual(
+                "CatalogNameSearchResponse",
+                self._schema_name_from_ref(card_names_schema["$ref"]),
+            )
+            card_name_result_schema_name = self._schema_name_from_ref(card_names_schema["$ref"])
+            self.assertEqual(
+                "array",
+                components[card_name_result_schema_name]["properties"]["items"]["type"],
+            )
+            card_name_schema_name = self._schema_name_from_ref(
+                components[card_name_result_schema_name]["properties"]["items"]["items"]["$ref"]
+            )
             self.assertEqual("CatalogNameSearchRowResponse", card_name_schema_name)
             self.assertEqual(
                 "array",
@@ -199,6 +209,14 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 "string",
                 components[card_name_schema_name]["properties"]["available_languages"]["items"]["type"],
+            )
+            self.assertEqual(
+                "integer",
+                components[card_name_result_schema_name]["properties"]["total_count"]["type"],
+            )
+            self.assertEqual(
+                "boolean",
+                components[card_name_result_schema_name]["properties"]["has_more"]["type"],
             )
             name_search_parameters = {
                 parameter["name"]: parameter
@@ -2207,12 +2225,14 @@ class WebApiTest(unittest.TestCase):
 
                 name_search = client.get("/cards/search/names", params={"query": "API Lookup"})
                 self.assertEqual(200, name_search.status_code)
-                self.assertEqual(1, len(name_search.json()))
-                self.assertEqual("api-oracle-lookup", name_search.json()[0]["oracle_id"])
-                self.assertEqual(["en", "ja"], name_search.json()[0]["available_languages"])
+                self.assertEqual(1, name_search.json()["total_count"])
+                self.assertFalse(name_search.json()["has_more"])
+                self.assertEqual(1, len(name_search.json()["items"]))
+                self.assertEqual("api-oracle-lookup", name_search.json()["items"][0]["oracle_id"])
+                self.assertEqual(["en", "ja"], name_search.json()["items"][0]["available_languages"])
                 self.assertEqual(
                     "https://example.test/cards/api-printing-en-new-small.jpg",
-                    name_search.json()[0]["image_uri_small"],
+                    name_search.json()["items"][0]["image_uri_small"],
                 )
 
                 default_printings = client.get("/cards/oracle/api-oracle-lookup/printings")
@@ -2329,13 +2349,15 @@ class WebApiTest(unittest.TestCase):
 
                 name_search = client.get("/cards/search/names", params={"query": "API Scoped Lookup"})
                 self.assertEqual(200, name_search.status_code)
-                self.assertEqual(1, len(name_search.json()))
-                self.assertEqual("api-scoped-oracle", name_search.json()[0]["oracle_id"])
-                self.assertEqual(1, name_search.json()[0]["printings_count"])
-                self.assertEqual(["ja"], name_search.json()[0]["available_languages"])
+                self.assertEqual(1, name_search.json()["total_count"])
+                self.assertFalse(name_search.json()["has_more"])
+                self.assertEqual(1, len(name_search.json()["items"]))
+                self.assertEqual("api-scoped-oracle", name_search.json()["items"][0]["oracle_id"])
+                self.assertEqual(1, name_search.json()["items"][0]["printings_count"])
+                self.assertEqual(["ja"], name_search.json()["items"][0]["available_languages"])
                 self.assertEqual(
                     "https://example.test/cards/api-scoped-ja-small.jpg",
-                    name_search.json()[0]["image_uri_small"],
+                    name_search.json()["items"][0]["image_uri_small"],
                 )
 
                 default_printings = client.get("/cards/oracle/api-scoped-oracle/printings")
@@ -2364,12 +2386,14 @@ class WebApiTest(unittest.TestCase):
                     params={"query": "API Scoped Lookup", "scope": "all"},
                 )
                 self.assertEqual(200, name_search_all.status_code)
-                self.assertEqual(1, len(name_search_all.json()))
-                self.assertEqual(2, name_search_all.json()[0]["printings_count"])
-                self.assertEqual(["en", "ja"], name_search_all.json()[0]["available_languages"])
+                self.assertEqual(1, name_search_all.json()["total_count"])
+                self.assertFalse(name_search_all.json()["has_more"])
+                self.assertEqual(1, len(name_search_all.json()["items"]))
+                self.assertEqual(2, name_search_all.json()["items"][0]["printings_count"])
+                self.assertEqual(["en", "ja"], name_search_all.json()["items"][0]["available_languages"])
                 self.assertEqual(
                     "https://example.test/cards/api-scoped-en-small.jpg",
-                    name_search_all.json()[0]["image_uri_small"],
+                    name_search_all.json()["items"][0]["image_uri_small"],
                 )
 
                 default_printings_all_scope = client.get(
@@ -2445,12 +2469,14 @@ class WebApiTest(unittest.TestCase):
                     params={"query": "Exact API Group Card", "exact": "true"},
                 )
                 self.assertEqual(200, exact.status_code)
-                self.assertEqual(1, len(exact.json()))
-                self.assertEqual("api-exact-group-oracle", exact.json()[0]["oracle_id"])
-                self.assertEqual(["en", "ja"], exact.json()[0]["available_languages"])
+                self.assertEqual(1, exact.json()["total_count"])
+                self.assertFalse(exact.json()["has_more"])
+                self.assertEqual(1, len(exact.json()["items"]))
+                self.assertEqual("api-exact-group-oracle", exact.json()["items"][0]["oracle_id"])
+                self.assertEqual(["en", "ja"], exact.json()["items"][0]["available_languages"])
                 self.assertEqual(
                     "https://example.test/cards/api-exact-group-en-small.jpg",
-                    exact.json()[0]["image_uri_small"],
+                    exact.json()["items"][0]["image_uri_small"],
                 )
 
                 substring = client.get(
@@ -2458,9 +2484,11 @@ class WebApiTest(unittest.TestCase):
                     params={"query": "ning"},
                 )
                 self.assertEqual(200, substring.status_code)
-                self.assertEqual(1, len(substring.json()))
-                self.assertEqual("api-lightning-bolt-oracle", substring.json()[0]["oracle_id"])
-                self.assertEqual("Lightning Bolt", substring.json()[0]["name"])
+                self.assertEqual(1, substring.json()["total_count"])
+                self.assertFalse(substring.json()["has_more"])
+                self.assertEqual(1, len(substring.json()["items"]))
+                self.assertEqual("api-lightning-bolt-oracle", substring.json()["items"][0]["oracle_id"])
+                self.assertEqual("Lightning Bolt", substring.json()["items"][0]["name"])
 
     def test_demo_api_grouped_name_search_uses_popularity_within_lexical_buckets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2505,6 +2533,8 @@ class WebApiTest(unittest.TestCase):
 
                 response = client.get("/cards/search/names", params={"query": "lightn"})
                 self.assertEqual(200, response.status_code)
+                self.assertEqual(4, response.json()["total_count"])
+                self.assertFalse(response.json()["has_more"])
                 self.assertEqual(
                     [
                         "Lightning Bolt",
@@ -2512,7 +2542,7 @@ class WebApiTest(unittest.TestCase):
                         "Lightning Cloud",
                         "Thunder Lightning",
                     ],
-                    [row["name"] for row in response.json()],
+                    [row["name"] for row in response.json()["items"]],
                 )
 
     def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:

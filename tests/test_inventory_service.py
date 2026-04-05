@@ -1216,20 +1216,22 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 )
                 connection.commit()
 
-            rows = search_card_names(db_path, query="Search Group", exact=False, limit=10)
+            result = search_card_names(db_path, query="Search Group", exact=False, limit=10)
 
-            self.assertEqual(1, len(rows))
-            self.assertEqual("grouped-search-oracle", rows[0].oracle_id)
-            self.assertEqual("Search Group Card", rows[0].name)
-            self.assertEqual(3, rows[0].printings_count)
-            self.assertEqual(["en", "ja", "de"], rows[0].available_languages)
+            self.assertEqual(1, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual(1, len(result.items))
+            self.assertEqual("grouped-search-oracle", result.items[0].oracle_id)
+            self.assertEqual("Search Group Card", result.items[0].name)
+            self.assertEqual(3, result.items[0].printings_count)
+            self.assertEqual(["en", "ja", "de"], result.items[0].available_languages)
             self.assertEqual(
                 "https://example.test/cards/grouped-search-en-small.jpg",
-                rows[0].image_uri_small,
+                result.items[0].image_uri_small,
             )
             self.assertEqual(
                 "https://example.test/cards/grouped-search-en-normal.jpg",
-                rows[0].image_uri_normal,
+                result.items[0].image_uri_normal,
             )
 
     def test_search_card_names_filters_group_counts_languages_and_representative_rows(self) -> None:
@@ -1260,20 +1262,22 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 is_default_add_searchable=0,
             )
 
-            rows = search_card_names(db_path, query="Scoped Group", exact=False, limit=10)
+            result = search_card_names(db_path, query="Scoped Group", exact=False, limit=10)
 
-            self.assertEqual(1, len(rows))
-            self.assertEqual("scoped-group-oracle", rows[0].oracle_id)
-            self.assertEqual("Scoped Group Card", rows[0].name)
-            self.assertEqual(1, rows[0].printings_count)
-            self.assertEqual(["ja"], rows[0].available_languages)
+            self.assertEqual(1, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual(1, len(result.items))
+            self.assertEqual("scoped-group-oracle", result.items[0].oracle_id)
+            self.assertEqual("Scoped Group Card", result.items[0].name)
+            self.assertEqual(1, result.items[0].printings_count)
+            self.assertEqual(["ja"], result.items[0].available_languages)
             self.assertEqual(
                 "https://example.test/cards/scoped-group-ja-small.jpg",
-                rows[0].image_uri_small,
+                result.items[0].image_uri_small,
             )
             self.assertEqual(
                 "https://example.test/cards/scoped-group-ja-normal.jpg",
-                rows[0].image_uri_normal,
+                result.items[0].image_uri_normal,
             )
 
     def test_search_card_names_exact_query_returns_grouped_match(self) -> None:
@@ -1304,16 +1308,18 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 is_default_add_searchable=1,
             )
 
-            rows = search_card_names(db_path, query="Exact Group Card", exact=True, limit=10)
+            result = search_card_names(db_path, query="Exact Group Card", exact=True, limit=10)
 
-            self.assertEqual(1, len(rows))
-            self.assertEqual("exact-group-oracle", rows[0].oracle_id)
-            self.assertEqual("Exact Group Card", rows[0].name)
-            self.assertEqual(2, rows[0].printings_count)
-            self.assertEqual(["en", "ja"], rows[0].available_languages)
+            self.assertEqual(1, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual(1, len(result.items))
+            self.assertEqual("exact-group-oracle", result.items[0].oracle_id)
+            self.assertEqual("Exact Group Card", result.items[0].name)
+            self.assertEqual(2, result.items[0].printings_count)
+            self.assertEqual(["en", "ja"], result.items[0].available_languages)
             self.assertEqual(
                 "https://example.test/cards/exact-group-en-small.jpg",
-                rows[0].image_uri_small,
+                result.items[0].image_uri_small,
             )
 
     def test_search_card_names_substring_query_falls_back_to_like_matching(self) -> None:
@@ -1332,11 +1338,13 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 is_default_add_searchable=1,
             )
 
-            rows = search_card_names(db_path, query="ning", exact=False, limit=10)
+            result = search_card_names(db_path, query="ning", exact=False, limit=10)
 
-            self.assertEqual(1, len(rows))
-            self.assertEqual("substring-group-oracle", rows[0].oracle_id)
-            self.assertEqual("Lightning Bolt", rows[0].name)
+            self.assertEqual(1, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual(1, len(result.items))
+            self.assertEqual("substring-group-oracle", result.items[0].oracle_id)
+            self.assertEqual("Lightning Bolt", result.items[0].name)
 
     def test_search_card_names_prefers_popular_prefix_matches_within_lexical_buckets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1380,7 +1388,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 is_default_add_searchable=1,
             )
 
-            rows = search_card_names(db_path, query="lightn", exact=False, limit=10)
+            result = search_card_names(db_path, query="lightn", exact=False, limit=10)
 
             self.assertEqual(
                 [
@@ -1389,8 +1397,10 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     "Lightning Cloud",
                     "Thunder Lightning",
                 ],
-                [row.name for row in rows],
+                [row.name for row in result.items],
             )
+            self.assertEqual(4, result.total_count)
+            self.assertFalse(result.has_more)
 
     def test_search_card_names_scope_all_includes_auxiliary_group_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1420,19 +1430,46 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 is_default_add_searchable=0,
             )
 
-            rows = search_card_names(db_path, query="Scoped Group", exact=False, limit=10, scope="all")
+            result = search_card_names(db_path, query="Scoped Group", exact=False, limit=10, scope="all")
 
-            self.assertEqual(1, len(rows))
-            self.assertEqual("scoped-group-oracle", rows[0].oracle_id)
-            self.assertEqual(2, rows[0].printings_count)
-            self.assertEqual(["en", "ja"], rows[0].available_languages)
+            self.assertEqual(1, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual(1, len(result.items))
+            self.assertEqual("scoped-group-oracle", result.items[0].oracle_id)
+            self.assertEqual(2, result.items[0].printings_count)
+            self.assertEqual(["en", "ja"], result.items[0].available_languages)
             self.assertEqual(
                 "https://example.test/cards/scoped-group-en-small.jpg",
-                rows[0].image_uri_small,
+                result.items[0].image_uri_small,
             )
             self.assertEqual(
                 "https://example.test/cards/scoped-group-en-normal.jpg",
-                rows[0].image_uri_normal,
+                result.items[0].image_uri_normal,
+            )
+
+    def test_search_card_names_reports_total_count_and_has_more_when_results_exceed_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            for index in range(3):
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id=f"total-search-{index}",
+                    oracle_id=f"total-search-oracle-{index}",
+                    name=f"Cloud Card {index}",
+                    collector_number=str(60 + index),
+                    is_default_add_searchable=1,
+                )
+
+            result = search_card_names(db_path, query="Cloud Card", exact=False, limit=2)
+
+            self.assertEqual(3, result.total_count)
+            self.assertTrue(result.has_more)
+            self.assertEqual(2, len(result.items))
+            self.assertEqual(
+                ["Cloud Card 0", "Cloud Card 1"],
+                [row.name for row in result.items],
             )
 
     def test_list_card_printings_for_oracle_defaults_to_english_but_supports_language_expansion(self) -> None:

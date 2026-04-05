@@ -94,6 +94,13 @@ class CatalogNameSearchRow(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogNameSearchResult(ResponseModel):
+    items: list[CatalogNameSearchRow]
+    total_count: int
+    has_more: bool
+
+
+@dataclass(frozen=True, slots=True)
 class InventoryListRow(ResponseModel):
     slug: str
     display_name: str

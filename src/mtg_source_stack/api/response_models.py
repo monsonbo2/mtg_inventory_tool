@@ -156,6 +156,12 @@ class CatalogNameSearchRowResponse(ApiBaseModel):
     image_uri_normal: str | None
 
 
+class CatalogNameSearchResponse(ApiBaseModel):
+    items: list[CatalogNameSearchRowResponse]
+    total_count: int
+    has_more: bool
+
+
 class OwnedInventoryRowResponse(ApiBaseModel):
     item_id: int
     scryfall_id: str

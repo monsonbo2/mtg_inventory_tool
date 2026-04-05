@@ -79,6 +79,7 @@ from .response_models import (
     AddInventoryItemResponse,
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
+    CatalogNameSearchResponse,
     CatalogNameSearchRowResponse,
     CatalogPrintingLookupRowResponse,
     CatalogSearchRowResponse,
@@ -550,7 +551,7 @@ def cards_search(
 
 @router.get(
     "/cards/search/names",
-    response_model=list[CatalogNameSearchRowResponse],
+    response_model=CatalogNameSearchResponse,
     responses=_error_responses(401, 403, 400, 503, 500),
 )
 def card_names_search(

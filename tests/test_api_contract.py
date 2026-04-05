@@ -25,6 +25,7 @@ from mtg_source_stack.api.request_models import (
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
+    CatalogNameSearchResponse,
     CatalogNameSearchRowResponse,
     CatalogPrintingLookupRowResponse,
     CatalogSearchRowResponse,
@@ -363,6 +364,13 @@ class ApiContractTest(RepoSmokeTestCase):
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
         printing_lookup = CatalogPrintingLookupRowResponse.model_validate(printing_lookup_payload)
         catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
+        catalog_name_result = CatalogNameSearchResponse.model_validate(
+            {
+                "items": [catalog_name_payload],
+                "total_count": 1,
+                "has_more": False,
+            }
+        )
         bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
         csv_import = CsvImportResponse.model_validate(csv_import_payload)
         decklist_import = DecklistImportResponse.model_validate(decklist_import_payload)
@@ -379,6 +387,8 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertTrue(printing_lookup.is_default_add_choice)
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
+        self.assertEqual(1, catalog_name_result.total_count)
+        self.assertFalse(catalog_name_result.has_more)
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("generic_csv", csv_import.detected_format)
@@ -477,6 +487,10 @@ class ApiContractTest(RepoSmokeTestCase):
             "Catalog language codes available for the matched card",
             catalog_name_properties["available_languages"]["description"],
         )
+        catalog_name_result_schema = CatalogNameSearchResponse.model_json_schema()
+        self.assertEqual("array", catalog_name_result_schema["properties"]["items"]["type"])
+        self.assertEqual("integer", catalog_name_result_schema["properties"]["total_count"]["type"])
+        self.assertEqual("boolean", catalog_name_result_schema["properties"]["has_more"]["type"])
 
         bulk_schema = BulkInventoryItemMutationRequest.model_json_schema()
         bulk_properties = bulk_schema["properties"]

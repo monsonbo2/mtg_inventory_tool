@@ -155,6 +155,9 @@ preserve for the first API-backed version of the project.
   - blank or whitespace-only search queries return `400 validation_error`
 - `GET /cards/search/names`
   - groups results by `oracle_id`
+  - returns an envelope with `items`, `total_count`, and `has_more`
+  - `total_count` is the exact grouped match count before `limit`
+  - `has_more` is true when additional grouped matches exist beyond `items`
   - keeps lexical match buckets first, then uses backend-owned popularity
     metadata such as `edhrec_rank` as an additive tie-breaker when available
   - prefers an English representative row and image when available

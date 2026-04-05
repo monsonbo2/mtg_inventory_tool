@@ -635,6 +635,33 @@
         "title": "BulkInventoryItemMutationResponse",
         "type": "object"
       },
+      "CatalogNameSearchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogNameSearchRowResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_count",
+          "has_more"
+        ],
+        "title": "CatalogNameSearchResponse",
+        "type": "object"
+      },
       "CatalogNameSearchRowResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4864,11 +4891,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CatalogNameSearchRowResponse"
-                  },
-                  "title": "Response Card Names Search Cards Search Names Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/CatalogNameSearchResponse"
                 }
               }
             },
