@@ -166,6 +166,9 @@ preserve for the first API-backed version of the project.
   - `has_more` is true when additional grouped matches exist beyond `items`
   - keeps lexical match buckets first, then uses backend-owned popularity
     metadata such as `edhrec_rank` as an additive tie-breaker when available
+  - non-exact queries prefer token/prefix-style matches first and only fall
+    back to broader substring rescue when stronger grouped matches were not
+    found
   - prefers an English representative row and image when available
   - includes `available_languages` for the matched card
 - `GET /cards/oracle/{oracle_id}/printings`

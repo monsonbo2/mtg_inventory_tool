@@ -1348,6 +1348,40 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("substring-group-oracle", result.items[0].oracle_id)
             self.assertEqual("Lightning Bolt", result.items[0].name)
 
+    def test_search_card_names_does_not_broaden_to_infix_matches_when_fts_already_found_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="bolt-token-match",
+                oracle_id="bolt-token-oracle",
+                name="Lightning Bolt",
+                collector_number="42",
+                lang="en",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="bolt-infix-only",
+                oracle_id="bolt-infix-oracle",
+                name="Thunderbolt",
+                collector_number="43",
+                lang="en",
+                released_at="2026-04-02",
+                is_default_add_searchable=1,
+            )
+
+            result = search_card_names(db_path, query="bolt", exact=False, limit=10)
+
+            self.assertEqual(1, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual(1, len(result.items))
+            self.assertEqual("bolt-token-oracle", result.items[0].oracle_id)
+            self.assertEqual("Lightning Bolt", result.items[0].name)
+
     def test_search_card_names_prefers_popular_prefix_matches_within_lexical_buckets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"

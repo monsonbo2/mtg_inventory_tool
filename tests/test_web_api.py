@@ -2699,6 +2699,40 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("api-lightning-bolt-oracle", substring.json()["items"][0]["oracle_id"])
                 self.assertEqual("Lightning Bolt", substring.json()["items"][0]["name"])
 
+    def test_demo_api_grouped_name_search_only_uses_infix_fallback_after_fts_miss(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-bolt-token-match",
+                    oracle_id="api-bolt-token-oracle",
+                    name="Lightning Bolt",
+                    collector_number="65",
+                    lang="en",
+                    released_at="2026-04-01",
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-bolt-infix-only",
+                    oracle_id="api-bolt-infix-oracle",
+                    name="Thunderbolt",
+                    collector_number="66",
+                    lang="en",
+                    released_at="2026-04-02",
+                    is_default_add_searchable=1,
+                )
+
+                response = client.get("/cards/search/names", params={"query": "bolt"})
+                self.assertEqual(200, response.status_code)
+                self.assertEqual(1, response.json()["total_count"])
+                self.assertFalse(response.json()["has_more"])
+                self.assertEqual(
+                    ["Lightning Bolt"],
+                    [row["name"] for row in response.json()["items"]],
+                )
+
     def test_demo_api_grouped_name_search_uses_popularity_within_lexical_buckets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
