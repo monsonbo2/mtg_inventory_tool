@@ -66,6 +66,7 @@ export type DeckUrlProvider =
   | "mtgtop8"
   | "tappedout"
   | (string & {});
+export type PrintingSelectionMode = "explicit" | "defaulted";
 
 export interface InventorySummary {
   slug: string;
@@ -102,6 +103,10 @@ export interface CatalogSearchRow {
   image_uri_normal: string | null;
 }
 
+export interface CatalogPrintingLookupRow extends CatalogSearchRow {
+  is_default_add_choice: boolean;
+}
+
 export interface CatalogNameSearchRow {
   oracle_id: string;
   name: string;
@@ -109,6 +114,12 @@ export interface CatalogNameSearchRow {
   available_languages: LanguageCode[];
   image_uri_small: string | null;
   image_uri_normal: string | null;
+}
+
+export interface CatalogNameSearchResult {
+  items: CatalogNameSearchRow[];
+  total_count: number;
+  has_more: boolean;
 }
 
 export interface OwnedInventoryRow {
@@ -135,6 +146,7 @@ export interface OwnedInventoryRow {
   est_value: string | null;
   price_date: string | null;
   notes: string | null;
+  printing_selection_mode: PrintingSelectionMode;
 }
 
 export interface InventoryAuditEvent {
@@ -297,6 +309,7 @@ interface InventoryItemMutationBase {
   acquisition_currency: string | null;
   notes: string | null;
   tags: string[];
+  printing_selection_mode: PrintingSelectionMode;
 }
 
 export interface InventoryItemMutationResponse extends InventoryItemMutationBase {}

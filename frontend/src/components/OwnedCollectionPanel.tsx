@@ -77,8 +77,8 @@ export function OwnedCollectionPanel(props: {
       <div className="collection-panel-header">
         <div className="panel-heading collection-panel-heading">
           <div>
-            <p className="section-kicker">Collection View</p>
-            <h2>Owned Rows</h2>
+            <p className="section-kicker">Your Collection</p>
+            <h2>Collection</h2>
           </div>
           <StatusPill status={props.state.collection.viewStatus} />
         </div>
@@ -129,7 +129,7 @@ export function OwnedCollectionPanel(props: {
             onClick={props.actions.onOpenActivity}
             type="button"
           >
-            View Activity
+            Recent Activity
           </button>
         </div>
       </div>
@@ -140,7 +140,7 @@ export function OwnedCollectionPanel(props: {
           <strong>{props.state.selectedInventoryRow?.display_name || "No collection"}</strong>
         </div>
         <div className="summary-chip">
-          <span>Total rows</span>
+          <span>Entries</span>
           <strong>{totalRows}</strong>
         </div>
         <div className="summary-chip">
@@ -154,29 +154,29 @@ export function OwnedCollectionPanel(props: {
       </div>
 
       {props.state.collection.viewError && props.state.collection.items.length ? (
-        <p className="panel-error">{props.state.collection.viewError}</p>
+        <p className="panel-error">Could not refresh this collection right now.</p>
       ) : null}
 
       <div className="collection-grid">
         {!props.state.selectedInventoryRow ? (
           <PanelState
-            body="Choose a collection on the left to load owned rows and pricing."
+            body="Choose a collection on the left to see your cards and values."
+            eyebrow="Collection"
             title="No collection selected"
           />
         ) : props.state.collection.viewStatus === "loading" &&
           props.state.collection.items.length === 0 ? (
           <PanelState
-            body="Fetching owned rows, prices, and tags for this collection."
+            body="Loading cards, values, and tags for this collection."
+            eyebrow="Collection"
             title="Loading collection"
             variant="loading"
           />
         ) : props.state.collection.viewStatus === "error" &&
           props.state.collection.items.length === 0 ? (
           <PanelState
-            body={
-              props.state.collection.viewError ||
-              "Could not load collection rows for this collection."
-            }
+            body="This collection could not be loaded right now. Try refreshing and opening it again."
+            eyebrow="Collection"
             title="Collection unavailable"
             variant="error"
           />
@@ -225,6 +225,7 @@ export function OwnedCollectionPanel(props: {
         ) : (
           <PanelState
             body={getInventoryCollectionEmptyMessage(props.state.selectedInventoryRow)}
+            eyebrow="Collection"
             title={`${props.state.selectedInventoryRow.display_name} is empty`}
           />
         )}

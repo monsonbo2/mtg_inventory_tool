@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import {
   addInventoryItem,
   ApiClientError,
-  bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
@@ -47,7 +46,6 @@ type UseInventoryMutationsOptions = {
 export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
-  const [bootstrapInventoryBusy, setBootstrapInventoryBusy] = useState(false);
   const [bulkTagsBusy, setBulkTagsBusy] = useState(false);
   const [createInventoryBusy, setCreateInventoryBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -168,42 +166,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
-  async function handleBootstrapInventory() {
-    setBootstrapInventoryBusy(true);
-    clearNotice();
-
-    try {
-      const response = await bootstrapDefaultInventory();
-      const refreshed = await options.reloadInventorySummaries(response.inventory.slug);
-      const successMessage = response.created
-        ? `Set up ${response.inventory.display_name}.`
-        : `Opened ${response.inventory.display_name}.`;
-
-      showNotice(
-        refreshed
-          ? successMessage
-          : `${successMessage} The collection list could not refresh automatically.`,
-        refreshed ? "success" : "error",
-      );
-      return true;
-    } catch (error) {
-      showNotice(
-        toUserMessage(error, "Could not set up your collection."),
-        "error",
-      );
-      return false;
-    } finally {
-      setBootstrapInventoryBusy(false);
-    }
-  }
-
   async function handlePatchItem(
     itemId: number,
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
   ) {
     const inventorySlug = requireSelectedInventory(
-      "Select a collection before editing collection rows.",
+      "Select a collection before making changes.",
     );
     if (!inventorySlug) {
       return;
@@ -227,7 +196,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
   async function handleDeleteItem(itemId: number, cardName: string) {
     const inventorySlug = requireSelectedInventory(
-      "Select a collection before removing collection rows.",
+      "Select a collection before removing cards.",
     );
     if (!inventorySlug) {
       return;
@@ -254,20 +223,20 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     tags: string[],
   ) {
     const inventorySlug = requireSelectedInventory(
-      "Select a collection before editing collection rows.",
+      "Select a collection before making changes.",
     );
     if (!inventorySlug) {
       return false;
     }
 
     if (!options.selectedItemIds.length) {
-      showNotice("Select at least one row before running a bulk tag action.");
+      showNotice("Select at least one entry before updating tags.");
       return false;
     }
 
     if (options.selectedItemIds.length > BULK_MUTATION_MAX_ITEMS) {
       showNotice(
-        `Bulk tag actions currently support up to ${BULK_MUTATION_MAX_ITEMS} rows at a time.`,
+        `Bulk tag actions currently support up to ${BULK_MUTATION_MAX_ITEMS} entries at a time.`,
         "error",
       );
       return false;
@@ -313,13 +282,11 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
   return {
     busyAddCardId,
-    bootstrapInventoryBusy,
     bulkTagsBusy,
     busyItem,
     clearNotice,
     createInventoryBusy,
     handleAddCard,
-    handleBootstrapInventory,
     handleBulkTagMutation,
     handleCreateInventory,
     handleDeleteItem,

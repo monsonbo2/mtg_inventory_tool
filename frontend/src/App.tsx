@@ -18,7 +18,6 @@ import type { AppShellState } from "./uiTypes";
 
 function getAppShellState(options: {
   inventoryCount: number;
-  inventoryErrorStatus: number | null;
   inventoryStatus: "idle" | "loading" | "ready" | "error";
 }): AppShellState {
   if (options.inventoryCount > 0) {
@@ -30,54 +29,60 @@ function getAppShellState(options: {
   }
 
   if (options.inventoryStatus === "error") {
-    if (options.inventoryErrorStatus === 401) {
-      return "auth_required";
-    }
-
-    if (options.inventoryErrorStatus === 403) {
-      return "forbidden";
-    }
-
     return "error";
   }
 
-  return "no_visible_inventories";
+  return "no_collections";
 }
 
 function getShellStatePanelContent(
   appShellState: Exclude<AppShellState, "ready">,
-  inventoryError: string | null,
 ) {
   switch (appShellState) {
     case "loading":
       return {
-        body: "Checking collection access and loading the workspace.",
-        title: "Loading workspace",
-        variant: "loading" as const,
+        collection: {
+          body: "Getting the space for cards, values, and tags ready.",
+          eyebrow: "Collection",
+          title: "Preparing collection view",
+          variant: "loading" as const,
+        },
+        search: {
+          body: "Getting card search ready so you can start adding cards in a moment.",
+          eyebrow: "Search",
+          title: "Preparing search",
+          variant: "loading" as const,
+        },
       };
-    case "auth_required":
+    case "no_collections":
       return {
-        body: "Sign in through the shared-service deployment before loading collections or card data.",
-        title: "Authentication required",
-        variant: "error" as const,
-      };
-    case "forbidden":
-      return {
-        body: "This account is signed in but does not currently have permission to view any collections.",
-        title: "Collection access blocked",
-        variant: "error" as const,
-      };
-    case "no_visible_inventories":
-      return {
-        body: "A visible collection is required before search, collection, and activity views can load.",
-        title: "No visible collections",
-        variant: "idle" as const,
+        collection: {
+          body: "Once you create a collection, its entries, tags, and values will show up here.",
+          eyebrow: "Collection",
+          title: "Your cards will appear here",
+          variant: "idle" as const,
+        },
+        search: {
+          body: "Create a collection to start finding cards and comparing printings.",
+          eyebrow: "Search",
+          title: "Search is ready when you are",
+          variant: "idle" as const,
+        },
       };
     case "error":
       return {
-        body: inventoryError || "Could not load collections right now.",
-        title: "Workspace unavailable",
-        variant: "error" as const,
+        collection: {
+          body: "Cards, values, and tags will appear here once collections are available.",
+          eyebrow: "Collection",
+          title: "Collection view not ready yet",
+          variant: "error" as const,
+        },
+        search: {
+          body: "Search tools are waiting for collections to load. Try refreshing the app.",
+          eyebrow: "Search",
+          title: "Search not ready yet",
+          variant: "error" as const,
+        },
       };
   }
 }
@@ -89,7 +94,6 @@ export default function App() {
     describeInventory,
     inventories,
     inventoryError,
-    inventoryErrorStatus,
     inventoryStatus,
     items,
     loadInventoryOverview,
@@ -119,9 +123,11 @@ export default function App() {
     searchError,
     searchGroups,
     searchHiddenResultCount,
+    searchLoadedHiddenResultCount,
     searchLoadMoreBusy,
     searchQuery,
     searchResultsVisible,
+    searchTotalCount,
     searchWorkspaceMode,
     searchStatus,
     setHighlightedSuggestionIndex,
@@ -156,13 +162,11 @@ export default function App() {
   });
   const {
     busyAddCardId,
-    bootstrapInventoryBusy,
     bulkTagsBusy,
     busyItem,
     clearNotice,
     createInventoryBusy,
     handleAddCard,
-    handleBootstrapInventory,
     handleBulkTagMutation,
     handleCreateInventory,
     handleDeleteItem,
@@ -197,9 +201,11 @@ export default function App() {
       error: searchError,
       groups: searchGroups,
       hiddenResultCount: searchHiddenResultCount,
+      loadedHiddenResultCount: searchLoadedHiddenResultCount,
       isLoadingMore: searchLoadMoreBusy,
       query: searchQuery,
       status: searchStatus,
+      totalCount: searchTotalCount,
     },
     selectedInventoryRow,
     suggestions: {
@@ -264,29 +270,24 @@ export default function App() {
   const toastNotice = notice?.tone === "success" ? notice : null;
   const appShellState = getAppShellState({
     inventoryCount: inventories.length,
-    inventoryErrorStatus,
     inventoryStatus,
   });
-  const shellStatePanel =
-    appShellState === "ready"
-      ? null
-      : getShellStatePanelContent(appShellState, inventoryError);
+  const shellStatePanels =
+    appShellState === "ready" ? null : getShellStatePanelContent(appShellState);
 
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Shared-Service Frontend</p>
+          <p className="eyebrow">Card Collection</p>
           <h1>MTG Collection Studio</h1>
           <p className="hero-copy">
-            The frontend tracks the current HTTP contract and now classifies
-            shared-service loading, access, and empty-workspace states before
-            the next onboarding pass lands.
+            Search cards, compare printings, and organize your collection in one place.
           </p>
         </div>
         <div className="hero-metrics">
           <MetricCard accent="Sunrise" label="Collections" value={String(inventories.length)} />
-          <MetricCard accent="Lagoon" label="Rows In View" value={String(items.length)} />
+          <MetricCard accent="Lagoon" label="Entries In View" value={String(items.length)} />
           <MetricCard
             accent="Paper"
             label="Est. Value"
@@ -302,12 +303,9 @@ export default function App() {
           <aside className="sidebar-column">
             <InventorySidebar
               appShellState={appShellState}
-              bootstrapInventoryBusy={bootstrapInventoryBusy}
               createInventoryBusy={createInventoryBusy}
               inventories={inventories}
               inventoryError={inventoryError}
-              inventoryStatus={inventoryStatus}
-              onBootstrapInventory={handleBootstrapInventory}
               onCreateInventory={handleCreateInventory}
               onSelectInventory={setSelectedInventory}
               selectedInventory={selectedInventory}
@@ -320,9 +318,10 @@ export default function App() {
               <SearchPanel actions={searchPanelActions} state={searchPanelState} />
             ) : (
               <PanelState
-                body={shellStatePanel!.body}
-                title={shellStatePanel!.title}
-                variant={shellStatePanel!.variant}
+                body={shellStatePanels!.search.body}
+                eyebrow={shellStatePanels!.search.eyebrow}
+                title={shellStatePanels!.search.title}
+                variant={shellStatePanels!.search.variant}
               />
             )}
           </div>
@@ -336,9 +335,10 @@ export default function App() {
             />
           ) : (
             <PanelState
-              body={shellStatePanel!.body}
-              title={shellStatePanel!.title}
-              variant={shellStatePanel!.variant}
+              body={shellStatePanels!.collection.body}
+              eyebrow={shellStatePanels!.collection.eyebrow}
+              title={shellStatePanels!.collection.title}
+              variant={shellStatePanels!.collection.variant}
             />
           )}
         </main>
@@ -349,8 +349,8 @@ export default function App() {
         onClose={() => setActivityOpen(false)}
         subtitle={
           selectedInventoryRow
-            ? `${selectedInventoryRow.display_name} · latest 12 events`
-            : "Choose a collection to inspect its recent write activity."
+            ? `${selectedInventoryRow.display_name} · latest 12 changes`
+            : "Choose a collection to view recent activity."
         }
         title="Collection Activity"
       >

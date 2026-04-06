@@ -99,12 +99,12 @@ export function InventoryTableView(props: {
   const exceedsBulkSelectionLimit = totalSelectedCount > 100;
   const selectedCountLabel =
     totalSelectedCount === 0
-      ? "No rows selected"
-      : `${totalSelectedCount} row${totalSelectedCount === 1 ? "" : "s"} selected`;
+      ? "No entries selected"
+      : `${totalSelectedCount} entr${totalSelectedCount === 1 ? "y" : "ies"} selected`;
   const visibleRowsLabel =
     props.items.length === props.allItemsCount
-      ? `Showing all ${props.allItemsCount} row${props.allItemsCount === 1 ? "" : "s"}.`
-      : `Showing ${props.items.length} of ${props.allItemsCount} row${props.allItemsCount === 1 ? "" : "s"}.`;
+      ? `Showing all ${props.allItemsCount} entr${props.allItemsCount === 1 ? "y" : "ies"}.`
+      : `Showing ${props.items.length} of ${props.allItemsCount} entr${props.allItemsCount === 1 ? "y" : "ies"}.`;
 
   useEffect(() => {
     if (headerCheckboxRef.current) {
@@ -285,7 +285,7 @@ export function InventoryTableView(props: {
                 onChange={(event) => updateFilters({ emptyLocationOnly: event.target.checked })}
                 type="checkbox"
               />
-              <span>Only rows without a location</span>
+              <span>Only entries without a location</span>
             </label>
           </div>
         );
@@ -319,20 +319,20 @@ export function InventoryTableView(props: {
           ) : null}
           {hiddenSelectedCount > 0 ? (
             <span className="table-selection-summary-accent">
-              {hiddenSelectedCount} selected row{hiddenSelectedCount === 1 ? "" : "s"} hidden by
+              {hiddenSelectedCount} selected entr{hiddenSelectedCount === 1 ? "y" : "ies"} hidden by
               current filters.
             </span>
           ) : (
             <span>
-              Bulk tag actions apply to all selected rows, including any hidden by filters.
+              Bulk tag actions apply to all selected entries, including any hidden by filters.
             </span>
           )}
           {exceedsBulkSelectionLimit ? (
             <span className="table-selection-summary-accent">
-              Bulk tag actions currently support up to 100 selected rows per request.
+              Bulk tag actions currently support up to 100 selected entries per request.
             </span>
           ) : (
-            <span>Bulk tag actions currently support up to 100 rows per request.</span>
+            <span>Bulk tag actions currently support up to 100 entries per request.</span>
           )}
         </div>
 
@@ -381,7 +381,7 @@ export function InventoryTableView(props: {
               />
             </label>
             <span className="field-hint field-hint-info" id={bulkTagsHintId}>
-              Use comma-separated tags. These actions apply to every selected row.
+              Use comma-separated tags. These actions apply to every selected entry.
             </span>
 
             <div className="table-bulk-action-buttons">
@@ -525,7 +525,7 @@ export function InventoryTableView(props: {
             <tr>
               <th className="inventory-table-checkbox-column" scope="col">
                 <input
-                  aria-label="Select all visible rows"
+                  aria-label="Select all visible entries"
                   checked={allVisibleSelected}
                   onChange={(event) => {
                     if (event.target.checked) {
@@ -647,8 +647,8 @@ export function InventoryTableView(props: {
             ) : (
               <tr className="inventory-table-empty-row">
                 <td className="inventory-table-empty-cell" colSpan={10}>
-                  <strong>No rows match the current table filters.</strong>
-                  <span>Adjust the active filters or clear them to bring rows back into view.</span>
+                  <strong>No entries match the current filters.</strong>
+                  <span>Adjust the active filters or clear them to bring entries back into view.</span>
                 </td>
               </tr>
             )}

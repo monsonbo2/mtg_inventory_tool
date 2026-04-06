@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { InventoryCreateRequest, InventorySummary } from "../types";
 import { normalizeInventorySlugInput, normalizeOptionalText } from "../uiHelpers";
-import type { AppShellState, AsyncStatus, InventoryCreateResult } from "../uiTypes";
+import type { AppShellState, InventoryCreateResult } from "../uiTypes";
 import { ModalDialog } from "./ui/ModalDialog";
 import { PanelState } from "./ui/PanelState";
 
@@ -22,7 +22,7 @@ function InventoryCardSummary(props: {
       ) : null}
       <div className="inventory-selector-footer">
         <span>
-          {props.inventory.item_rows} rows · {props.inventory.total_cards} cards
+          {props.inventory.item_rows} entr{props.inventory.item_rows === 1 ? "y" : "ies"} · {props.inventory.total_cards} cards
         </span>
       </div>
     </>
@@ -43,7 +43,7 @@ function InventorySwitcherOption(props: {
     >
       <span className="inventory-switcher-option-name">{props.inventory.display_name}</span>
       <span className="inventory-switcher-option-meta">
-        {props.inventory.item_rows} rows · {props.inventory.total_cards} cards
+        {props.inventory.item_rows} entr{props.inventory.item_rows === 1 ? "y" : "ies"} · {props.inventory.total_cards} cards
       </span>
     </button>
   );
@@ -51,14 +51,11 @@ function InventorySwitcherOption(props: {
 
 export function InventorySidebar(props: {
   appShellState: AppShellState;
-  bootstrapInventoryBusy: boolean;
   createInventoryBusy: boolean;
   inventories: InventorySummary[];
   selectedInventory: string | null;
   selectedInventoryRow: InventorySummary | null;
-  inventoryStatus: AsyncStatus;
   inventoryError: string | null;
-  onBootstrapInventory: () => Promise<boolean>;
   onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
   onSelectInventory: (inventorySlug: string) => void;
 }) {
@@ -246,7 +243,7 @@ export function InventorySidebar(props: {
         </div>
 
         <p className="panel-hint inventory-sidebar-note">
-          You need <code>editor</code> or <code>admin</code> access to create collections.
+          Collections help separate personal, trade, deck, and project cards.
         </p>
       </form>
     );
@@ -255,34 +252,22 @@ export function InventorySidebar(props: {
   return (
     <section className="panel inventory-sidebar-panel">
       {props.inventoryError && props.inventories.length && props.appShellState === "ready" ? (
-        <p className="panel-error">{props.inventoryError}</p>
+        <p className="panel-error">Could not refresh the collection list right now.</p>
       ) : null}
 
       {props.appShellState === "loading" && props.inventories.length === 0 ? (
         <PanelState
-          body="Checking which collections are available to this workspace."
+          body="Looking for collections on this device."
           compact
+          eyebrow="Collections"
           title="Loading collections"
           variant="loading"
         />
-      ) : props.appShellState === "auth_required" ? (
-        <PanelState
-          body="Sign in through the shared-service deployment before loading collections."
-          compact
-          title="Authentication required"
-          variant="error"
-        />
-      ) : props.appShellState === "forbidden" ? (
-        <PanelState
-          body="This account is signed in but does not currently have permission to view any collections."
-          compact
-          title="Collection access blocked"
-          variant="error"
-        />
       ) : props.appShellState === "error" && props.inventories.length === 0 ? (
         <PanelState
-          body={props.inventoryError || "Could not load collections right now."}
+          body="Collections could not be loaded right now. Refresh and try again."
           compact
+          eyebrow="Collections"
           title="Collections unavailable"
           variant="error"
         />
@@ -331,17 +316,15 @@ export function InventorySidebar(props: {
       ) : (
         <>
           <PanelState
-            body="Set up your default collection to unlock search, collection, and activity views for this account."
+            body="Create a collection to start adding cards, tracking value, and keeping everything organized."
             compact
-            title="No visible collections"
+            eyebrow="Collections"
+            title="Start your first collection"
           />
           <div className="inventory-sidebar-actions inventory-sidebar-actions-empty">
             <button
               className="primary-button inventory-sidebar-action inventory-sidebar-action-create"
-              disabled={props.bootstrapInventoryBusy}
-              onClick={() => {
-                void props.onBootstrapInventory();
-              }}
+              onClick={openCreateForm}
               type="button"
             >
               <span
@@ -349,12 +332,12 @@ export function InventorySidebar(props: {
                 className="inventory-action-icon inventory-action-icon-create"
               />
               <span className="inventory-sidebar-action-create-label">
-                {props.bootstrapInventoryBusy ? "Setting Up..." : "Set Up My Collection"}
+                Create Collection
               </span>
             </button>
           </div>
           <p className="panel-hint inventory-sidebar-note">
-            This creates or reopens your personal default collection for the current signed-in account.
+            You can keep everything in one collection or split it up later.
           </p>
         </>
       )}

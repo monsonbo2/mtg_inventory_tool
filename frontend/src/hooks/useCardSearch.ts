@@ -9,7 +9,10 @@ import {
   createSearchCardGroups,
   type SearchCardGroup,
 } from "../searchResultHelpers";
-import type { CatalogNameSearchRow, CatalogSearchRow } from "../types";
+import type {
+  CatalogNameSearchRow,
+  CatalogPrintingLookupRow,
+} from "../types";
 import { toUserMessage } from "../uiHelpers";
 import type { AsyncStatus } from "../uiTypes";
 
@@ -31,6 +34,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CatalogNameSearchRow[]>([]);
+  const [searchTotalCount, setSearchTotalCount] = useState(0);
   const [searchGroupVisibleLimit, setSearchGroupVisibleLimit] = useState(SEARCH_GROUP_INITIAL_LIMIT);
   const [searchRequestedLimit, setSearchRequestedLimit] = useState(SEARCH_GROUP_PREFETCH_LIMIT);
   const [searchCanLoadMore, setSearchCanLoadMore] = useState(false);
@@ -43,8 +47,10 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
   const suggestionLookupRequestIdRef = useRef(0);
   const suggestionCacheRef = useRef<Record<string, CatalogNameSearchRow[]>>({});
-  const printingLookupCacheRef = useRef<Record<string, CatalogSearchRow[]>>({});
-  const printingLookupPromisesRef = useRef<Record<string, Promise<CatalogSearchRow[]>>>({});
+  const printingLookupCacheRef = useRef<Record<string, CatalogPrintingLookupRow[]>>({});
+  const printingLookupPromisesRef = useRef<
+    Record<string, Promise<CatalogPrintingLookupRow[]>>
+  >({});
   const skipSuggestionFetchQueryRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -84,14 +90,14 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         query: trimmed,
         limit: AUTOCOMPLETE_LIMIT,
       })
-        .then((results) => {
+        .then((response) => {
           if (requestId !== suggestionLookupRequestIdRef.current) {
             return;
           }
-          suggestionCacheRef.current[normalizedQuery] = results;
-          setSuggestionResults(results);
+          suggestionCacheRef.current[normalizedQuery] = response.items;
+          setSuggestionResults(response.items);
           setSuggestionStatus("ready");
-          setHighlightedSuggestionIndex(results.length ? 0 : -1);
+          setHighlightedSuggestionIndex(response.items.length ? 0 : -1);
         })
         .catch((error) => {
           if (requestId !== suggestionLookupRequestIdRef.current) {
@@ -126,6 +132,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     skipSuggestionFetchQueryRef.current = null;
     setSearchQuery("");
     setSearchResults([]);
+    setSearchTotalCount(0);
     setActiveSearchGroupId(null);
     setSearchResultsVisible(false);
     setSearchWorkspaceMode("browse");
@@ -191,6 +198,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     const visibleLimit = runOptions.visibleLimit ?? SEARCH_GROUP_INITIAL_LIMIT;
     if (!trimmed) {
       setSearchResults([]);
+      setSearchTotalCount(0);
       setActiveSearchGroupId(null);
       setSearchResultsVisible(false);
       setSearchWorkspaceMode("browse");
@@ -214,21 +222,26 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     }
 
     try {
-      const results = await searchCardNames({
+      const response = await searchCardNames({
         query: trimmed,
         limit: requestLimit,
       });
-      const nextVisibleLimit = Math.min(visibleLimit, results.length);
+      const nextResults = response.items;
+      const nextVisibleLimit = Math.min(visibleLimit, nextResults.length);
       const nextActiveSearchGroupId =
-        activeSearchGroupId && results.slice(0, nextVisibleLimit).some((result) => result.oracle_id === activeSearchGroupId)
+        activeSearchGroupId &&
+        nextResults
+          .slice(0, nextVisibleLimit)
+          .some((result) => result.oracle_id === activeSearchGroupId)
           ? activeSearchGroupId
-          : results[0]?.oracle_id || null;
-      setSearchResults(results);
+          : nextResults[0]?.oracle_id || null;
+      setSearchResults(nextResults);
+      setSearchTotalCount(response.total_count);
       setSearchGroupVisibleLimit(nextVisibleLimit);
       setSearchRequestedLimit(requestLimit);
-      setSearchCanLoadMore(results.length >= requestLimit);
+      setSearchCanLoadMore(response.has_more);
       setActiveSearchGroupId(nextActiveSearchGroupId);
-      setSearchResultsVisible(results.length > 0);
+      setSearchResultsVisible(nextResults.length > 0);
       setSearchWorkspaceMode("browse");
       setSearchStatus("ready");
     } catch (error) {
@@ -236,6 +249,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         setSearchError(toUserMessage(error, "More matching cards could not load."));
       } else {
         setSearchResults([]);
+        setSearchTotalCount(0);
         setActiveSearchGroupId(null);
         setSearchResultsVisible(false);
         setSearchWorkspaceMode("browse");
@@ -259,6 +273,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     skipSuggestionFetchQueryRef.current = null;
     setSearchQuery(value);
     setSearchResults([]);
+    setSearchTotalCount(0);
     setActiveSearchGroupId(null);
     setSearchResultsVisible(false);
     setSearchWorkspaceMode("browse");
@@ -283,6 +298,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     skipSuggestionFetchQueryRef.current = query.toLowerCase();
     setSearchQuery(query);
     setSearchResults([result]);
+    setSearchTotalCount(1);
     setSearchGroupVisibleLimit(1);
     setSearchRequestedLimit(1);
     setSearchCanLoadMore(false);
@@ -430,7 +446,11 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     return request;
   }
 
-  const searchHiddenResultCount = Math.max(0, searchResults.length - searchGroupVisibleLimit);
+  const searchLoadedHiddenResultCount = Math.max(
+    0,
+    searchResults.length - searchGroupVisibleLimit,
+  );
+  const searchHiddenResultCount = Math.max(0, searchTotalCount - searchGroupVisibleLimit);
   const visibleSearchResults = searchResults.slice(0, searchGroupVisibleLimit);
   const searchGroups = createSearchCardGroups(visibleSearchResults);
 
@@ -450,12 +470,14 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     loadSearchGroupPrintings,
     resetSearchWorkspace,
     searchError,
-    searchCanLoadMore: searchHiddenResultCount > 0 || searchCanLoadMore,
+    searchCanLoadMore: searchLoadedHiddenResultCount > 0 || searchCanLoadMore,
     searchGroups,
     searchHiddenResultCount,
+    searchLoadedHiddenResultCount,
     searchLoadMoreBusy,
     searchQuery,
     searchResultsVisible,
+    searchTotalCount,
     searchWorkspaceMode,
     searchStatus,
     setHighlightedSuggestionIndex,

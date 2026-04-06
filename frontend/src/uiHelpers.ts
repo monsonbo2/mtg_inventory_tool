@@ -168,7 +168,7 @@ export function getBusyMessage(action: ItemMutationAction) {
     case "tags":
       return "Saving tags...";
     case "delete":
-      return "Removing row...";
+      return "Removing entry...";
   }
 }
 
@@ -234,18 +234,18 @@ export function getInventoryCollectionEmptyMessage(inventory: InventorySummary) 
     const lead = inventory.description
       ? `${inventory.description}.`
       : `${inventory.display_name} is ready for its first card.`;
-    return `${lead} Search for a card and add it to create the first owned row.`;
+    return `${lead} Search for a card and add it to start building this collection.`;
   }
 
-  return "Add a card from the search panel to create the first owned row.";
+  return "Add a card from search to keep building this collection.";
 }
 
 export function getInventoryAuditEmptyMessage(inventory: InventorySummary) {
   if (inventory.total_cards === 0) {
-    return "This collection has not recorded any write activity yet. Adding the first card will start the audit trail.";
+    return "This collection does not have any recent changes yet. Adding the first card will start the activity feed.";
   }
 
-  return "Once you add, edit, or remove cards, the latest events will appear here.";
+  return "Once you add, edit, or remove cards, the latest changes will appear here.";
 }
 
 export function formatStatusLabel(status: AsyncStatus) {
@@ -305,11 +305,11 @@ export function getPatchSuccessMessage(
       return `Set ${response.card_name} to ${formatFinishLabel(response.finish)} in ${inventoryLabel}.`;
     case "set_location":
       return response.merged
-        ? `Updated location for ${response.card_name} and merged matching rows in ${inventoryLabel}.`
+        ? `Updated location for ${response.card_name} and combined matching entries in ${inventoryLabel}.`
         : `Updated location for ${response.card_name} to ${formatLocationLabel(response.location)} in ${inventoryLabel}.`;
     case "set_condition":
       return response.merged
-        ? `Updated condition for ${response.card_name} and merged matching rows in ${inventoryLabel}.`
+        ? `Updated condition for ${response.card_name} and combined matching entries in ${inventoryLabel}.`
         : `Set condition for ${response.card_name} to ${response.condition_code} in ${inventoryLabel}.`;
     case "set_notes":
       return response.notes
@@ -331,29 +331,29 @@ export function getBulkMutationSuccessMessage(
   updatedCount: number,
   inventoryLabel: string,
 ) {
-  const rowLabel = `${updatedCount} row${updatedCount === 1 ? "" : "s"}`;
+  const entryLabel = `${updatedCount} entr${updatedCount === 1 ? "y" : "ies"}`;
 
   switch (operation) {
     case "add_tags":
-      return `Added tags on ${rowLabel} in ${inventoryLabel}.`;
+      return `Added tags to ${entryLabel} in ${inventoryLabel}.`;
     case "remove_tags":
-      return `Removed tags from ${rowLabel} in ${inventoryLabel}.`;
+      return `Removed tags from ${entryLabel} in ${inventoryLabel}.`;
     case "set_tags":
-      return `Replaced tags on ${rowLabel} in ${inventoryLabel}.`;
+      return `Replaced tags on ${entryLabel} in ${inventoryLabel}.`;
     case "clear_tags":
-      return `Cleared tags on ${rowLabel} in ${inventoryLabel}.`;
+      return `Cleared tags from ${entryLabel} in ${inventoryLabel}.`;
     case "set_quantity":
-      return `Updated quantity on ${rowLabel} in ${inventoryLabel}.`;
+      return `Updated quantity on ${entryLabel} in ${inventoryLabel}.`;
     case "set_notes":
-      return `Updated notes on ${rowLabel} in ${inventoryLabel}.`;
+      return `Updated notes on ${entryLabel} in ${inventoryLabel}.`;
     case "set_acquisition":
-      return `Updated acquisition details on ${rowLabel} in ${inventoryLabel}.`;
+      return `Updated acquisition details on ${entryLabel} in ${inventoryLabel}.`;
     case "set_finish":
-      return `Updated finish on ${rowLabel} in ${inventoryLabel}.`;
+      return `Updated finish on ${entryLabel} in ${inventoryLabel}.`;
     case "set_location":
-      return `Updated location on ${rowLabel} in ${inventoryLabel}.`;
+      return `Updated location on ${entryLabel} in ${inventoryLabel}.`;
     case "set_condition":
-      return `Updated condition on ${rowLabel} in ${inventoryLabel}.`;
+      return `Updated condition on ${entryLabel} in ${inventoryLabel}.`;
   }
 }
 

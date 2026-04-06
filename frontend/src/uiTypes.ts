@@ -4,9 +4,7 @@ export type AsyncStatus = "idle" | "loading" | "ready" | "error";
 export type AppShellState =
   | "loading"
   | "ready"
-  | "auth_required"
-  | "forbidden"
-  | "no_visible_inventories"
+  | "no_collections"
   | "error";
 export type ViewRefreshOutcome = "applied" | "skipped";
 export type NoticeTone = "info" | "success" | "error";

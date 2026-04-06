@@ -3,7 +3,8 @@ import type {
   ApiErrorEnvelope,
   BulkInventoryItemMutationRequest,
   BulkInventoryItemMutationResponse,
-  CatalogNameSearchRow,
+  CatalogNameSearchResult,
+  CatalogPrintingLookupRow,
   CatalogSearchRow,
   CsvImportRequest,
   CsvImportResponse,
@@ -346,7 +347,7 @@ export async function searchCards(params: SearchCardsParams) {
 }
 
 export async function searchCardNames(params: SearchCardNamesParams) {
-  return requestJson<CatalogNameSearchRow[]>("/cards/search/names", {
+  return requestJson<CatalogNameSearchResult>("/cards/search/names", {
     query: {
       query: params.query,
       scope: params.scope,
@@ -360,7 +361,7 @@ export async function listCardPrintings(
   oracleId: string,
   params: ListCardPrintingsParams = {},
 ) {
-  return requestJson<CatalogSearchRow[]>(
+  return requestJson<CatalogPrintingLookupRow[]>(
     `/cards/oracle/${encodeURIComponent(oracleId)}/printings`,
     {
       query: { lang: params.lang, scope: params.scope },

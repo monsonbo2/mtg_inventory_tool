@@ -155,6 +155,16 @@
     grid-template-columns: 1fr;
   }
 
+  .empty-state,
+  .compact-empty {
+    grid-template-columns: 1fr;
+  }
+
+  .state-block,
+  .compact-empty.state-block {
+    min-height: 0;
+  }
+
   .activity-drawer-backdrop {
     padding: 0;
   }

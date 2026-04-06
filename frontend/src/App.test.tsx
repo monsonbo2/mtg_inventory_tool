@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { ApiClientError } from "./api";
 import type {
+  CatalogNameSearchResult,
   CatalogNameSearchRow,
-  CatalogSearchRow,
+  CatalogPrintingLookupRow,
   InventoryAuditEvent,
   OwnedInventoryRow,
 } from "./types";
@@ -15,7 +16,6 @@ vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
     ...actual,
-    bootstrapDefaultInventory: vi.fn(),
     listInventories: vi.fn(),
     listInventoryItems: vi.fn(),
     listInventoryAudit: vi.fn(),
@@ -31,7 +31,6 @@ vi.mock("./api", async () => {
 
 import {
   addInventoryItem,
-  bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
   listCardPrintings,
@@ -72,11 +71,14 @@ describe("App", () => {
       est_value: "4.00",
       price_date: "2026-04-01",
       notes: "Main deck",
+      printing_selection_mode: "explicit",
       ...overrides,
     };
   }
 
-  function buildSearchRow(overrides: Partial<CatalogSearchRow> = {}): CatalogSearchRow {
+  function buildSearchRow(
+    overrides: Partial<CatalogPrintingLookupRow> = {},
+  ): CatalogPrintingLookupRow {
     return {
       scryfall_id: "bolt-1",
       name: "Lightning Bolt",
@@ -89,6 +91,7 @@ describe("App", () => {
       tcgplayer_product_id: "1001",
       image_uri_small: null,
       image_uri_normal: null,
+      is_default_add_choice: false,
       ...overrides,
     };
   }
@@ -104,6 +107,17 @@ describe("App", () => {
       image_uri_small: null,
       image_uri_normal: null,
       ...overrides,
+    };
+  }
+
+  function buildNameSearchResult(
+    items: CatalogNameSearchRow[] = [],
+    overrides: Partial<Omit<CatalogNameSearchResult, "items">> = {},
+  ): CatalogNameSearchResult {
+    return {
+      items,
+      total_count: overrides.total_count ?? items.length,
+      has_more: overrides.has_more ?? false,
     };
   }
 
@@ -125,7 +139,7 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue(items);
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
       inventory: "personal",
@@ -148,7 +162,7 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
       inventory: "personal",
@@ -163,7 +177,7 @@ describe("App", () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
 
     render(<App />);
 
@@ -177,53 +191,61 @@ describe("App", () => {
     expect(screen.getByText("Run a search")).toBeInTheDocument();
   });
 
-  it("classifies unauthenticated inventory loads as an auth-required shell state", async () => {
+  it("shows a generic collections-unavailable shell state when collection loading fails with 401", async () => {
     vi.mocked(listInventories).mockRejectedValue(
       new ApiClientError("Authentication required.", {
         code: "authentication_required",
         status: 401,
       }),
     );
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
 
     render(<App />);
 
-    expect(await screen.findAllByText("Authentication required")).toHaveLength(3);
+    expect(await screen.findByText("Collections unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Search not ready yet")).toBeInTheDocument();
+    expect(screen.getByText("Collection view not ready yet")).toBeInTheDocument();
+    expect(screen.queryByText("Authentication required.")).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
   });
 
-  it("classifies forbidden inventory loads as an access-blocked shell state", async () => {
+  it("shows a generic collections-unavailable shell state when collection loading fails with 403", async () => {
     vi.mocked(listInventories).mockRejectedValue(
       new ApiClientError("Forbidden.", {
         code: "forbidden",
         status: 403,
       }),
     );
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
 
     render(<App />);
 
-    expect(await screen.findAllByText("Collection access blocked")).toHaveLength(3);
+    expect(await screen.findByText("Collections unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Search not ready yet")).toBeInTheDocument();
+    expect(screen.getByText("Collection view not ready yet")).toBeInTheDocument();
+    expect(screen.queryByText("Forbidden.")).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
   });
 
-  it("classifies an empty visible inventory list without opening create-collection flow", async () => {
+  it("shows a no-collections shell state with a create action when no collections exist yet", async () => {
     vi.mocked(listInventories).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
 
     render(<App />);
 
-    expect(await screen.findAllByText("No visible collections")).toHaveLength(3);
+    expect(await screen.findByText("Start your first collection")).toBeInTheDocument();
+    expect(screen.getByText("Search is ready when you are")).toBeInTheDocument();
+    expect(screen.getByText("Your cards will appear here")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Collection" })).toBeInTheDocument();
   });
 
-  it("bootstraps the default collection from the empty inventory state", async () => {
+  it("creates the first collection from the empty onboarding state", async () => {
     const user = userEvent.setup();
 
     vi.mocked(listInventories)
@@ -232,72 +254,49 @@ describe("App", () => {
         {
           slug: "collection",
           display_name: "Collection",
-          description: "Default personal collection",
+          description: "Main personal collection",
           item_rows: 0,
           total_cards: 0,
         },
       ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bootstrapDefaultInventory).mockResolvedValue({
-      created: true,
-      inventory: {
-        inventory_id: 9,
-        slug: "collection",
-        display_name: "Collection",
-        description: "Default personal collection",
-      },
+    vi.mocked(createInventory).mockResolvedValue({
+      inventory_id: 9,
+      slug: "collection",
+      display_name: "Collection",
+      description: "Main personal collection",
     });
 
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: "Set Up My Collection" }));
+    await user.click(await screen.findByRole("button", { name: "Create Collection" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
+    await user.type(within(dialog).getByRole("textbox", { name: "Collection name" }), "Collection");
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Description (optional)" }),
+      "Main personal collection",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Create Collection" }));
 
     await waitFor(() => {
-      expect(bootstrapDefaultInventory).toHaveBeenCalledTimes(1);
+      expect(createInventory).toHaveBeenCalledWith({
+        slug: "collection",
+        display_name: "Collection",
+        description: "Main personal collection",
+      });
     });
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Set up Collection.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Created Collection.");
     expect(await screen.findByText("Current collection: Collection")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(listInventoryItems).toHaveBeenCalledWith("collection");
       expect(listInventoryAudit).toHaveBeenCalledWith("collection");
     });
-  });
-
-  it("keeps the onboarding state visible when bootstrap fails", async () => {
-    const user = userEvent.setup();
-
-    vi.mocked(listInventories).mockResolvedValue([]);
-    vi.mocked(listInventoryItems).mockResolvedValue([]);
-    vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
-    vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bootstrapDefaultInventory).mockRejectedValue(
-      new ApiClientError("Editor access is required to set up a collection.", {
-        code: "forbidden",
-        status: 403,
-      }),
-    );
-
-    render(<App />);
-
-    await user.click(await screen.findByRole("button", { name: "Set Up My Collection" }));
-
-    await waitFor(() => {
-      expect(bootstrapDefaultInventory).toHaveBeenCalledTimes(1);
-    });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Editor access is required to set up a collection.",
-    );
-    expect(screen.getByRole("button", { name: "Set Up My Collection" })).toBeInTheDocument();
-    expect(screen.queryByText("Current collection: Collection")).not.toBeInTheDocument();
-    expect(listInventoryItems).not.toHaveBeenCalled();
-    expect(listInventoryAudit).not.toHaveBeenCalled();
   });
 
   it("surfaces backend patch errors as a notice", async () => {
@@ -325,6 +324,7 @@ describe("App", () => {
       est_value: "4.00",
       price_date: "2026-04-01",
       notes: "Main deck",
+      printing_selection_mode: "explicit",
     };
 
     vi.mocked(listInventories).mockResolvedValue([
@@ -338,7 +338,7 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([ownedRow]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(patchInventoryItem).mockRejectedValue(
       new ApiClientError(
@@ -408,9 +408,9 @@ describe("App", () => {
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Fo") {
-        return [forest, forceOfWill];
+        return buildNameSearchResult([forest, forceOfWill]);
       }
-      return [];
+      return buildNameSearchResult();
     });
 
     render(<App />);
@@ -459,9 +459,9 @@ describe("App", () => {
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Fo") {
-        return [forest, forceOfWill];
+        return buildNameSearchResult([forest, forceOfWill]);
       }
-      return [];
+      return buildNameSearchResult();
     });
 
     render(<App />);
@@ -491,7 +491,7 @@ describe("App", () => {
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "lightn") {
-        return [
+        return buildNameSearchResult([
           buildNameSearchRow({
             oracle_id: "lightning-bolt-oracle",
             name: "Lightning Bolt",
@@ -507,9 +507,9 @@ describe("App", () => {
             name: "Lightning Axe",
             printings_count: 9,
           }),
-        ];
+        ]);
       }
-      return [];
+      return buildNameSearchResult();
     });
 
     render(<App />);
@@ -547,7 +547,7 @@ describe("App", () => {
       mockBaseSearchApp();
       vi.mocked(searchCardNames).mockImplementation(async (params) => {
         if (params.query === "lightn") {
-          return [
+          return buildNameSearchResult([
             buildNameSearchRow({
               oracle_id: "lightning-bolt-oracle",
               name: "Lightning Bolt",
@@ -563,9 +563,9 @@ describe("App", () => {
               name: "Lightning Axe",
               printings_count: 9,
             }),
-          ];
+          ]);
         }
-        return [];
+        return buildNameSearchResult();
       });
 
       render(<App />);
@@ -597,7 +597,7 @@ describe("App", () => {
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "lightn") {
-        return [
+        return buildNameSearchResult([
           buildNameSearchRow({
             oracle_id: "lightning-bolt-oracle",
             name: "Lightning Bolt",
@@ -618,9 +618,9 @@ describe("App", () => {
             name: "Lightning Blast",
             printings_count: 6,
           }),
-        ];
+        ]);
       }
-      return [];
+      return buildNameSearchResult();
     });
 
     const { container } = render(<App />);
@@ -686,9 +686,13 @@ describe("App", () => {
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Cloud") {
-        return rows.slice(0, params.limit ?? rows.length);
+        const limit = params.limit ?? rows.length;
+        return buildNameSearchResult(rows.slice(0, limit), {
+          total_count: rows.length,
+          has_more: limit < rows.length,
+        });
       }
-      return [];
+      return buildNameSearchResult();
     });
 
     const { container } = render(<App />);
@@ -700,6 +704,7 @@ describe("App", () => {
 
     await screen.findByRole("heading", { name: "Cloud Result 01" });
     expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Cloud", limit: 18 });
+    expect(screen.getByText("21 matching cards")).toBeInTheDocument();
 
     const visibleResultNames = () =>
       Array.from(container.querySelectorAll(".search-workspace-result-copy strong")).map(
@@ -710,13 +715,13 @@ describe("App", () => {
 
     const initialCallCount = vi.mocked(searchCardNames).mock.calls.length;
     await user.click(
-      screen.getByRole("button", { name: "Show 10 more of 10 additional matches" }),
+      screen.getByRole("button", { name: "Show 10 more of 13 additional matches" }),
     );
 
     expect(visibleResultNames()).toHaveLength(18);
     expect(vi.mocked(searchCardNames).mock.calls).toHaveLength(initialCallCount);
 
-    await user.click(screen.getByRole("button", { name: "Load 10 more matches" }));
+    await user.click(screen.getByRole("button", { name: "Load 3 more matches" }));
 
     await waitFor(() => {
       expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Cloud", limit: 28 });
@@ -727,13 +732,83 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /more matches/i })).not.toBeInTheDocument();
   });
 
+  it("preselects the backend default printing choice after loading printings", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "bolt-oracle",
+            name: "Lightning Bolt",
+            printings_count: 2,
+            available_languages: ["en"],
+          }),
+        ]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(listCardPrintings).mockResolvedValue([
+      buildSearchRow({
+        scryfall_id: "bolt-alpha",
+        name: "Lightning Bolt",
+        set_code: "lea",
+        set_name: "Limited Edition Alpha",
+        collector_number: "161",
+        finishes: ["normal"],
+      }),
+      buildSearchRow({
+        scryfall_id: "bolt-m11",
+        name: "Lightning Bolt",
+        set_code: "m11",
+        set_name: "Magic 2011",
+        collector_number: "146",
+        finishes: ["normal", "foil"],
+        is_default_add_choice: true,
+      }),
+    ]);
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "Lightning");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltCard).not.toBeNull();
+
+    const printingSelect = within(boltCard!).getByRole("combobox", { name: "Printing" });
+    const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
+
+    await user.click(printingSelect);
+
+    await waitFor(() => {
+      expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
+    });
+    await waitFor(() => {
+      expect(printingSelect).toHaveValue("bolt-m11");
+    });
+
+    expect(
+      within(printingSelect).getByRole("option", {
+        name: /MAGIC 2011 .* Default choice/i,
+      }),
+    ).toBeInTheDocument();
+    expect(finishSelect).toBeEnabled();
+    expect(within(boltCard!).getByText(/Default add choice/i)).toBeInTheDocument();
+    expect(within(boltCard!).getByRole("button", { name: "Add to collection" })).toBeEnabled();
+  });
+
   it("groups name-first search results and clears the quick-add workspace after a successful add", async () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Lightning") {
-        return [
+        return buildNameSearchResult([
           buildNameSearchRow({
             oracle_id: "bolt-oracle",
             name: "Lightning Bolt",
@@ -746,9 +821,9 @@ describe("App", () => {
             printings_count: 1,
             available_languages: ["en"],
           }),
-        ];
+        ]);
       }
-      return [];
+      return buildNameSearchResult();
     });
     vi.mocked(listCardPrintings).mockImplementation(async (oracleId) => {
       if (oracleId === "bolt-oracle") {
@@ -864,15 +939,15 @@ describe("App", () => {
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Fo") {
-        return [
+        return buildNameSearchResult([
           buildNameSearchRow({
             oracle_id: "forest-oracle",
             name: "Forest",
             printings_count: 1,
           }),
-        ];
+        ]);
       }
-      return [];
+      return buildNameSearchResult();
     });
 
     render(<App />);
@@ -905,15 +980,15 @@ describe("App", () => {
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
       if (params.query === "Lightning") {
-        return [
+        return buildNameSearchResult([
           buildNameSearchRow({
             oracle_id: "bolt-oracle",
             name: "Lightning Bolt",
             printings_count: 3,
           }),
-        ];
+        ]);
       }
-      return [];
+      return buildNameSearchResult();
     });
 
     render(<App />);
@@ -1012,7 +1087,7 @@ describe("App", () => {
       .mockResolvedValueOnce([initialBolt])
       .mockResolvedValueOnce([updatedBolt]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
       inventory: "personal",
@@ -1039,6 +1114,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_quantity: 2,
     });
 
@@ -1190,7 +1266,7 @@ describe("App", () => {
       .mockResolvedValueOnce([initialBolt])
       .mockResolvedValueOnce([updatedBolt]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
       inventory: "personal",
@@ -1217,6 +1293,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_finish: "normal",
     });
 
@@ -1272,7 +1349,7 @@ describe("App", () => {
       .mockResolvedValueOnce([initialBolt])
       .mockResolvedValueOnce([updatedBolt]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
       inventory: "personal",
@@ -1299,6 +1376,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn", "trade"],
+      printing_selection_mode: "explicit",
       old_tags: ["burn"],
     });
 
@@ -1359,7 +1437,7 @@ describe("App", () => {
       .mockResolvedValueOnce([initialBolt])
       .mockResolvedValueOnce([updatedBolt]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
       inventory: "personal",
@@ -1386,6 +1464,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_tags: ["burn", "trade"],
     });
 
@@ -1448,7 +1527,7 @@ describe("App", () => {
       .mockResolvedValueOnce([initialBolt])
       .mockResolvedValueOnce([updatedBolt]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
       inventory: "personal",
@@ -1475,6 +1554,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_tags: ["burn", "trade"],
     });
 
@@ -1633,7 +1713,7 @@ describe("App", () => {
     expect(within(detailedCounterspellRow!).getByText("Inline edits")).toBeInTheDocument();
   });
 
-  it("opens and closes the activity drawer while keeping audit off the main page by default", async () => {
+  it("opens and closes the activity drawer while keeping activity off the main page by default", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -1656,11 +1736,11 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByRole("button", { name: "View Activity" });
-    expect(screen.queryByRole("heading", { name: "Audit Feed" })).not.toBeInTheDocument();
+    await screen.findByRole("button", { name: "Recent Activity" });
+    expect(screen.queryByRole("heading", { name: "Activity" })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "View Activity" }));
+    await user.click(screen.getByRole("button", { name: "Recent Activity" }));
     expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
     expect(screen.getByText("Set Finish")).toBeInTheDocument();
 
@@ -1669,7 +1749,7 @@ describe("App", () => {
       expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "View Activity" }));
+    await user.click(screen.getByRole("button", { name: "Recent Activity" }));
     expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
 
     await user.click(screen.getByTestId("activity-drawer-backdrop"));
@@ -1677,7 +1757,7 @@ describe("App", () => {
       expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "View Activity" }));
+    await user.click(screen.getByRole("button", { name: "Recent Activity" }));
     expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
@@ -1709,7 +1789,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const openButton = await screen.findByRole("button", { name: "View Activity" });
+    const openButton = await screen.findByRole("button", { name: "Recent Activity" });
     openButton.focus();
     expect(openButton).toHaveFocus();
 
@@ -1762,7 +1842,7 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "Table" }));
 
     expect(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" })).toBeInTheDocument();
-    expect(screen.getByText("No rows selected")).toBeInTheDocument();
+    expect(screen.getByText("No entries selected")).toBeInTheDocument();
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
@@ -1774,7 +1854,7 @@ describe("App", () => {
 
     await user.click(lightningBoltRow!);
 
-    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+    expect(screen.getByText("1 entry selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Detailed" }));
@@ -1784,15 +1864,15 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Table" }));
     expect(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
-    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+    expect(screen.getByText("1 entry selected")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
-    expect(screen.getByText("2 rows selected")).toBeInTheDocument();
+    expect(screen.getByText("2 entries selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Clear selection" }));
-    expect(screen.getByText("No rows selected")).toBeInTheDocument();
+    expect(screen.getByText("No entries selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).not.toBeChecked();
   });
@@ -1837,31 +1917,31 @@ describe("App", () => {
     expect(getRows()[1]).toHaveTextContent("Lightning Bolt");
 
     await user.click(screen.getByRole("checkbox", { name: "Select Counterspell" }));
-    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+    expect(screen.getByText("1 entry selected")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Set" }));
     await user.click(screen.getByLabelText("LEA · Limited Edition Alpha"));
 
-    expect(screen.getByText("Showing 1 of 2 rows.")).toBeInTheDocument();
-    expect(screen.getByText("1 selected row hidden by current filters.")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 2 entries.")).toBeInTheDocument();
+    expect(screen.getByText("1 selected entry hidden by current filters.")).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Select Counterspell" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
 
-    expect(screen.getByText("2 rows selected")).toBeInTheDocument();
-    expect(screen.getByText("1 selected row hidden by current filters.")).toBeInTheDocument();
+    expect(screen.getByText("2 entries selected")).toBeInTheDocument();
+    expect(screen.getByText("1 selected entry hidden by current filters.")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
 
-    expect(screen.getByText("Showing all 2 rows.")).toBeInTheDocument();
-    expect(screen.queryByText("1 selected row hidden by current filters.")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing all 2 entries.")).toBeInTheDocument();
+    expect(screen.queryByText("1 selected entry hidden by current filters.")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
   });
 
-  it("applies bulk tag actions to selected table rows and clears the selection after success", async () => {
+  it("applies bulk tag actions to selected table entries and clears the selection after success", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -1896,7 +1976,7 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "Table" }));
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
 
-    expect(screen.getByText("2 rows selected")).toBeInTheDocument();
+    expect(screen.getByText("2 entries selected")).toBeInTheDocument();
 
     await user.type(screen.getByRole("textbox", { name: "Bulk tags" }), "burn, staples");
     await user.click(screen.getByRole("button", { name: "Add tags" }));
@@ -1910,12 +1990,12 @@ describe("App", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("No rows selected")).toBeInTheDocument();
+      expect(screen.getByText("No entries selected")).toBeInTheDocument();
     });
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).not.toBeChecked();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Added tags on 2 rows in Personal Collection.",
+      "Added tags to 2 entries in Personal Collection.",
     );
     expect(listInventoryItems).toHaveBeenCalledTimes(2);
     expect(listInventoryAudit).toHaveBeenCalledTimes(2);
@@ -1967,7 +2047,7 @@ describe("App", () => {
 
     expect(screen.getByRole("textbox", { name: "Bulk tags" })).toHaveValue("");
     expect(await screen.findByRole("status")).toHaveTextContent(
-      "Cleared tags on 2 rows in Personal Collection.",
+      "Cleared tags from 2 entries in Personal Collection.",
     );
   });
 
@@ -2029,19 +2109,19 @@ describe("App", () => {
       ];
     });
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
 
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
     await user.click(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" }));
-    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+    expect(screen.getByText("1 entry selected")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Change collection/i }));
     await user.click(screen.getByRole("button", { name: /Trade Binder/i }));
 
-    expect(await screen.findByText("No rows selected")).toBeInTheDocument();
+    expect(await screen.findByText("No entries selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
   });
@@ -2077,7 +2157,7 @@ describe("App", () => {
       ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(createInventory).mockResolvedValue({
       inventory_id: 42,
@@ -2133,7 +2213,7 @@ describe("App", () => {
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
-    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(createInventory).mockRejectedValue(
       new ApiClientError("Inventory short name already exists.", {

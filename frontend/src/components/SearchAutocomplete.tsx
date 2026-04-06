@@ -30,7 +30,7 @@ export function SearchAutocomplete(props: {
       {props.status === "loading" ? (
         <div className="search-autocomplete-state">
           <strong>Loading suggestions...</strong>
-          <span>Searching the local card catalog as you type.</span>
+          <span>Looking for matching cards as you type.</span>
         </div>
       ) : props.status === "error" ? (
         <div className="search-autocomplete-state">

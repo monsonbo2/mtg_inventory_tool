@@ -1,7 +1,11 @@
 import { useEffect, useId, useState } from "react";
 import type { FormEvent } from "react";
 
-import type { AddInventoryItemRequest, CatalogSearchRow, FinishValue } from "../types";
+import type {
+  AddInventoryItemRequest,
+  CatalogPrintingLookupRow,
+  FinishValue,
+} from "../types";
 import type { SearchCardGroup } from "../searchResultHelpers";
 import type { AsyncStatus, NoticeTone } from "../uiTypes";
 import {
@@ -36,11 +40,11 @@ export function SearchResultCard(props: {
   group: SearchCardGroup;
   busyPrintingId: string | null;
   canAdd: boolean;
-  onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogSearchRow[]>;
+  onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogPrintingLookupRow[]>;
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
-  const [printings, setPrintings] = useState<CatalogSearchRow[]>([]);
+  const [printings, setPrintings] = useState<CatalogPrintingLookupRow[]>([]);
   const [printingStatus, setPrintingStatus] = useState<AsyncStatus>("idle");
   const [printingError, setPrintingError] = useState<string | null>(null);
   const [hasLoadedExactPrintings, setHasLoadedExactPrintings] = useState(false);
@@ -174,8 +178,10 @@ export function SearchResultCard(props: {
     activePrinting?.finishes.includes(option.value),
   );
   const selectedPrintingSummary = activePrinting
-    ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}`
-    : "Select a printing below before this card can be added.";
+    ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}${
+        activePrinting.is_default_add_choice ? " · Default add choice" : ""
+      }`
+    : "Choose a printing below before adding this card.";
 
   async function loadPrintings() {
     if (printingStatus === "loading") {
@@ -187,7 +193,16 @@ export function SearchResultCard(props: {
 
     try {
       const nextPrintings = await props.onLoadPrintings(props.group);
+      const nextSelectedPrinting =
+        nextPrintings.find((printing) => printing.scryfall_id === selectedPrintingId) ||
+        nextPrintings.find((printing) => printing.is_default_add_choice) ||
+        null;
       setPrintings(nextPrintings);
+      setSelectedPrintingId(nextSelectedPrinting?.scryfall_id || "");
+      setShowLanguagePicker(
+        Boolean(nextSelectedPrinting && nextSelectedPrinting.lang !== "en"),
+      );
+      setSelectedLanguageCode(nextSelectedPrinting?.lang || "en");
       setHasLoadedExactPrintings(true);
       setPrintingStatus("ready");
     } catch (error) {
@@ -211,7 +226,7 @@ export function SearchResultCard(props: {
     }
 
     if (!activePrinting) {
-      props.onNotice("Choose an exact printing before adding the card.", "error");
+      props.onNotice("Choose a printing before adding this card.", "error");
       return;
     }
 
@@ -290,6 +305,7 @@ export function SearchResultCard(props: {
                 {visiblePrintings.map((printing) => (
                   <option key={printing.scryfall_id} value={printing.scryfall_id}>
                     {formatPrintingOptionLabel(printing)}
+                    {printing.is_default_add_choice ? " · Default choice" : ""}
                   </option>
                 ))}
               </select>
@@ -374,7 +390,7 @@ export function SearchResultCard(props: {
 
           {printingStatus === "loading" ? (
             <p className="field-hint field-hint-info">
-              Loading the full printing list for {props.group.name}...
+              Loading printings for {props.group.name}...
             </p>
           ) : printingStatus === "error" ? (
             <div className="search-printing-state">
@@ -388,12 +404,12 @@ export function SearchResultCard(props: {
                 }}
                 type="button"
               >
-                Retry printing lookup
+                Retry loading printings
               </button>
             </div>
           ) : !hasLoadedExactPrintings ? (
             <p className="field-hint field-hint-info">
-              Open the printing list to load the full set of available printings.
+              Open the printing menu to see all available printings.
             </p>
           ) : null}
 
@@ -401,7 +417,7 @@ export function SearchResultCard(props: {
 
         <div className="form-section form-section-muted">
           <div className="form-section-header">
-            <strong>Optional row details</strong>
+            <strong>Optional details</strong>
             <span>{optionalDetailSummary}</span>
           </div>
 
@@ -442,7 +458,7 @@ export function SearchResultCard(props: {
                 setNotes(event.target.value);
                 setRecentlyAdded(false);
               }}
-              placeholder="Optional add-note for the row"
+              placeholder="Add an optional note"
               rows={3}
               value={notes}
             />
@@ -455,7 +471,7 @@ export function SearchResultCard(props: {
           </p>
         ) : recentlyAdded ? (
           <p className="field-hint field-hint-success">
-            Added successfully. You can keep this group open and add another printing.
+            Added. You can keep this card open and add another printing.
           </p>
         ) : null}
       </form>

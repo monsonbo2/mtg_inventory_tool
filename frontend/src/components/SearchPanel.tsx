@@ -1,5 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { AddInventoryItemRequest, CatalogNameSearchRow, CatalogSearchRow, InventorySummary } from "../types";
+import type {
+  AddInventoryItemRequest,
+  CatalogNameSearchRow,
+  CatalogPrintingLookupRow,
+  InventorySummary,
+} from "../types";
 import {
   summarizeSearchGroup,
   type SearchCardGroup,
@@ -48,9 +53,11 @@ type SearchPanelState = {
     error: string | null;
     groups: SearchCardGroup[];
     hiddenResultCount: number;
+    loadedHiddenResultCount: number;
     isLoadingMore: boolean;
     query: string;
     status: AsyncStatus;
+    totalCount: number;
   };
   suggestions: {
     error: string | null;
@@ -70,7 +77,7 @@ type SearchPanelActions = {
   onSearchResultsDismiss: () => void;
   onSearchSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onSearchWorkspaceBrowse: () => void;
-  onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogSearchRow[]>;
+  onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogPrintingLookupRow[]>;
   onSuggestionHighlight: (index: number) => void;
   onSuggestionRequestClose: () => void;
   onSuggestionSelect: (result: CatalogNameSearchRow) => void;
@@ -101,13 +108,19 @@ export function SearchPanel(props: {
     props.state.searchWorkspaceMode === "browse" &&
     props.state.search.groups.length > 1;
   const searchQueryLabel = props.state.search.query.trim() || activeSearchGroup?.name || "Search";
-  const searchResultCountLabel = `${props.state.search.groups.length} matching card${
-    props.state.search.groups.length === 1 ? "" : "s"
+  const searchResultCount = props.state.search.totalCount || props.state.search.groups.length;
+  const searchResultCountLabel = `${searchResultCount} matching card${
+    searchResultCount === 1 ? "" : "s"
   }`;
-  const nextSearchMatchCount = Math.min(10, props.state.search.hiddenResultCount || 10);
+  const nextSearchMatchCount = Math.min(
+    10,
+    props.state.search.loadedHiddenResultCount > 0
+      ? props.state.search.loadedHiddenResultCount
+      : props.state.search.hiddenResultCount || 10,
+  );
   const searchResultsLoadMoreLabel = props.state.search.isLoadingMore
     ? "Loading more matches..."
-    : props.state.search.hiddenResultCount > 0
+    : props.state.search.loadedHiddenResultCount > 0
       ? `Show ${nextSearchMatchCount} more of ${props.state.search.hiddenResultCount} additional matches`
       : `Load ${nextSearchMatchCount} more matches`;
   const activeSuggestionId =
@@ -274,31 +287,35 @@ export function SearchPanel(props: {
         </p>
       ) : props.state.selectedInventoryRow.total_cards === 0 ? (
         <p className="panel-hint panel-hint-success">
-          {props.state.selectedInventoryRow.display_name} starts empty on purpose. Use search results
-          below to seed the first rows.
+          {props.state.selectedInventoryRow.display_name} is ready for its first cards. Use search
+          results below to get started.
         </p>
       ) : null}
 
       {props.state.search.status === "loading" && !hasSearchResults ? (
         <PanelState
-          body="Looking up matching cards in the local catalog."
+          body="Looking through matching cards and printings."
+          eyebrow="Search"
           title="Searching cards"
           variant="loading"
         />
       ) : props.state.search.status === "error" ? (
         <PanelState
-          body={props.state.search.error || "Card search failed."}
+          body="Card search is temporarily unavailable. Try again in a moment."
+          eyebrow="Search"
           title="Search unavailable"
           variant="error"
         />
       ) : props.state.search.status === "ready" && !hasSearchResults ? (
         <PanelState
-          body="Try another card name, set code, or a broader search term."
+          body="Try a broader card name, a simpler spelling, or fewer extra terms."
+          eyebrow="Search"
           title="No matching cards"
         />
       ) : !hasSearchResults ? (
         <PanelState
-          body="Search by card name, then choose the exact printing to add."
+          body="Search by card name, then choose the printing you want to add."
+          eyebrow="Search"
           title="Run a search"
         />
       ) : null}
@@ -307,12 +324,12 @@ export function SearchPanel(props: {
         <div className="search-workspace">
           <div className="search-workspace-header">
             <div className="search-workspace-header-copy">
-              <p className="section-kicker">Search Workspace</p>
+              <p className="section-kicker">Search Results</p>
               <p className="search-workspace-title">{searchQueryLabel}</p>
               <p className="search-workspace-summary">
                 {showSearchMatches
-                  ? `${searchResultCountLabel}. Pick a card on the left, then confirm the exact printing and row details on the right.`
-                  : "Selected card ready. Confirm the exact printing and row details below."}
+                  ? `${searchResultCountLabel}. Pick a card on the left, then confirm the printing and details on the right.`
+                  : "Selected card ready. Confirm the printing and details below."}
               </p>
             </div>
             <div className="search-workspace-header-actions">

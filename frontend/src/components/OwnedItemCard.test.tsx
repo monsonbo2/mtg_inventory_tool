@@ -28,6 +28,7 @@ const item: OwnedInventoryRow = {
   est_value: "4.00",
   price_date: "2026-04-01",
   notes: "Main deck",
+  printing_selection_mode: "explicit",
 };
 
 function renderCard(overrides: Partial<OwnedInventoryRow> = {}) {
