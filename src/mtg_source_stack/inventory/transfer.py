@@ -146,6 +146,7 @@ def _load_transfer_source_rows(
                 ii.inventory_id,
                 i.slug AS inventory,
                 ii.scryfall_id,
+                c.oracle_id,
                 c.name AS card_name,
                 c.set_code,
                 c.set_name,

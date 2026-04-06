@@ -93,6 +93,7 @@ def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
     return OwnedInventoryRow(
         item_id=int(row["item_id"]),
         scryfall_id=row["scryfall_id"],
+        oracle_id=row["oracle_id"],
         name=row["name"],
         set_code=row["set_code"],
         set_name=row["set_name"],
@@ -421,6 +422,7 @@ def list_owned_filtered(
             SELECT
                 ii.id AS item_id,
                 ii.scryfall_id,
+                c.oracle_id,
                 c.name,
                 c.set_code,
                 c.set_name,

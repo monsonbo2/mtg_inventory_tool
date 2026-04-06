@@ -45,6 +45,7 @@ from ..inventory.service import (
     set_finish,
     set_location,
     set_notes,
+    set_printing,
     set_quantity,
     set_tags,
     transfer_inventory_items,
@@ -74,6 +75,7 @@ from .request_models import (
     LANGUAGE_CODE_DESCRIPTION,
     PatchInventoryItemRequest,
     SEARCH_LANG_DESCRIPTION,
+    SetInventoryItemPrintingRequest,
 )
 from .response_models import (
     AddInventoryItemResponse,
@@ -96,6 +98,7 @@ from .response_models import (
     InventoryListRowResponse,
     OwnedInventoryRowResponse,
     RemoveInventoryItemResponse,
+    SetPrintingResponse,
 )
 
 
@@ -855,6 +858,34 @@ def inventory_items_patch(
         )
 
     return _serialize(result)
+
+
+@router.patch(
+    "/inventories/{inventory_slug}/items/{item_id}/printing",
+    response_model=SetPrintingResponse,
+    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
+)
+def inventory_items_set_printing(
+    inventory_slug: str,
+    item_id: int,
+    payload: SetInventoryItemPrintingRequest,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_inventory_write_request_context)],
+) -> Any:
+    return _serialize(
+        set_printing(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            item_id=item_id,
+            scryfall_id=payload.scryfall_id,
+            finish=payload.finish,
+            merge=payload.merge,
+            keep_acquisition=payload.keep_acquisition,
+            actor_type=context.actor_type,
+            actor_id=context.actor_id,
+            request_id=context.request_id,
+        )
+    )
 
 
 @router.delete(

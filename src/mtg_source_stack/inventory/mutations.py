@@ -15,6 +15,7 @@ from .audit import load_inventory_item_snapshot, write_inventory_audit_event
 from .catalog import determine_printing_selection_mode, resolve_card_row
 from .money import coerce_decimal
 from .normalize import (
+    CANONICAL_FINISHES,
     load_tags_json,
     merge_tags,
     normalize_condition_code,
@@ -23,6 +24,7 @@ from .normalize import (
     normalize_finish,
     normalize_inventory_slug,
     normalize_language_code,
+    normalized_catalog_finish_list,
     normalize_tags,
     parse_tags,
     tags_to_json,
@@ -53,6 +55,7 @@ from .response_models import (
     SetFinishResult,
     SetLocationResult,
     SetNotesResult,
+    SetPrintingResult,
     SetQuantityResult,
     SetTagsResult,
     SplitRowResult,
@@ -180,6 +183,19 @@ def _bulk_item_field_error(*, field_name: str, operation: str) -> ValidationErro
 def _set_finish_collision_error() -> ConflictError:
     return ConflictError(
         "Changing finish would collide with an existing inventory row. Resolve the duplicate row first."
+    )
+
+
+def _set_printing_collision_error() -> ConflictError:
+    return ConflictError(
+        "Changing printing would collide with an existing inventory row. "
+        "Re-run with --merge to combine the rows, or resolve the duplicate row first."
+    )
+
+
+def _set_printing_concurrent_merge_error() -> ConflictError:
+    return ConflictError(
+        "Changing printing collided with another concurrent write while merging. Retry the request."
     )
 
 
@@ -456,6 +472,7 @@ def _load_bulk_inventory_item_rows(
             ii.inventory_id,
             i.slug AS inventory,
             ii.scryfall_id,
+            c.oracle_id,
             c.name AS card_name,
             c.set_code,
             c.set_name,
@@ -1236,6 +1253,112 @@ def _complete_condition_merge(
     )
 
 
+def _mutable_row_copy(row: sqlite3.Row) -> dict[str, Any]:
+    return {key: row[key] for key in row.keys()}
+
+
+def _resolve_printing_change_finish(
+    *,
+    target_card: sqlite3.Row,
+    current_finish: str,
+    requested_finish: str | None,
+) -> tuple[str, bool]:
+    if requested_finish is not None:
+        normalized_finish = normalize_finish(requested_finish)
+        validate_supported_finish(target_card["finishes_json"], normalized_finish)
+        return normalized_finish, False
+
+    available_finishes = normalized_catalog_finish_list(target_card["finishes_json"])
+    if current_finish in available_finishes:
+        return current_finish, False
+    for candidate_finish in CANONICAL_FINISHES:
+        if candidate_finish in available_finishes:
+            return candidate_finish, True
+    raise ValidationError(
+        f"Target printing '{target_card['scryfall_id']}' does not expose any supported finishes."
+    )
+
+
+def _complete_printing_merge(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    source_item: sqlite3.Row,
+    target_item: sqlite3.Row,
+    before_snapshot: dict[str, Any],
+    target_scryfall_id: str,
+    target_finish: str,
+    target_language_code: str,
+    keep_acquisition: str | None,
+    auto_selected_finish: bool,
+    actor_type: str,
+    actor_id: str | None,
+    request_id: str | None,
+) -> SetPrintingResult:
+    merge_source_item = _mutable_row_copy(source_item)
+    merge_source_item["printing_selection_mode"] = "explicit"
+    result = merge_inventory_item_rows(
+        connection,
+        inventory_slug=inventory_slug,
+        source_item=merge_source_item,
+        target_item=target_item,
+        acquisition_preference=keep_acquisition,
+    )
+    after_snapshot = load_inventory_item_snapshot(
+        connection,
+        inventory_slug=inventory_slug,
+        item_id=int(result["item_id"]),
+    )
+    metadata = {
+        "merged": True,
+        "new_scryfall_id": target_scryfall_id,
+        "new_finish": target_finish,
+        "new_language_code": target_language_code,
+        "keep_acquisition": keep_acquisition,
+        "auto_selected_finish": auto_selected_finish,
+    }
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_printing",
+        item_id=int(source_item["item_id"]),
+        before=before_snapshot,
+        after=None,
+        metadata={
+            **metadata,
+            "target_item_id": int(result["item_id"]),
+        },
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_printing",
+        item_id=int(result["item_id"]),
+        before=inventory_item_result_from_row(target_item),
+        after=after_snapshot,
+        metadata={
+            **metadata,
+            "source_item_id": int(source_item["item_id"]),
+        },
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    connection.commit()
+    return SetPrintingResult(
+        **inventory_item_response_kwargs(result),
+        operation="set_printing",
+        old_scryfall_id=str(source_item["scryfall_id"]),
+        old_finish=str(source_item["finish"]),
+        old_language_code=str(source_item["language_code"]),
+        merged=True,
+        merged_source_item_id=int(result["merged_source_item_id"]),
+    )
+
+
 def add_card_with_connection(
     connection: sqlite3.Connection,
     *,
@@ -1748,6 +1871,212 @@ def set_finish(
             inventory_slug=inventory_slug,
             item_id=item_id,
             finish=finish,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+        connection.commit()
+    return result
+
+
+def set_printing_with_connection(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    item_id: int,
+    scryfall_id: str,
+    finish: str | None = None,
+    merge: bool = False,
+    keep_acquisition: str | None = None,
+    before_write: Callable[[], Any] | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetPrintingResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
+    target_scryfall_id = text_or_none(scryfall_id)
+    if target_scryfall_id is None:
+        raise ValidationError("scryfall_id is required for set_printing.")
+    if keep_acquisition not in (None, "source", "target"):
+        raise ValidationError("keep_acquisition must be one of: source, target.")
+    if not merge and keep_acquisition is not None:
+        raise ValidationError("keep_acquisition only applies when merge is true for set_printing.")
+
+    item = get_inventory_item_row(connection, inventory_slug, item_id)
+    before_snapshot = inventory_item_result_from_row(item)
+    target_card = resolve_card_row(
+        connection,
+        scryfall_id=target_scryfall_id,
+        oracle_id=None,
+        tcgplayer_product_id=None,
+        name=None,
+        set_code=None,
+        set_name=None,
+        collector_number=None,
+        lang=None,
+        finish=None,
+    )
+    if str(target_card["oracle_id"]) != str(item["oracle_id"]):
+        raise ValidationError("Target printing must belong to the same oracle card as the current inventory row.")
+
+    target_finish, auto_selected_finish = _resolve_printing_change_finish(
+        target_card=target_card,
+        current_finish=str(item["finish"]),
+        requested_finish=finish,
+    )
+    target_language_code = normalize_language_code(target_card["lang"])
+    mode_only_update = (
+        target_scryfall_id == str(item["scryfall_id"])
+        and target_finish == str(item["finish"])
+        and target_language_code == str(item["language_code"])
+    )
+    if mode_only_update and str(item["printing_selection_mode"]) == "explicit":
+        return SetPrintingResult(
+            **inventory_item_response_kwargs(before_snapshot),
+            operation="set_printing",
+            old_scryfall_id=str(item["scryfall_id"]),
+            old_finish=str(item["finish"]),
+            old_language_code=str(item["language_code"]),
+            merged=False,
+        )
+
+    collision = find_inventory_item_collision(
+        connection,
+        inventory_id=int(item["inventory_id"]),
+        scryfall_id=target_scryfall_id,
+        condition_code=str(item["condition_code"]),
+        finish=target_finish,
+        language_code=target_language_code,
+        location=str(item["location"]),
+        exclude_item_id=item_id,
+    )
+    if collision is not None:
+        if not merge:
+            raise _set_printing_collision_error()
+        if before_write is not None:
+            before_write()
+        return _complete_printing_merge(
+            connection,
+            inventory_slug=inventory_slug,
+            source_item=item,
+            target_item=collision,
+            before_snapshot=before_snapshot,
+            target_scryfall_id=target_scryfall_id,
+            target_finish=target_finish,
+            target_language_code=target_language_code,
+            keep_acquisition=keep_acquisition,
+            auto_selected_finish=auto_selected_finish,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+
+    if before_write is not None:
+        before_write()
+    try:
+        connection.execute(
+            """
+            UPDATE inventory_items
+            SET
+                scryfall_id = ?,
+                finish = ?,
+                language_code = ?,
+                printing_selection_mode = 'explicit',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (target_scryfall_id, target_finish, target_language_code, item_id),
+        )
+    except sqlite3.IntegrityError as exc:
+        if not merge:
+            raise _set_printing_collision_error() from exc
+        collision = find_inventory_item_collision(
+            connection,
+            inventory_id=int(item["inventory_id"]),
+            scryfall_id=target_scryfall_id,
+            condition_code=str(item["condition_code"]),
+            finish=target_finish,
+            language_code=target_language_code,
+            location=str(item["location"]),
+            exclude_item_id=item_id,
+        )
+        if collision is None:
+            raise _set_printing_concurrent_merge_error() from exc
+        return _complete_printing_merge(
+            connection,
+            inventory_slug=inventory_slug,
+            source_item=item,
+            target_item=collision,
+            before_snapshot=before_snapshot,
+            target_scryfall_id=target_scryfall_id,
+            target_finish=target_finish,
+            target_language_code=target_language_code,
+            keep_acquisition=keep_acquisition,
+            auto_selected_finish=auto_selected_finish,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+
+    after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
+    after_row = get_inventory_item_row(connection, inventory_slug, item_id)
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action="set_printing",
+        item_id=item_id,
+        before=before_snapshot,
+        after=after_snapshot,
+        metadata={
+            "merged": False,
+            "old_scryfall_id": str(item["scryfall_id"]),
+            "new_scryfall_id": target_scryfall_id,
+            "old_finish": str(item["finish"]),
+            "new_finish": target_finish,
+            "old_language_code": str(item["language_code"]),
+            "new_language_code": target_language_code,
+            "auto_selected_finish": auto_selected_finish,
+        },
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+    return SetPrintingResult(
+        **inventory_item_response_kwargs(inventory_item_result_from_row(after_row)),
+        operation="set_printing",
+        old_scryfall_id=str(item["scryfall_id"]),
+        old_finish=str(item["finish"]),
+        old_language_code=str(item["language_code"]),
+        merged=False,
+    )
+
+
+def set_printing(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    item_id: int,
+    scryfall_id: str,
+    finish: str | None = None,
+    merge: bool = False,
+    keep_acquisition: str | None = None,
+    before_write: Callable[[], Any] | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> SetPrintingResult:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
+    db_file = _prepared_db_path(db_path)
+    with connect(db_file) as connection:
+        result = set_printing_with_connection(
+            connection,
+            inventory_slug=inventory_slug,
+            item_id=item_id,
+            scryfall_id=scryfall_id,
+            finish=finish,
+            merge=merge,
+            keep_acquisition=keep_acquisition,
+            before_write=before_write,
             actor_type=actor_type,
             actor_id=actor_id,
             request_id=request_id,

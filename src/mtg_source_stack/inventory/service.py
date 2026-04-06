@@ -46,6 +46,7 @@ from .mutations import (
     set_finish_with_connection,
     set_location,
     set_notes,
+    set_printing,
     set_quantity,
     set_tags,
     split_row,

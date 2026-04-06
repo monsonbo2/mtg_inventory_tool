@@ -45,6 +45,7 @@ def inventory_item_response_kwargs(payload: Mapping[str, Any]) -> dict[str, Any]
     return {
         "inventory": payload["inventory"],
         "card_name": payload["card_name"],
+        "oracle_id": payload["oracle_id"],
         "set_code": payload["set_code"],
         "set_name": payload["set_name"],
         "collector_number": payload["collector_number"],
@@ -185,6 +186,7 @@ class InventoryAuditEvent(ResponseModel):
 class OwnedInventoryRow(ResponseModel):
     item_id: int
     scryfall_id: str
+    oracle_id: str
     name: str
     set_code: str
     set_name: str
@@ -213,6 +215,7 @@ class OwnedInventoryRow(ResponseModel):
 class InventoryItemMutationRow(ResponseModel):
     inventory: str
     card_name: str
+    oracle_id: str
     set_code: str
     set_name: str
     collector_number: str
@@ -256,6 +259,16 @@ class SetTagsResult(InventoryItemMutationRow):
 class SetFinishResult(InventoryItemMutationRow):
     operation: str
     old_finish: str
+
+
+@dataclass(frozen=True, slots=True)
+class SetPrintingResult(InventoryItemMutationRow):
+    operation: str
+    old_scryfall_id: str
+    old_finish: str
+    old_language_code: str
+    merged: bool
+    merged_source_item_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

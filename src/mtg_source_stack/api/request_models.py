@@ -66,6 +66,25 @@ PATCH_KEEP_ACQUISITION_DESCRIPTION = (
     "Only applies to merged location or condition changes. Choose whether the merged row keeps "
     "the target row or source row acquisition metadata."
 )
+SET_PRINTING_REQUEST_DESCRIPTION = (
+    "Change an existing owned row to a different printing of the same oracle card. "
+    "When finish is omitted, the backend keeps the current finish if the target printing supports it; "
+    "otherwise it auto-selects the first supported finish in normal > foil > etched order."
+)
+SET_PRINTING_FINISH_DESCRIPTION = (
+    f"Optional explicit target finish. Accepted input values: {_ACCEPTED_FINISH_INPUTS_TEXT}. "
+    f"Canonical response values: {_CANONICAL_FINISHES_TEXT}. "
+    "When omitted, the backend preserves the current finish if valid on the target printing; "
+    "otherwise it auto-selects the first supported finish in normal > foil > etched order."
+)
+SET_PRINTING_MERGE_DESCRIPTION = (
+    "When true, a collision with an existing row identity after the printing change is merged "
+    "instead of returning a conflict."
+)
+SET_PRINTING_KEEP_ACQUISITION_DESCRIPTION = (
+    "Only applies when merge is true for printing changes. Choose whether the merged row keeps "
+    "the target row or source row acquisition metadata."
+)
 BULK_ITEM_MUTATION_REQUEST_DESCRIPTION = (
     "Specify exactly one bulk mutation operation per request. "
     "The current runtime supports add_tags, remove_tags, set_tags, clear_tags, "
@@ -267,6 +286,21 @@ class PatchInventoryItemRequest(ApiBaseModel):
     acquisition_price: str | None = None
     acquisition_currency: str | None = None
     clear_acquisition: bool = False
+
+
+class SetInventoryItemPrintingRequest(ApiBaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": SET_PRINTING_REQUEST_DESCRIPTION},
+    )
+
+    scryfall_id: str
+    finish: FinishInput | None = Field(default=None, description=SET_PRINTING_FINISH_DESCRIPTION)
+    merge: bool = Field(default=False, description=SET_PRINTING_MERGE_DESCRIPTION)
+    keep_acquisition: Literal["target", "source"] | None = Field(
+        default=None,
+        description=SET_PRINTING_KEEP_ACQUISITION_DESCRIPTION,
+    )
 
 
 class BulkInventoryItemMutationRequest(ApiBaseModel):

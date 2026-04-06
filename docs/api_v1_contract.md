@@ -23,6 +23,9 @@ preserve for the first API-backed version of the project.
 - Owned inventory rows include `allowed_finishes` so edit UIs can constrain
   finish changes without doing an extra catalog lookup.
 - Owned inventory rows and inventory write/import responses include
+  `oracle_id` so clients can fetch sibling printings for an existing row
+  without first re-querying catalog search.
+- Owned inventory rows and inventory write/import responses include
   `printing_selection_mode` so clients can distinguish between an explicitly
   chosen printing and a concrete printing the backend selected by default.
   Typical examples: direct `scryfall_id` adds stay `explicit`, while bare
@@ -38,6 +41,9 @@ preserve for the first API-backed version of the project.
 - PATCH responses include an explicit `operation` discriminator such as
   `set_finish` or `set_quantity`; clients should branch on `operation` instead
   of inferring the result type from optional fields alone.
+- `PATCH /inventories/{inventory_slug}/items/{item_id}/printing` is a separate
+  dedicated mutation for changing an owned row's printing without overloading
+  the generic one-family PATCH contract.
 - `POST /inventories/{inventory_slug}/items/bulk` accepts exactly one bulk
   mutation operation per request and currently supports:
   `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
@@ -175,6 +181,20 @@ preserve for the first API-backed version of the project.
     printing the backend would choose for omitted-finish quick-add
   - marks exactly one row when omitted-finish quick-add resolves successfully;
     foil-only or otherwise incompatible quick-add cases leave every row unmarked
+- `PATCH /inventories/{inventory_slug}/items/{item_id}/printing`
+  - requires a target `scryfall_id` for another printing of the same `oracle_id`
+  - when `finish` is omitted:
+    - keeps the current finish if the target printing supports it
+    - otherwise auto-selects the first supported finish in `normal`, `foil`,
+      `etched` order
+  - when `finish` is explicitly provided, it must be supported by the target
+    printing or the request returns `400 validation_error`
+  - successful printing changes always return
+    `printing_selection_mode="explicit"`
+  - stored `language_code` follows the target printing language
+  - if the target identity collides with another owned row, the request
+    returns `409 conflict` unless `merge=true`
+  - `keep_acquisition` only applies when `merge=true`
 - `POST /inventories/{inventory_slug}/items/bulk`
   - current supported operations:
     `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,

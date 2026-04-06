@@ -165,6 +165,7 @@ class CatalogNameSearchResponse(ApiBaseModel):
 class OwnedInventoryRowResponse(ApiBaseModel):
     item_id: int
     scryfall_id: str
+    oracle_id: str
     name: str
     set_code: str
     set_name: str
@@ -210,6 +211,7 @@ class InventoryAuditEventResponse(ApiBaseModel):
 class InventoryItemMutationBaseResponse(ApiBaseModel):
     inventory: str
     card_name: str
+    oracle_id: str
     set_code: str
     set_name: str
     collector_number: str
@@ -388,6 +390,15 @@ class SetQuantityResponse(InventoryItemMutationBaseResponse):
 class SetFinishResponse(InventoryItemMutationBaseResponse):
     operation: Literal["set_finish"]
     old_finish: str
+
+
+class SetPrintingResponse(InventoryItemMutationBaseResponse):
+    operation: Literal["set_printing"]
+    old_scryfall_id: str
+    old_finish: str
+    old_language_code: str = Field(description=LANGUAGE_CODE_RESPONSE_DESCRIPTION)
+    merged: bool
+    merged_source_item_id: int | None = None
 
 
 class SetLocationResponse(InventoryItemMutationBaseResponse):

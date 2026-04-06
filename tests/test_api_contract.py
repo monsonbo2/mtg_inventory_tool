@@ -21,6 +21,7 @@ from mtg_source_stack.api.request_models import (
     InventoryDuplicateRequest,
     InventoryTransferRequest,
     PatchInventoryItemRequest,
+    SetInventoryItemPrintingRequest,
 )
 from mtg_source_stack.api.response_models import (
     ApiErrorResponse,
@@ -38,6 +39,7 @@ from mtg_source_stack.api.response_models import (
     OwnedInventoryRowResponse,
     SetAcquisitionResponse,
     SetFinishResponse,
+    SetPrintingResponse,
 )
 from mtg_source_stack.db.schema import initialize_database, require_current_schema
 from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReadyError, ValidationError
@@ -178,6 +180,7 @@ class ApiContractTest(RepoSmokeTestCase):
             {
                 "item_id": 1,
                 "scryfall_id": "card-1",
+                "oracle_id": "oracle-lightning-bolt",
                 "name": "Lightning Bolt",
                 "set_code": "lea",
                 "set_name": "Limited Edition Alpha",
@@ -257,6 +260,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "csv_row": 2,
                     "inventory": "personal",
                     "card_name": "Lightning Bolt",
+                    "oracle_id": "oracle-lightning-bolt",
                     "set_code": "lea",
                     "set_name": "Limited Edition Alpha",
                     "collector_number": "161",
@@ -297,6 +301,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "section": "mainboard",
                     "inventory": "personal",
                     "card_name": "Lightning Bolt",
+                    "oracle_id": "oracle-lightning-bolt",
                     "set_code": "lea",
                     "set_name": "Limited Edition Alpha",
                     "collector_number": "161",
@@ -340,6 +345,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "section": "commander",
                     "inventory": "personal",
                     "card_name": "Lightning Bolt",
+                    "oracle_id": "oracle-lightning-bolt",
                     "set_code": "lea",
                     "set_name": "Limited Edition Alpha",
                     "collector_number": "161",
@@ -378,6 +384,7 @@ class ApiContractTest(RepoSmokeTestCase):
         error = ApiErrorResponse.model_validate(error_payload)
 
         self.assertEqual("2.50", owned.acquisition_price)
+        self.assertEqual("oracle-lightning-bolt", owned.oracle_id)
         self.assertEqual("3.00", owned.unit_price)
         self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
         self.assertEqual(["normal", "foil"], owned.allowed_finishes)
@@ -452,6 +459,7 @@ class ApiContractTest(RepoSmokeTestCase):
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]
+        self.assertEqual("string", owned_properties["oracle_id"]["type"])
         self.assertEqual(["normal", "foil", "etched"], owned_properties["finish"]["enum"])
         self.assertEqual(["normal", "foil", "etched"], owned_properties["allowed_finishes"]["items"]["enum"])
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
@@ -459,10 +467,29 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["explicit", "defaulted"], owned_properties["printing_selection_mode"]["enum"])
 
         set_finish_schema = SetFinishResponse.model_json_schema()
+        self.assertEqual("string", set_finish_schema["properties"]["oracle_id"]["type"])
         self.assertEqual(
             ["explicit", "defaulted"],
             set_finish_schema["properties"]["printing_selection_mode"]["enum"],
         )
+        set_printing_request_schema = SetInventoryItemPrintingRequest.model_json_schema()
+        self.assertIn(
+            "different printing of the same oracle card",
+            set_printing_request_schema["description"],
+        )
+        self.assertIn(
+            "normal > foil > etched",
+            set_printing_request_schema["properties"]["finish"]["description"],
+        )
+        self.assertIn(
+            "merge is true for printing changes",
+            set_printing_request_schema["properties"]["keep_acquisition"]["description"],
+        )
+
+        set_printing_schema = SetPrintingResponse.model_json_schema()
+        self.assertEqual("set_printing", set_printing_schema["properties"]["operation"]["const"])
+        self.assertEqual("string", set_printing_schema["properties"]["old_scryfall_id"]["type"])
+        self.assertEqual("string", set_printing_schema["properties"]["old_language_code"]["type"])
 
         catalog_schema = CatalogSearchRowResponse.model_json_schema()
         catalog_properties = catalog_schema["properties"]
@@ -668,6 +695,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "operation": "set_acquisition",
                 "inventory": "personal",
                 "card_name": "Sol Ring",
+                "oracle_id": "oracle-sol-ring",
                 "set_code": "cmd",
                 "set_name": "Commander",
                 "collector_number": "260",
@@ -688,6 +716,36 @@ class ApiContractTest(RepoSmokeTestCase):
             }
         )
         self.assertEqual("set_acquisition", acquisition_response.operation)
+
+        printing_response = SetPrintingResponse.model_validate(
+            {
+                "operation": "set_printing",
+                "inventory": "personal",
+                "card_name": "Sol Ring",
+                "oracle_id": "oracle-sol-ring",
+                "set_code": "sld",
+                "set_name": "Secret Lair",
+                "collector_number": "99",
+                "scryfall_id": "sld-sol-ring",
+                "item_id": 15,
+                "quantity": 1,
+                "finish": "foil",
+                "condition_code": "NM",
+                "language_code": "en",
+                "location": "Artifacts Binder",
+                "acquisition_price": "3.50",
+                "acquisition_currency": "USD",
+                "notes": None,
+                "tags": ["commander", "artifact"],
+                "printing_selection_mode": "explicit",
+                "old_scryfall_id": "cmd-sol-ring",
+                "old_finish": "normal",
+                "old_language_code": "en",
+                "merged": False,
+                "merged_source_item_id": None,
+            }
+        )
+        self.assertEqual("set_printing", printing_response.operation)
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

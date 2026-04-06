@@ -811,7 +811,7 @@ def resolve_card_row(
     if scryfall_id:
         row = connection.execute(
             """
-            SELECT scryfall_id, name, set_code, set_name, collector_number, lang, finishes_json
+            SELECT scryfall_id, oracle_id, name, set_code, set_name, collector_number, lang, finishes_json
             FROM mtg_cards
             WHERE scryfall_id = ?
             """,
