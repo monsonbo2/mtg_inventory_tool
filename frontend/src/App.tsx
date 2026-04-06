@@ -142,10 +142,12 @@ export default function App() {
   });
   const {
     collectionView,
+    detailModalItemId,
     focusedItemId,
     handleClearSelectedItems,
     handleClearVisibleSelectedItems,
     handleCollectionViewChange,
+    handleCloseItemDetails,
     handleOpenItemDetails,
     handleSelectAllVisibleItems,
     handleToggleItemSelection,
@@ -235,6 +237,7 @@ export default function App() {
   const collectionPanelState = {
     collection: {
       busyItem,
+      detailModalItemId,
       focusedItemId,
       items,
       view: collectionView,
@@ -256,6 +259,7 @@ export default function App() {
     onClearSelectedItems: handleClearSelectedItems,
     onClearVisibleSelectedItems: handleClearVisibleSelectedItems,
     onCollectionViewChange: handleCollectionViewChange,
+    onCloseItemDetails: handleCloseItemDetails,
     onDelete: handleDeleteItem,
     onNotice: reportNotice,
     onOpenActivity: () => setActivityOpen(true),

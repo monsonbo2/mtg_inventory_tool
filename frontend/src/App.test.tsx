@@ -732,7 +732,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /more matches/i })).not.toBeInTheDocument();
   });
 
-  it("preselects the backend default printing choice after loading printings", async () => {
+  it("keeps printing unselected while still using the backend default printing choice on add", async () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
@@ -768,6 +768,7 @@ describe("App", () => {
         is_default_add_choice: true,
       }),
     ]);
+    vi.mocked(addInventoryItem).mockResolvedValue({ card_name: "Lightning Bolt" } as any);
 
     render(<App />);
 
@@ -783,13 +784,11 @@ describe("App", () => {
     const printingSelect = within(boltCard!).getByRole("combobox", { name: "Printing" });
     const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
 
-    await user.click(printingSelect);
-
     await waitFor(() => {
       expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
     });
     await waitFor(() => {
-      expect(printingSelect).toHaveValue("bolt-m11");
+      expect(printingSelect).toHaveValue("");
     });
 
     expect(
@@ -797,9 +796,25 @@ describe("App", () => {
         name: /MAGIC 2011 .* Default choice/i,
       }),
     ).toBeInTheDocument();
+    expect(
+      within(boltCard!).getByText(/No printing selected\. Add now to use the default choice/i),
+    ).toBeInTheDocument();
     expect(finishSelect).toBeEnabled();
-    expect(within(boltCard!).getByText(/Default add choice/i)).toBeInTheDocument();
-    expect(within(boltCard!).getByRole("button", { name: "Add to collection" })).toBeEnabled();
+    const addButton = within(boltCard!).getByRole("button", { name: "Add to collection" });
+    expect(addButton).toBeEnabled();
+
+    await user.click(addButton);
+
+    await waitFor(() => {
+      expect(addInventoryItem).toHaveBeenCalledWith(
+        "personal",
+        expect.objectContaining({
+          scryfall_id: "bolt-m11",
+          quantity: 1,
+          finish: "normal",
+        }),
+      );
+    });
   });
 
   it("groups name-first search results and clears the quick-add workspace after a successful add", async () => {
@@ -874,8 +889,6 @@ describe("App", () => {
     const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
 
     expect(finishSelect).toBeDisabled();
-
-    await user.click(printingSelect);
 
     await waitFor(() => {
       expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
@@ -1661,7 +1674,7 @@ describe("App", () => {
     expect(boltRowScope.getByText("trade")).toBeInTheDocument();
   });
 
-  it("opens the matching row in detailed view from browse mode", async () => {
+  it("opens the matching row in a detail dialog from browse mode", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -1695,22 +1708,23 @@ describe("App", () => {
       within(counterspellRow!).getByRole("button", { name: "Open details" }),
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
-    });
+    const dialog = await screen.findByRole("dialog", { name: "Card details" });
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
 
-    const detailedCounterspellRow = (await screen.findByRole("heading", {
-      name: "Counterspell",
-    })).closest("article");
-    expect(detailedCounterspellRow).not.toBeNull();
-    expect(detailedCounterspellRow).toHaveAttribute("data-focused", "true");
+    expect(within(dialog).getByRole("heading", { name: "Counterspell" })).toBeInTheDocument();
+    expect(within(dialog).getByText("Inline edits")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Close dialog" }));
     await waitFor(() => {
-      expect(detailedCounterspellRow).toHaveFocus();
+      expect(screen.queryByRole("dialog", { name: "Card details" })).not.toBeInTheDocument();
     });
-    expect(within(detailedCounterspellRow!).getByText("Inline edits")).toBeInTheDocument();
   });
 
   it("opens and closes the activity drawer while keeping activity off the main page by default", async () => {

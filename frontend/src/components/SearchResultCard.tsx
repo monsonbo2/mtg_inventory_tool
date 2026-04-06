@@ -90,9 +90,22 @@ export function SearchResultCard(props: {
     setRecentlyAdded(false);
   }, [props.group.groupId]);
 
+  useEffect(() => {
+    if (hasLoadedExactPrintings || printingStatus !== "idle") {
+      return;
+    }
+
+    void loadPrintings();
+  }, [hasLoadedExactPrintings, printingStatus, props.group.groupId]);
+
   const activePrinting =
     printings.find((printing) => printing.scryfall_id === selectedPrintingId) || null;
-  const busy = props.busyPrintingId !== null && props.busyPrintingId === selectedPrintingId;
+  const defaultPrinting =
+    printings.find((printing) => printing.is_default_add_choice) || null;
+  const effectivePrinting = activePrinting || defaultPrinting;
+  const busy =
+    props.busyPrintingId !== null &&
+    props.busyPrintingId === effectivePrinting?.scryfall_id;
   const availableLanguageCodes = Array.from(new Set(printings.map((printing) => printing.lang))).sort(
     (left, right) => {
       if (left === "en") {
@@ -113,16 +126,16 @@ export function SearchResultCard(props: {
       : printings;
 
   useEffect(() => {
-    if (!activePrinting) {
+    if (!effectivePrinting) {
       setFinish("normal");
       return;
     }
 
-    if (!activePrinting.finishes.includes(finish)) {
-      setFinish(activePrinting.finishes[0] || "normal");
+    if (!effectivePrinting.finishes.includes(finish)) {
+      setFinish(effectivePrinting.finishes[0] || "normal");
       setRecentlyAdded(false);
     }
-  }, [activePrinting, finish]);
+  }, [effectivePrinting, finish]);
 
   useEffect(() => {
     if (!availableLanguageCodes.length) {
@@ -159,7 +172,7 @@ export function SearchResultCard(props: {
       parsedTags.length ? `${parsedTags.length} tag${parsedTags.length === 1 ? "" : "s"}` : null,
       trimmedNotes ? "Note ready" : null,
     ].filter(Boolean).join(" · ") || "No optional details yet";
-  const needsPrintingSelection = props.canAdd && !activePrinting;
+  const needsPrintingSelection = props.canAdd && !effectivePrinting;
   const printingsAvailableLabel = `${props.group.printingsCount} printing${
     props.group.printingsCount === 1 ? "" : "s"
   } available`;
@@ -169,23 +182,35 @@ export function SearchResultCard(props: {
       ? "Added"
       : !props.canAdd
         ? "Select collection"
+        : printingStatus === "loading"
+          ? "Loading printings..."
         : needsPrintingSelection
           ? "Select printing first"
         : quantityIsValid
           ? "Add to collection"
           : "Enter valid qty";
   const availableFinishes = FINISH_OPTIONS.filter((option) =>
-    activePrinting?.finishes.includes(option.value),
+    effectivePrinting?.finishes.includes(option.value),
   );
+  const resolvedFinish =
+    effectivePrinting && !effectivePrinting.finishes.includes(finish)
+      ? effectivePrinting.finishes[0] || "normal"
+      : finish;
   const selectedPrintingSummary = activePrinting
     ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}${
         activePrinting.is_default_add_choice ? " · Default add choice" : ""
       }`
-    : "Choose a printing below before adding this card.";
+    : printingStatus === "loading"
+      ? "Loading the default printing for this card."
+      : defaultPrinting
+        ? `No printing selected. Add now to use the default choice, or pick another printing below.`
+      : hasLoadedExactPrintings
+        ? "Choose a printing below to add this card."
+        : "Choose a printing below before adding this card.";
 
   async function loadPrintings() {
     if (printingStatus === "loading") {
-      return;
+      return null;
     }
 
     setPrintingStatus("loading");
@@ -195,19 +220,23 @@ export function SearchResultCard(props: {
       const nextPrintings = await props.onLoadPrintings(props.group);
       const nextSelectedPrinting =
         nextPrintings.find((printing) => printing.scryfall_id === selectedPrintingId) ||
-        nextPrintings.find((printing) => printing.is_default_add_choice) ||
         null;
+      const nextDefaultPrinting =
+        nextPrintings.find((printing) => printing.is_default_add_choice) || null;
+      const nextResolvedPrinting = nextSelectedPrinting || nextDefaultPrinting;
       setPrintings(nextPrintings);
       setSelectedPrintingId(nextSelectedPrinting?.scryfall_id || "");
       setShowLanguagePicker(
-        Boolean(nextSelectedPrinting && nextSelectedPrinting.lang !== "en"),
+        Boolean(nextResolvedPrinting && nextResolvedPrinting.lang !== "en"),
       );
-      setSelectedLanguageCode(nextSelectedPrinting?.lang || "en");
+      setSelectedLanguageCode(nextResolvedPrinting?.lang || "en");
       setHasLoadedExactPrintings(true);
       setPrintingStatus("ready");
+      return nextResolvedPrinting;
     } catch (error) {
       setPrintingStatus("error");
       setPrintingError(toUserMessage(error, "Could not load printings for this card."));
+      return null;
     }
   }
 
@@ -225,7 +254,10 @@ export function SearchResultCard(props: {
       return;
     }
 
-    if (!activePrinting) {
+    const resolvedPrinting =
+      effectivePrinting || (!hasLoadedExactPrintings ? await loadPrintings() : null);
+
+    if (!resolvedPrinting) {
       props.onNotice("Choose a printing before adding this card.", "error");
       return;
     }
@@ -236,9 +268,9 @@ export function SearchResultCard(props: {
     }
 
     const didAdd = await props.onAdd({
-      scryfall_id: activePrinting.scryfall_id,
+      scryfall_id: resolvedPrinting.scryfall_id,
       quantity: parsedQuantity,
-      finish,
+      finish: resolvedFinish,
       location: trimmedLocation || undefined,
       notes: trimmedNotes || null,
       tags: parsedTags,
@@ -253,8 +285,8 @@ export function SearchResultCard(props: {
       <form className="add-card-form" onSubmit={handleSubmit}>
         <div className="card-hero">
           <CardThumbnail
-            imageUrl={activePrinting?.image_uri_small || props.group.image_uri_small}
-            imageUrlLarge={activePrinting?.image_uri_normal || props.group.image_uri_normal}
+            imageUrl={effectivePrinting?.image_uri_small || props.group.image_uri_small}
+            imageUrlLarge={effectivePrinting?.image_uri_normal || props.group.image_uri_normal}
             name={props.group.name}
             variant="search"
           />
@@ -273,7 +305,13 @@ export function SearchResultCard(props: {
           <div className="search-result-hero-actions">
             <button
               className="primary-button search-result-add-button"
-              disabled={busy || !props.canAdd || !quantityIsValid || !activePrinting}
+              disabled={
+                busy ||
+                !props.canAdd ||
+                !quantityIsValid ||
+                printingStatus === "loading" ||
+                (hasLoadedExactPrintings && !effectivePrinting)
+              }
               type="submit"
             >
               {addButtonLabel}
@@ -331,15 +369,15 @@ export function SearchResultCard(props: {
               <select
                 className="text-input"
                 disabled={
-                  busy || !props.canAdd || !activePrinting || availableFinishes.length <= 1
+                  busy || !props.canAdd || !effectivePrinting || availableFinishes.length <= 1
                 }
                 onChange={(event) => {
                   setFinish(event.target.value as FinishValue);
                   setRecentlyAdded(false);
                 }}
-                value={finish}
+                value={resolvedFinish}
               >
-                {!activePrinting ? <option value="normal">Choose printing first</option> : null}
+                {!effectivePrinting ? <option value="normal">Choose printing first</option> : null}
                 {availableFinishes.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -409,7 +447,15 @@ export function SearchResultCard(props: {
             </div>
           ) : !hasLoadedExactPrintings ? (
             <p className="field-hint field-hint-info">
-              Open the printing menu to see all available printings.
+              Loading the default printing for this card.
+            </p>
+          ) : !activePrinting && defaultPrinting ? (
+            <p className="field-hint field-hint-info">
+              No printing selected. Add now to use the default choice, or choose one below.
+            </p>
+          ) : !activePrinting ? (
+            <p className="field-hint field-hint-info">
+              Choose a printing to finish adding this card.
             </p>
           ) : null}
 

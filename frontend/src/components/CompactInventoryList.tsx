@@ -11,7 +11,6 @@ import {
   decimalToNumber,
   equalStringArrays,
   formatFinishLabel,
-  formatLanguageCode,
   formatUsd,
   getAvailableFinishesForOwnedRow,
   getBusyMessage,
@@ -240,6 +239,7 @@ function CompactInventoryRow(props: {
   const tagHintClassName = `field-hint compact-row-tags-hint ${
     tagFeedback?.tone === "success" ? "field-hint-success" : "field-hint-info"
   }`;
+  const tagsFieldHasExtraContent = tags.length > 0 || Boolean(tagHint);
 
   return (
     <article className={isBusy ? "compact-row compact-row-busy" : "compact-row"}>
@@ -267,11 +267,6 @@ function CompactInventoryRow(props: {
               >
                 Open details
               </button>
-            </div>
-            <div className="tag-row compact-row-tags">
-              <span className="tag-chip">{props.item.set_code.toUpperCase()}</span>
-              <span className="tag-chip subdued">{props.item.condition_code}</span>
-              <span className="tag-chip subdued">{formatLanguageCode(props.item.language_code)}</span>
             </div>
             {statusMessage ? <p className={statusClassName}>{statusMessage}</p> : null}
           </div>
@@ -362,7 +357,15 @@ function CompactInventoryRow(props: {
 
           <InlineEditor dirty={tagsDirty} label="Tags" saved={savedField === "tags"}>
             <div
-              className={tagsActive ? "compact-row-tags-editor compact-row-tags-editor-active" : "compact-row-tags-editor"}
+              className={[
+                "compact-row-tags-editor",
+                tagsActive ? "compact-row-tags-editor-active" : null,
+                tagsFieldHasExtraContent
+                  ? "compact-row-tags-editor-stacked"
+                  : "compact-row-tags-editor-compact",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               onBlur={(event) => {
                 if (!tagsFieldRef.current?.contains(event.relatedTarget as Node | null)) {
                   setTagsActive(false);
@@ -421,12 +424,14 @@ function CompactInventoryRow(props: {
                 placeholder="Add a tag"
                 value={tagDraft}
               />
-              <p aria-atomic="true" aria-live="polite" className={tagHintClassName}>
-                {tagHint}
-              </p>
-              <div className="tag-row compact-row-field-tags">
-                {tags.length ? (
-                  tags.map((tag) => (
+              {tagHint ? (
+                <p aria-atomic="true" aria-live="polite" className={tagHintClassName}>
+                  {tagHint}
+                </p>
+              ) : null}
+              {tags.length ? (
+                <div className="tag-row compact-row-field-tags">
+                  {tags.map((tag) => (
                     tagsActive ? (
                       <button
                         aria-label={removingTag === tag ? `Removing tag ${tag}` : `Remove tag ${tag}`}
@@ -456,11 +461,9 @@ function CompactInventoryRow(props: {
                         {tag}
                       </span>
                     )
-                  ))
-                ) : (
-                  <span className="muted-note">No tags</span>
-                )}
-              </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </InlineEditor>
 

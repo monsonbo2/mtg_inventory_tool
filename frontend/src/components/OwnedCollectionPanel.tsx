@@ -14,6 +14,7 @@ import type {
 import { CompactInventoryList } from "./CompactInventoryList";
 import { InventoryTableView } from "./InventoryTableView";
 import { OwnedItemCard } from "./OwnedItemCard";
+import { ModalDialog } from "./ui/ModalDialog";
 import { PanelState } from "./ui/PanelState";
 import { StatusPill } from "./ui/StatusPill";
 
@@ -21,6 +22,7 @@ type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
   collection: {
     busyItem: { itemId: number; action: ItemMutationAction } | null;
+    detailModalItemId: number | null;
     focusedItemId: number | null;
     items: OwnedInventoryRow[];
     view: "browse" | "table" | "detailed";
@@ -46,6 +48,7 @@ type OwnedCollectionPanelActions = {
   onDelete: (itemId: number, cardName: string) => Promise<void>;
   onNotice: (message: string, tone?: NoticeTone) => void;
   onCollectionViewChange: (nextView: "browse" | "table" | "detailed") => void;
+  onCloseItemDetails: () => void;
   onOpenItemDetails: (itemId: number) => void;
   onTableSortChange: (nextSort: InventoryTableSortState) => void;
   onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
@@ -64,6 +67,12 @@ export function OwnedCollectionPanel(props: {
   actions: OwnedCollectionPanelActions;
   state: OwnedCollectionPanelState;
 }) {
+  const detailModalItem =
+    props.state.collection.detailModalItemId === null
+      ? null
+      : props.state.collection.items.find(
+          (item) => item.item_id === props.state.collection.detailModalItemId,
+        ) ?? null;
   const totalEstimatedValue = props.state.collection.items.reduce(
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
@@ -230,6 +239,32 @@ export function OwnedCollectionPanel(props: {
           />
         )}
       </div>
+
+      {detailModalItem ? (
+        <ModalDialog
+          isOpen
+          kicker="Collection Entry"
+          onClose={props.actions.onCloseItemDetails}
+          size="wide"
+          subtitle="Review and edit this card without leaving Browse mode."
+          title="Card details"
+        >
+          <OwnedItemCard
+            busyAction={
+              props.state.collection.busyItem?.itemId === detailModalItem.item_id
+                ? props.state.collection.busyItem.action
+                : null
+            }
+            item={detailModalItem}
+            onDelete={async (itemId, cardName) => {
+              await props.actions.onDelete(itemId, cardName);
+              props.actions.onCloseItemDetails();
+            }}
+            onNotice={props.actions.onNotice}
+            onPatch={props.actions.onPatch}
+          />
+        </ModalDialog>
+      ) : null}
     </section>
   );
 }

@@ -27,6 +27,7 @@ export function ModalDialog(props: {
   kicker?: string;
   title: string;
   subtitle?: string;
+  size?: "default" | "wide";
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -128,7 +129,9 @@ export function ModalDialog(props: {
         aria-describedby={props.subtitle ? subtitleId : undefined}
         aria-labelledby={titleId}
         aria-modal="true"
-        className="modal-dialog"
+        className={
+          props.size === "wide" ? "modal-dialog modal-dialog-wide" : "modal-dialog"
+        }
         role="dialog"
         ref={dialogRef}
         tabIndex={-1}

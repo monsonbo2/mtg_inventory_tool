@@ -16,6 +16,7 @@ export function useCollectionViewState(options: {
   const [collectionView, setCollectionView] = useState<
     "browse" | "table" | "detailed"
   >("browse");
+  const [detailModalItemId, setDetailModalItemId] = useState<number | null>(null);
   const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [tableSort, setTableSort] = useState<InventoryTableSortState>(null);
@@ -24,6 +25,7 @@ export function useCollectionViewState(options: {
   );
 
   useEffect(() => {
+    setDetailModalItemId(null);
     setFocusedItemId(null);
     setTableSort(null);
     setTableFilters(createDefaultInventoryTableFilters());
@@ -32,6 +34,9 @@ export function useCollectionViewState(options: {
 
   useEffect(() => {
     const visibleItemIds = new Set(options.items.map((item) => item.item_id));
+    setDetailModalItemId((current) =>
+      current !== null && visibleItemIds.has(current) ? current : null,
+    );
     setFocusedItemId((current) => (current !== null && visibleItemIds.has(current) ? current : null));
     setSelectedItemIds((current) =>
       current.filter((itemId) => visibleItemIds.has(itemId)),
@@ -39,13 +44,17 @@ export function useCollectionViewState(options: {
   }, [options.items]);
 
   function handleCollectionViewChange(nextView: "browse" | "table" | "detailed") {
+    setDetailModalItemId(null);
     setFocusedItemId(null);
     setCollectionView(nextView);
   }
 
   function handleOpenItemDetails(itemId: number) {
-    setFocusedItemId(itemId);
-    setCollectionView("detailed");
+    setDetailModalItemId(itemId);
+  }
+
+  function handleCloseItemDetails() {
+    setDetailModalItemId(null);
   }
 
   function handleToggleItemSelection(itemId: number) {
@@ -87,10 +96,12 @@ export function useCollectionViewState(options: {
 
   return {
     collectionView,
+    detailModalItemId,
     focusedItemId,
     handleClearSelectedItems,
     handleClearVisibleSelectedItems,
     handleCollectionViewChange,
+    handleCloseItemDetails,
     handleOpenItemDetails,
     handleSelectAllVisibleItems,
     handleToggleItemSelection,
