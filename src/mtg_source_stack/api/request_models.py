@@ -68,6 +68,8 @@ PATCH_KEEP_ACQUISITION_DESCRIPTION = (
 )
 SET_PRINTING_REQUEST_DESCRIPTION = (
     "Change an existing owned row to a different printing of the same oracle card. "
+    "Clients may also resubmit the current scryfall_id to confirm a defaulted row as explicit "
+    "when finish and language stay unchanged. "
     "When finish is omitted, the backend keeps the current finish if the target printing supports it; "
     "otherwise it auto-selects the first supported finish in normal > foil > etched order."
 )
@@ -75,7 +77,9 @@ SET_PRINTING_FINISH_DESCRIPTION = (
     f"Optional explicit target finish. Accepted input values: {_ACCEPTED_FINISH_INPUTS_TEXT}. "
     f"Canonical response values: {_CANONICAL_FINISHES_TEXT}. "
     "When omitted, the backend preserves the current finish if valid on the target printing; "
-    "otherwise it auto-selects the first supported finish in normal > foil > etched order."
+    "otherwise it auto-selects the first supported finish in normal > foil > etched order. "
+    "Resubmitting the current scryfall_id is confirmation-only and cannot be used as a same-printing "
+    "finish change."
 )
 SET_PRINTING_MERGE_DESCRIPTION = (
     "When true, a collision with an existing row identity after the printing change is merged "

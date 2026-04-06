@@ -128,11 +128,19 @@ Use this as the first-pass UI-to-endpoint map:
 - CSV export download -> `GET /inventories/{inventory_slug}/export.csv`
   Uses `profile=default` today and returns `text/csv`.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
-  Returned rows include `allowed_finishes` for safe finish-edit controls.
+  Returned rows include `oracle_id`, `allowed_finishes`, and
+  `printing_selection_mode` for printing-aware edit flows.
 - Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"quantity": ...}`
 - Quick edit finish -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"finish": ...}`
+- Change owned printing -> `PATCH /inventories/{inventory_slug}/items/{item_id}/printing`
+  Request body: `{"scryfall_id": ...}` with optional `finish`, `merge`, and
+  `keep_acquisition`.
+  - use this for switching to a different printing of the same `oracle_id`
+  - the current `scryfall_id` may be resubmitted only to confirm a defaulted
+    selection as explicit when finish and language stay unchanged
+  - same-printing finish edits still belong on the generic PATCH route
 - Quick edit location -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"location": ...}`
 - Quick edit notes -> `PATCH /inventories/{inventory_slug}/items/{item_id}`

@@ -1,12 +1,12 @@
 {
-  "operation": "set_acquisition",
+  "operation": "set_printing",
   "inventory": "personal",
   "card_name": "Sol Ring",
   "oracle_id": "demo-sol-ring-oracle",
-  "set_code": "cmd",
-  "set_name": "Commander",
-  "collector_number": "260",
-  "scryfall_id": "demo-sol-ring",
+  "set_code": "sld",
+  "set_name": "Secret Lair",
+  "collector_number": "99",
+  "scryfall_id": "demo-sol-ring-sld",
   "item_id": 15,
   "quantity": 1,
   "finish": "foil",
@@ -21,6 +21,9 @@
     "artifact"
   ],
   "printing_selection_mode": "explicit",
-  "old_acquisition_price": null,
-  "old_acquisition_currency": null
+  "old_scryfall_id": "demo-sol-ring",
+  "old_finish": "normal",
+  "old_language_code": "en",
+  "merged": false,
+  "merged_source_item_id": null
 }

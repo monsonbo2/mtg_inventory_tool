@@ -2,6 +2,7 @@
   "operation": "set_condition",
   "inventory": "personal",
   "card_name": "Swords to Plowshares",
+  "oracle_id": "demo-swords-oracle",
   "set_code": "ice",
   "set_name": "Ice Age",
   "collector_number": "54",
@@ -16,6 +17,7 @@
   "acquisition_currency": null,
   "notes": null,
   "tags": [],
+  "printing_selection_mode": "explicit",
   "old_condition_code": "NM",
   "merged": false,
   "merged_source_item_id": null

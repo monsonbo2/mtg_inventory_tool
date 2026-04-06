@@ -26,6 +26,7 @@
       "section": "commander",
       "inventory": "personal",
       "card_name": "Atraxa, Praetors' Voice",
+      "oracle_id": "demo-atraxa-oracle",
       "set_code": "2xm",
       "set_name": "Double Masters",
       "collector_number": "190",
@@ -39,13 +40,15 @@
       "acquisition_price": null,
       "acquisition_currency": null,
       "notes": null,
-      "tags": []
+      "tags": [],
+      "printing_selection_mode": "explicit"
     },
     {
       "source_position": 2,
       "section": "mainboard",
       "inventory": "personal",
       "card_name": "Sol Ring",
+      "oracle_id": "demo-sol-ring-oracle",
       "set_code": "cmm",
       "set_name": "Commander Masters",
       "collector_number": "403",
@@ -59,7 +62,8 @@
       "acquisition_price": null,
       "acquisition_currency": null,
       "notes": null,
-      "tags": []
+      "tags": [],
+      "printing_selection_mode": "explicit"
     }
   ]
 }

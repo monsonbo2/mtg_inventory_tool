@@ -9,6 +9,7 @@ export interface ApiErrorEnvelope {
 export type CatalogScope = "default" | "all";
 export type FinishValue = "normal" | "foil" | "etched";
 export type FinishInput = FinishValue | "nonfoil";
+export type PrintingSelectionMode = "explicit" | "defaulted";
 export type ConditionCode =
   | "M"
   | "NM"
@@ -114,6 +115,7 @@ export interface CatalogNameSearchRow {
 export interface OwnedInventoryRow {
   item_id: number;
   scryfall_id: string;
+  oracle_id: string;
   name: string;
   set_code: string;
   set_name: string;
@@ -135,6 +137,7 @@ export interface OwnedInventoryRow {
   est_value: string | null;
   price_date: string | null;
   notes: string | null;
+  printing_selection_mode: PrintingSelectionMode;
 }
 
 export interface InventoryAuditEvent {
@@ -177,6 +180,11 @@ type PatchMergeOptions = {
   merge?: boolean;
 };
 
+type PrintingChangeMergeOptions = {
+  keep_acquisition?: InventoryAcquisitionMergePolicy | null;
+  merge?: boolean;
+};
+
 export type PatchInventoryItemRequest =
   | { quantity: number }
   | { finish: FinishInput }
@@ -195,6 +203,11 @@ export type PatchInventoryItemRequest =
   | {
       clear_acquisition: true;
     };
+
+export type SetInventoryItemPrintingRequest = PrintingChangeMergeOptions & {
+  scryfall_id: string;
+  finish?: FinishInput;
+};
 
 export type BulkInventoryItemOperation =
   | "add_tags"
@@ -283,6 +296,7 @@ export type BulkInventoryItemMutationRequest =
 interface InventoryItemMutationBase {
   inventory: string;
   card_name: string;
+  oracle_id: string;
   set_code: string;
   set_name: string;
   collector_number: string;
@@ -297,6 +311,7 @@ interface InventoryItemMutationBase {
   acquisition_currency: string | null;
   notes: string | null;
   tags: string[];
+  printing_selection_mode: PrintingSelectionMode;
 }
 
 export interface InventoryItemMutationResponse extends InventoryItemMutationBase {}
@@ -353,6 +368,15 @@ export interface SetAcquisitionPatchResponse
   operation: "set_acquisition";
   old_acquisition_price: string | null;
   old_acquisition_currency: string | null;
+}
+
+export interface SetPrintingResponse extends InventoryItemMutationBase {
+  operation: "set_printing";
+  old_scryfall_id: string;
+  old_finish: FinishValue;
+  old_language_code: LanguageCode;
+  merged: boolean;
+  merged_source_item_id?: number | null;
 }
 
 export type InventoryItemPatchResponse =

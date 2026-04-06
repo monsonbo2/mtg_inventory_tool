@@ -24,6 +24,7 @@ from mtg_source_stack.api.request_models import (
     SetInventoryItemPrintingRequest,
 )
 from mtg_source_stack.api.response_models import (
+    AddInventoryItemResponse,
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
     CatalogNameSearchResponse,
@@ -37,9 +38,15 @@ from mtg_source_stack.api.response_models import (
     InventoryDuplicateResponse,
     InventoryTransferResponse,
     OwnedInventoryRowResponse,
+    RemoveInventoryItemResponse,
     SetAcquisitionResponse,
+    SetConditionResponse,
     SetFinishResponse,
+    SetLocationResponse,
+    SetNotesResponse,
     SetPrintingResponse,
+    SetQuantityResponse,
+    SetTagsResponse,
 )
 from mtg_source_stack.db.schema import initialize_database, require_current_schema
 from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReadyError, ValidationError
@@ -56,6 +63,7 @@ from mtg_source_stack.inventory.service import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OPENAPI_SNAPSHOT_PATH = REPO_ROOT / "contracts" / "openapi.json"
+DEMO_PAYLOADS_DIR = REPO_ROOT / "contracts" / "demo_payloads"
 OPENAPI_SNAPSHOT_REFRESH_COMMAND = dedent(
     """\
     PYTHONPATH=src python3 - <<'PY'
@@ -478,7 +486,15 @@ class ApiContractTest(RepoSmokeTestCase):
             set_printing_request_schema["description"],
         )
         self.assertIn(
+            "confirm a defaulted row as explicit",
+            set_printing_request_schema["description"],
+        )
+        self.assertIn(
             "normal > foil > etched",
+            set_printing_request_schema["properties"]["finish"]["description"],
+        )
+        self.assertIn(
+            "confirmation-only",
             set_printing_request_schema["properties"]["finish"]["description"],
         )
         self.assertIn(
@@ -746,6 +762,32 @@ class ApiContractTest(RepoSmokeTestCase):
             }
         )
         self.assertEqual("set_printing", printing_response.operation)
+
+    def test_demo_payload_examples_validate_against_models(self) -> None:
+        example_validators = {
+            "owned_items.json": lambda payload: [
+                OwnedInventoryRowResponse.model_validate(item) for item in payload
+            ],
+            "patch_printing_request.json": SetInventoryItemPrintingRequest.model_validate,
+            "add_item_response.json": AddInventoryItemResponse.model_validate,
+            "delete_item_response.json": RemoveInventoryItemResponse.model_validate,
+            "patch_quantity_response.json": SetQuantityResponse.model_validate,
+            "patch_finish_response.json": SetFinishResponse.model_validate,
+            "patch_location_response.json": SetLocationResponse.model_validate,
+            "patch_condition_response.json": SetConditionResponse.model_validate,
+            "patch_notes_response.json": SetNotesResponse.model_validate,
+            "patch_tags_response.json": SetTagsResponse.model_validate,
+            "patch_acquisition_response.json": SetAcquisitionResponse.model_validate,
+            "patch_printing_response.json": SetPrintingResponse.model_validate,
+            "csv_import_response.json": CsvImportResponse.model_validate,
+            "decklist_import_response.json": DecklistImportResponse.model_validate,
+            "deck_url_import_response.json": DeckUrlImportResponse.model_validate,
+        }
+
+        for filename, validator in example_validators.items():
+            with self.subTest(filename=filename):
+                payload = json.loads((DEMO_PAYLOADS_DIR / filename).read_text(encoding="utf-8"))
+                validator(payload)
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

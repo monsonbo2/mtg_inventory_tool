@@ -183,12 +183,16 @@ preserve for the first API-backed version of the project.
     foil-only or otherwise incompatible quick-add cases leave every row unmarked
 - `PATCH /inventories/{inventory_slug}/items/{item_id}/printing`
   - requires a target `scryfall_id` for another printing of the same `oracle_id`
+  - clients may resubmit the current `scryfall_id` only to confirm a
+    `defaulted` row as `explicit` when finish and language stay unchanged
   - when `finish` is omitted:
     - keeps the current finish if the target printing supports it
     - otherwise auto-selects the first supported finish in `normal`, `foil`,
       `etched` order
   - when `finish` is explicitly provided, it must be supported by the target
     printing or the request returns `400 validation_error`
+  - same-`scryfall_id` requests that would change finish or language return
+    `400 validation_error`; use the generic item PATCH route for finish changes
   - successful printing changes always return
     `printing_selection_mode="explicit"`
   - stored `language_code` follows the target printing language

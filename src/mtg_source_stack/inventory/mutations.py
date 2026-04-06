@@ -1925,6 +1925,14 @@ def set_printing_with_connection(
         requested_finish=finish,
     )
     target_language_code = normalize_language_code(target_card["lang"])
+    if target_scryfall_id == str(item["scryfall_id"]) and (
+        target_finish != str(item["finish"])
+        or target_language_code != str(item["language_code"])
+    ):
+        raise ValidationError(
+            "set_printing only supports confirming the current printing when finish and language stay unchanged. "
+            "Use the generic item PATCH route for finish changes."
+        )
     mode_only_update = (
         target_scryfall_id == str(item["scryfall_id"])
         and target_finish == str(item["finish"])

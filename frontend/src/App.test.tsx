@@ -51,6 +51,7 @@ describe("App", () => {
     return {
       item_id: 7,
       scryfall_id: "bolt-1",
+      oracle_id: "bolt-oracle",
       name: "Lightning Bolt",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
@@ -72,6 +73,7 @@ describe("App", () => {
       est_value: "4.00",
       price_date: "2026-04-01",
       notes: "Main deck",
+      printing_selection_mode: "explicit",
       ...overrides,
     };
   }
@@ -304,6 +306,7 @@ describe("App", () => {
     const ownedRow: OwnedInventoryRow = {
       item_id: 7,
       scryfall_id: "bolt-1",
+      oracle_id: "bolt-oracle",
       name: "Lightning Bolt",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
@@ -325,6 +328,7 @@ describe("App", () => {
       est_value: "4.00",
       price_date: "2026-04-01",
       notes: "Main deck",
+      printing_selection_mode: "explicit",
     };
 
     vi.mocked(listInventories).mockResolvedValue([
@@ -1025,6 +1029,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_quantity",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1039,6 +1044,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_quantity: 2,
     });
 
@@ -1203,6 +1209,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_finish",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1217,6 +1224,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_finish: "normal",
     });
 
@@ -1285,6 +1293,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_tags",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1299,6 +1308,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn", "trade"],
+      printing_selection_mode: "explicit",
       old_tags: ["burn"],
     });
 
@@ -1372,6 +1382,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_tags",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1386,6 +1397,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_tags: ["burn", "trade"],
     });
 
@@ -1461,6 +1473,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_tags",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1475,6 +1488,7 @@ describe("App", () => {
       acquisition_currency: "USD",
       notes: "Main deck",
       tags: ["burn"],
+      printing_selection_mode: "explicit",
       old_tags: ["burn", "trade"],
     });
 

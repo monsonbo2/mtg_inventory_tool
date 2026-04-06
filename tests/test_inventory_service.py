@@ -5049,6 +5049,140 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("explicit", result.printing_selection_mode)
             self.assertFalse(result.merged)
 
+    def test_set_printing_rejects_same_printing_finish_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-same-id",
+                oracle_id="printing-oracle-7",
+                name="Same Printing Card",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-same-id",
+                finish="normal",
+                language_code="en",
+                printing_selection_mode="defaulted",
+            )
+
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "finish and language stay unchanged",
+            ):
+                set_printing(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=item_id,
+                    scryfall_id="printing-same-id",
+                    finish="foil",
+                )
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(owned_rows))
+            self.assertEqual("normal", owned_rows[0].finish)
+            self.assertEqual("defaulted", owned_rows[0].printing_selection_mode)
+
+    def test_set_printing_rejects_same_printing_finish_changes_even_with_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-same-id-merge",
+                oracle_id="printing-oracle-8",
+                name="Same Printing Merge Card",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-same-id-merge",
+                quantity=2,
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                printing_selection_mode="defaulted",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-same-id-merge",
+                quantity=1,
+                finish="foil",
+                language_code="en",
+                location="Binder A",
+                printing_selection_mode="explicit",
+            )
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    "SELECT id FROM inventory_items WHERE finish = 'normal'"
+                ).fetchall()
+            source_item_id = int(rows[0]["id"])
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "finish and language stay unchanged",
+            ):
+                set_printing(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=source_item_id,
+                    scryfall_id="printing-same-id-merge",
+                    finish="foil",
+                    merge=True,
+                )
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(2, len(owned_rows))
+            rows_by_finish = {row.finish: row.quantity for row in owned_rows}
+            self.assertEqual({"normal": 2, "foil": 1}, rows_by_finish)
+
     def test_price_gaps_and_reconcile_use_latest_snapshot_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"

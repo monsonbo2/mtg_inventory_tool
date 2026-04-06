@@ -2,6 +2,7 @@
   "operation": "set_quantity",
   "inventory": "personal",
   "card_name": "Counterspell",
+  "oracle_id": "demo-counterspell-oracle",
   "set_code": "7ed",
   "set_name": "Seventh Edition",
   "collector_number": "67",
@@ -19,5 +20,6 @@
     "control",
     "blue"
   ],
+  "printing_selection_mode": "explicit",
   "old_quantity": 2
 }

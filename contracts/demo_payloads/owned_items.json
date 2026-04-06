@@ -2,6 +2,7 @@
   {
     "item_id": 2,
     "scryfall_id": "demo-counterspell",
+    "oracle_id": "demo-counterspell-oracle",
     "name": "Counterspell",
     "set_code": "7ed",
     "set_name": "Seventh Edition",
@@ -28,11 +29,13 @@
     "unit_price": "1.25",
     "est_value": "3.75",
     "price_date": "2026-04-01",
-    "notes": null
+    "notes": null,
+    "printing_selection_mode": "explicit"
   },
   {
     "item_id": 1,
     "scryfall_id": "demo-bolt",
+    "oracle_id": "demo-bolt-oracle",
     "name": "Lightning Bolt",
     "set_code": "lea",
     "set_name": "Limited Edition Alpha",
@@ -59,11 +62,13 @@
     "unit_price": "6.75",
     "est_value": "13.50",
     "price_date": "2026-04-01",
-    "notes": "Showcase card for the demo UI."
+    "notes": "Showcase card for the demo UI.",
+    "printing_selection_mode": "explicit"
   },
   {
     "item_id": 4,
     "scryfall_id": "demo-sol-ring",
+    "oracle_id": "demo-sol-ring-oracle",
     "name": "Sol Ring",
     "set_code": "cmr",
     "set_name": "Commander Legends",
@@ -87,11 +92,13 @@
     "unit_price": "4.75",
     "est_value": "4.75",
     "price_date": "2026-04-01",
-    "notes": null
+    "notes": null,
+    "printing_selection_mode": "explicit"
   },
   {
     "item_id": 3,
     "scryfall_id": "demo-swords",
+    "oracle_id": "demo-swords-oracle",
     "name": "Swords to Plowshares",
     "set_code": "ice",
     "set_name": "Ice Age",
@@ -114,6 +121,7 @@
     "unit_price": "3.5",
     "est_value": "3.5",
     "price_date": "2026-04-01",
-    "notes": null
+    "notes": null,
+    "printing_selection_mode": "explicit"
   }
 ]

@@ -538,7 +538,15 @@ class WebApiSchemaTest(unittest.TestCase):
                 set_printing_request_schema["description"],
             )
             self.assertIn(
+                "confirm a defaulted row as explicit",
+                set_printing_request_schema["description"],
+            )
+            self.assertIn(
                 "normal > foil > etched",
+                set_printing_request_schema["properties"]["finish"]["description"],
+            )
+            self.assertIn(
+                "confirmation-only",
                 set_printing_request_schema["properties"]["finish"]["description"],
             )
             self.assertIn(
@@ -2443,6 +2451,52 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(409, conflict.status_code)
                 self.assertEqual("conflict", conflict.json()["error"]["code"])
                 self.assertIn("Changing printing would collide", conflict.json()["error"]["message"])
+
+    def test_demo_api_set_printing_rejects_same_printing_finish_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-printing-same-id",
+                    oracle_id="api-printing-same-id-oracle",
+                    name="API Same Printing Card",
+                    set_code="lea",
+                    collector_number="7",
+                    finishes_json='["normal","foil"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-printing-same-id",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                item_id = added.json()["item_id"]
+
+                changed = client.patch(
+                    f"/inventories/personal/items/{item_id}/printing",
+                    json={"scryfall_id": "api-printing-same-id", "finish": "foil"},
+                )
+                self.assertEqual(400, changed.status_code)
+                self.assertEqual("validation_error", changed.json()["error"]["code"])
+                self.assertIn("finish and language stay unchanged", changed.json()["error"]["message"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual(1, len(listed.json()))
+                self.assertEqual("normal", listed.json()[0]["finish"])
+                self.assertEqual("explicit", listed.json()[0]["printing_selection_mode"])
 
     def test_demo_api_filters_default_add_scope_for_catalog_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
