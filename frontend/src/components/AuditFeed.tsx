@@ -19,20 +19,20 @@ export function AuditFeed(props: {
       <div className="audit-list">
         {!props.selectedInventoryRow ? (
           <PanelState
-            body="Choose an inventory to inspect its recent write activity."
+            body="Choose a collection to inspect its recent write activity."
             compact
-            title="Pick an inventory"
+            title="Pick a collection"
           />
         ) : props.viewStatus === "loading" && props.auditEvents.length === 0 ? (
           <PanelState
-            body="Fetching the most recent audit entries for this inventory."
+            body="Fetching the most recent audit entries for this collection."
             compact
             title="Loading activity"
             variant="loading"
           />
         ) : props.viewStatus === "error" && props.auditEvents.length === 0 ? (
           <PanelState
-            body={props.viewError || "Could not load recent activity for this inventory."}
+            body={props.viewError || "Could not load recent activity for this collection."}
             compact
             title="Activity unavailable"
             variant="error"
@@ -45,7 +45,7 @@ export function AuditFeed(props: {
                 <span className="audit-time">{formatTimestamp(event.occurred_at)}</span>
               </div>
               <p className="audit-meta">Actor: {formatAuditActor(event)}</p>
-              <p className="audit-meta">Item: {event.item_id ? `#${event.item_id}` : "inventory"}</p>
+              <p className="audit-meta">Item: {event.item_id ? `#${event.item_id}` : "collection"}</p>
               {event.request_id ? <p className="audit-meta">Request: {event.request_id}</p> : null}
             </article>
           ))
@@ -55,7 +55,7 @@ export function AuditFeed(props: {
             compact
             title={
               props.selectedInventoryRow.total_cards === 0
-                ? "No activity yet in this inventory"
+                ? "No activity yet in this collection"
                 : "No recent activity"
             }
           />

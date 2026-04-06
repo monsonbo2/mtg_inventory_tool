@@ -1,0 +1,166 @@
+@media (max-width: 1140px) {
+  .hero,
+  .workspace-top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-row-main {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .compact-row-left {
+    flex: 0 1 auto;
+  }
+
+  .compact-row-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .compact-row-fields .compact-row-stat {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 820px) {
+  .app-shell {
+    width: min(100vw - 20px, 1440px);
+    padding-top: 18px;
+  }
+
+  .hero-metrics,
+  .search-form,
+  .item-meta-grid,
+  .editor-grid,
+  .inventory-summary-bar,
+  .mini-grid,
+  .search-result-quick-add-grid,
+  .compact-row-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .card-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .result-card .card-hero {
+    --search-result-thumb-height: auto;
+  }
+
+  .search-workspace {
+    margin-top: 16px;
+    padding-top: 16px;
+  }
+
+  .search-workspace-header {
+    grid-template-columns: 1fr;
+  }
+
+  .search-workspace-header-actions {
+    justify-self: start;
+  }
+
+  .search-workspace-count,
+  .search-results-close {
+    justify-self: start;
+  }
+
+  .result-card .card-hero-body {
+    min-height: 0;
+    padding-right: 0;
+  }
+
+  .card-thumb-search,
+  .card-thumb-owned {
+    width: min(180px, 44vw);
+  }
+
+  .search-workspace-result .card-thumb-search {
+    width: min(84px, 28vw);
+  }
+
+  .panel,
+  .result-card,
+  .owned-card,
+  .metric-card {
+    border-radius: 20px;
+  }
+
+  .inline-editor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-row {
+    padding: 18px;
+  }
+
+  .compact-row-fields {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .compact-row-fields .compact-row-stat {
+    grid-column: auto;
+  }
+
+  .compact-row-stat-value {
+    min-height: 0;
+  }
+
+  .compact-row-main,
+  .compact-row-left,
+  .compact-row-footer,
+  .compact-row-titlebar,
+  .activity-drawer-header,
+  .collection-header-controls,
+  .result-card-header,
+  .table-toolbar,
+  .table-query-panel-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-result-hero-actions {
+    justify-content: stretch;
+    min-width: 0;
+    position: static;
+    transform: none;
+  }
+
+  .search-result-add-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table-toolbar-actions,
+  .table-query-actions {
+    justify-content: stretch;
+  }
+
+  .table-toolbar-controls {
+    justify-items: stretch;
+    width: 100%;
+  }
+
+  .table-bulk-actions,
+  .table-bulk-action-buttons {
+    width: 100%;
+  }
+
+  .table-filter-checklist {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-drawer-backdrop {
+    padding: 0;
+  }
+
+  .activity-drawer {
+    width: 100%;
+    border-radius: 0;
+  }
+}

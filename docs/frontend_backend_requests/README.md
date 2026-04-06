@@ -26,6 +26,7 @@ backend requests.
 | `api_base_path_compatibility.md` | [#7](https://github.com/monsonbo2/mtg_inventory_tool/issues/7) | Superseded | Steve | handled by frontend proxy rewrite strategy |
 | `bulk_inventory_item_mutations.md` | Not linked yet | Done | Boyd | generic bulk route now supports tags, quantity, notes, acquisition, finish, location, and condition mutations |
 | `card_name_search_and_printing_lookup.md` | [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16) | Done | Boyd | implemented via grouped name search plus oracle printings lookup in commit `b409f56` |
+| `card_name_search_relevance_ranking.md` | [#29](https://github.com/monsonbo2/mtg_inventory_tool/issues/29) | Proposed | Unassigned | name-search ordering should add backend relevance signals so common cards surface ahead of obscure lexical matches |
 | `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Done | Steve | stored image URLs exposed in search and owned-item responses |
 | `csv_import_http_api.md` | [#25](https://github.com/monsonbo2/mtg_inventory_tool/issues/25) | Done | Boyd | HTTP CSV import now ships with preview/commit, multipart upload, and structured resolution issues |
 | `default_printing_resolution_policy.md` | [#23](https://github.com/monsonbo2/mtg_inventory_tool/issues/23) | Done | Boyd | `oracle_id` quick-add now publishes the default printing policy as stable contract behavior |

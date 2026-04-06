@@ -34,6 +34,18 @@ probably comes next” notes can live without crowding `AGENTS.md`.
 After the Phase 2 merge point, expect new work to happen on focused feature
 branches rather than one long-lived integration branch.
 
+Current frontend handoff status on `frontend_phase_2`:
+
+- the shared frontend API client now supports JSON requests, multipart CSV
+  upload, and CSV/text downloads
+- the frontend type surface and client wrappers now cover shared-service
+  bootstrap, import/export, transfer, duplicate, and the broader bulk-mutation
+  contract
+- the current demo UI still passes frontend tests/build on top of that refactor
+- the next frontend product branch should start with shared-service bootstrap
+  UX and permission-aware empty states, then move into import/export flows
+  before transfer/duplicate polish
+
 For live branch priority, prefer:
 
 1. `git status --short --branch`

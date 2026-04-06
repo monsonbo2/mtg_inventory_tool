@@ -15,12 +15,15 @@ vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
     ...actual,
+    bootstrapDefaultInventory: vi.fn(),
     listInventories: vi.fn(),
     listInventoryItems: vi.fn(),
     listInventoryAudit: vi.fn(),
     searchCardNames: vi.fn(),
     listCardPrintings: vi.fn(),
     addInventoryItem: vi.fn(),
+    bulkMutateInventoryItems: vi.fn(),
+    createInventory: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
   };
@@ -28,6 +31,9 @@ vi.mock("./api", async () => {
 
 import {
   addInventoryItem,
+  bootstrapDefaultInventory,
+  bulkMutateInventoryItems,
+  createInventory,
   listCardPrintings,
   listInventories,
   listInventoryItems,
@@ -121,6 +127,13 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
     vi.mocked(searchCardNames).mockResolvedValue([]);
     vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
   }
 
   function mockBaseSearchApp() {
@@ -137,6 +150,13 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue([]);
     vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
   }
 
   it("starts with an empty search field and keeps the example text as a placeholder only", async () => {
@@ -155,6 +175,129 @@ describe("App", () => {
 
     expect(searchCardNames).not.toHaveBeenCalled();
     expect(screen.getByText("Run a search")).toBeInTheDocument();
+  });
+
+  it("classifies unauthenticated inventory loads as an auth-required shell state", async () => {
+    vi.mocked(listInventories).mockRejectedValue(
+      new ApiClientError("Authentication required.", {
+        code: "authentication_required",
+        status: 401,
+      }),
+    );
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findAllByText("Authentication required")).toHaveLength(3);
+    expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+  });
+
+  it("classifies forbidden inventory loads as an access-blocked shell state", async () => {
+    vi.mocked(listInventories).mockRejectedValue(
+      new ApiClientError("Forbidden.", {
+        code: "forbidden",
+        status: 403,
+      }),
+    );
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findAllByText("Collection access blocked")).toHaveLength(3);
+    expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+  });
+
+  it("classifies an empty visible inventory list without opening create-collection flow", async () => {
+    vi.mocked(listInventories).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findAllByText("No visible collections")).toHaveLength(3);
+    expect(screen.queryByRole("combobox", { name: "Search query" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+  });
+
+  it("bootstraps the default collection from the empty inventory state", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          slug: "collection",
+          display_name: "Collection",
+          description: "Default personal collection",
+          item_rows: 0,
+          total_cards: 0,
+        },
+      ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bootstrapDefaultInventory).mockResolvedValue({
+      created: true,
+      inventory: {
+        inventory_id: 9,
+        slug: "collection",
+        display_name: "Collection",
+        description: "Default personal collection",
+      },
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Set Up My Collection" }));
+
+    await waitFor(() => {
+      expect(bootstrapDefaultInventory).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Set up Collection.");
+    expect(await screen.findByText("Current collection: Collection")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledWith("collection");
+      expect(listInventoryAudit).toHaveBeenCalledWith("collection");
+    });
+  });
+
+  it("keeps the onboarding state visible when bootstrap fails", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories).mockResolvedValue([]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bootstrapDefaultInventory).mockRejectedValue(
+      new ApiClientError("Editor access is required to set up a collection.", {
+        code: "forbidden",
+        status: 403,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Set Up My Collection" }));
+
+    await waitFor(() => {
+      expect(bootstrapDefaultInventory).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Editor access is required to set up a collection.",
+    );
+    expect(screen.getByRole("button", { name: "Set Up My Collection" })).toBeInTheDocument();
+    expect(screen.queryByText("Current collection: Collection")).not.toBeInTheDocument();
+    expect(listInventoryItems).not.toHaveBeenCalled();
+    expect(listInventoryAudit).not.toHaveBeenCalled();
   });
 
   it("surfaces backend patch errors as a notice", async () => {
@@ -209,15 +352,13 @@ describe("App", () => {
 
     render(<App />);
 
+    await userEvent.click(await screen.findByRole("button", { name: "Detailed" }));
+
     const heading = await screen.findByRole("heading", { name: "Lightning Bolt" });
     const card = heading.closest("article");
     expect(card).not.toBeNull();
     const row = within(card!);
-    await userEvent.click(row.getByRole("button", { name: "Edit Lightning Bolt" }));
-
-    await waitFor(() => {
-      expect(row.getByRole("combobox")).toBeEnabled();
-    });
+    expect(row.getByRole("combobox")).toBeEnabled();
 
     await userEvent.selectOptions(row.getByRole("combobox"), "foil");
     await userEvent.click(row.getByRole("button", { name: "Save" }));
@@ -240,10 +381,10 @@ describe("App", () => {
 
     render(<App />);
 
+    await user.click(await screen.findByRole("button", { name: "Detailed" }));
+
     const row = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest("article");
     expect(row).not.toBeNull();
-
-    await user.click(within(row!).getByRole("button", { name: "Edit Lightning Bolt" }));
 
     expect(within(row!).getByRole("combobox")).toBeEnabled();
     expect(within(row!).getByText("Available: Normal, Foil.")).toBeInTheDocument();
@@ -294,33 +435,188 @@ describe("App", () => {
 
     await user.keyboard("{Enter}");
 
-    expect(searchCardNames).toHaveBeenCalledWith({ query: "Fo", limit: 5 });
-    expect(input).toHaveValue("Forest");
+    expect(searchCardNames).toHaveBeenCalledWith({ query: "Fo", limit: 8 });
+    expect(input).toHaveValue("Force of Will");
     expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Forest" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Force of Will" })).toBeInTheDocument();
+    expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
   });
 
-  it("prioritizes card names that start with the query over later word matches", async () => {
+  it("lets arrow-up return keyboard focus to the search input so Enter submits the full search", async () => {
+    const user = userEvent.setup();
+    const forest = buildNameSearchRow({
+      oracle_id: "forest-oracle",
+      name: "Forest",
+      printings_count: 1,
+    });
+    const forceOfWill = buildNameSearchRow({
+      oracle_id: "force-oracle",
+      name: "Force of Will",
+      printings_count: 4,
+      available_languages: ["en", "de"],
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Fo") {
+        return [forest, forceOfWill];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.clear(input);
+    await user.type(input, "Fo");
+
+    await screen.findByRole("option", { name: /Forest/i });
+    expect(input).toHaveAttribute("aria-activedescendant", expect.stringContaining("-option-0"));
+
+    await user.keyboard("{ArrowUp}");
+
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{Enter}");
+
+    expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Fo", limit: 18 });
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Forest" })).toBeInTheDocument();
+    expect(screen.getByText("Matching cards")).toBeInTheDocument();
+  });
+
+  it("uses arrow keys to move through matching cards after a submitted search and Enter selects the card", async () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
     vi.mocked(searchCardNames).mockImplementation(async (params) => {
-      if (params.query === "Lightning") {
+      if (params.query === "lightn") {
         return [
-          buildNameSearchRow({
-            oracle_id: "ball-lightning-oracle",
-            name: "Ball Lightning",
-            printings_count: 2,
-          }),
           buildNameSearchRow({
             oracle_id: "lightning-bolt-oracle",
             name: "Lightning Bolt",
             printings_count: 3,
           }),
           buildNameSearchRow({
+            oracle_id: "lightning-angel-oracle",
+            name: "Lightning Angel",
+            printings_count: 5,
+          }),
+          buildNameSearchRow({
+            oracle_id: "lightning-axe-oracle",
+            name: "Lightning Axe",
+            printings_count: 9,
+          }),
+        ];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "lightn");
+    await screen.findByRole("option", { name: /Lightning Angel/i });
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByText("Matching cards")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("heading", { name: "Lightning Angel" })).toBeInTheDocument();
+    expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
+  });
+
+  it("scrolls matching-card navigation into view as keyboard selection moves", async () => {
+    const user = userEvent.setup();
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return [
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-axe-oracle",
+              name: "Lightning Axe",
+              printings_count: 9,
+            }),
+          ];
+        }
+        return [];
+      });
+
+      render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Search query" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+
+      await user.keyboard("{ArrowUp}");
+      await user.keyboard("{Enter}");
+
+      await screen.findByText("Matching cards");
+      scrollIntoViewSpy.mockClear();
+
+      await user.keyboard("{ArrowDown}");
+
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    }
+  });
+
+  it("preserves backend ordering for name-search suggestions and grouped results", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "lightn") {
+        return [
+          buildNameSearchRow({
+            oracle_id: "lightning-bolt-oracle",
+            name: "Lightning Bolt",
+            printings_count: 3,
+          }),
+          buildNameSearchRow({
+            oracle_id: "lightning-angel-oracle",
+            name: "Lightning Angel",
+            printings_count: 5,
+          }),
+          buildNameSearchRow({
+            oracle_id: "lightning-axe-oracle",
+            name: "Lightning Axe",
+            printings_count: 9,
+          }),
+          buildNameSearchRow({
             oracle_id: "lightning-blast-oracle",
             name: "Lightning Blast",
-            printings_count: 1,
+            printings_count: 6,
           }),
         ];
       }
@@ -330,9 +626,9 @@ describe("App", () => {
     const { container } = render(<App />);
 
     const input = await screen.findByRole("combobox", { name: "Search query" });
-    await user.type(input, "Lightning");
+    await user.type(input, "lightn");
 
-    await screen.findByRole("option", { name: /Lightning Blast/i });
+    await screen.findByRole("option", { name: /Lightning Angel/i });
 
     const listbox = screen.getByRole("listbox", { name: "Card suggestions" });
     const suggestionNames = within(listbox)
@@ -340,24 +636,95 @@ describe("App", () => {
       .map((option) => option.querySelector(".search-autocomplete-copy strong")?.textContent);
 
     expect(suggestionNames).toEqual([
-      "Lightning Blast",
       "Lightning Bolt",
-      "Ball Lightning",
+      "Lightning Angel",
+      "Lightning Axe",
+      "Lightning Blast",
     ]);
 
     await user.click(screen.getByRole("button", { name: "Search cards" }));
 
-    await screen.findByRole("heading", { name: "Lightning Blast" });
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.getByText("Matching cards")).toBeInTheDocument();
 
     const resultNames = Array.from(
-      container.querySelectorAll(".search-results-grid article h3"),
-    ).map((heading) => heading.textContent);
+      container.querySelectorAll(".search-workspace-result-copy strong"),
+    ).map((name) => name.textContent);
 
     expect(resultNames).toEqual([
-      "Lightning Blast",
       "Lightning Bolt",
-      "Ball Lightning",
+      "Lightning Angel",
+      "Lightning Axe",
+      "Lightning Blast",
     ]);
+
+    const blastResult = screen.getByText("Lightning Blast").closest("button");
+    expect(blastResult).not.toBeNull();
+
+    await user.click(blastResult!);
+
+    expect(await screen.findByRole("heading", { name: "Lightning Blast" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Lightning Angel" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back to matches" }));
+
+    expect(screen.getByText("Matching cards")).toBeInTheDocument();
+  });
+
+  it("loads more matching cards from the browse list in 10-card steps", async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 21 }, (_, index) =>
+      buildNameSearchRow({
+        oracle_id: `cloud-${index + 1}`,
+        name: `Cloud Result ${String(index + 1).padStart(2, "0")}`,
+        printings_count: index + 1,
+      }),
+    );
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Cloud") {
+        return rows.slice(0, params.limit ?? rows.length);
+      }
+      return [];
+    });
+
+    const { container } = render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "Cloud");
+    await screen.findByRole("option", { name: /Cloud Result 01/i });
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    await screen.findByRole("heading", { name: "Cloud Result 01" });
+    expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Cloud", limit: 18 });
+
+    const visibleResultNames = () =>
+      Array.from(container.querySelectorAll(".search-workspace-result-copy strong")).map(
+        (name) => name.textContent,
+      );
+
+    expect(visibleResultNames()).toHaveLength(8);
+
+    const initialCallCount = vi.mocked(searchCardNames).mock.calls.length;
+    await user.click(
+      screen.getByRole("button", { name: "Show 10 more of 10 additional matches" }),
+    );
+
+    expect(visibleResultNames()).toHaveLength(18);
+    expect(vi.mocked(searchCardNames).mock.calls).toHaveLength(initialCallCount);
+
+    await user.click(screen.getByRole("button", { name: "Load 10 more matches" }));
+
+    await waitFor(() => {
+      expect(searchCardNames).toHaveBeenLastCalledWith({ query: "Cloud", limit: 28 });
+    });
+    await waitFor(() => {
+      expect(visibleResultNames()).toHaveLength(21);
+    });
+    expect(screen.queryByRole("button", { name: /more matches/i })).not.toBeInTheDocument();
   });
 
   it("groups name-first search results and clears the quick-add workspace after a successful add", async () => {
@@ -426,7 +793,7 @@ describe("App", () => {
     const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest("article");
     expect(boltCard).not.toBeNull();
     expect(screen.getAllByRole("heading", { name: "Lightning Bolt" })).toHaveLength(1);
-    expect(screen.getByRole("heading", { name: "Lightning Blast" })).toBeInTheDocument();
+    expect(screen.getByText("Lightning Blast")).toBeInTheDocument();
 
     const printingSelect = within(boltCard!).getByRole("combobox", { name: "Printing" });
     const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
@@ -438,6 +805,13 @@ describe("App", () => {
     await waitFor(() => {
       expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
     });
+
+    expect(
+      within(boltCard!).getByRole("button", { name: "Select printing first" }),
+    ).toBeDisabled();
+    expect(
+      within(printingSelect).getByRole("option", { name: "3 printings available" }),
+    ).toBeInTheDocument();
 
     expect(
       within(boltCard!).getByRole("button", { name: "Other languages available" }),
@@ -464,7 +838,7 @@ describe("App", () => {
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
 
     await user.selectOptions(finishSelect, "foil");
-    await user.click(within(boltCard!).getByRole("button", { name: "Add to inventory" }));
+    await user.click(within(boltCard!).getByRole("button", { name: "Add to collection" }));
 
     await waitFor(() => {
       expect(addInventoryItem).toHaveBeenCalledWith(
@@ -525,7 +899,51 @@ describe("App", () => {
     expect(input).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("defaults to compact collection view and toggles detailed mode without refetching", async () => {
+  it("keeps the add-card pane open on outside click and closes it from the explicit close button", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
+        return [
+          buildNameSearchRow({
+            oracle_id: "bolt-oracle",
+            name: "Lightning Bolt",
+            printings_count: 3,
+          }),
+        ];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Search query" });
+    await user.type(input, "Lightning");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    expect(input).toHaveValue("Lightning");
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+
+    await user.click(input);
+
+    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+
+    await user.click(document.body);
+
+    expect(screen.getByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    expect(input).toHaveValue("Lightning");
+
+    await user.click(screen.getByRole("button", { name: "Close add card pane" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Lightning Bolt" })).not.toBeInTheDocument();
+    });
+    expect(input).toHaveValue("Lightning");
+  });
+
+  it("defaults to browse collection view and toggles detailed mode without refetching", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -550,8 +968,9 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: "Edit Lightning Bolt" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "true");
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.queryByText("Inline edits")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute("aria-pressed", "false");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
@@ -559,29 +978,617 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Detailed" }));
 
-    expect(screen.queryByRole("button", { name: "Edit Lightning Bolt" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Inline edits")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute("aria-pressed", "true");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "Compact" }));
+    await user.click(screen.getByRole("button", { name: "Browse" }));
 
-    expect(await screen.findByRole("button", { name: "Edit Lightning Bolt" })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.queryByText("Inline edits")).not.toBeInTheDocument();
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps one compact row open at a time and clears unsaved drafts when switching rows", async () => {
+  it("saves browse edits directly when a field blurs", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow();
+    const updatedBolt = buildOwnedRow({ quantity: 5, est_value: "10.00" });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 5,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_quantity",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 5,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_quantity: 2,
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeEnabled();
+    expect(
+      boltRowScope.queryByRole("textbox", { name: /Notes/ }),
+    ).not.toBeInTheDocument();
+    const boltQuantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
+    expect(boltRowScope.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+
+    await user.clear(boltQuantityInput);
+    await user.type(boltQuantityInput, "5");
+    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toHaveValue(5);
+    expect(boltRowScope.queryByText("Changes save automatically.")).not.toBeInTheDocument();
+    await user.tab();
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, { quantity: 5 });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedQuantityInput = refreshedBoltScope.getByRole("spinbutton", {
+      name: /Quantity/,
+    });
+    expect(refreshedQuantityInput).toHaveValue(5);
+    const refreshedQuantityField = refreshedQuantityInput.closest("label");
+    expect(refreshedQuantityField).not.toBeNull();
+    expect(within(refreshedQuantityField!).getByText("Saved")).toBeInTheDocument();
+  });
+
+  it("keeps browse validation feedback inside the quantity field instead of the row", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
+
+    await user.clear(quantityInput);
+    await user.type(quantityInput, "0");
+
+    const quantityField = quantityInput.closest("label");
+    expect(quantityField).not.toBeNull();
+    expect(
+      within(quantityField!).getByText("Enter a whole-number quantity greater than 0."),
+    ).toBeInTheDocument();
+    expect(boltRow!.querySelector(".compact-row-status")).toBeNull();
+  });
+
+  it("offers existing collection locations as browse suggestions", async () => {
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({ location: "Binder" }),
+        buildOwnedRow({
+          item_id: 11,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+        buildOwnedRow({
+          item_id: 15,
+          scryfall_id: "giant-growth-1",
+          name: "Giant Growth",
+          set_code: "lea",
+          set_name: "Limited Edition Alpha",
+          collector_number: "207",
+          quantity: 3,
+          location: "Binder",
+          tags: ["pump"],
+          est_value: "6.00",
+          unit_price: "2.00",
+          notes: null,
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const locationInput = within(boltRow!).getByRole("combobox", { name: /Location/ });
+    const listId = locationInput.getAttribute("list");
+    expect(listId).toBeTruthy();
+
+    const locationList = document.getElementById(listId!);
+    expect(locationList).not.toBeNull();
+    const optionValues = Array.from(locationList!.querySelectorAll("option")).map((option) =>
+      option.getAttribute("value"),
+    );
+    expect(optionValues).toEqual(["Binder", "Trade Binder"]);
+  });
+
+  it("updates browse finish from allowed options and refreshes the row value", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      allowed_finishes: ["normal", "foil"],
+      finish: "normal",
+      est_value: "4.00",
+      unit_price: "2.00",
+    });
+    const updatedBolt = buildOwnedRow({
+      allowed_finishes: ["normal", "foil"],
+      finish: "foil",
+      est_value: "9.00",
+      unit_price: "4.50",
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_finish",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "foil",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_finish: "normal",
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const finishSelect = boltRowScope.getByRole("combobox", { name: /Finish/ });
+    expect(finishSelect).toBeEnabled();
+    expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
+
+    await user.selectOptions(finishSelect, "foil");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, { finish: "foil" });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    expect(refreshedBoltScope.getByRole("combobox", { name: /Finish/ })).toHaveValue("foil");
+    expect(refreshedBoltScope.getByText("$9.00")).toBeInTheDocument();
+  });
+
+  it("adds a browse tag on Enter, saves it, clears the input, and keeps focus ready", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      tags: ["burn"],
+    });
+    const updatedBolt = buildOwnedRow({
+      tags: ["burn", "trade"],
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_tags",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn", "trade"],
+      old_tags: ["burn"],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.type(tagsInput, "trade{enter}");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, {
+        tags: ["burn", "trade"],
+      });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
+    expect(refreshedTagsInput).toHaveValue("");
+    await waitFor(() => {
+      expect(refreshedTagsInput).toHaveFocus();
+    });
+    expect(refreshedBoltScope.getByText("burn")).toBeInTheDocument();
+    expect(refreshedBoltScope.getByText("trade")).toBeInTheDocument();
+  });
+
+  it("removes a browse tag once the tags field is active and keeps the tag input focused", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      tags: ["burn", "trade"],
+    });
+    const updatedBolt = buildOwnedRow({
+      tags: ["burn"],
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_tags",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_tags: ["burn", "trade"],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.click(tagsInput);
+    expect(boltRowScope.getByText("Click a tag to remove it.")).toBeInTheDocument();
+    await user.click(boltRowScope.getByRole("button", { name: "Remove tag trade" }));
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, {
+        tags: ["burn"],
+      });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
+    await waitFor(() => {
+      expect(refreshedTagsInput).toHaveFocus();
+    });
+    expect(refreshedBoltScope.getByText("Removed trade.")).toBeInTheDocument();
+    expect(refreshedBoltScope.getByText("burn")).toBeInTheDocument();
+    expect(refreshedBoltScope.queryByText("trade")).not.toBeInTheDocument();
+  });
+
+  it("removes the last browse tag with Backspace when the tag input is empty", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow({
+      tags: ["burn", "trade"],
+    });
+    const updatedBolt = buildOwnedRow({
+      tags: ["burn"],
+    });
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 1,
+        total_cards: 2,
+      },
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockResolvedValueOnce([updatedBolt]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_tags",
+      card_name: "Lightning Bolt",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 2,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      old_tags: ["burn", "trade"],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.click(tagsInput);
+    expect(tagsInput).toHaveValue("");
+    await user.keyboard("{Backspace}");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, {
+        tags: ["burn"],
+      });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshedBoltRow = (await screen.findByRole("heading", {
+      name: "Lightning Bolt",
+    })).closest("article");
+    expect(refreshedBoltRow).not.toBeNull();
+    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
+    await waitFor(() => {
+      expect(refreshedTagsInput).toHaveFocus();
+    });
+    expect(refreshedBoltScope.getByText("burn")).toBeInTheDocument();
+    expect(refreshedBoltScope.queryByText("trade")).not.toBeInTheDocument();
+  });
+
+  it("uses the first browse tag click to activate tag removal instead of removing immediately", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          tags: ["burn", "trade"],
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+
+    await user.click(boltRowScope.getByText("trade"));
+
+    expect(patchInventoryItem).not.toHaveBeenCalled();
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+    await waitFor(() => {
+      expect(tagsInput).toHaveFocus();
+    });
+    expect(boltRowScope.getByText("Click a tag to remove it.")).toBeInTheDocument();
+    expect(
+      boltRowScope.getByRole("button", { name: "Remove tag trade" }),
+    ).toBeInTheDocument();
+  });
+
+  it("exits browse tag edit mode on Escape", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          tags: ["burn", "trade"],
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.click(tagsInput);
+    expect(boltRowScope.getByText("Click a tag to remove it.")).toBeInTheDocument();
+    expect(boltRowScope.getByRole("button", { name: "Remove tag trade" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(tagsInput).not.toHaveFocus();
+    });
+    expect(boltRowScope.queryByText("Click a tag to remove it.")).not.toBeInTheDocument();
+    expect(
+      boltRowScope.queryByRole("button", { name: "Remove tag trade" }),
+    ).not.toBeInTheDocument();
+    expect(boltRowScope.getByText("trade")).toBeInTheDocument();
+  });
+
+  it("opens the matching row in detailed view from browse mode", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
       items: [
         buildOwnedRow(),
         buildOwnedRow({
-          item_id: 8,
+          item_id: 11,
           scryfall_id: "counterspell-1",
           name: "Counterspell",
           set_code: "7ed",
@@ -599,36 +1606,31 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: "Edit Lightning Bolt" }));
-
-    let boltRow = screen.getByRole("heading", { name: "Lightning Bolt" }).closest("article");
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
-    const boltQuantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
-
-    await user.clear(boltQuantityInput);
-    await user.type(boltQuantityInput, "5");
-    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toHaveValue(5);
-
-    const counterspellRow = screen.getByRole("heading", { name: "Counterspell" }).closest("article");
+    const counterspellRow = (await screen.findByRole("heading", { name: "Counterspell" })).closest(
+      "article",
+    );
     expect(counterspellRow).not.toBeNull();
-    await user.click(within(counterspellRow!).getByRole("button", { name: "Edit Counterspell" }));
 
-    boltRow = screen.getByRole("heading", { name: "Lightning Bolt" }).closest("article");
-    expect(boltRow).not.toBeNull();
-    expect(within(boltRow!).queryByRole("spinbutton", { name: /Quantity/ })).not.toBeInTheDocument();
+    await user.click(
+      within(counterspellRow!).getByRole("button", { name: "Open details" }),
+    );
 
-    await user.click(within(boltRow!).getByRole("button", { name: "Edit Lightning Bolt" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Detailed" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
 
-    boltRow = screen.getByRole("heading", { name: "Lightning Bolt" }).closest("article");
-    expect(boltRow).not.toBeNull();
-    expect(within(boltRow!).getByRole("spinbutton", { name: /Quantity/ })).toHaveValue(2);
-    expect(
-      within(screen.getByRole("heading", { name: "Counterspell" }).closest("article")!).queryByRole(
-        "spinbutton",
-        { name: /Quantity/ },
-      ),
-    ).not.toBeInTheDocument();
+    const detailedCounterspellRow = (await screen.findByRole("heading", {
+      name: "Counterspell",
+    })).closest("article");
+    expect(detailedCounterspellRow).not.toBeNull();
+    expect(detailedCounterspellRow).toHaveAttribute("data-focused", "true");
+    await waitFor(() => {
+      expect(detailedCounterspellRow).toHaveFocus();
+    });
+    expect(within(detailedCounterspellRow!).getByText("Inline edits")).toBeInTheDocument();
   });
 
   it("opens and closes the activity drawer while keeping audit off the main page by default", async () => {
@@ -656,32 +1658,80 @@ describe("App", () => {
 
     await screen.findByRole("button", { name: "View Activity" });
     expect(screen.queryByRole("heading", { name: "Audit Feed" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "View Activity" }));
-    expect(await screen.findByRole("dialog", { name: "Inventory Activity" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
     expect(screen.getByText("Set Finish")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Close activity drawer" }));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "View Activity" }));
-    expect(await screen.findByRole("dialog", { name: "Inventory Activity" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
 
     await user.click(screen.getByTestId("activity-drawer-backdrop"));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "View Activity" }));
-    expect(await screen.findByRole("dialog", { name: "Inventory Activity" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Collection Activity" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Inventory Activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "Collection Activity" })).not.toBeInTheDocument();
     });
+  });
+
+  it("moves focus into the activity drawer, traps tab focus, and returns focus to the opener", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      auditEvents: [
+        {
+          id: 1,
+          inventory: "personal",
+          item_id: 42,
+          action: "set_finish",
+          actor_type: "api",
+          actor_id: "local-demo",
+          request_id: "req-1",
+          occurred_at: "2026-04-02T01:07:30Z",
+          before: null,
+          after: null,
+          metadata: {},
+        },
+      ],
+    });
+
+    render(<App />);
+
+    const openButton = await screen.findByRole("button", { name: "View Activity" });
+    openButton.focus();
+    expect(openButton).toHaveFocus();
+
+    await user.click(openButton);
+
+    const closeButton = await screen.findByRole("button", {
+      name: "Close activity drawer",
+    });
+    await waitFor(() => {
+      expect(closeButton).toHaveFocus();
+    });
+
+    await user.tab();
+    expect(closeButton).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Collection Activity" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(openButton).toHaveFocus();
   });
 
   it("supports table view row selection without refetching and preserves selection across view changes", async () => {
@@ -716,8 +1766,16 @@ describe("App", () => {
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("checkbox", { name: "Select Lightning Bolt" }));
+    const table = screen.getByRole("table");
+    const lightningBoltRow = within(table)
+      .getAllByRole("row")
+      .find((row) => row.textContent?.includes("Lightning Bolt"));
+    expect(lightningBoltRow).toBeDefined();
+
+    await user.click(lightningBoltRow!);
+
     expect(screen.getByText("1 row selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Detailed" }));
     expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
@@ -803,6 +1861,116 @@ describe("App", () => {
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
   });
 
+  it("applies bulk tag actions to selected table rows and clears the selection after success", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [7, 8],
+      updated_item_ids: [7, 8],
+      updated_count: 2,
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+
+    expect(screen.getByText("2 rows selected")).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Bulk tags" }), "burn, staples");
+    await user.click(screen.getByRole("button", { name: "Add tags" }));
+
+    await waitFor(() => {
+      expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
+        operation: "add_tags",
+        item_ids: [7, 8],
+        tags: ["burn", "staples"],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("No rows selected")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).not.toBeChecked();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Added tags on 2 rows in Personal Collection.",
+    );
+    expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    expect(listInventoryAudit).toHaveBeenCalledTimes(2);
+  });
+
+  it("submits clear-tags bulk actions without sending a tags payload", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "clear_tags",
+      requested_item_ids: [7, 8],
+      updated_item_ids: [7, 8],
+      updated_count: 2,
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+    await user.type(screen.getByRole("textbox", { name: "Bulk tags" }), "burn, staples");
+    await user.click(screen.getByRole("button", { name: "Clear tags" }));
+
+    await waitFor(() => {
+      expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
+        operation: "clear_tags",
+        item_ids: [7, 8],
+      });
+    });
+
+    expect(screen.getByRole("textbox", { name: "Bulk tags" })).toHaveValue("");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Cleared tags on 2 rows in Personal Collection.",
+    );
+  });
+
   it("clears table selection when the selected inventory changes", async () => {
     const user = userEvent.setup();
 
@@ -870,10 +2038,126 @@ describe("App", () => {
     await user.click(await screen.findByRole("checkbox", { name: "Select Lightning Bolt" }));
     expect(screen.getByText("1 row selected")).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: /Change collection/i }));
     await user.click(screen.getByRole("button", { name: /Trade Binder/i }));
 
     expect(await screen.findByText("No rows selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
+  });
+
+  it("creates a new inventory from the sidebar and selects it", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([
+        {
+          slug: "personal",
+          display_name: "Personal Collection",
+          description: "Main demo inventory",
+          item_rows: 0,
+          total_cards: 0,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          slug: "personal",
+          display_name: "Personal Collection",
+          description: "Main demo inventory",
+          item_rows: 0,
+          total_cards: 0,
+        },
+        {
+          slug: "trade-binder",
+          display_name: "Trade Binder",
+          description: "Cards available to trade",
+          item_rows: 0,
+          total_cards: 0,
+        },
+      ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(createInventory).mockResolvedValue({
+      inventory_id: 42,
+      slug: "trade-binder",
+      display_name: "Trade Binder",
+      description: "Cards available to trade",
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Collection" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: "Collection name" })).toHaveFocus();
+    expect(within(dialog).queryByRole("textbox", { name: /Short name/i })).not.toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: "Collection name" }), "Trade Binder");
+
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Description (optional)" }),
+      "Cards available to trade",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Create Collection" }));
+
+    await waitFor(() => {
+      expect(createInventory).toHaveBeenCalledWith({
+        slug: "trade-binder",
+        display_name: "Trade Binder",
+        description: "Cards available to trade",
+      });
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Created Trade Binder.");
+    expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Create Collection" })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledWith("trade-binder");
+      expect(listInventoryAudit).toHaveBeenCalledWith("trade-binder");
+    });
+  });
+
+  it("reveals the short name field after a create conflict", async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(listInventories).mockResolvedValue([
+      {
+        slug: "personal",
+        display_name: "Personal Collection",
+        description: "Main demo inventory",
+        item_rows: 0,
+        total_cards: 0,
+      },
+    ]);
+    vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue([]);
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(createInventory).mockRejectedValue(
+      new ApiClientError("Inventory short name already exists.", {
+        code: "conflict",
+        status: 409,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Collection" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
+    expect(within(dialog).queryByRole("textbox", { name: /Short name/i })).not.toBeInTheDocument();
+
+    await user.type(within(dialog).getByRole("textbox", { name: "Collection name" }), "Trade Binder");
+    await user.click(within(dialog).getByRole("button", { name: "Create Collection" }));
+
+    expect(await within(dialog).findByRole("textbox", { name: /Short name/i })).toHaveValue(
+      "trade-binder",
+    );
+    expect(
+      screen.getByText(
+        "That collection name needs a different short name. Edit it below and try again.",
+      ),
+    ).toBeInTheDocument();
   });
 });

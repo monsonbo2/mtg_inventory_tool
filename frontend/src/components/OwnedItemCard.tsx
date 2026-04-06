@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -13,6 +13,7 @@ import {
   formatFinishLabel,
   formatLanguageCode,
   formatMaybeCurrency,
+  getTagChipStyle,
   formatUsd,
   getAvailableFinishesForOwnedRow,
   getBusyMessage,
@@ -25,6 +26,7 @@ import { CardThumbnail } from "./ui/CardThumbnail";
 export function OwnedItemCard(props: {
   item: OwnedInventoryRow;
   busyAction: ItemMutationAction | null;
+  focused?: boolean;
   onPatch: (
     itemId: number,
     action: ItemMutationAction,
@@ -38,6 +40,8 @@ export function OwnedItemCard(props: {
   const [location, setLocation] = useState(props.item.location || "");
   const [notes, setNotes] = useState(props.item.notes || "");
   const [tags, setTags] = useState(props.item.tags.join(", "));
+  const [focusCueVisible, setFocusCueVisible] = useState(false);
+  const articleRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setQuantity(String(props.item.quantity));
@@ -53,6 +57,30 @@ export function OwnedItemCard(props: {
     props.item.quantity,
     props.item.tags,
   ]);
+
+  useEffect(() => {
+    if (!props.focused) {
+      setFocusCueVisible(false);
+      return;
+    }
+
+    setFocusCueVisible(true);
+    const node = articleRef.current;
+    const animationId = window.requestAnimationFrame(() => {
+      if (typeof node?.scrollIntoView === "function") {
+        node.scrollIntoView({ block: "nearest" });
+      }
+      node?.focus();
+    });
+    const timeoutId = window.setTimeout(() => {
+      setFocusCueVisible(false);
+    }, 1600);
+
+    return () => {
+      window.cancelAnimationFrame(animationId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [props.focused]);
 
   async function saveQuantity() {
     if (!quantityIsValid) {
@@ -95,7 +123,7 @@ export function OwnedItemCard(props: {
 
   async function handleDelete() {
     const confirmed = window.confirm(
-      `Remove ${props.item.name} from the selected inventory?`,
+      `Remove ${props.item.name} from the selected collection?`,
     );
     if (!confirmed) {
       return;
@@ -137,7 +165,19 @@ export function OwnedItemCard(props: {
         : "All changes saved";
 
   return (
-    <article className={isBusy ? "owned-card owned-card-busy" : "owned-card"}>
+    <article
+      className={[
+        "owned-card",
+        isBusy ? "owned-card-busy" : null,
+        props.focused ? "owned-card-targeted" : null,
+        focusCueVisible ? "owned-card-focus-cue" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-focused={props.focused ? "true" : undefined}
+      ref={articleRef}
+      tabIndex={props.focused ? -1 : undefined}
+    >
       <div className="card-hero">
         <CardThumbnail
           imageUrl={props.item.image_uri_small}
@@ -302,7 +342,7 @@ export function OwnedItemCard(props: {
         <div className="tag-row">
           {props.item.tags.length ? (
             props.item.tags.map((tag) => (
-              <span className="tag-chip" key={tag}>
+              <span className="tag-chip" key={tag} style={getTagChipStyle(tag)}>
                 {tag}
               </span>
             ))
