@@ -257,6 +257,7 @@ def _add_full_catalog_demo_card(
 ) -> Any:
     oracle_id = _resolve_full_catalog_demo_oracle_id(db_path, card_name=card_name)
     normalized_initial_finish = normalize_finish(initial_finish)
+    normalized_required_finish = normalize_finish(required_finish)
     try:
         with connect(db_path) as connection:
             resolved_card = resolve_card_row(
@@ -270,7 +271,15 @@ def _add_full_catalog_demo_card(
                 lang=lang,
                 finish=required_finish,
             )
-            validate_supported_finish(resolved_card["finishes_json"], normalized_initial_finish)
+            try:
+                validate_supported_finish(resolved_card["finishes_json"], normalized_initial_finish)
+                seeded_initial_finish = initial_finish
+            except ValidationError:
+                # Full-catalog demo rows should follow the live oracle-resolution
+                # policy rather than assuming the chosen printing still supports a
+                # separate "initial" finish state.
+                validate_supported_finish(resolved_card["finishes_json"], normalized_required_finish)
+                seeded_initial_finish = required_finish
             result = add_card_with_connection(
                 connection,
                 inventory_slug=inventory_slug,
@@ -284,7 +293,7 @@ def _add_full_catalog_demo_card(
                 lang=lang,
                 quantity=quantity,
                 condition_code=condition_code,
-                finish=initial_finish,
+                finish=seeded_initial_finish,
                 language_code=None,
                 location=location,
                 acquisition_price=acquisition_price,

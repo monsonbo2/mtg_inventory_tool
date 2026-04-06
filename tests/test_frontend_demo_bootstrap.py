@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -209,3 +210,56 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
             self.assertIn("Could not seed full-catalog demo row for 'Lightning Bolt'", result.stderr)
             self.assertIn("finish 'foil'", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
+
+    def test_bootstrap_full_catalog_mode_handles_sol_ring_when_default_etched_printing_lacks_normal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "frontend_demo_sol_ring_etched.db"
+            source_rows = json.loads(
+                fixture_path("frontend_demo_full_catalog", "scryfall.json").read_text(encoding="utf-8")
+            )
+            for row in source_rows:
+                if row["id"] == "fixture-sol-ring-mainstream-en":
+                    row["finishes"] = ["etched"]
+                    row["released_at"] = "2024-08-02"
+
+            scryfall_json = Path(tmp_dir) / "sol_ring_etched_only.json"
+            scryfall_json.write_text(json.dumps(source_rows), encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/bootstrap_frontend_demo.py",
+                    "--db",
+                    str(db_path),
+                    "--force",
+                    "--full-catalog",
+                    "--scryfall-json",
+                    str(scryfall_json),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertIn("Catalog mode: full", result.stdout)
+            self.assertIn("Curated owned-item demo rows resolved from imported catalog printings.", result.stdout)
+            self.assert_richer_demo_dataset(db_path)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            owned_by_name = {row.name: row for row in owned_rows}
+            self.assertEqual("fixture-sol-ring-mainstream-en", owned_by_name["Sol Ring"].scryfall_id)
+            self.assertEqual("etched", owned_by_name["Sol Ring"].finish)
