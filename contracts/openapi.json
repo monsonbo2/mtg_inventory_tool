@@ -2483,6 +2483,50 @@
       "InventoryCreateRequest": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "default_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Location"
+          },
+          "default_tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tags"
+          },
           "description": {
             "anyOf": [
               {
@@ -2497,6 +2541,17 @@
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
           },
           "slug": {
             "title": "Slug",
@@ -2513,6 +2568,50 @@
       "InventoryCreateResponse": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "default_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Location"
+          },
+          "default_tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tags"
+          },
           "description": {
             "anyOf": [
               {
@@ -2532,6 +2631,17 @@
             "title": "Inventory Id",
             "type": "integer"
           },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -2541,7 +2651,12 @@
           "inventory_id",
           "slug",
           "display_name",
-          "description"
+          "description",
+          "default_location",
+          "default_tags",
+          "notes",
+          "acquisition_price",
+          "acquisition_currency"
         ],
         "title": "InventoryCreateResponse",
         "type": "object"
@@ -2603,6 +2718,50 @@
       "InventoryListRowResponse": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "default_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Location"
+          },
+          "default_tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tags"
+          },
           "description": {
             "anyOf": [
               {
@@ -2622,6 +2781,17 @@
             "title": "Item Rows",
             "type": "integer"
           },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -2635,6 +2805,11 @@
           "slug",
           "display_name",
           "description",
+          "default_location",
+          "default_tags",
+          "notes",
+          "acquisition_price",
+          "acquisition_currency",
           "item_rows",
           "total_cards"
         ],

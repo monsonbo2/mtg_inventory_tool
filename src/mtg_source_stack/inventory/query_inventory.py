@@ -69,7 +69,16 @@ def get_inventory_row(connection: sqlite3.Connection, slug: str) -> sqlite3.Row:
     slug = normalize_inventory_slug(slug)
     row = connection.execute(
         """
-        SELECT id, slug, display_name
+        SELECT
+            id,
+            slug,
+            display_name,
+            description,
+            default_location,
+            default_tags,
+            notes,
+            acquisition_price,
+            acquisition_currency
         FROM inventories
         WHERE slug = ?
         """,
@@ -94,7 +103,16 @@ def get_or_create_inventory_row(
 
     row = connection.execute(
         """
-        SELECT id, slug, display_name
+        SELECT
+            id,
+            slug,
+            display_name,
+            description,
+            default_location,
+            default_tags,
+            notes,
+            acquisition_price,
+            acquisition_currency
         FROM inventories
         WHERE slug = ?
         """,
@@ -106,7 +124,16 @@ def get_or_create_inventory_row(
             """
             INSERT INTO inventories (slug, display_name)
             VALUES (?, ?)
-            RETURNING id, slug, display_name
+            RETURNING
+                id,
+                slug,
+                display_name,
+                description,
+                default_location,
+                default_tags,
+                notes,
+                acquisition_price,
+                acquisition_currency
             """,
             (slug, display_name or slug),
         )

@@ -106,6 +106,11 @@ class InventoryListRow(ResponseModel):
     slug: str
     display_name: str
     description: str | None
+    default_location: str | None
+    default_tags: str | None
+    notes: str | None
+    acquisition_price: Decimal | None
+    acquisition_currency: str | None
     item_rows: int
     total_cards: int
 
@@ -116,6 +121,11 @@ class InventoryCreateResult(ResponseModel):
     slug: str
     display_name: str
     description: str | None
+    default_location: str | None
+    default_tags: str | None
+    notes: str | None
+    acquisition_price: Decimal | None
+    acquisition_currency: str | None
 
 
 @dataclass(frozen=True, slots=True)

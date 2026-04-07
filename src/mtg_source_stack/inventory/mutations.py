@@ -1396,6 +1396,7 @@ def add_card_with_connection(
     normalized_condition = normalize_condition_code(condition_code)
     normalized_finish = normalize_finish(finish)
     explicit_language = text_or_none(language_code)
+    explicit_location = location is not None
     normalized_location = text_or_none(location) or ""
     normalized_acquisition_price = coerce_decimal(acquisition_price)
     normalized_acquisition_currency = normalize_currency_code(acquisition_currency)
@@ -1417,6 +1418,8 @@ def add_card_with_connection(
         inventory_cache=inventory_cache,
         auto_create=inventory_display_name is not None,
     )
+    if not explicit_location:
+        normalized_location = text_or_none(inventory["default_location"]) or ""
 
     card = resolved_card
     if card is None:
@@ -1458,7 +1461,13 @@ def add_card_with_connection(
                 f"Printing language: {resolved_language}; requested language_code: {normalized_language}."
             )
 
-    new_tags = parse_tags(tags)
+    explicit_tags = tags is not None
+    default_tags = parse_tags(inventory["default_tags"])
+    if explicit_tags:
+        requested_tags = parse_tags(tags)
+        new_tags = requested_tags if text_or_none(tags) is None else merge_tags(default_tags, requested_tags)
+    else:
+        new_tags = default_tags
     # Re-adding the same logical row should accumulate tags instead of replacing
     # previously attached metadata from earlier imports or manual edits.
     existing_row = connection.execute(

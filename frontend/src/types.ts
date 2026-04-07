@@ -72,6 +72,11 @@ export interface InventorySummary {
   slug: string;
   display_name: string;
   description: string | null;
+  default_location: string | null;
+  default_tags: string | null;
+  notes: string | null;
+  acquisition_price: string | null;
+  acquisition_currency: string | null;
   item_rows: number;
   total_cards: number;
 }
@@ -80,6 +85,11 @@ export interface InventoryCreateRequest {
   slug: string;
   display_name: string;
   description?: string | null;
+  default_location?: string | null;
+  default_tags?: string | null;
+  notes?: string | null;
+  acquisition_price?: string | null;
+  acquisition_currency?: string | null;
 }
 
 export interface InventoryCreateResponse {
@@ -87,6 +97,11 @@ export interface InventoryCreateResponse {
   slug: string;
   display_name: string;
   description: string | null;
+  default_location: string | null;
+  default_tags: string | null;
+  notes: string | null;
+  acquisition_price: string | null;
+  acquisition_currency: string | null;
 }
 
 export interface CatalogSearchRow {

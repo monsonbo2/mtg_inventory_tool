@@ -63,6 +63,11 @@ class InventoryListRowResponse(ApiBaseModel):
     slug: str
     display_name: str
     description: str | None
+    default_location: str | None
+    default_tags: str | None
+    notes: str | None
+    acquisition_price: str | None
+    acquisition_currency: str | None
     item_rows: int
     total_cards: int
 
@@ -72,6 +77,11 @@ class InventoryCreateResponse(ApiBaseModel):
     slug: str
     display_name: str
     description: str | None
+    default_location: str | None
+    default_tags: str | None
+    notes: str | None
+    acquisition_price: str | None
+    acquisition_currency: str | None
 
 
 class DefaultInventoryBootstrapResponse(ApiBaseModel):

@@ -83,9 +83,13 @@ class SchemaMigrationTest(unittest.TestCase):
                     row["name"]
                     for row in connection.execute("PRAGMA table_info(mtg_cards)").fetchall()
                 }
+                inventory_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(inventories)").fetchall()
+                }
 
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], versions)
-            self.assertEqual(10, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], versions)
+            self.assertEqual(11, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
             self.assertEqual(1, inventory_memberships_exists)
@@ -103,6 +107,15 @@ class SchemaMigrationTest(unittest.TestCase):
                     "is_default_add_searchable",
                 }.issubset(mtg_card_columns)
             )
+            self.assertTrue(
+                {
+                    "default_location",
+                    "default_tags",
+                    "notes",
+                    "acquisition_price",
+                    "acquisition_currency",
+                }.issubset(inventory_columns)
+            )
 
     def test_initialize_database_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -116,7 +129,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(10, len(rows))
+            self.assertEqual(11, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -129,6 +142,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (8, "add catalog classification fields"),
                     (9, "add catalog relevance rank"),
                     (10, "add inventory printing selection mode"),
+                    (11, "add inventory metadata defaults"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -192,18 +206,28 @@ class SchemaMigrationTest(unittest.TestCase):
                 actor_default_inventories_exists = migrated.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'actor_default_inventories'"
                 ).fetchone()[0]
+                inventory_columns = {row["name"] for row in migrated.execute("PRAGMA table_info(inventories)")}
 
             self.assertIn("tags_json", columns)
             self.assertIn("printing_selection_mode", columns)
             self.assertEqual("[]", tags_value)
             self.assertEqual("explicit", printing_selection_mode)
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
             self.assertEqual(1, fts_exists)
             self.assertEqual(1, memberships_exists)
             self.assertEqual(1, actor_default_inventories_exists)
+            self.assertTrue(
+                {
+                    "default_location",
+                    "default_tags",
+                    "notes",
+                    "acquisition_price",
+                    "acquisition_currency",
+                }.issubset(inventory_columns)
+            )
 
     def test_initialize_database_normalizes_legacy_price_snapshot_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -279,7 +303,7 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], versions)
 
     def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
         for type_line, expected in (

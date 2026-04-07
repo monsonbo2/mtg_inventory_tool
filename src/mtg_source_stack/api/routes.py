@@ -346,6 +346,11 @@ def inventories_create(
             slug=payload.slug,
             display_name=payload.display_name,
             description=payload.description,
+            default_location=payload.default_location,
+            default_tags=payload.default_tags,
+            notes=payload.notes,
+            acquisition_price=payload.acquisition_price,
+            acquisition_currency=payload.acquisition_currency,
             actor_id=context.actor_id,
         )
     )

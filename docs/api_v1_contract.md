@@ -31,6 +31,9 @@ preserve for the first API-backed version of the project.
   Typical examples: direct `scryfall_id` adds stay `explicit`, while bare
   `oracle_id` or name-only imports become `defaulted` when the backend had to
   choose among multiple valid printings.
+- Inventory create/list/bootstrap responses include inventory-level metadata
+  fields such as `default_location`, `default_tags`, `notes`,
+  `acquisition_price`, and `acquisition_currency`.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
   explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
@@ -138,6 +141,12 @@ preserve for the first API-backed version of the project.
     resolved printing language
   - if `language_code` is explicitly provided and does not match the resolved
     printing language, the request returns `400 validation_error`
+  - omitted `location` inherits the inventory's `default_location` when set
+  - omitted `tags` inherits the inventory's `default_tags` when set
+  - explicit non-empty `tags` merge with inventory `default_tags` rather than
+    replacing them
+  - explicit blank `location` or blank `tags` bypasses those inventory
+    defaults instead of reapplying them
 - `GET /cards/search` query `lang`
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language

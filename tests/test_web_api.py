@@ -288,6 +288,89 @@ class WebApiSchemaTest(unittest.TestCase):
                 owned_properties["printing_selection_mode"]["enum"],
             )
 
+            inventories_list_schema = spec["paths"]["/inventories"]["get"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]
+            self.assertEqual("array", inventories_list_schema["type"])
+            inventories_list_schema_name = self._schema_name_from_ref(inventories_list_schema["items"]["$ref"])
+            self.assertEqual("InventoryListRowResponse", inventories_list_schema_name)
+            inventories_list_properties = components[inventories_list_schema_name]["properties"]
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["default_location"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["default_tags"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["notes"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["acquisition_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["acquisition_currency"]["anyOf"],
+            )
+
+            inventories_create_request_schema = spec["paths"]["/inventories"]["post"]["requestBody"]["content"][
+                "application/json"
+            ]["schema"]
+            inventories_create_request_schema_name = self._schema_name_from_ref(
+                inventories_create_request_schema["$ref"]
+            )
+            inventories_create_request_properties = components[inventories_create_request_schema_name]["properties"]
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["default_location"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["default_tags"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["notes"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["acquisition_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["acquisition_currency"]["anyOf"],
+            )
+
+            inventories_create_schema = spec["paths"]["/inventories"]["post"]["responses"]["201"]["content"][
+                "application/json"
+            ]["schema"]
+            inventories_create_schema_name = self._schema_name_from_ref(inventories_create_schema["$ref"])
+            self.assertEqual("InventoryCreateResponse", inventories_create_schema_name)
+            inventories_create_properties = components[inventories_create_schema_name]["properties"]
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["default_location"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["default_tags"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["notes"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["acquisition_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["acquisition_currency"]["anyOf"],
+            )
+
             bootstrap_schema = spec["paths"]["/me/bootstrap"]["post"]["responses"]["200"]["content"][
                 "application/json"
             ]["schema"]
@@ -1090,6 +1173,83 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("local-demo", audit.json()[0]["actor_id"])
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
                 self.assertRegex(audit.json()[0]["occurred_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_demo_api_inventory_metadata_round_trips_and_add_defaults_apply(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={
+                        "slug": "personal",
+                        "display_name": "Personal Collection",
+                        "description": "Main demo inventory",
+                        "default_location": "Trade Binder",
+                        "default_tags": "trade, staples",
+                        "notes": "Main inventory notes",
+                        "acquisition_price": "25.00",
+                        "acquisition_currency": "usd",
+                    },
+                )
+                self.assertEqual(201, created_inventory.status_code)
+                self.assertEqual(
+                    {
+                        "inventory_id": 1,
+                        "slug": "personal",
+                        "display_name": "Personal Collection",
+                        "description": "Main demo inventory",
+                        "default_location": "Trade Binder",
+                        "default_tags": "staples, trade",
+                        "notes": "Main inventory notes",
+                        "acquisition_price": "25.00",
+                        "acquisition_currency": "USD",
+                    },
+                    created_inventory.json(),
+                )
+
+                inventories = client.get("/inventories")
+                self.assertEqual(200, inventories.status_code)
+                self.assertEqual(
+                    [
+                        {
+                            "slug": "personal",
+                            "display_name": "Personal Collection",
+                            "description": "Main demo inventory",
+                            "default_location": "Trade Binder",
+                            "default_tags": "staples, trade",
+                            "notes": "Main inventory notes",
+                            "acquisition_price": "25.00",
+                            "acquisition_currency": "USD",
+                            "item_rows": 0,
+                            "total_cards": 0,
+                        }
+                    ],
+                    inventories.json(),
+                )
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 2,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertEqual("Trade Binder", added.json()["location"])
+                self.assertEqual(["staples", "trade"], added.json()["tags"])
+
+                with connect(db_path) as connection:
+                    item_row = connection.execute(
+                        "SELECT location, tags_json FROM inventory_items WHERE id = ?",
+                        (added.json()["item_id"],),
+                    ).fetchone()
+
+                self.assertEqual("Trade Binder", item_row["location"])
+                self.assertEqual('["staples", "trade"]', item_row["tags_json"])
 
     def test_demo_api_csv_import_supports_preview_and_commit_but_not_implicit_inventory_creation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -4565,10 +4725,20 @@ class WebApiTest(unittest.TestCase):
                 self.assertTrue(created.json()["created"])
                 self.assertEqual("Collection", created.json()["inventory"]["display_name"])
                 self.assertEqual("shared-user-collection", created.json()["inventory"]["slug"])
+                self.assertIsNone(created.json()["inventory"]["default_location"])
+                self.assertIsNone(created.json()["inventory"]["default_tags"])
+                self.assertIsNone(created.json()["inventory"]["notes"])
+                self.assertIsNone(created.json()["inventory"]["acquisition_price"])
+                self.assertIsNone(created.json()["inventory"]["acquisition_currency"])
 
                 inventories = client.get("/inventories", headers=user_headers)
                 self.assertEqual(200, inventories.status_code)
                 self.assertEqual(["shared-user-collection"], [row["slug"] for row in inventories.json()])
+                self.assertIsNone(inventories.json()[0]["default_location"])
+                self.assertIsNone(inventories.json()[0]["default_tags"])
+                self.assertIsNone(inventories.json()[0]["notes"])
+                self.assertIsNone(inventories.json()[0]["acquisition_price"])
+                self.assertIsNone(inventories.json()[0]["acquisition_currency"])
 
                 repeated = client.post("/me/bootstrap", headers=user_headers)
                 self.assertEqual(200, repeated.status_code)

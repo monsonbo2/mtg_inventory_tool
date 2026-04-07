@@ -210,6 +210,11 @@ class InventoryCreateRequest(ApiBaseModel):
     slug: str
     display_name: str
     description: str | None = None
+    default_location: str | None = None
+    default_tags: str | None = None
+    notes: str | None = None
+    acquisition_price: str | None = None
+    acquisition_currency: str | None = None
 
 
 class DecklistImportResolutionRequest(ApiBaseModel):

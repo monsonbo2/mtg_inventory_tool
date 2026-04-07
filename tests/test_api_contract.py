@@ -18,6 +18,7 @@ from mtg_source_stack.api.request_models import (
     BulkInventoryItemMutationRequest,
     DecklistImportRequest,
     DeckUrlImportRequest,
+    InventoryCreateRequest,
     InventoryDuplicateRequest,
     InventoryTransferRequest,
     PatchInventoryItemRequest,
@@ -35,7 +36,9 @@ from mtg_source_stack.api.response_models import (
     DecklistImportResponse,
     DeckUrlImportResponse,
     DefaultInventoryBootstrapResponse,
+    InventoryCreateResponse,
     InventoryDuplicateResponse,
+    InventoryListRowResponse,
     InventoryTransferResponse,
     OwnedInventoryRowResponse,
     RemoveInventoryItemResponse,
@@ -245,8 +248,38 @@ class ApiContractTest(RepoSmokeTestCase):
                 "slug": "alice-collection",
                 "display_name": "Collection",
                 "description": None,
+                "default_location": None,
+                "default_tags": None,
+                "notes": None,
+                "acquisition_price": None,
+                "acquisition_currency": None,
             },
         }
+        inventory_create_payload = {
+            "inventory_id": 7,
+            "slug": "alice-collection",
+            "display_name": "Collection",
+            "description": "Main inventory",
+            "default_location": "Binder A",
+            "default_tags": "modern, staples",
+            "notes": "Main trade stock",
+            "acquisition_price": "42.50",
+            "acquisition_currency": "USD",
+        }
+        inventory_list_payload = [
+            {
+                "slug": "alice-collection",
+                "display_name": "Collection",
+                "description": "Main inventory",
+                "default_location": "Binder A",
+                "default_tags": "modern, staples",
+                "notes": "Main trade stock",
+                "acquisition_price": "42.50",
+                "acquisition_currency": "USD",
+                "item_rows": 12,
+                "total_cards": 45,
+            }
+        ]
         csv_import_payload = {
             "csv_filename": "inventory_import.csv",
             "detected_format": "generic_csv",
@@ -385,6 +418,8 @@ class ApiContractTest(RepoSmokeTestCase):
                 "has_more": False,
             }
         )
+        inventory_create = InventoryCreateResponse.model_validate(inventory_create_payload)
+        inventory_list = [InventoryListRowResponse.model_validate(row) for row in inventory_list_payload]
         bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
         csv_import = CsvImportResponse.model_validate(csv_import_payload)
         decklist_import = DecklistImportResponse.model_validate(decklist_import_payload)
@@ -404,6 +439,12 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
         self.assertEqual(1, catalog_name_result.total_count)
         self.assertFalse(catalog_name_result.has_more)
+        self.assertEqual("Binder A", inventory_create.default_location)
+        self.assertEqual("modern, staples", inventory_create.default_tags)
+        self.assertEqual("42.50", inventory_create.acquisition_price)
+        self.assertEqual("USD", inventory_create.acquisition_currency)
+        self.assertEqual("Main trade stock", inventory_list[0].notes)
+        self.assertEqual(45, inventory_list[0].total_cards)
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("generic_csv", csv_import.detected_format)
@@ -442,6 +483,30 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
         self.assertIn("prefers English mainstream-paper printings", add_properties["oracle_id"]["description"])
 
+        inventory_create_schema = InventoryCreateRequest.model_json_schema()
+        inventory_create_properties = inventory_create_schema["properties"]
+        self.assertEqual("string", inventory_create_properties["slug"]["type"])
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["default_location"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["default_tags"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["notes"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["acquisition_price"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["acquisition_currency"]["anyOf"],
+        )
+
         decklist_schema = DecklistImportRequest.model_json_schema()
         decklist_properties = decklist_schema["properties"]
         self.assertEqual(False, decklist_properties["dry_run"]["default"])
@@ -473,6 +538,52 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
         self.assertIn("Canonical language codes: en, ja, de, fr", owned_properties["language_code"]["description"])
         self.assertEqual(["explicit", "defaulted"], owned_properties["printing_selection_mode"]["enum"])
+
+        inventory_list_schema = InventoryListRowResponse.model_json_schema()
+        inventory_list_properties = inventory_list_schema["properties"]
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["default_location"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["default_tags"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["notes"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["acquisition_price"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["acquisition_currency"]["anyOf"],
+        )
+
+        inventory_create_response_schema = InventoryCreateResponse.model_json_schema()
+        inventory_create_response_properties = inventory_create_response_schema["properties"]
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["default_location"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["default_tags"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["notes"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["acquisition_price"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["acquisition_currency"]["anyOf"],
+        )
 
         set_finish_schema = SetFinishResponse.model_json_schema()
         self.assertEqual("string", set_finish_schema["properties"]["oracle_id"]["type"])
@@ -654,6 +765,11 @@ class ApiContractTest(RepoSmokeTestCase):
                     "slug": "source-copy",
                     "display_name": "Source Copy",
                     "description": "Original description",
+                    "default_location": None,
+                    "default_tags": None,
+                    "notes": None,
+                    "acquisition_price": None,
+                    "acquisition_currency": None,
                 },
                 "transfer": {
                     "source_inventory": "source",
@@ -765,6 +881,10 @@ class ApiContractTest(RepoSmokeTestCase):
 
     def test_demo_payload_examples_validate_against_models(self) -> None:
         example_validators = {
+            "inventories_list.json": lambda payload: [
+                InventoryListRowResponse.model_validate(item) for item in payload
+            ],
+            "bootstrap_default_inventory_response.json": DefaultInventoryBootstrapResponse.model_validate,
             "owned_items.json": lambda payload: [
                 OwnedInventoryRowResponse.model_validate(item) for item in payload
             ],

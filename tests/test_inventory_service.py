@@ -42,6 +42,7 @@ from mtg_source_stack.inventory.service import (
     list_card_printings_for_oracle,
     list_inventory_audit_events,
     list_inventory_memberships,
+    list_inventories,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
@@ -1834,21 +1835,157 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 slug="personal",
                 display_name="Personal Collection",
                 description="Main binder inventory",
+                default_location=" Binder A ",
+                default_tags="Burn,  Modern, burn",
+                notes=" Main collection notes ",
+                acquisition_price="12.50",
+                acquisition_currency="usd",
             )
 
             self.assertEqual(1, result.inventory_id)
             self.assertEqual("personal", result.slug)
             self.assertEqual("Personal Collection", result.display_name)
             self.assertEqual("Main binder inventory", result.description)
+            self.assertEqual("Binder A", result.default_location)
+            self.assertEqual("burn, modern", result.default_tags)
+            self.assertEqual("Main collection notes", result.notes)
+            self.assertEqual(Decimal("12.50"), result.acquisition_price)
+            self.assertEqual("USD", result.acquisition_currency)
             self.assertEqual(
                 {
                     "inventory_id": 1,
                     "slug": "personal",
                     "display_name": "Personal Collection",
                     "description": "Main binder inventory",
+                    "default_location": "Binder A",
+                    "default_tags": "burn, modern",
+                    "notes": "Main collection notes",
+                    "acquisition_price": "12.50",
+                    "acquisition_currency": "USD",
                 },
                 serialize_response(result),
             )
+
+            listed = list_inventories(db_path)
+            self.assertEqual(1, len(listed))
+            self.assertEqual("Binder A", listed[0].default_location)
+            self.assertEqual("burn, modern", listed[0].default_tags)
+            self.assertEqual("Main collection notes", listed[0].notes)
+            self.assertEqual(Decimal("12.50"), listed[0].acquisition_price)
+            self.assertEqual("USD", listed[0].acquisition_currency)
+
+    def test_add_card_uses_inventory_default_location_and_tags_when_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                default_location="Binder A",
+                default_tags="Burn, Modern",
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location=None,
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertEqual("Binder A", added.location)
+            self.assertEqual(["burn", "modern"], added.tags)
+
+    def test_add_card_merges_inventory_default_tags_with_explicit_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                default_tags="Burn, Modern",
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Deckbox",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags="Foil, burn",
+            )
+
+            self.assertEqual("Deckbox", added.location)
+            self.assertEqual(["burn", "modern", "foil"], added.tags)
+
+    def test_add_card_blank_location_and_tags_bypass_inventory_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                default_location="Binder A",
+                default_tags="Burn, Modern",
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="   ",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags="   ",
+            )
+
+            self.assertIsNone(added.location)
+            self.assertEqual([], added.tags)
 
     def test_write_services_require_prepared_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3704,6 +3841,11 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 slug="source",
                 display_name="Source Collection",
                 description="Original description",
+                default_location="Trade Binder",
+                default_tags="trade, staples",
+                notes="Source inventory notes",
+                acquisition_price="25.00",
+                acquisition_currency="USD",
                 actor_id="owner-user",
             )
             self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
@@ -3722,6 +3864,11 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("source", result.source_inventory)
             self.assertEqual("source-copy", result.inventory.slug)
             self.assertEqual("Original description", result.inventory.description)
+            self.assertEqual("Trade Binder", result.inventory.default_location)
+            self.assertEqual("trade, staples", result.inventory.default_tags)
+            self.assertEqual("Source inventory notes", result.inventory.notes)
+            self.assertEqual(Decimal("25.00"), result.inventory.acquisition_price)
+            self.assertEqual("USD", result.inventory.acquisition_currency)
             self.assertEqual("all_items", result.transfer.selection_kind)
             self.assertEqual(2, result.transfer.copied_count)
 

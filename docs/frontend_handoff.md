@@ -63,6 +63,8 @@ Use this as the first-pass UI-to-endpoint map:
 
 - Inventory selector -> `GET /inventories`
   Returns only the inventories visible to the current shared-service user.
+  Inventory rows also include inventory metadata such as `default_location`,
+  `default_tags`, `notes`, `acquisition_price`, and `acquisition_currency`.
 - Card search -> `GET /cards/search`
 - Card search scope guidance:
   - omit `scope` for the ordinary mainline add flow
@@ -83,6 +85,11 @@ Use this as the first-pass UI-to-endpoint map:
   Accepts printing-level identifiers like `scryfall_id` and card-level
   `oracle_id`. When `language_code` is omitted, the backend stores the
   resolved printing language.
+  - omitted `location` inherits the inventory `default_location` when present
+  - omitted `tags` inherits the inventory `default_tags` when present
+  - explicit non-empty `tags` merge with the inventory defaults
+  - explicit blank `location` or blank `tags` intentionally bypass the
+    inventory defaults
 - Multi-row bulk edit -> `POST /inventories/{inventory_slug}/items/bulk`
   Request body is JSON.
   - use exactly one bulk `operation` per request
