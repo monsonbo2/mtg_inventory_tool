@@ -1,7 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import type { InventoryCreateRequest, InventorySummary } from "../types";
-import { normalizeInventorySlugInput, normalizeOptionalText } from "../uiHelpers";
+import {
+  normalizeInventorySlugInput,
+  normalizeOptionalText,
+  normalizeTagInputText,
+} from "../uiHelpers";
 import type { AppShellState, InventoryCreateResult } from "../uiTypes";
 import { ModalDialog } from "./ui/ModalDialog";
 import { PanelState } from "./ui/PanelState";
@@ -66,6 +70,8 @@ export function InventorySidebar(props: {
   const [slug, setSlug] = useState("");
   const [showShortNameField, setShowShortNameField] = useState(false);
   const [description, setDescription] = useState("");
+  const [defaultLocation, setDefaultLocation] = useState("");
+  const [defaultTags, setDefaultTags] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const currentInventory =
@@ -157,6 +163,8 @@ export function InventorySidebar(props: {
     setSlug("");
     setShowShortNameField(false);
     setDescription("");
+    setDefaultLocation("");
+    setDefaultTags("");
     setSlugTouched(false);
     setFormError(null);
   }
@@ -197,11 +205,27 @@ export function InventorySidebar(props: {
     }
   }
 
+  function handleDefaultLocationChange(value: string) {
+    setDefaultLocation(value);
+    if (formError) {
+      setFormError(null);
+    }
+  }
+
+  function handleDefaultTagsChange(value: string) {
+    setDefaultTags(value);
+    if (formError) {
+      setFormError(null);
+    }
+  }
+
   async function handleCreateSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const nextDisplayName = displayName.trim();
     const nextSlug = normalizeInventorySlugInput(slug);
+    const nextDefaultLocation = normalizeOptionalText(defaultLocation);
+    const nextDefaultTags = normalizeTagInputText(defaultTags);
 
     if (!nextDisplayName) {
       setFormError("Enter a collection name before creating it.");
@@ -213,11 +237,19 @@ export function InventorySidebar(props: {
       return;
     }
 
-    const createResult = await props.onCreateInventory({
+    const createPayload: InventoryCreateRequest = {
       display_name: nextDisplayName,
       slug: nextSlug,
       description: normalizeOptionalText(description),
-    });
+    };
+    if (nextDefaultLocation) {
+      createPayload.default_location = nextDefaultLocation;
+    }
+    if (nextDefaultTags) {
+      createPayload.default_tags = nextDefaultTags;
+    }
+
+    const createResult = await props.onCreateInventory(createPayload);
 
     if (createResult.ok) {
       closeCreateForm();
@@ -283,6 +315,33 @@ export function InventorySidebar(props: {
               placeholder="Add a short description for this collection."
               value={description}
             />
+          </label>
+
+          <label className="field">
+            <span>Default location</span>
+            <input
+              className="text-input"
+              onChange={(event) => handleDefaultLocationChange(event.target.value)}
+              placeholder="e.g. Trade Binder"
+              value={defaultLocation}
+            />
+            <span className="field-hint field-hint-info">
+              Items added to this collection will automatically use this location unless
+              you choose another one while adding cards.
+            </span>
+          </label>
+
+          <label className="field">
+            <span>Default tags</span>
+            <input
+              className="text-input"
+              onChange={(event) => handleDefaultTagsChange(event.target.value)}
+              placeholder="e.g. trade, staples"
+              value={defaultTags}
+            />
+            <span className="field-hint field-hint-info">
+              Items added to this collection will automatically include these tags.
+            </span>
           </label>
         </div>
 
@@ -381,18 +440,25 @@ export function InventorySidebar(props: {
                   type="button"
                 >
                   <span className="inventory-button-head inventory-focus-trigger-head">
-                    <span className="inventory-button-meta">
-                      {getInventoryCountLabel(props.inventories.length)} available
+                    <span className="inventory-focus-trigger-meta">
+                      <span className="inventory-button-meta">
+                        {getInventoryCountLabel(props.inventories.length)} available
+                      </span>
+                      <span className="inventory-focus-trigger-copy">
+                        Click to switch
+                      </span>
                     </span>
-                    <span
-                      aria-hidden="true"
-                      className={
-                        changeCollectionOpen
-                          ? "inventory-focus-trigger-indicator inventory-focus-trigger-indicator-open"
-                          : "inventory-focus-trigger-indicator"
-                      }
-                    >
-                      ▾
+                    <span aria-hidden="true" className="inventory-focus-trigger-affordance">
+                      <span className="inventory-focus-trigger-label">Switch</span>
+                      <span
+                        className={
+                          changeCollectionOpen
+                            ? "inventory-focus-trigger-indicator inventory-focus-trigger-indicator-open"
+                            : "inventory-focus-trigger-indicator"
+                        }
+                      >
+                        ▾
+                      </span>
                     </span>
                   </span>
                   <InventoryCardSummary inventory={currentInventory} showDescription={false} />

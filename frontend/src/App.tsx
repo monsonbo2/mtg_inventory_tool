@@ -141,10 +141,18 @@ export default function App() {
     },
   });
   const {
+    browsePage,
+    browsePageCount,
+    browseVisibleLimit,
+    browseVisibleLimitOptions,
     collectionView,
     collectionSearchQuery,
     detailModalItemId,
+    filteredCollectionItemsCount,
+    filteredTableItemsCount,
     focusedItemId,
+    handleBrowsePageChange,
+    handleBrowseVisibleLimitChange,
     handleClearSelectedItems,
     handleClearVisibleSelectedItems,
     handleCollectionViewChange,
@@ -152,14 +160,21 @@ export default function App() {
     handleCollectionSearchQueryChange,
     handleOpenItemDetails,
     handleSelectTableItem,
+    handleSelectAllCollectionItems,
     handleSelectAllVisibleItems,
+    handleTableFiltersChange,
+    handleTablePageChange,
     handleToggleItemSelection,
     selectedItemIds,
-    setTableFilters,
     setTableSort,
+    tablePage,
+    tablePageCount,
+    tableVisibleLimit,
+    tableVisibleLimitOptions,
     tableFilterOptions,
     tableFilters,
     tableSort,
+    handleTableVisibleLimitChange,
     visibleCollectionItems,
     visibleTableItems,
   } = useCollectionViewState({
@@ -180,8 +195,10 @@ export default function App() {
     handleImportDecklist,
     handleImportDeckUrl,
     handlePatchItem,
+    handleTransferItems,
     notice,
     reportNotice,
+    transferBusy,
   } = useInventoryMutations({
     clearSelectedItems: handleClearSelectedItems,
     describeInventory,
@@ -189,6 +206,7 @@ export default function App() {
     reloadInventorySummaries,
     resetSearchWorkspace,
     selectedInventory,
+    selectedInventoryItemCount: items.length,
     selectedItemIds,
   });
 
@@ -248,7 +266,12 @@ export default function App() {
   };
   const collectionPanelState = {
     collection: {
+      browsePage,
+      browsePageCount,
+      browseVisibleLimit,
+      browseVisibleLimitOptions,
       busyItem,
+      filteredItemsCount: filteredCollectionItemsCount,
       searchQuery: collectionSearchQuery,
       detailModalItemId,
       focusedItemId,
@@ -260,15 +283,27 @@ export default function App() {
     },
     selectedInventoryRow,
     table: {
+      allItemsCount: filteredTableItemsCount,
+      availableTargetInventories: inventories.filter(
+        (inventory) => inventory.slug !== selectedInventory,
+      ),
       bulkMutationBusy,
+      createInventoryBusy,
       filterOptions: tableFilterOptions,
       filters: tableFilters,
       items: visibleTableItems,
+      page: tablePage,
+      pageCount: tablePageCount,
       selectedItemIds,
       sort: tableSort,
+      transferBusy,
+      visibleLimit: tableVisibleLimit,
+      visibleLimitOptions: tableVisibleLimitOptions,
     },
   };
   const collectionPanelActions = {
+    onBrowsePageChange: handleBrowsePageChange,
+    onBrowseVisibleLimitChange: handleBrowseVisibleLimitChange,
     onBulkMutationSubmit: handleBulkMutation,
     onClearSelectedItems: handleClearSelectedItems,
     onClearVisibleSelectedItems: handleClearVisibleSelectedItems,
@@ -280,10 +315,15 @@ export default function App() {
     onOpenActivity: () => setActivityOpen(true),
     onOpenItemDetails: handleOpenItemDetails,
     onPatch: handlePatchItem,
+    onCreateInventory: handleCreateInventory,
     onSelectTableItem: handleSelectTableItem,
+    onSelectAllCollectionItems: handleSelectAllCollectionItems,
     onSelectAllVisibleItems: handleSelectAllVisibleItems,
-    onTableFiltersChange: setTableFilters,
+    onTransferItems: handleTransferItems,
+    onTableFiltersChange: handleTableFiltersChange,
+    onTablePageChange: handleTablePageChange,
     onTableSortChange: setTableSort,
+    onTableVisibleLimitChange: handleTableVisibleLimitChange,
     onToggleItemSelection: handleToggleItemSelection,
   };
   const bannerNotice = notice && notice.tone !== "success" ? notice : null;
@@ -300,7 +340,7 @@ export default function App() {
       <header className="hero">
         <div>
           <p className="eyebrow">Card Collection</p>
-          <h1>MTG Collection Studio</h1>
+          <h1>Stash Counter</h1>
           <p className="hero-copy">
             Search cards, compare printings, and organize your collection in one place.
           </p>

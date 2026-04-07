@@ -9,26 +9,44 @@ import {
 } from "../tableViewHelpers";
 import type { OwnedInventoryRow } from "../types";
 
+const BROWSE_VISIBLE_LIMIT_OPTIONS = [25, 50, 100] as const;
+const TABLE_VISIBLE_LIMIT_OPTIONS = [50, 100, 200] as const;
+
+function getPageCount(totalItems: number, pageSize: number) {
+  return Math.max(1, Math.ceil(totalItems / pageSize));
+}
+
 export function useCollectionViewState(options: {
   items: OwnedInventoryRow[];
   selectedInventory: string | null;
 }) {
   const [selectionAnchorItemId, setSelectionAnchorItemId] = useState<number | null>(null);
-  const [collectionView, setCollectionView] = useState<
-    "browse" | "table" | "detailed"
-  >("browse");
+  const [collectionView, setCollectionView] = useState<"browse" | "table">("browse");
   const [detailModalItemId, setDetailModalItemId] = useState<number | null>(null);
   const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [browsePage, setBrowsePage] = useState(1);
+  const [browseVisibleLimit, setBrowseVisibleLimit] = useState<number>(
+    BROWSE_VISIBLE_LIMIT_OPTIONS[0],
+  );
+  const [tablePage, setTablePage] = useState(1);
+  const [tableVisibleLimit, setTableVisibleLimit] = useState<number>(
+    TABLE_VISIBLE_LIMIT_OPTIONS[0],
+  );
   const [tableSort, setTableSort] = useState<InventoryTableSortState>(null);
   const [tableFilters, setTableFilters] = useState<InventoryTableFilters>(
     createDefaultInventoryTableFilters,
   );
 
   useEffect(() => {
+    setCollectionView((currentView) => (currentView === "table" ? "table" : "browse"));
     setDetailModalItemId(null);
     setFocusedItemId(null);
     setSelectionAnchorItemId(null);
+    setBrowsePage(1);
+    setBrowseVisibleLimit(BROWSE_VISIBLE_LIMIT_OPTIONS[0]);
+    setTablePage(1);
+    setTableVisibleLimit(TABLE_VISIBLE_LIMIT_OPTIONS[0]);
     setTableSort(null);
     setTableFilters(createDefaultInventoryTableFilters());
     setSelectedItemIds([]);
@@ -48,7 +66,7 @@ export function useCollectionViewState(options: {
     );
   }, [options.items]);
 
-  function handleCollectionViewChange(nextView: "browse" | "table" | "detailed") {
+  function handleCollectionViewChange(nextView: "browse" | "table") {
     setDetailModalItemId(null);
     setFocusedItemId(null);
     setCollectionView(nextView);
@@ -71,24 +89,83 @@ export function useCollectionViewState(options: {
     );
   }
 
-  const visibleTableItems = applyInventoryTableQuery(
+  const filteredTableItems = applyInventoryTableQuery(
     options.items,
     tableSort,
     tableFilters,
   );
   const normalizedCollectionSearchQuery = tableFilters.nameQuery.trim().toLowerCase();
-  const visibleCollectionItems = normalizedCollectionSearchQuery
+  const filteredCollectionItems = normalizedCollectionSearchQuery
     ? options.items.filter((item) =>
         item.name.toLowerCase().includes(normalizedCollectionSearchQuery),
       )
     : options.items;
+  const browsePageCount = getPageCount(filteredCollectionItems.length, browseVisibleLimit);
+  const tablePageCount = getPageCount(filteredTableItems.length, tableVisibleLimit);
+  const activeBrowsePage = Math.min(browsePage, browsePageCount);
+  const activeTablePage = Math.min(tablePage, tablePageCount);
+  const visibleCollectionItems = filteredCollectionItems.slice(
+    (activeBrowsePage - 1) * browseVisibleLimit,
+    activeBrowsePage * browseVisibleLimit,
+  );
+  const visibleTableItems = filteredTableItems.slice(
+    (activeTablePage - 1) * tableVisibleLimit,
+    activeTablePage * tableVisibleLimit,
+  );
   const tableFilterOptions = getInventoryTableFilterOptions(options.items);
 
+  useEffect(() => {
+    setBrowsePage((currentPage) => Math.min(currentPage, browsePageCount));
+  }, [browsePageCount]);
+
+  useEffect(() => {
+    setTablePage((currentPage) => Math.min(currentPage, tablePageCount));
+  }, [tablePageCount]);
+
   function handleCollectionSearchQueryChange(nextQuery: string) {
+    setBrowsePage(1);
+    setTablePage(1);
     setTableFilters((current) => ({
       ...current,
       nameQuery: nextQuery,
     }));
+  }
+
+  function handleBrowseVisibleLimitChange(nextLimit: number) {
+    if (
+      !BROWSE_VISIBLE_LIMIT_OPTIONS.includes(
+        nextLimit as (typeof BROWSE_VISIBLE_LIMIT_OPTIONS)[number],
+      )
+    ) {
+      return;
+    }
+    setBrowsePage(1);
+    setBrowseVisibleLimit(nextLimit);
+  }
+
+  function handleTableVisibleLimitChange(nextLimit: number) {
+    if (
+      !TABLE_VISIBLE_LIMIT_OPTIONS.includes(
+        nextLimit as (typeof TABLE_VISIBLE_LIMIT_OPTIONS)[number],
+      )
+    ) {
+      return;
+    }
+    setTablePage(1);
+    setTableVisibleLimit(nextLimit);
+  }
+
+  function handleBrowsePageChange(nextPage: number) {
+    setBrowsePage(Math.min(Math.max(nextPage, 1), browsePageCount));
+  }
+
+  function handleTablePageChange(nextPage: number) {
+    setTablePage(Math.min(Math.max(nextPage, 1), tablePageCount));
+  }
+
+  function handleTableFiltersChange(nextFilters: InventoryTableFilters) {
+    setTablePage(1);
+    setTableFilters(nextFilters);
   }
 
   function handleSelectTableItem(
@@ -159,6 +236,11 @@ export function useCollectionViewState(options: {
     });
   }
 
+  function handleSelectAllCollectionItems() {
+    setSelectionAnchorItemId(visibleTableItems[0]?.item_id ?? options.items[0]?.item_id ?? null);
+    setSelectedItemIds(options.items.map((item) => item.item_id));
+  }
+
   function handleClearVisibleSelectedItems() {
     const visibleItemIds = new Set(visibleTableItems.map((item) => item.item_id));
     setSelectionAnchorItemId((current) =>
@@ -177,8 +259,15 @@ export function useCollectionViewState(options: {
   return {
     collectionView,
     collectionSearchQuery: tableFilters.nameQuery,
+    browsePage: activeBrowsePage,
+    browsePageCount,
+    browseVisibleLimit,
+    browseVisibleLimitOptions: [...BROWSE_VISIBLE_LIMIT_OPTIONS],
     detailModalItemId,
+    filteredCollectionItemsCount: filteredCollectionItems.length,
     focusedItemId,
+    handleBrowsePageChange,
+    handleBrowseVisibleLimitChange,
     handleClearSelectedItems,
     handleClearVisibleSelectedItems,
     handleCollectionViewChange,
@@ -187,13 +276,21 @@ export function useCollectionViewState(options: {
     handleOpenItemDetails,
     handleSelectTableItem,
     handleSelectAllVisibleItems,
+    handleSelectAllCollectionItems,
     handleToggleItemSelection,
+    handleTableFiltersChange,
+    handleTablePageChange,
     selectedItemIds,
-    setTableFilters,
     setTableSort,
+    tablePage: activeTablePage,
+    tablePageCount,
+    tableVisibleLimit,
+    tableVisibleLimitOptions: [...TABLE_VISIBLE_LIMIT_OPTIONS],
     tableFilterOptions,
     tableFilters,
     tableSort,
+    filteredTableItemsCount: filteredTableItems.length,
+    handleTableVisibleLimitChange,
     visibleCollectionItems,
     visibleTableItems,
   };

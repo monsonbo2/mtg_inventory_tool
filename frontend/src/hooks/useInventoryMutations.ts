@@ -10,6 +10,7 @@ import {
   importDecklist,
   importDeckUrl,
   patchInventoryItem,
+  transferInventoryItems,
 } from "../api";
 import type {
   AddInventoryItemRequest,
@@ -18,6 +19,7 @@ import type {
   DeckUrlImportResponse,
   DecklistImportResponse,
   InventoryCreateRequest,
+  InventoryTransferMode,
   PatchInventoryItemRequest,
 } from "../types";
 import {
@@ -35,6 +37,7 @@ import type {
 } from "../uiTypes";
 
 const BULK_MUTATION_MAX_ITEMS = 200;
+const TRANSFER_MUTATION_MAX_ITEMS = 100;
 
 type InventoryImportResponse =
   | CsvImportResponse
@@ -51,6 +54,7 @@ type UseInventoryMutationsOptions = {
   reloadInventorySummaries: (preferredSlug?: string | null) => Promise<boolean>;
   resetSearchWorkspace: () => void;
   selectedItemIds: number[];
+  selectedInventoryItemCount: number;
   clearSelectedItems: () => void;
 };
 
@@ -60,6 +64,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   const [bulkMutationBusy, setBulkMutationBusy] = useState(false);
   const [createInventoryBusy, setCreateInventoryBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [transferBusy, setTransferBusy] = useState<InventoryTransferMode | null>(null);
 
   function getAddRequestBusyId(payload: AddInventoryItemRequest) {
     if ("scryfall_id" in payload) {
@@ -458,6 +463,86 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
+  async function handleTransferItems(request: {
+    mode: InventoryTransferMode;
+    targetInventorySlug: string | null;
+    targetInventoryLabel?: string | null;
+  }) {
+    const sourceInventorySlug = requireSelectedInventory(
+      "Select a collection before copying or moving cards.",
+    );
+    if (!sourceInventorySlug) {
+      return false;
+    }
+
+    if (!options.selectedItemIds.length) {
+      showNotice("Select at least one entry before copying or moving cards.", "error");
+      return false;
+    }
+
+    if (!request.targetInventorySlug) {
+      showNotice("Choose a destination collection before copying or moving cards.", "error");
+      return false;
+    }
+
+    if (request.targetInventorySlug === sourceInventorySlug) {
+      showNotice("Choose a different destination collection.", "error");
+      return false;
+    }
+
+    const transferringEntireCollection =
+      options.selectedInventoryItemCount > 0 &&
+      options.selectedItemIds.length === options.selectedInventoryItemCount;
+
+    if (!transferringEntireCollection && options.selectedItemIds.length > TRANSFER_MUTATION_MAX_ITEMS) {
+      showNotice(
+        `Copy and move currently support up to ${TRANSFER_MUTATION_MAX_ITEMS} selected entries at a time unless you select the entire collection.`,
+        "error",
+      );
+      return false;
+    }
+
+    setTransferBusy(request.mode);
+    clearNotice();
+
+    try {
+      const response = await transferInventoryItems(sourceInventorySlug, {
+        target_inventory_slug: request.targetInventorySlug,
+        mode: request.mode,
+        on_conflict: "merge",
+        keep_acquisition: "source",
+        ...(transferringEntireCollection
+          ? { all_items: true as const }
+          : { item_ids: options.selectedItemIds }),
+      });
+
+      const transferredCount = response.requested_count;
+      await refreshAfterMutation(
+        sourceInventorySlug,
+        `${request.mode === "copy" ? "Copied" : "Moved"} ${transferredCount} entr${
+          transferredCount === 1 ? "y" : "ies"
+        } to ${
+          request.targetInventoryLabel || options.describeInventory(request.targetInventorySlug)
+        }.`,
+      );
+      options.clearSelectedItems();
+      return true;
+    } catch (error) {
+      showNotice(
+        toUserMessage(
+          error,
+          request.mode === "copy"
+            ? "Could not copy the selected entries."
+            : "Could not move the selected entries.",
+        ),
+        "error",
+      );
+      return false;
+    } finally {
+      setTransferBusy(null);
+    }
+  }
+
   return {
     busyAddCardId,
     bulkMutationBusy,
@@ -472,7 +557,9 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     handleImportDecklist,
     handleImportDeckUrl,
     handlePatchItem,
+    handleTransferItems,
     notice,
     reportNotice,
+    transferBusy,
   };
 }

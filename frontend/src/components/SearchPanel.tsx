@@ -10,7 +10,11 @@ import {
   summarizeSearchGroup,
   type SearchCardGroup,
 } from "../searchResultHelpers";
-import { normalizeInventorySlugInput, normalizeOptionalText } from "../uiHelpers";
+import {
+  normalizeInventorySlugInput,
+  normalizeOptionalText,
+  normalizeTagInputText,
+} from "../uiHelpers";
 import type { AsyncStatus, InventoryCreateResult, NoticeTone } from "../uiTypes";
 import { SearchAutocomplete } from "./SearchAutocomplete";
 import { PanelState } from "./ui/PanelState";
@@ -137,6 +141,8 @@ export function SearchPanel(props: {
   const [createCollectionName, setCreateCollectionName] = useState("");
   const [createCollectionSlug, setCreateCollectionSlug] = useState("");
   const [createCollectionDescription, setCreateCollectionDescription] = useState("");
+  const [createCollectionDefaultLocation, setCreateCollectionDefaultLocation] = useState("");
+  const [createCollectionDefaultTags, setCreateCollectionDefaultTags] = useState("");
   const [createCollectionSlugTouched, setCreateCollectionSlugTouched] = useState(false);
   const [showCreateCollectionSlugField, setShowCreateCollectionSlugField] = useState(false);
   const [importFormError, setImportFormError] = useState<string | null>(null);
@@ -363,6 +369,8 @@ export function SearchPanel(props: {
     setCreateCollectionName("");
     setCreateCollectionSlug("");
     setCreateCollectionDescription("");
+    setCreateCollectionDefaultLocation("");
+    setCreateCollectionDefaultTags("");
     setCreateCollectionSlugTouched(false);
     setShowCreateCollectionSlugField(false);
     setImportFormError(null);
@@ -415,6 +423,20 @@ export function SearchPanel(props: {
     }
   }
 
+  function handleCreateCollectionDefaultLocationChange(value: string) {
+    setCreateCollectionDefaultLocation(value);
+    if (importFormError) {
+      setImportFormError(null);
+    }
+  }
+
+  function handleCreateCollectionDefaultTagsChange(value: string) {
+    setCreateCollectionDefaultTags(value);
+    if (importFormError) {
+      setImportFormError(null);
+    }
+  }
+
   function handleImportTargetModeChange(nextMode: ImportTargetMode) {
     setImportTargetMode(nextMode);
     if (nextMode === "existing" && !importTargetInventorySlug) {
@@ -449,6 +471,8 @@ export function SearchPanel(props: {
 
     const nextDisplayName = createCollectionName.trim();
     const nextSlug = normalizeInventorySlugInput(createCollectionSlug);
+    const nextDefaultLocation = normalizeOptionalText(createCollectionDefaultLocation);
+    const nextDefaultTags = normalizeTagInputText(createCollectionDefaultTags);
 
     if (!nextDisplayName) {
       setImportFormError("Enter a collection name before creating it.");
@@ -461,11 +485,19 @@ export function SearchPanel(props: {
       return null;
     }
 
-    const createResult = await props.actions.onCreateInventory({
+    const createPayload: InventoryCreateRequest = {
       display_name: nextDisplayName,
       slug: nextSlug,
       description: normalizeOptionalText(createCollectionDescription),
-    });
+    };
+    if (nextDefaultLocation) {
+      createPayload.default_location = nextDefaultLocation;
+    }
+    if (nextDefaultTags) {
+      createPayload.default_tags = nextDefaultTags;
+    }
+
+    const createResult = await props.actions.onCreateInventory(createPayload);
 
     if (createResult.ok) {
       setImportTargetInventorySlug(createResult.inventory.slug);
@@ -672,6 +704,39 @@ export function SearchPanel(props: {
               />
             </label>
 
+            <label className="field">
+              <span>Default location</span>
+              <input
+                className="text-input"
+                disabled={Boolean(importSubmitBusy)}
+                onChange={(event) =>
+                  handleCreateCollectionDefaultLocationChange(event.target.value)
+                }
+                placeholder="e.g. Trade Binder"
+                value={createCollectionDefaultLocation}
+              />
+              <span className="field-hint field-hint-info">
+                Items added to this collection will automatically use this location unless
+                you choose another one while adding cards.
+              </span>
+            </label>
+
+            <label className="field">
+              <span>Default tags</span>
+              <input
+                className="text-input"
+                disabled={Boolean(importSubmitBusy)}
+                onChange={(event) =>
+                  handleCreateCollectionDefaultTagsChange(event.target.value)
+                }
+                placeholder="e.g. trade, staples"
+                value={createCollectionDefaultTags}
+              />
+              <span className="field-hint field-hint-info">
+                Items added to this collection will automatically include these tags.
+              </span>
+            </label>
+
             <p className="panel-hint inventory-sidebar-note">
               Collections help separate personal, trade, deck, and project cards.
             </p>
@@ -749,7 +814,7 @@ export function SearchPanel(props: {
 
       <form className="search-form" onSubmit={props.actions.onSearchSubmit}>
         <label className="field search-field" ref={searchFieldRef}>
-          <span>Search query</span>
+          <span>Quick Add and Card Search</span>
           <div className="search-input-stack">
             <input
               aria-activedescendant={activeSuggestionId}
@@ -947,6 +1012,8 @@ export function SearchPanel(props: {
               <SearchResultCard
                 busyPrintingId={props.state.busyAddCardId}
                 canAdd={Boolean(props.state.selectedInventoryRow)}
+                defaultLocation={props.state.selectedInventoryRow?.default_location || null}
+                defaultTags={props.state.selectedInventoryRow?.default_tags || null}
                 group={activeSearchGroup}
                 onAdd={props.actions.onAdd}
                 onLoadPrintings={props.actions.onLoadPrintings}

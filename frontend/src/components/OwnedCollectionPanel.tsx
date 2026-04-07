@@ -1,10 +1,19 @@
+import type { ReactNode } from "react";
+
 import type {
   BulkInventoryItemMutationRequest,
+  InventoryCreateRequest,
   InventorySummary,
+  InventoryTransferMode,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
-import type { AsyncStatus, ItemMutationAction, NoticeTone } from "../uiTypes";
+import type {
+  AsyncStatus,
+  InventoryCreateResult,
+  ItemMutationAction,
+  NoticeTone,
+} from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
 import type {
   InventoryTableFilters,
@@ -21,23 +30,36 @@ import { StatusPill } from "./ui/StatusPill";
 type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
   collection: {
+    browsePage: number;
+    browsePageCount: number;
+    browseVisibleLimit: number;
+    browseVisibleLimitOptions: number[];
     busyItem: { itemId: number; action: ItemMutationAction } | null;
+    filteredItemsCount: number;
     searchQuery: string;
     detailModalItemId: number | null;
     focusedItemId: number | null;
     items: OwnedInventoryRow[];
     visibleItems: OwnedInventoryRow[];
-    view: "browse" | "table" | "detailed";
+    view: "browse" | "table";
     viewError: string | null;
     viewStatus: AsyncStatus;
   };
   table: {
+    allItemsCount: number;
+    availableTargetInventories: InventorySummary[];
     bulkMutationBusy: boolean;
+    createInventoryBusy: boolean;
     filterOptions: InventoryTableFilterOptions;
     filters: InventoryTableFilters;
     items: OwnedInventoryRow[];
+    page: number;
+    pageCount: number;
     selectedItemIds: number[];
     sort: InventoryTableSortState;
+    transferBusy: InventoryTransferMode | null;
+    visibleLimit: number;
+    visibleLimitOptions: number[];
   };
 };
 
@@ -49,12 +71,19 @@ type OwnedCollectionPanelActions = {
   ) => Promise<void>;
   onDelete: (itemId: number, cardName: string) => Promise<void>;
   onNotice: (message: string, tone?: NoticeTone) => void;
-  onCollectionViewChange: (nextView: "browse" | "table" | "detailed") => void;
+  onCreateInventory: (
+    payload: InventoryCreateRequest,
+  ) => Promise<InventoryCreateResult>;
+  onBrowsePageChange: (nextPage: number) => void;
+  onBrowseVisibleLimitChange: (nextLimit: number) => void;
+  onCollectionViewChange: (nextView: "browse" | "table") => void;
   onCollectionSearchQueryChange: (nextQuery: string) => void;
   onCloseItemDetails: () => void;
   onOpenItemDetails: (itemId: number) => void;
   onTableSortChange: (nextSort: InventoryTableSortState) => void;
   onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
+  onTablePageChange: (nextPage: number) => void;
+  onTableVisibleLimitChange: (nextLimit: number) => void;
   onBulkMutationSubmit: (
     payload: BulkInventoryItemMutationRequest,
   ) => Promise<boolean>;
@@ -63,8 +92,14 @@ type OwnedCollectionPanelActions = {
     itemId: number,
     options?: { additive?: boolean; range?: boolean },
   ) => void;
+  onSelectAllCollectionItems: () => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisibleItems: () => void;
+  onTransferItems: (options: {
+    mode: InventoryTransferMode;
+    targetInventorySlug: string | null;
+    targetInventoryLabel?: string | null;
+  }) => Promise<boolean>;
   onClearVisibleSelectedItems: () => void;
   onClearSelectedItems: () => void;
 };
@@ -86,6 +121,130 @@ export function OwnedCollectionPanel(props: {
   const totalRows =
     props.state.selectedInventoryRow?.item_rows ?? props.state.collection.items.length;
   const totalCards = props.state.selectedInventoryRow?.total_cards ?? 0;
+  const activeViewLimit =
+    props.state.collection.view === "browse"
+      ? props.state.collection.browseVisibleLimit
+      : props.state.table.visibleLimit;
+  const activeViewLimitOptions =
+    props.state.collection.view === "browse"
+      ? props.state.collection.browseVisibleLimitOptions
+      : props.state.table.visibleLimitOptions;
+  const activeViewCount =
+    props.state.collection.view === "browse"
+      ? props.state.collection.filteredItemsCount
+      : props.state.table.allItemsCount;
+  const activePage =
+    props.state.collection.view === "browse"
+      ? props.state.collection.browsePage
+      : props.state.table.page;
+  const activePageCount =
+    props.state.collection.view === "browse"
+      ? props.state.collection.browsePageCount
+      : props.state.table.pageCount;
+  const activeShownCount =
+    props.state.collection.view === "browse"
+      ? props.state.collection.visibleItems.length
+      : props.state.table.items.length;
+  const activeLimitLabel =
+    props.state.collection.view === "browse" ? "Browse entries shown" : "Table rows shown";
+  const activeLimitSummary =
+    props.state.collection.items.length === 0
+      ? "This collection is ready for its first cards."
+      : activeViewCount > activeShownCount
+      ? `Showing ${activeShownCount} of ${activeViewCount} entries in ${props.state.collection.view}. Use page controls or increase the limit to see more.`
+      : activeViewCount > 0
+        ? `Showing all ${activeViewCount} entr${activeViewCount === 1 ? "y" : "ies"} in ${props.state.collection.view}.`
+        : `No entries currently match this ${props.state.collection.view} view.`;
+  let collectionContent: ReactNode;
+
+  if (!props.state.selectedInventoryRow) {
+    collectionContent = (
+      <PanelState
+        body="Choose a collection on the left to see your cards and values."
+        eyebrow="Collection"
+        title="No collection selected"
+      />
+    );
+  } else if (
+    props.state.collection.viewStatus === "loading" &&
+    props.state.collection.items.length === 0
+  ) {
+    collectionContent = (
+      <PanelState
+        body="Loading cards, values, and tags for this collection."
+        eyebrow="Collection"
+        title="Loading collection"
+        variant="loading"
+      />
+    );
+  } else if (
+    props.state.collection.viewStatus === "error" &&
+    props.state.collection.items.length === 0
+  ) {
+    collectionContent = (
+      <PanelState
+        body="This collection could not be loaded right now. Try refreshing and opening it again."
+        eyebrow="Collection"
+        title="Collection unavailable"
+        variant="error"
+      />
+    );
+  } else if (!props.state.collection.items.length) {
+    collectionContent = (
+      <PanelState
+        body={getInventoryCollectionEmptyMessage(props.state.selectedInventoryRow)}
+        eyebrow="Collection"
+        title={`${props.state.selectedInventoryRow.display_name} is empty`}
+      />
+    );
+  } else if (!props.state.collection.visibleItems.length) {
+    collectionContent = (
+      <div className="collection-search-empty">
+        <strong>No matching cards</strong>
+        <span>
+          Try a different card name or clear the collection search to bring
+          entries back into view.
+        </span>
+      </div>
+    );
+  } else if (props.state.collection.view === "table") {
+    collectionContent = (
+      <InventoryTableView
+        allItemsCount={props.state.table.allItemsCount}
+        availableTargetInventories={props.state.table.availableTargetInventories}
+        bulkMutationBusy={props.state.table.bulkMutationBusy}
+        collectionItemCount={props.state.collection.items.length}
+        createInventoryBusy={props.state.table.createInventoryBusy}
+        filterOptions={props.state.table.filterOptions}
+        filters={props.state.table.filters}
+        items={props.state.table.items}
+        onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
+        onClearSelection={props.actions.onClearSelectedItems}
+        onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
+        onCreateInventory={props.actions.onCreateInventory}
+        onFiltersChange={props.actions.onTableFiltersChange}
+        onOpenDetails={props.actions.onOpenItemDetails}
+        onSelectAllCollection={props.actions.onSelectAllCollectionItems}
+        onSelectItem={props.actions.onSelectTableItem}
+        onSelectAllVisible={props.actions.onSelectAllVisibleItems}
+        onSortChange={props.actions.onTableSortChange}
+        onTransferItems={props.actions.onTransferItems}
+        onToggleItemSelection={props.actions.onToggleItemSelection}
+        selectedItemIds={props.state.table.selectedItemIds}
+        sortState={props.state.table.sort}
+        transferBusy={props.state.table.transferBusy}
+      />
+    );
+  } else {
+    collectionContent = (
+      <CompactInventoryList
+        busyItem={props.state.collection.busyItem}
+        items={props.state.collection.visibleItems}
+        onOpenDetails={props.actions.onOpenItemDetails}
+        onPatch={props.actions.onPatch}
+      />
+    );
+  }
 
   return (
     <section className="panel">
@@ -124,18 +283,6 @@ export function OwnedCollectionPanel(props: {
             >
               Table
             </button>
-            <button
-              aria-pressed={props.state.collection.view === "detailed"}
-              className={
-                props.state.collection.view === "detailed"
-                  ? "view-toggle-button view-toggle-button-active"
-                  : "view-toggle-button"
-              }
-              onClick={() => props.actions.onCollectionViewChange("detailed")}
-              type="button"
-            >
-              Detailed
-            </button>
           </div>
 
           <button
@@ -170,6 +317,67 @@ export function OwnedCollectionPanel(props: {
 
       {props.state.selectedInventoryRow ? (
         <div className="collection-search-row">
+          <div className="collection-display-controls">
+            <div className="collection-display-toolbar">
+              <label className="field collection-limit-field">
+                <span>{activeLimitLabel}</span>
+                <select
+                  className="text-input"
+                  onChange={(event) => {
+                    const nextLimit = Number.parseInt(event.target.value, 10);
+                    if (props.state.collection.view === "browse") {
+                      props.actions.onBrowseVisibleLimitChange(nextLimit);
+                      return;
+                    }
+                    props.actions.onTableVisibleLimitChange(nextLimit);
+                  }}
+                  value={String(activeViewLimit)}
+                >
+                  {activeViewLimitOptions.map((limit) => (
+                    <option key={limit} value={limit}>
+                      {limit}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div aria-label={`${props.state.collection.view} pagination`} className="collection-pagination">
+                <button
+                  className="secondary-button"
+                  disabled={activePage <= 1 || activeViewCount === 0}
+                  onClick={() => {
+                    if (props.state.collection.view === "browse") {
+                      props.actions.onBrowsePageChange(activePage - 1);
+                      return;
+                    }
+                    props.actions.onTablePageChange(activePage - 1);
+                  }}
+                  type="button"
+                >
+                  Previous
+                </button>
+                <span className="collection-page-indicator">
+                  Page {activePage} of {activePageCount}
+                </span>
+                <button
+                  className="secondary-button"
+                  disabled={activePage >= activePageCount || activeViewCount === 0}
+                  onClick={() => {
+                    if (props.state.collection.view === "browse") {
+                      props.actions.onBrowsePageChange(activePage + 1);
+                      return;
+                    }
+                    props.actions.onTablePageChange(activePage + 1);
+                  }}
+                  type="button"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            <p className="collection-limit-summary">{activeLimitSummary}</p>
+          </div>
+
           <label className="field collection-search-field">
             <span>Search this collection</span>
             <input
@@ -190,89 +398,7 @@ export function OwnedCollectionPanel(props: {
       ) : null}
 
       <div className="collection-grid">
-        {!props.state.selectedInventoryRow ? (
-          <PanelState
-            body="Choose a collection on the left to see your cards and values."
-            eyebrow="Collection"
-            title="No collection selected"
-          />
-        ) : props.state.collection.viewStatus === "loading" &&
-          props.state.collection.items.length === 0 ? (
-          <PanelState
-            body="Loading cards, values, and tags for this collection."
-            eyebrow="Collection"
-            title="Loading collection"
-            variant="loading"
-          />
-        ) : props.state.collection.viewStatus === "error" &&
-          props.state.collection.items.length === 0 ? (
-          <PanelState
-            body="This collection could not be loaded right now. Try refreshing and opening it again."
-            eyebrow="Collection"
-            title="Collection unavailable"
-            variant="error"
-          />
-        ) : props.state.collection.items.length ? (
-          props.state.collection.visibleItems.length ? (
-            props.state.collection.view === "browse" ? (
-              <CompactInventoryList
-                busyItem={props.state.collection.busyItem}
-                items={props.state.collection.visibleItems}
-                onOpenDetails={props.actions.onOpenItemDetails}
-                onPatch={props.actions.onPatch}
-              />
-            ) : props.state.collection.view === "table" ? (
-              <InventoryTableView
-                allItemsCount={props.state.collection.items.length}
-                bulkMutationBusy={props.state.table.bulkMutationBusy}
-                filterOptions={props.state.table.filterOptions}
-                filters={props.state.table.filters}
-                items={props.state.table.items}
-                onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
-                onClearSelection={props.actions.onClearSelectedItems}
-                onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
-                onFiltersChange={props.actions.onTableFiltersChange}
-                onOpenDetails={props.actions.onOpenItemDetails}
-                onSelectItem={props.actions.onSelectTableItem}
-                onSelectAllVisible={props.actions.onSelectAllVisibleItems}
-                onSortChange={props.actions.onTableSortChange}
-                onToggleItemSelection={props.actions.onToggleItemSelection}
-                selectedItemIds={props.state.table.selectedItemIds}
-                sortState={props.state.table.sort}
-              />
-            ) : (
-              props.state.collection.visibleItems.map((item) => (
-                <OwnedItemCard
-                  busyAction={
-                    props.state.collection.busyItem?.itemId === item.item_id
-                      ? props.state.collection.busyItem.action
-                      : null
-                  }
-                  item={item}
-                  key={item.item_id}
-                  focused={props.state.collection.focusedItemId === item.item_id}
-                  onDelete={props.actions.onDelete}
-                  onNotice={props.actions.onNotice}
-                  onPatch={props.actions.onPatch}
-                />
-              ))
-            )
-          ) : (
-            <div className="collection-search-empty">
-              <strong>No matching cards</strong>
-              <span>
-                Try a different card name or clear the collection search to bring
-                entries back into view.
-              </span>
-            </div>
-          )
-        ) : (
-          <PanelState
-            body={getInventoryCollectionEmptyMessage(props.state.selectedInventoryRow)}
-            eyebrow="Collection"
-            title={`${props.state.selectedInventoryRow.display_name} is empty`}
-          />
-        )}
+        {collectionContent}
       </div>
 
       {detailModalItem ? (
@@ -291,7 +417,7 @@ export function OwnedCollectionPanel(props: {
                 : null
             }
             item={detailModalItem}
-            onDelete={async (itemId, cardName) => {
+            onDelete={async (itemId: number, cardName: string) => {
               await props.actions.onDelete(itemId, cardName);
               props.actions.onCloseItemDetails();
             }}

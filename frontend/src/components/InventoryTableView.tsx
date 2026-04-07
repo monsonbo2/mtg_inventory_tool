@@ -6,9 +6,13 @@ import type {
   BulkTagMutationOperation,
   ConditionCode,
   FinishValue,
+  InventoryCreateRequest,
+  InventorySummary,
+  InventoryTransferMode,
   LanguageCode,
   OwnedInventoryRow,
 } from "../types";
+import type { InventoryCreateResult } from "../uiTypes";
 import type {
   InventoryTableColumnKey,
   InventoryTableFilterOptions,
@@ -29,7 +33,9 @@ import {
   getTagChipStyle,
   formatUsd,
   formatLocationLabel,
+  normalizeInventorySlugInput,
   normalizeOptionalText,
+  normalizeTagInputText,
   parseTags,
   summarizeInlineText,
 } from "../uiHelpers";
@@ -63,12 +69,17 @@ function getColumnActionHint(column: InventoryTableColumnKey) {
 }
 
 type BulkEditorMode = "tags" | "location" | "notes";
+type TransferTargetMode = "existing" | "create";
+type ActiveTableTray = "bulk" | InventoryTransferMode | null;
 
 export function InventoryTableView(props: {
   items: OwnedInventoryRow[];
   allItemsCount: number;
+  availableTargetInventories: InventorySummary[];
+  collectionItemCount: number;
   selectedItemIds: number[];
   bulkMutationBusy: boolean;
+  createInventoryBusy: boolean;
   sortState: InventoryTableSortState;
   filters: InventoryTableFilters;
   filterOptions: InventoryTableFilterOptions;
@@ -77,19 +88,41 @@ export function InventoryTableView(props: {
   onBulkMutationSubmit: (
     payload: BulkInventoryItemMutationRequest,
   ) => Promise<boolean>;
+  onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
   onSelectItem: (itemId: number, options?: { additive?: boolean; range?: boolean }) => void;
+  onSelectAllCollection: () => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisible: () => void;
   onClearVisibleSelection: () => void;
   onClearSelection: () => void;
   onOpenDetails: (itemId: number) => void;
+  onTransferItems: (options: {
+    mode: InventoryTransferMode;
+    targetInventorySlug: string | null;
+    targetInventoryLabel?: string | null;
+  }) => Promise<boolean>;
+  transferBusy: InventoryTransferMode | null;
 }) {
   const [activeColumn, setActiveColumn] = useState<InventoryTableColumnKey | null>(null);
-  const [bulkEditorOpen, setBulkEditorOpen] = useState(false);
+  const [activeTray, setActiveTray] = useState<ActiveTableTray>(null);
   const [bulkEditorMode, setBulkEditorMode] = useState<BulkEditorMode>("tags");
   const [bulkTagsInput, setBulkTagsInput] = useState("");
   const [bulkLocationInput, setBulkLocationInput] = useState("");
   const [bulkNotesInput, setBulkNotesInput] = useState("");
+  const [transferTargetMode, setTransferTargetMode] = useState<TransferTargetMode>(
+    props.availableTargetInventories.length ? "existing" : "create",
+  );
+  const [transferTargetInventorySlug, setTransferTargetInventorySlug] = useState<string | null>(
+    props.availableTargetInventories[0]?.slug ?? null,
+  );
+  const [transferCollectionName, setTransferCollectionName] = useState("");
+  const [transferCollectionSlug, setTransferCollectionSlug] = useState("");
+  const [transferCollectionDescription, setTransferCollectionDescription] = useState("");
+  const [transferCollectionDefaultLocation, setTransferCollectionDefaultLocation] = useState("");
+  const [transferCollectionDefaultTags, setTransferCollectionDefaultTags] = useState("");
+  const [transferCollectionSlugTouched, setTransferCollectionSlugTouched] = useState(false);
+  const [showTransferCollectionSlugField, setShowTransferCollectionSlugField] = useState(false);
+  const [transferFormError, setTransferFormError] = useState<string | null>(null);
   const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
   const tableViewRef = useRef<HTMLDivElement | null>(null);
   const bulkTagsHintId = "table-bulk-tags-hint";
@@ -105,6 +138,10 @@ export function InventoryTableView(props: {
   const parsedBulkTags = parseTags(bulkTagsInput);
   const exceedsBulkSelectionLimit = totalSelectedCount > 200;
   const hasSelection = totalSelectedCount > 0;
+  const bulkEditorOpen = activeTray === "bulk";
+  const activeTransferMode = activeTray === "copy" || activeTray === "move" ? activeTray : null;
+  const transferSubmitBusy =
+    activeTransferMode !== null && props.transferBusy === activeTransferMode;
   const selectedCountLabel =
     totalSelectedCount === 0
       ? "No entries selected"
@@ -122,9 +159,24 @@ export function InventoryTableView(props: {
 
   useEffect(() => {
     if (!hasSelection) {
-      setBulkEditorOpen(false);
+      setActiveTray(null);
     }
   }, [hasSelection]);
+
+  useEffect(() => {
+    setTransferTargetInventorySlug((currentTargetInventorySlug) =>
+      currentTargetInventorySlug &&
+      props.availableTargetInventories.some(
+        (inventory) => inventory.slug === currentTargetInventorySlug,
+      )
+        ? currentTargetInventorySlug
+        : props.availableTargetInventories[0]?.slug ?? null,
+    );
+
+    if (!props.availableTargetInventories.length) {
+      setTransferTargetMode("create");
+    }
+  }, [props.availableTargetInventories]);
 
   useEffect(() => {
     if (!activeColumn) {
@@ -163,6 +215,25 @@ export function InventoryTableView(props: {
     });
   }
 
+  function resetTransferCreateForm() {
+    setTransferCollectionName("");
+    setTransferCollectionSlug("");
+    setTransferCollectionDescription("");
+    setTransferCollectionDefaultLocation("");
+    setTransferCollectionDefaultTags("");
+    setTransferCollectionSlugTouched(false);
+    setShowTransferCollectionSlugField(false);
+    setTransferFormError(null);
+  }
+
+  function openTray(nextTray: Exclude<ActiveTableTray, null>) {
+    setTransferFormError(null);
+    setActiveTray((currentTray) => (currentTray === nextTray ? null : nextTray));
+    if ((nextTray === "copy" || nextTray === "move") && !props.availableTargetInventories.length) {
+      setTransferTargetMode("create");
+    }
+  }
+
   function toggleStringValue<T extends string>(values: T[], value: T) {
     return values.includes(value)
       ? values.filter((currentValue) => currentValue !== value)
@@ -198,7 +269,7 @@ export function InventoryTableView(props: {
     );
     if (didApply) {
       setBulkTagsInput("");
-      setBulkEditorOpen(false);
+      setActiveTray(null);
     }
   }
 
@@ -220,7 +291,7 @@ export function InventoryTableView(props: {
 
     if (didApply) {
       setBulkLocationInput("");
-      setBulkEditorOpen(false);
+      setActiveTray(null);
     }
   }
 
@@ -242,7 +313,112 @@ export function InventoryTableView(props: {
 
     if (didApply) {
       setBulkNotesInput("");
-      setBulkEditorOpen(false);
+      setActiveTray(null);
+    }
+  }
+
+  function handleTransferCollectionNameChange(value: string) {
+    setTransferCollectionName(value);
+    if (!transferCollectionSlugTouched) {
+      setTransferCollectionSlug(normalizeInventorySlugInput(value));
+    }
+    if (transferFormError) {
+      setTransferFormError(null);
+    }
+  }
+
+  function handleTransferCollectionSlugChange(value: string) {
+    setTransferCollectionSlugTouched(true);
+    setTransferCollectionSlug(normalizeInventorySlugInput(value));
+    if (transferFormError) {
+      setTransferFormError(null);
+    }
+  }
+
+  function handleTransferSubmitModeChange(nextMode: TransferTargetMode) {
+    setTransferTargetMode(nextMode);
+    setTransferFormError(null);
+    if (nextMode === "create") {
+      return;
+    }
+    resetTransferCreateForm();
+  }
+
+  async function handleTransferSubmit() {
+    if (!activeTransferMode) {
+      return;
+    }
+
+    if (transferTargetMode === "existing") {
+      const targetInventory =
+        props.availableTargetInventories.find(
+          (inventory) => inventory.slug === transferTargetInventorySlug,
+        ) ?? null;
+
+      if (!targetInventory) {
+        setTransferFormError("Choose a destination collection before continuing.");
+        return;
+      }
+
+      const didTransfer = await props.onTransferItems({
+        mode: activeTransferMode,
+        targetInventorySlug: targetInventory.slug,
+        targetInventoryLabel: targetInventory.display_name,
+      });
+
+      if (didTransfer) {
+        setActiveTray(null);
+      }
+      return;
+    }
+
+    const nextDisplayName = transferCollectionName.trim();
+    const nextSlug = normalizeInventorySlugInput(transferCollectionSlug);
+    const nextDefaultLocation = normalizeOptionalText(transferCollectionDefaultLocation);
+    const nextDefaultTags = normalizeTagInputText(transferCollectionDefaultTags);
+
+    if (!nextDisplayName) {
+      setTransferFormError("Enter a collection name before creating it.");
+      return;
+    }
+
+    if (!nextSlug) {
+      setTransferFormError("Enter a short name using letters, numbers, or hyphens.");
+      return;
+    }
+
+    const createPayload: InventoryCreateRequest = {
+      display_name: nextDisplayName,
+      slug: nextSlug,
+      description: normalizeOptionalText(transferCollectionDescription),
+    };
+    if (nextDefaultLocation) {
+      createPayload.default_location = nextDefaultLocation;
+    }
+    if (nextDefaultTags) {
+      createPayload.default_tags = nextDefaultTags;
+    }
+
+    const createResult = await props.onCreateInventory(createPayload);
+    if (!createResult.ok) {
+      if (createResult.reason === "conflict") {
+        setShowTransferCollectionSlugField(true);
+        setTransferFormError(
+          "That collection name needs a different short name. Edit it below and try again.",
+        );
+      }
+      return;
+    }
+
+    const didTransfer = await props.onTransferItems({
+      mode: activeTransferMode,
+      targetInventorySlug: createResult.inventory.slug,
+      targetInventoryLabel: createResult.inventory.display_name,
+    });
+
+    if (didTransfer) {
+      resetTransferCreateForm();
+      setActiveTray(null);
     }
   }
 
@@ -436,17 +612,17 @@ export function InventoryTableView(props: {
             {hiddenSelectedCount > 0 ? (
               <span className="table-selection-summary-accent">
                 {hiddenSelectedCount} selected entr
-                {hiddenSelectedCount === 1 ? "y" : "ies"} hidden by current filters.
+                {hiddenSelectedCount === 1 ? "y" : "ies"} not shown in the current view.
               </span>
             ) : (
               <span>
-                Bulk edits apply to every selected entry, including any hidden by filters.
+                Bulk edits apply to every selected entry, including any not shown in the current view.
               </span>
             )}
           </div>
           <button
             className="secondary-button table-bulk-tray-close"
-            onClick={() => setBulkEditorOpen(false)}
+            onClick={() => setActiveTray(null)}
             type="button"
           >
             Close
@@ -632,32 +808,270 @@ export function InventoryTableView(props: {
     );
   }
 
+  function renderTransferEditor() {
+    if (!hasSelection || !activeTransferMode) {
+      return null;
+    }
+
+    const title =
+      activeTransferMode === "copy" ? "Copy to collection" : "Move to collection";
+
+    return (
+      <section aria-label={`${title} tray`} className="table-bulk-tray table-transfer-tray">
+        <div className="table-bulk-tray-header">
+          <div>
+            <strong>{title}</strong>
+            <span>
+              {activeTransferMode === "copy"
+                ? `Copy ${totalSelectedCount} selected entr${
+                    totalSelectedCount === 1 ? "y" : "ies"
+                  } into another collection.`
+                : `Move ${totalSelectedCount} selected entr${
+                    totalSelectedCount === 1 ? "y" : "ies"
+                  } into another collection.`}
+            </span>
+            {hiddenSelectedCount > 0 ? (
+              <span className="table-selection-summary-accent">
+                {hiddenSelectedCount} selected entr
+                {hiddenSelectedCount === 1 ? "y" : "ies"} not shown in the current view.
+              </span>
+            ) : (
+              <span>
+                Matching rows in the destination will merge automatically and keep the source acquisition details.
+              </span>
+            )}
+          </div>
+          <button
+            className="secondary-button table-bulk-tray-close"
+            onClick={() => setActiveTray(null)}
+            type="button"
+          >
+            Close
+          </button>
+        </div>
+
+        <div aria-label="Transfer target mode" className="table-bulk-mode-toggle" role="group">
+          <button
+            aria-pressed={transferTargetMode === "existing"}
+            className={
+              transferTargetMode === "existing"
+                ? "secondary-button table-bulk-mode-button table-bulk-mode-button-active"
+                : "secondary-button table-bulk-mode-button"
+            }
+            disabled={!props.availableTargetInventories.length}
+            onClick={() => handleTransferSubmitModeChange("existing")}
+            type="button"
+          >
+            Existing collection
+          </button>
+          <button
+            aria-pressed={transferTargetMode === "create"}
+            className={
+              transferTargetMode === "create"
+                ? "secondary-button table-bulk-mode-button table-bulk-mode-button-active"
+                : "secondary-button table-bulk-mode-button"
+            }
+            onClick={() => handleTransferSubmitModeChange("create")}
+            type="button"
+          >
+            Create new
+          </button>
+        </div>
+
+        {transferTargetMode === "existing" ? (
+          <div className="table-bulk-pane table-transfer-pane">
+            {props.availableTargetInventories.length ? (
+              <label className="field table-bulk-field">
+                <span>Destination collection</span>
+                <select
+                  className="text-input"
+                  disabled={transferSubmitBusy}
+                  onChange={(event) => {
+                    setTransferTargetInventorySlug(event.target.value || null);
+                    if (transferFormError) {
+                      setTransferFormError(null);
+                    }
+                  }}
+                  value={transferTargetInventorySlug ?? ""}
+                >
+                  {props.availableTargetInventories.map((inventory) => (
+                    <option key={inventory.slug} value={inventory.slug}>
+                      {inventory.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p className="table-query-empty">
+                No other collections are available yet. Create one to continue.
+              </p>
+            )}
+
+            <span className="field-hint field-hint-info">
+              Copy keeps the selected entries in this collection. Move removes them here after the destination update succeeds.
+            </span>
+
+            {transferFormError ? (
+              <p className="field-hint field-hint-error">{transferFormError}</p>
+            ) : null}
+
+            <div className="table-bulk-pane-actions">
+              <button
+                className="secondary-button"
+                disabled={!props.availableTargetInventories.length || transferSubmitBusy}
+                onClick={() => void handleTransferSubmit()}
+                type="button"
+              >
+                {transferSubmitBusy
+                  ? activeTransferMode === "copy"
+                    ? "Copying..."
+                    : "Moving..."
+                  : title}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {transferTargetMode === "create" ? (
+          <div className="table-bulk-pane table-transfer-pane">
+            <label className="field table-bulk-field">
+              <span>Collection name</span>
+              <input
+                className="text-input"
+                disabled={props.createInventoryBusy || transferSubmitBusy}
+                onChange={(event) => handleTransferCollectionNameChange(event.target.value)}
+                placeholder="e.g. Archive Box"
+                type="text"
+                value={transferCollectionName}
+              />
+            </label>
+
+            {showTransferCollectionSlugField ? (
+              <label className="field table-bulk-field">
+                <span>Short name</span>
+                <input
+                  className="text-input"
+                  disabled={props.createInventoryBusy || transferSubmitBusy}
+                  onChange={(event) => handleTransferCollectionSlugChange(event.target.value)}
+                  placeholder="archive-box"
+                  type="text"
+                  value={transferCollectionSlug}
+                />
+                <span className="field-hint field-hint-info">
+                  Used for links and quick references. Keep it short and easy to recognize.
+                </span>
+              </label>
+            ) : null}
+
+            <label className="field table-bulk-field">
+              <span>Description (optional)</span>
+              <textarea
+                className="text-input textarea-input"
+                disabled={props.createInventoryBusy || transferSubmitBusy}
+                onChange={(event) => {
+                  setTransferCollectionDescription(event.target.value);
+                  if (transferFormError) {
+                    setTransferFormError(null);
+                  }
+                }}
+                placeholder="Add a short description for this collection."
+                rows={3}
+                value={transferCollectionDescription}
+              />
+            </label>
+
+            <label className="field table-bulk-field">
+              <span>Default location</span>
+              <input
+                className="text-input"
+                disabled={props.createInventoryBusy || transferSubmitBusy}
+                onChange={(event) => {
+                  setTransferCollectionDefaultLocation(event.target.value);
+                  if (transferFormError) {
+                    setTransferFormError(null);
+                  }
+                }}
+                placeholder="e.g. Archive Box"
+                type="text"
+                value={transferCollectionDefaultLocation}
+              />
+              <span className="field-hint field-hint-info">
+                Items added to this collection will automatically use this location unless you choose another one while adding cards.
+              </span>
+            </label>
+
+            <label className="field table-bulk-field">
+              <span>Default tags</span>
+              <input
+                className="text-input"
+                disabled={props.createInventoryBusy || transferSubmitBusy}
+                onChange={(event) => {
+                  setTransferCollectionDefaultTags(event.target.value);
+                  if (transferFormError) {
+                    setTransferFormError(null);
+                  }
+                }}
+                placeholder="e.g. archive, staples"
+                type="text"
+                value={transferCollectionDefaultTags}
+              />
+              <span className="field-hint field-hint-info">
+                Items added to this collection will automatically include these tags.
+              </span>
+            </label>
+
+            {transferFormError ? (
+              <p className="field-hint field-hint-error">{transferFormError}</p>
+            ) : null}
+
+            <div className="table-bulk-pane-actions">
+              <button
+                className="secondary-button"
+                disabled={props.createInventoryBusy || transferSubmitBusy}
+                onClick={() => void handleTransferSubmit()}
+                type="button"
+              >
+                {props.createInventoryBusy || transferSubmitBusy
+                  ? activeTransferMode === "copy"
+                    ? "Copying..."
+                    : "Moving..."
+                  : activeTransferMode === "copy"
+                    ? "Create and copy"
+                    : "Create and move"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <div className="inventory-table-view" ref={tableViewRef}>
       <div className="table-toolbar-shell">
         <div className="table-toolbar">
-          <div className="table-selection-summary">
-            <strong>{selectedCountLabel}</strong>
-            <div className="table-selection-summary-meta">
-              <span>{visibleRowsLabel}</span>
-              {activeFilterCount > 0 ? (
-                <span>{activeFilterCount} active filter{activeFilterCount === 1 ? "" : "s"}</span>
-              ) : null}
-              {hiddenSelectedCount > 0 ? (
-                <span className="table-selection-summary-accent">
-                  {hiddenSelectedCount} selected entr
-                  {hiddenSelectedCount === 1 ? "y" : "ies"} hidden by current filters.
-                </span>
-              ) : null}
-              {exceedsBulkSelectionLimit ? (
-                <span className="table-selection-summary-accent">
-                  Bulk edit limit: 200 entries.
-                </span>
-              ) : null}
+          <div className="table-toolbar-primary">
+            <div className="table-selection-summary">
+              <strong>{selectedCountLabel}</strong>
+              <div className="table-selection-summary-meta">
+                <span>{visibleRowsLabel}</span>
+                {activeFilterCount > 0 ? (
+                  <span>{activeFilterCount} active filter{activeFilterCount === 1 ? "" : "s"}</span>
+                ) : null}
+                {hiddenSelectedCount > 0 ? (
+                  <span className="table-selection-summary-accent">
+                    {hiddenSelectedCount} selected entr
+                    {hiddenSelectedCount === 1 ? "y" : "ies"} not shown in the current view.
+                  </span>
+                ) : null}
+                {exceedsBulkSelectionLimit ? (
+                  <span className="table-selection-summary-accent">
+                    Bulk edit limit: 200 entries.
+                  </span>
+                ) : null}
+              </div>
             </div>
-          </div>
 
-          <div className="table-toolbar-controls">
             <div className="table-toolbar-actions">
               {activeFilterCount > 0 ? (
                 <button
@@ -679,8 +1093,18 @@ export function InventoryTableView(props: {
               >
                 Select all visible
               </button>
+              <button
+                className="secondary-button"
+                disabled={props.collectionItemCount === 0}
+                onClick={props.onSelectAllCollection}
+                type="button"
+              >
+                Select entire collection
+              </button>
             </div>
+          </div>
 
+          <div className="table-toolbar-selection-slot">
             {hasSelection ? (
               <div className="table-selection-actions">
                 <button
@@ -690,10 +1114,34 @@ export function InventoryTableView(props: {
                       : "secondary-button table-selection-action"
                   }
                   disabled={exceedsBulkSelectionLimit}
-                  onClick={() => setBulkEditorOpen((current) => !current)}
+                  onClick={() => openTray("bulk")}
                   type="button"
                 >
                   Bulk edit
+                </button>
+                <button
+                  className={
+                    activeTransferMode === "copy"
+                      ? "secondary-button table-selection-action table-selection-action-active"
+                      : "secondary-button table-selection-action"
+                  }
+                  disabled={props.transferBusy !== null}
+                  onClick={() => openTray("copy")}
+                  type="button"
+                >
+                  Copy to collection
+                </button>
+                <button
+                  className={
+                    activeTransferMode === "move"
+                      ? "secondary-button table-selection-action table-selection-action-active"
+                      : "secondary-button table-selection-action"
+                  }
+                  disabled={props.transferBusy !== null}
+                  onClick={() => openTray("move")}
+                  type="button"
+                >
+                  Move to collection
                 </button>
                 <button
                   className="secondary-button table-selection-action"
@@ -703,11 +1151,16 @@ export function InventoryTableView(props: {
                   Clear selection
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <span className="table-selection-slot-copy">
+                Select rows for bulk actions.
+              </span>
+            )}
           </div>
         </div>
 
         {renderBulkEditor()}
+        {renderTransferEditor()}
       </div>
 
       <div className="inventory-table-shell">

@@ -177,6 +177,11 @@ export function normalizeOptionalText(value: string | null | undefined) {
   return text ? text : null;
 }
 
+export function normalizeTagInputText(value: string | null | undefined) {
+  const tags = parseTags(value || "");
+  return tags.length ? tags.join(", ") : null;
+}
+
 export function getInventoryLocationSuggestions(items: OwnedInventoryRow[]) {
   const locations = new Map<
     string,

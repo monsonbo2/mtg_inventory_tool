@@ -53,6 +53,8 @@ export function SearchResultCard(props: {
   group: SearchCardGroup;
   busyPrintingId: string | null;
   canAdd: boolean;
+  defaultLocation: string | null;
+  defaultTags: string | null;
   onLoadPrintings: (
     group: SearchCardGroup,
     options?: { includeAllLanguages?: boolean },
@@ -198,11 +200,19 @@ export function SearchResultCard(props: {
   const parsedTags = parseTags(tags);
   const trimmedLocation = location.trim();
   const trimmedNotes = notes.trim();
+  const fallbackLocation = props.defaultLocation?.trim() || "";
+  const fallbackTags = parseTags(props.defaultTags || "");
+  const effectiveLocation = trimmedLocation || fallbackLocation;
+  const effectiveTags = parsedTags.length
+    ? Array.from(new Set([...fallbackTags, ...parsedTags]))
+    : fallbackTags;
   const quantityIsValid = Number.isInteger(parsedQuantity) && parsedQuantity > 0;
   const optionalDetailSummary =
     [
-      trimmedLocation ? `Location: ${trimmedLocation}` : null,
-      parsedTags.length ? `${parsedTags.length} tag${parsedTags.length === 1 ? "" : "s"}` : null,
+      effectiveLocation ? `Location: ${effectiveLocation}` : null,
+      effectiveTags.length
+        ? `${effectiveTags.length} tag${effectiveTags.length === 1 ? "" : "s"}`
+        : null,
       trimmedNotes ? "Note ready" : null,
     ].filter(Boolean).join(" · ") || "No optional details yet";
   const needsPrintingSelection = props.canAdd && !effectivePrinting;
@@ -345,9 +355,9 @@ export function SearchResultCard(props: {
       scryfall_id: resolvedPrinting.scryfall_id,
       quantity: parsedQuantity,
       finish: resolvedFinish,
-      location: trimmedLocation || undefined,
+      location: effectiveLocation || undefined,
       notes: trimmedNotes || null,
-      tags: parsedTags,
+      tags: effectiveTags.length ? effectiveTags : undefined,
     });
     if (didAdd) {
       setRecentlyAdded(true);
