@@ -63,6 +63,8 @@ Use this as the first-pass UI-to-endpoint map:
 
 - Inventory selector -> `GET /inventories`
   Returns only the inventories visible to the current shared-service user.
+  Inventory rows also include inventory metadata such as `default_location`,
+  `default_tags`, `notes`, `acquisition_price`, and `acquisition_currency`.
 - Card search -> `GET /cards/search`
 - Card search scope guidance:
   - omit `scope` for the ordinary mainline add flow
@@ -70,6 +72,8 @@ Use this as the first-pass UI-to-endpoint map:
     search mode
 - Card-name search -> `GET /cards/search/names`
   Returns one row per card/oracle and includes `available_languages`.
+  The backend prefers token/prefix-style matches first and only falls back to
+  broader substring rescue when those grouped matches are absent.
   - if the frontend opts into `scope=all`, keep that same scope choice when
     moving from card-name search to printing lookup
 - Printing lookup for a selected card -> `GET /cards/oracle/{oracle_id}/printings`
@@ -81,6 +85,11 @@ Use this as the first-pass UI-to-endpoint map:
   Accepts printing-level identifiers like `scryfall_id` and card-level
   `oracle_id`. When `language_code` is omitted, the backend stores the
   resolved printing language.
+  - omitted `location` inherits the inventory `default_location` when present
+  - omitted `tags` inherits the inventory `default_tags` when present
+  - explicit non-empty `tags` merge with the inventory defaults
+  - explicit blank `location` or blank `tags` intentionally bypass the
+    inventory defaults
 - Multi-row bulk edit -> `POST /inventories/{inventory_slug}/items/bulk`
   Request body is JSON.
   - use exactly one bulk `operation` per request
@@ -128,11 +137,19 @@ Use this as the first-pass UI-to-endpoint map:
 - CSV export download -> `GET /inventories/{inventory_slug}/export.csv`
   Uses `profile=default` today and returns `text/csv`.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
-  Returned rows include `allowed_finishes` for safe finish-edit controls.
+  Returned rows include `oracle_id`, `allowed_finishes`, and
+  `printing_selection_mode` for printing-aware edit flows.
 - Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"quantity": ...}`
 - Quick edit finish -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"finish": ...}`
+- Change owned printing -> `PATCH /inventories/{inventory_slug}/items/{item_id}/printing`
+  Request body: `{"scryfall_id": ...}` with optional `finish`, `merge`, and
+  `keep_acquisition`.
+  - use this for switching to a different printing of the same `oracle_id`
+  - the current `scryfall_id` may be resubmitted only to confirm a defaulted
+    selection as explicit when finish and language stay unchanged
+  - same-printing finish edits still belong on the generic PATCH route
 - Quick edit location -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"location": ...}`
 - Quick edit notes -> `PATCH /inventories/{inventory_slug}/items/{item_id}`

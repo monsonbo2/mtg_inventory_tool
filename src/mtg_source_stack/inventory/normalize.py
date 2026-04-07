@@ -369,6 +369,13 @@ def parse_tags(value: str | None) -> list[str]:
     return normalize_tags(text.split(","))
 
 
+def normalize_tag_text(value: str | None) -> str | None:
+    tags = parse_tags(value)
+    if not tags:
+        return None
+    return ", ".join(tags)
+
+
 def load_tags_json(value: str | None) -> list[str]:
     return normalize_tags(parse_json_list(value))
 

@@ -9,6 +9,7 @@ import type {
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
   InventoryAuditEvent,
+  InventoryCreateResponse,
   InventorySummary,
   OwnedInventoryRow,
 } from "./types";
@@ -57,6 +58,7 @@ describe("App", () => {
     return {
       item_id: 7,
       scryfall_id: "bolt-1",
+      oracle_id: "bolt-oracle",
       name: "Lightning Bolt",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
@@ -135,6 +137,11 @@ describe("App", () => {
       slug: "personal",
       display_name: "Personal Collection",
       description: "Main demo inventory",
+      default_location: null,
+      default_tags: null,
+      notes: null,
+      acquisition_price: null,
+      acquisition_currency: null,
       item_rows: 0,
       total_cards: 0,
       ...overrides,
@@ -208,6 +215,23 @@ describe("App", () => {
       imported_rows: [],
       ...overrides,
     } as any;
+  }
+
+  function buildInventoryCreateResponse(
+    overrides: Partial<InventoryCreateResponse> = {},
+  ): InventoryCreateResponse {
+    return {
+      inventory_id: 1,
+      slug: "personal",
+      display_name: "Personal Collection",
+      description: "Main demo inventory",
+      default_location: null,
+      default_tags: null,
+      notes: null,
+      acquisition_price: null,
+      acquisition_currency: null,
+      ...overrides,
+    };
   }
 
   function mockCollectionViewApp(options?: {
@@ -361,12 +385,12 @@ describe("App", () => {
   it("creates a new collection from the import dialog and imports into it", async () => {
     const user = userEvent.setup();
     const personal = buildInventorySummary();
-    const demoImports = {
+    const demoImports = buildInventoryCreateResponse({
       inventory_id: 2,
       slug: "demo-imports",
       display_name: "Demo Imports",
       description: null,
-    };
+    });
 
     mockBaseSearchApp();
     vi.mocked(listInventories)
@@ -473,24 +497,24 @@ describe("App", () => {
     vi.mocked(listInventories)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
-        {
+        buildInventorySummary({
           slug: "collection",
           display_name: "Collection",
           description: "Main personal collection",
-          item_rows: 0,
-          total_cards: 0,
-        },
+        }),
       ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(createInventory).mockResolvedValue({
-      inventory_id: 9,
-      slug: "collection",
-      display_name: "Collection",
-      description: "Main personal collection",
-    });
+    vi.mocked(createInventory).mockResolvedValue(
+      buildInventoryCreateResponse({
+        inventory_id: 9,
+        slug: "collection",
+        display_name: "Collection",
+        description: "Main personal collection",
+      }),
+    );
 
     render(<App />);
 
@@ -525,6 +549,7 @@ describe("App", () => {
     const ownedRow: OwnedInventoryRow = {
       item_id: 7,
       scryfall_id: "bolt-1",
+      oracle_id: "bolt-oracle",
       name: "Lightning Bolt",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
@@ -550,13 +575,10 @@ describe("App", () => {
     };
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
+      buildInventorySummary({
         item_rows: 1,
         total_cards: 2,
-      },
+      }),
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([ownedRow]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
@@ -1336,13 +1358,10 @@ describe("App", () => {
     const updatedBolt = buildOwnedRow({ quantity: 5, est_value: "10.00" });
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
+      buildInventorySummary({
         item_rows: 1,
         total_cards: 5,
-      },
+      }),
     ]);
     vi.mocked(listInventoryItems)
       .mockResolvedValueOnce([initialBolt])
@@ -1361,6 +1380,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_quantity",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1515,13 +1535,10 @@ describe("App", () => {
     });
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
+      buildInventorySummary({
         item_rows: 1,
         total_cards: 2,
-      },
+      }),
     ]);
     vi.mocked(listInventoryItems)
       .mockResolvedValueOnce([initialBolt])
@@ -1540,6 +1557,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_finish",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1598,13 +1616,10 @@ describe("App", () => {
     });
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
+      buildInventorySummary({
         item_rows: 1,
         total_cards: 2,
-      },
+      }),
     ]);
     vi.mocked(listInventoryItems)
       .mockResolvedValueOnce([initialBolt])
@@ -1623,6 +1638,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_tags",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1686,13 +1702,10 @@ describe("App", () => {
     });
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
+      buildInventorySummary({
         item_rows: 1,
         total_cards: 2,
-      },
+      }),
     ]);
     vi.mocked(listInventoryItems)
       .mockResolvedValueOnce([initialBolt])
@@ -1711,6 +1724,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_tags",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -1776,13 +1790,10 @@ describe("App", () => {
     });
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
+      buildInventorySummary({
         item_rows: 1,
         total_cards: 2,
-      },
+      }),
     ]);
     vi.mocked(listInventoryItems)
       .mockResolvedValueOnce([initialBolt])
@@ -1801,6 +1812,7 @@ describe("App", () => {
       inventory: "personal",
       operation: "set_tags",
       card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
       set_code: "lea",
       set_name: "Limited Edition Alpha",
       collector_number: "161",
@@ -2003,7 +2015,7 @@ describe("App", () => {
     const collectionSearch = await screen.findByRole("textbox", {
       name: "Search this collection",
     });
-    expect(screen.getByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Counterspell" })).toBeInTheDocument();
 
     await user.type(collectionSearch, "Counter");
@@ -2573,20 +2585,17 @@ describe("App", () => {
     const user = userEvent.setup();
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
+      buildInventorySummary({
         item_rows: 2,
         total_cards: 3,
-      },
-      {
+      }),
+      buildInventorySummary({
         slug: "trade-binder",
         display_name: "Trade Binder",
         description: "Cards available to trade",
         item_rows: 1,
         total_cards: 1,
-      },
+      }),
     ]);
     vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => {
       if (inventorySlug === "trade-binder") {
@@ -2649,40 +2658,28 @@ describe("App", () => {
 
     vi.mocked(listInventories)
       .mockResolvedValueOnce([
-        {
-          slug: "personal",
-          display_name: "Personal Collection",
-          description: "Main demo inventory",
-          item_rows: 0,
-          total_cards: 0,
-        },
+        buildInventorySummary(),
       ])
       .mockResolvedValueOnce([
-        {
-          slug: "personal",
-          display_name: "Personal Collection",
-          description: "Main demo inventory",
-          item_rows: 0,
-          total_cards: 0,
-        },
-        {
+        buildInventorySummary(),
+        buildInventorySummary({
           slug: "trade-binder",
           display_name: "Trade Binder",
           description: "Cards available to trade",
-          item_rows: 0,
-          total_cards: 0,
-        },
+        }),
       ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(createInventory).mockResolvedValue({
-      inventory_id: 42,
-      slug: "trade-binder",
-      display_name: "Trade Binder",
-      description: "Cards available to trade",
-    });
+    vi.mocked(createInventory).mockResolvedValue(
+      buildInventoryCreateResponse({
+        inventory_id: 42,
+        slug: "trade-binder",
+        display_name: "Trade Binder",
+        description: "Cards available to trade",
+      }),
+    );
 
     render(<App />);
 
@@ -2721,13 +2718,7 @@ describe("App", () => {
     const user = userEvent.setup();
 
     vi.mocked(listInventories).mockResolvedValue([
-      {
-        slug: "personal",
-        display_name: "Personal Collection",
-        description: "Main demo inventory",
-        item_rows: 0,
-        total_cards: 0,
-      },
+      buildInventorySummary(),
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
     vi.mocked(listInventoryAudit).mockResolvedValue([]);

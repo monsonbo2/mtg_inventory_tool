@@ -103,7 +103,7 @@ export function InventoryTableView(props: {
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
   const activeFilterCount = getActiveInventoryTableFilterCount(props.filters);
   const parsedBulkTags = parseTags(bulkTagsInput);
-  const exceedsBulkSelectionLimit = totalSelectedCount > 100;
+  const exceedsBulkSelectionLimit = totalSelectedCount > 200;
   const hasSelection = totalSelectedCount > 0;
   const selectedCountLabel =
     totalSelectedCount === 0
@@ -433,6 +433,16 @@ export function InventoryTableView(props: {
               Applies to {totalSelectedCount} selected entr
               {totalSelectedCount === 1 ? "y" : "ies"}.
             </span>
+            {hiddenSelectedCount > 0 ? (
+              <span className="table-selection-summary-accent">
+                {hiddenSelectedCount} selected entr
+                {hiddenSelectedCount === 1 ? "y" : "ies"} hidden by current filters.
+              </span>
+            ) : (
+              <span>
+                Bulk edits apply to every selected entry, including any hidden by filters.
+              </span>
+            )}
           </div>
           <button
             className="secondary-button table-bulk-tray-close"
@@ -615,7 +625,7 @@ export function InventoryTableView(props: {
 
         {exceedsBulkSelectionLimit ? (
           <span className="table-selection-summary-accent">
-            Bulk edit currently supports up to 100 selected entries per request.
+            Bulk edit currently supports up to 200 selected entries per request.
           </span>
         ) : null}
       </section>
@@ -641,7 +651,7 @@ export function InventoryTableView(props: {
               ) : null}
               {exceedsBulkSelectionLimit ? (
                 <span className="table-selection-summary-accent">
-                  Bulk edit limit: 100 entries.
+                  Bulk edit limit: 200 entries.
                 </span>
               ) : null}
             </div>

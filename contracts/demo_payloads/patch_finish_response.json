@@ -2,6 +2,7 @@
   "operation": "set_finish",
   "inventory": "personal",
   "card_name": "Lightning Bolt",
+  "oracle_id": "demo-bolt-oracle",
   "set_code": "lea",
   "set_name": "Limited Edition Alpha",
   "collector_number": "161",
@@ -19,5 +20,6 @@
     "burn",
     "trade"
   ],
+  "printing_selection_mode": "explicit",
   "old_finish": "normal"
 }

@@ -1,6 +1,7 @@
 {
   "inventory": "personal",
   "card_name": "Forest",
+  "oracle_id": "demo-forest-oracle",
   "set_code": "m10",
   "set_name": "Magic 2010",
   "collector_number": "246",
@@ -16,5 +17,6 @@
   "notes": null,
   "tags": [
     "bulk"
-  ]
+  ],
+  "printing_selection_mode": "explicit"
 }

@@ -23,6 +23,7 @@
       "section": "mainboard",
       "inventory": "personal",
       "card_name": "Lightning Bolt",
+      "oracle_id": "demo-bolt-oracle",
       "set_code": "lea",
       "set_name": "Limited Edition Alpha",
       "collector_number": "161",
@@ -36,13 +37,15 @@
       "acquisition_price": null,
       "acquisition_currency": null,
       "notes": null,
-      "tags": []
+      "tags": [],
+      "printing_selection_mode": "explicit"
     },
     {
       "decklist_line": 3,
       "section": "sideboard",
       "inventory": "personal",
       "card_name": "Pyroblast",
+      "oracle_id": "demo-pyroblast-oracle",
       "set_code": "ice",
       "set_name": "Ice Age",
       "collector_number": "213",
@@ -56,7 +59,8 @@
       "acquisition_price": null,
       "acquisition_currency": null,
       "notes": null,
-      "tags": []
+      "tags": [],
+      "printing_selection_mode": "explicit"
     }
   ]
 }

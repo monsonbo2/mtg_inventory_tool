@@ -35,6 +35,11 @@ describe("api transport", () => {
           slug: "personal",
           display_name: "Personal",
           description: null,
+          default_location: null,
+          default_tags: null,
+          notes: null,
+          acquisition_price: null,
+          acquisition_currency: null,
         }),
         {
           headers: {

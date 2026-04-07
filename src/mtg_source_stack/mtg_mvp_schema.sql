@@ -85,6 +85,11 @@ CREATE TABLE IF NOT EXISTS inventories (
     slug TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
     description TEXT,
+    default_location TEXT,
+    default_tags TEXT,
+    notes TEXT,
+    acquisition_price NUMERIC,
+    acquisition_currency TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

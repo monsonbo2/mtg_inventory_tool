@@ -23,11 +23,17 @@ preserve for the first API-backed version of the project.
 - Owned inventory rows include `allowed_finishes` so edit UIs can constrain
   finish changes without doing an extra catalog lookup.
 - Owned inventory rows and inventory write/import responses include
+  `oracle_id` so clients can fetch sibling printings for an existing row
+  without first re-querying catalog search.
+- Owned inventory rows and inventory write/import responses include
   `printing_selection_mode` so clients can distinguish between an explicitly
   chosen printing and a concrete printing the backend selected by default.
   Typical examples: direct `scryfall_id` adds stay `explicit`, while bare
   `oracle_id` or name-only imports become `defaulted` when the backend had to
   choose among multiple valid printings.
+- Inventory create/list/bootstrap responses include inventory-level metadata
+  fields such as `default_location`, `default_tags`, `notes`,
+  `acquisition_price`, and `acquisition_currency`.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
   explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
@@ -38,6 +44,9 @@ preserve for the first API-backed version of the project.
 - PATCH responses include an explicit `operation` discriminator such as
   `set_finish` or `set_quantity`; clients should branch on `operation` instead
   of inferring the result type from optional fields alone.
+- `PATCH /inventories/{inventory_slug}/items/{item_id}/printing` is a separate
+  dedicated mutation for changing an owned row's printing without overloading
+  the generic one-family PATCH contract.
 - `POST /inventories/{inventory_slug}/items/bulk` accepts exactly one bulk
   mutation operation per request and currently supports:
   `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
@@ -132,6 +141,12 @@ preserve for the first API-backed version of the project.
     resolved printing language
   - if `language_code` is explicitly provided and does not match the resolved
     printing language, the request returns `400 validation_error`
+  - omitted `location` inherits the inventory's `default_location` when set
+  - omitted `tags` inherits the inventory's `default_tags` when set
+  - explicit non-empty `tags` merge with inventory `default_tags` rather than
+    replacing them
+  - explicit blank `location` or blank `tags` bypasses those inventory
+    defaults instead of reapplying them
 - `GET /cards/search` query `lang`
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language
@@ -160,6 +175,9 @@ preserve for the first API-backed version of the project.
   - `has_more` is true when additional grouped matches exist beyond `items`
   - keeps lexical match buckets first, then uses backend-owned popularity
     metadata such as `edhrec_rank` as an additive tie-breaker when available
+  - non-exact queries prefer token/prefix-style matches first and only fall
+    back to broader substring rescue when stronger grouped matches were not
+    found
   - prefers an English representative row and image when available
   - includes `available_languages` for the matched card
 - `GET /cards/oracle/{oracle_id}/printings`
@@ -175,6 +193,24 @@ preserve for the first API-backed version of the project.
     printing the backend would choose for omitted-finish quick-add
   - marks exactly one row when omitted-finish quick-add resolves successfully;
     foil-only or otherwise incompatible quick-add cases leave every row unmarked
+- `PATCH /inventories/{inventory_slug}/items/{item_id}/printing`
+  - requires a target `scryfall_id` for another printing of the same `oracle_id`
+  - clients may resubmit the current `scryfall_id` only to confirm a
+    `defaulted` row as `explicit` when finish and language stay unchanged
+  - when `finish` is omitted:
+    - keeps the current finish if the target printing supports it
+    - otherwise auto-selects the first supported finish in `normal`, `foil`,
+      `etched` order
+  - when `finish` is explicitly provided, it must be supported by the target
+    printing or the request returns `400 validation_error`
+  - same-`scryfall_id` requests that would change finish or language return
+    `400 validation_error`; use the generic item PATCH route for finish changes
+  - successful printing changes always return
+    `printing_selection_mode="explicit"`
+  - stored `language_code` follows the target printing language
+  - if the target identity collides with another owned row, the request
+    returns `409 conflict` unless `merge=true`
+  - `keep_acquisition` only applies when `merge=true`
 - `POST /inventories/{inventory_slug}/items/bulk`
   - current supported operations:
     `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,

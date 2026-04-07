@@ -257,6 +257,10 @@
             ],
             "title": "Notes"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -293,6 +297,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -481,7 +486,7 @@
             "items": {
               "type": "integer"
             },
-            "maxItems": 100,
+            "maxItems": 200,
             "minItems": 1,
             "title": "Item Ids",
             "type": "array"
@@ -1250,6 +1255,10 @@
             ],
             "title": "Notes"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -1286,6 +1295,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -1704,6 +1714,10 @@
             ],
             "title": "Notes"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -1748,6 +1762,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -2138,6 +2153,10 @@
             ],
             "title": "Notes"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -2178,6 +2197,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -2463,6 +2483,50 @@
       "InventoryCreateRequest": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "default_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Location"
+          },
+          "default_tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tags"
+          },
           "description": {
             "anyOf": [
               {
@@ -2477,6 +2541,17 @@
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
           },
           "slug": {
             "title": "Slug",
@@ -2493,6 +2568,50 @@
       "InventoryCreateResponse": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "default_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Location"
+          },
+          "default_tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tags"
+          },
           "description": {
             "anyOf": [
               {
@@ -2512,6 +2631,17 @@
             "title": "Inventory Id",
             "type": "integer"
           },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -2521,7 +2651,12 @@
           "inventory_id",
           "slug",
           "display_name",
-          "description"
+          "description",
+          "default_location",
+          "default_tags",
+          "notes",
+          "acquisition_price",
+          "acquisition_currency"
         ],
         "title": "InventoryCreateResponse",
         "type": "object"
@@ -2583,6 +2718,50 @@
       "InventoryListRowResponse": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "default_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Location"
+          },
+          "default_tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tags"
+          },
           "description": {
             "anyOf": [
               {
@@ -2602,6 +2781,17 @@
             "title": "Item Rows",
             "type": "integer"
           },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -2615,6 +2805,11 @@
           "slug",
           "display_name",
           "description",
+          "default_location",
+          "default_tags",
+          "notes",
+          "acquisition_price",
+          "acquisition_currency",
           "item_rows",
           "total_cards"
         ],
@@ -2993,6 +3188,10 @@
             ],
             "title": "Notes"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "price_date": {
             "anyOf": [
               {
@@ -3062,6 +3261,7 @@
         "required": [
           "item_id",
           "scryfall_id",
+          "oracle_id",
           "name",
           "set_code",
           "set_name",
@@ -3320,6 +3520,10 @@
             ],
             "title": "Notes"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -3356,6 +3560,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -3485,6 +3690,10 @@
             "title": "Operation",
             "type": "string"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -3521,6 +3730,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -3650,6 +3860,10 @@
             "title": "Operation",
             "type": "string"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -3686,6 +3900,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -3800,6 +4015,10 @@
             "title": "Operation",
             "type": "string"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -3836,6 +4055,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -3855,6 +4075,61 @@
           "old_finish"
         ],
         "title": "SetFinishResponse",
+        "type": "object"
+      },
+      "SetInventoryItemPrintingRequest": {
+        "additionalProperties": false,
+        "description": "Change an existing owned row to a different printing of the same oracle card. Clients may also resubmit the current scryfall_id to confirm a defaulted row as explicit when finish and language stay unchanged. When finish is omitted, the backend keeps the current finish if the target printing supports it; otherwise it auto-selects the first supported finish in normal > foil > etched order.",
+        "properties": {
+          "finish": {
+            "anyOf": [
+              {
+                "enum": [
+                  "normal",
+                  "nonfoil",
+                  "foil",
+                  "etched"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional explicit target finish. Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. When omitted, the backend preserves the current finish if valid on the target printing; otherwise it auto-selects the first supported finish in normal > foil > etched order. Resubmitting the current scryfall_id is confirmation-only and cannot be used as a same-printing finish change.",
+            "title": "Finish"
+          },
+          "keep_acquisition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "target",
+                  "source"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only applies when merge is true for printing changes. Choose whether the merged row keeps the target row or source row acquisition metadata.",
+            "title": "Keep Acquisition"
+          },
+          "merge": {
+            "default": false,
+            "description": "When true, a collision with an existing row identity after the printing change is merged instead of returning a conflict.",
+            "title": "Merge",
+            "type": "boolean"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scryfall_id"
+        ],
+        "title": "SetInventoryItemPrintingRequest",
         "type": "object"
       },
       "SetLocationResponse": {
@@ -3971,6 +4246,10 @@
             "title": "Operation",
             "type": "string"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -4007,6 +4286,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -4128,6 +4408,10 @@
             "title": "Operation",
             "type": "string"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -4164,6 +4448,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -4183,6 +4468,187 @@
           "old_notes"
         ],
         "title": "SetNotesResponse",
+        "type": "object"
+      },
+      "SetPrintingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Currency"
+          },
+          "acquisition_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Price"
+          },
+          "card_name": {
+            "title": "Card Name",
+            "type": "string"
+          },
+          "collector_number": {
+            "title": "Collector Number",
+            "type": "string"
+          },
+          "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
+            "title": "Condition Code",
+            "type": "string"
+          },
+          "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "type": "string"
+          },
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "integer"
+          },
+          "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
+            "title": "Language Code",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "merged": {
+            "title": "Merged",
+            "type": "boolean"
+          },
+          "merged_source_item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Source Item Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "old_finish": {
+            "title": "Old Finish",
+            "type": "string"
+          },
+          "old_language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
+            "title": "Old Language Code",
+            "type": "string"
+          },
+          "old_scryfall_id": {
+            "title": "Old Scryfall Id",
+            "type": "string"
+          },
+          "operation": {
+            "const": "set_printing",
+            "title": "Operation",
+            "type": "string"
+          },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
+          "printing_selection_mode": {
+            "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
+            "enum": [
+              "explicit",
+              "defaulted"
+            ],
+            "title": "Printing Selection Mode",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          },
+          "set_code": {
+            "title": "Set Code",
+            "type": "string"
+          },
+          "set_name": {
+            "title": "Set Name",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inventory",
+          "card_name",
+          "oracle_id",
+          "set_code",
+          "set_name",
+          "collector_number",
+          "scryfall_id",
+          "item_id",
+          "quantity",
+          "finish",
+          "condition_code",
+          "language_code",
+          "location",
+          "acquisition_price",
+          "acquisition_currency",
+          "notes",
+          "tags",
+          "printing_selection_mode",
+          "operation",
+          "old_scryfall_id",
+          "old_finish",
+          "old_language_code",
+          "merged"
+        ],
+        "title": "SetPrintingResponse",
         "type": "object"
       },
       "SetQuantityResponse": {
@@ -4277,6 +4743,10 @@
             "title": "Operation",
             "type": "string"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -4313,6 +4783,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -4429,6 +4900,10 @@
             "title": "Operation",
             "type": "string"
           },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
           "printing_selection_mode": {
             "description": "How the concrete printing was chosen. `explicit` means the caller directly identified the printing. `defaulted` means backend resolution selected the printing.",
             "enum": [
@@ -4465,6 +4940,7 @@
         "required": [
           "inventory",
           "card_name",
+          "oracle_id",
           "set_code",
           "set_name",
           "collector_number",
@@ -6525,6 +7001,124 @@
           }
         },
         "summary": "Inventory Items Patch"
+      }
+    },
+    "/inventories/{inventory_slug}/items/{item_id}/printing": {
+      "patch": {
+        "operationId": "inventory_items_set_printing_inventories__inventory_slug__items__item_id__printing_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetInventoryItemPrintingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetPrintingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Items Set Printing"
       }
     },
     "/inventories/{source_inventory_slug}/duplicate": {

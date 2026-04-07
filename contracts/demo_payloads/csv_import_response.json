@@ -19,6 +19,7 @@
       "csv_row": 2,
       "inventory": "personal",
       "card_name": "Lightning Bolt",
+      "oracle_id": "demo-bolt-oracle",
       "set_code": "lea",
       "set_name": "Limited Edition Alpha",
       "collector_number": "161",
@@ -34,7 +35,8 @@
       "notes": "CSV import row",
       "tags": [
         "bulk import"
-      ]
+      ],
+      "printing_selection_mode": "explicit"
     }
   ]
 }

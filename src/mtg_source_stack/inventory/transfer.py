@@ -146,6 +146,7 @@ def _load_transfer_source_rows(
                 ii.inventory_id,
                 i.slug AS inventory,
                 ii.scryfall_id,
+                c.oracle_id,
                 c.name AS card_name,
                 c.set_code,
                 c.set_name,
@@ -798,7 +799,13 @@ def duplicate_inventory(
     with connect(db_file) as connection:
         source_inventory = connection.execute(
             """
-            SELECT description
+            SELECT
+                description,
+                default_location,
+                default_tags,
+                notes,
+                acquisition_price,
+                acquisition_currency
             FROM inventories
             WHERE slug = ?
             """,
@@ -812,6 +819,11 @@ def duplicate_inventory(
             slug=target_slug,
             display_name=target_display_name,
             description=source_inventory["description"] if target_description is None else target_description,
+            default_location=source_inventory["default_location"],
+            default_tags=source_inventory["default_tags"],
+            notes=source_inventory["notes"],
+            acquisition_price=source_inventory["acquisition_price"],
+            acquisition_currency=source_inventory["acquisition_currency"],
             actor_id=actor_id,
         )
         transfer_result = transfer_inventory_items_with_connection(

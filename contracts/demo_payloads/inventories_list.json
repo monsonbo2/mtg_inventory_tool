@@ -3,6 +3,11 @@
     "slug": "personal",
     "display_name": "Personal Collection",
     "description": "Frontend demo inventory",
+    "default_location": "Trade Binder",
+    "default_tags": "burn, staples",
+    "notes": "Primary frontend demo inventory",
+    "acquisition_price": "25.00",
+    "acquisition_currency": "USD",
     "item_rows": 4,
     "total_cards": 7
   },
@@ -10,6 +15,11 @@
     "slug": "trade-binder",
     "display_name": "Trade Binder",
     "description": "Intentionally empty inventory for frontend empty states",
+    "default_location": null,
+    "default_tags": null,
+    "notes": null,
+    "acquisition_price": null,
+    "acquisition_currency": null,
     "item_rows": 0,
     "total_cards": 0
   }

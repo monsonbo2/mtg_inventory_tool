@@ -120,6 +120,19 @@ def _prepare_migration(connection: sqlite3.Connection, migration: MigrationFile)
             CHECK (printing_selection_mode IN ('explicit', 'defaulted'))
             """
         )
+    if migration.version == 11 and not table_exists(connection, "inventories"):
+        connection.execute(
+            """
+            CREATE TABLE inventories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
 
 
 def migrate_connection(connection: sqlite3.Connection) -> list[MigrationFile]:

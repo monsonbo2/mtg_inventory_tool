@@ -7,6 +7,7 @@ import type { OwnedInventoryRow } from "../types";
 const item: OwnedInventoryRow = {
   item_id: 7,
   scryfall_id: "card-1",
+  oracle_id: "lightning-bolt-oracle",
   name: "Lightning Bolt",
   set_code: "lea",
   set_name: "Limited Edition Alpha",

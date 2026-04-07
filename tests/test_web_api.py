@@ -122,6 +122,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{source_inventory_slug}/transfer", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
+                ("/inventories/{inventory_slug}/items/{item_id}/printing", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
             ]:
@@ -144,6 +145,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{source_inventory_slug}/transfer", "post"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "patch"),
+                ("/inventories/{inventory_slug}/items/{item_id}/printing", "patch"),
                 ("/inventories/{inventory_slug}/items/{item_id}", "delete"),
                 ("/inventories/{inventory_slug}/audit", "get"),
             ]:
@@ -284,6 +286,89 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 ["explicit", "defaulted"],
                 owned_properties["printing_selection_mode"]["enum"],
+            )
+
+            inventories_list_schema = spec["paths"]["/inventories"]["get"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]
+            self.assertEqual("array", inventories_list_schema["type"])
+            inventories_list_schema_name = self._schema_name_from_ref(inventories_list_schema["items"]["$ref"])
+            self.assertEqual("InventoryListRowResponse", inventories_list_schema_name)
+            inventories_list_properties = components[inventories_list_schema_name]["properties"]
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["default_location"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["default_tags"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["notes"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["acquisition_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_list_properties["acquisition_currency"]["anyOf"],
+            )
+
+            inventories_create_request_schema = spec["paths"]["/inventories"]["post"]["requestBody"]["content"][
+                "application/json"
+            ]["schema"]
+            inventories_create_request_schema_name = self._schema_name_from_ref(
+                inventories_create_request_schema["$ref"]
+            )
+            inventories_create_request_properties = components[inventories_create_request_schema_name]["properties"]
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["default_location"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["default_tags"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["notes"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["acquisition_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_request_properties["acquisition_currency"]["anyOf"],
+            )
+
+            inventories_create_schema = spec["paths"]["/inventories"]["post"]["responses"]["201"]["content"][
+                "application/json"
+            ]["schema"]
+            inventories_create_schema_name = self._schema_name_from_ref(inventories_create_schema["$ref"])
+            self.assertEqual("InventoryCreateResponse", inventories_create_schema_name)
+            inventories_create_properties = components[inventories_create_schema_name]["properties"]
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["default_location"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["default_tags"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["notes"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["acquisition_price"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                inventories_create_properties["acquisition_currency"]["anyOf"],
             )
 
             bootstrap_schema = spec["paths"]["/me/bootstrap"]["post"]["responses"]["200"]["content"][
@@ -530,6 +615,35 @@ class WebApiSchemaTest(unittest.TestCase):
                 patch_request_schema["properties"]["keep_acquisition"]["description"],
             )
 
+            set_printing_request_schema = components["SetInventoryItemPrintingRequest"]
+            self.assertIn(
+                "different printing of the same oracle card",
+                set_printing_request_schema["description"],
+            )
+            self.assertIn(
+                "confirm a defaulted row as explicit",
+                set_printing_request_schema["description"],
+            )
+            self.assertIn(
+                "normal > foil > etched",
+                set_printing_request_schema["properties"]["finish"]["description"],
+            )
+            self.assertIn(
+                "confirmation-only",
+                set_printing_request_schema["properties"]["finish"]["description"],
+            )
+            self.assertIn(
+                "merge is true for printing changes",
+                set_printing_request_schema["properties"]["keep_acquisition"]["description"],
+            )
+            set_printing_schema = spec["paths"]["/inventories/{inventory_slug}/items/{item_id}/printing"]["patch"][
+                "responses"
+            ]["200"]["content"]["application/json"]["schema"]
+            self.assertEqual(
+                "SetPrintingResponse",
+                self._schema_name_from_ref(set_printing_schema["$ref"]),
+            )
+
             bulk_request_schema = components["BulkInventoryItemMutationRequest"]
             self.assertIn(
                 "supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, set_location, and set_condition",
@@ -551,7 +665,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 bulk_request_schema["properties"]["operation"]["enum"],
             )
             self.assertEqual(1, bulk_request_schema["properties"]["item_ids"]["minItems"])
-            self.assertEqual(100, bulk_request_schema["properties"]["item_ids"]["maxItems"])
+            self.assertEqual(200, bulk_request_schema["properties"]["item_ids"]["maxItems"])
             self.assertIn("Used by set_location", bulk_request_schema["properties"]["location"]["description"])
             self.assertIn("Only applies to set_location", bulk_request_schema["properties"]["clear_location"]["description"])
             self.assertIn("Used by set_condition", bulk_request_schema["properties"]["condition_code"]["description"])
@@ -1020,12 +1134,14 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(201, added.status_code)
                 added_payload = added.json()
                 self.assertEqual(["demo", "web"], added_payload["tags"])
+                self.assertEqual("api-oracle-1", added_payload["oracle_id"])
                 self.assertEqual("explicit", added_payload["printing_selection_mode"])
                 self.assertEqual("req-add", added.headers["X-Request-Id"])
 
                 listed = client.get("/inventories/personal/items")
                 self.assertEqual(200, listed.status_code)
                 self.assertEqual(1, len(listed.json()))
+                self.assertEqual("api-oracle-1", listed.json()[0]["oracle_id"])
                 self.assertEqual(2, listed.json()[0]["quantity"])
                 self.assertEqual(["normal", "foil"], listed.json()[0]["allowed_finishes"])
                 self.assertEqual("explicit", listed.json()[0]["printing_selection_mode"])
@@ -1057,6 +1173,83 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("local-demo", audit.json()[0]["actor_id"])
                 self.assertEqual("req-finish", audit.json()[0]["request_id"])
                 self.assertRegex(audit.json()[0]["occurred_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_demo_api_inventory_metadata_round_trips_and_add_defaults_apply(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={
+                        "slug": "personal",
+                        "display_name": "Personal Collection",
+                        "description": "Main demo inventory",
+                        "default_location": "Trade Binder",
+                        "default_tags": "trade, staples",
+                        "notes": "Main inventory notes",
+                        "acquisition_price": "25.00",
+                        "acquisition_currency": "usd",
+                    },
+                )
+                self.assertEqual(201, created_inventory.status_code)
+                self.assertEqual(
+                    {
+                        "inventory_id": 1,
+                        "slug": "personal",
+                        "display_name": "Personal Collection",
+                        "description": "Main demo inventory",
+                        "default_location": "Trade Binder",
+                        "default_tags": "staples, trade",
+                        "notes": "Main inventory notes",
+                        "acquisition_price": "25.00",
+                        "acquisition_currency": "USD",
+                    },
+                    created_inventory.json(),
+                )
+
+                inventories = client.get("/inventories")
+                self.assertEqual(200, inventories.status_code)
+                self.assertEqual(
+                    [
+                        {
+                            "slug": "personal",
+                            "display_name": "Personal Collection",
+                            "description": "Main demo inventory",
+                            "default_location": "Trade Binder",
+                            "default_tags": "staples, trade",
+                            "notes": "Main inventory notes",
+                            "acquisition_price": "25.00",
+                            "acquisition_currency": "USD",
+                            "item_rows": 0,
+                            "total_cards": 0,
+                        }
+                    ],
+                    inventories.json(),
+                )
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 2,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                self.assertEqual("Trade Binder", added.json()["location"])
+                self.assertEqual(["staples", "trade"], added.json()["tags"])
+
+                with connect(db_path) as connection:
+                    item_row = connection.execute(
+                        "SELECT location, tags_json FROM inventory_items WHERE id = ?",
+                        (added.json()["item_id"],),
+                    ).fetchone()
+
+                self.assertEqual("Trade Binder", item_row["location"])
+                self.assertEqual('["staples", "trade"]', item_row["tags_json"])
 
     def test_demo_api_csv_import_supports_preview_and_commit_but_not_implicit_inventory_creation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2289,6 +2482,182 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(["api-foil-only-printing"], [row["scryfall_id"] for row in printings.json()])
                 self.assertEqual([False], [row["is_default_add_choice"] for row in printings.json()])
 
+    def test_demo_api_set_printing_changes_to_a_sibling_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-printing-old",
+                    oracle_id="api-printing-oracle",
+                    name="API Printing Card",
+                    set_code="old",
+                    set_name="Old Set",
+                    collector_number="7",
+                    lang="en",
+                    finishes_json='["normal"]',
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-printing-new",
+                    oracle_id="api-printing-oracle",
+                    name="API Printing Card",
+                    set_code="sld",
+                    set_name="Secret Lair",
+                    collector_number="8",
+                    lang="ja",
+                    finishes_json='["foil"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-add-printing"},
+                    json={
+                        "scryfall_id": "api-printing-old",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                item_id = added.json()["item_id"]
+
+                changed = client.patch(
+                    f"/inventories/personal/items/{item_id}/printing",
+                    headers={"X-Actor-Id": "web-user", "X-Request-Id": "req-set-printing"},
+                    json={"scryfall_id": "api-printing-new"},
+                )
+                self.assertEqual(200, changed.status_code)
+                self.assertEqual("set_printing", changed.json()["operation"])
+                self.assertEqual("api-printing-old", changed.json()["old_scryfall_id"])
+                self.assertEqual("normal", changed.json()["old_finish"])
+                self.assertEqual("en", changed.json()["old_language_code"])
+                self.assertEqual("api-printing-new", changed.json()["scryfall_id"])
+                self.assertEqual("api-printing-oracle", changed.json()["oracle_id"])
+                self.assertEqual("foil", changed.json()["finish"])
+                self.assertEqual("ja", changed.json()["language_code"])
+                self.assertEqual("explicit", changed.json()["printing_selection_mode"])
+                self.assertFalse(changed.json()["merged"])
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("set_printing", audit.json()[0]["action"])
+                self.assertEqual("api-printing-old", audit.json()[0]["metadata"]["old_scryfall_id"])
+                self.assertEqual("api-printing-new", audit.json()[0]["metadata"]["new_scryfall_id"])
+                self.assertTrue(audit.json()[0]["metadata"]["auto_selected_finish"])
+
+    def test_demo_api_set_printing_reports_conflict_without_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-printing-source",
+                    oracle_id="api-printing-oracle-merge",
+                    name="API Merge Printing Card",
+                    set_code="old",
+                    collector_number="1",
+                    finishes_json='["normal"]',
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-printing-target",
+                    oracle_id="api-printing-oracle-merge",
+                    name="API Merge Printing Card",
+                    set_code="new",
+                    collector_number="2",
+                    finishes_json='["normal"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                source = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-printing-source",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "Binder A",
+                    },
+                )
+                self.assertEqual(201, source.status_code)
+                target = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-printing-target",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "Binder A",
+                    },
+                )
+                self.assertEqual(201, target.status_code)
+
+                conflict = client.patch(
+                    f"/inventories/personal/items/{source.json()['item_id']}/printing",
+                    json={"scryfall_id": "api-printing-target"},
+                )
+                self.assertEqual(409, conflict.status_code)
+                self.assertEqual("conflict", conflict.json()["error"]["code"])
+                self.assertIn("Changing printing would collide", conflict.json()["error"]["message"])
+
+    def test_demo_api_set_printing_rejects_same_printing_finish_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-printing-same-id",
+                    oracle_id="api-printing-same-id-oracle",
+                    name="API Same Printing Card",
+                    set_code="lea",
+                    collector_number="7",
+                    finishes_json='["normal","foil"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    json={
+                        "scryfall_id": "api-printing-same-id",
+                        "quantity": 1,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+                item_id = added.json()["item_id"]
+
+                changed = client.patch(
+                    f"/inventories/personal/items/{item_id}/printing",
+                    json={"scryfall_id": "api-printing-same-id", "finish": "foil"},
+                )
+                self.assertEqual(400, changed.status_code)
+                self.assertEqual("validation_error", changed.json()["error"]["code"])
+                self.assertIn("finish and language stay unchanged", changed.json()["error"]["message"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual(1, len(listed.json()))
+                self.assertEqual("normal", listed.json()[0]["finish"])
+                self.assertEqual("explicit", listed.json()[0]["printing_selection_mode"])
+
     def test_demo_api_filters_default_add_scope_for_catalog_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -2489,6 +2858,40 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(substring.json()["items"]))
                 self.assertEqual("api-lightning-bolt-oracle", substring.json()["items"][0]["oracle_id"])
                 self.assertEqual("Lightning Bolt", substring.json()["items"][0]["name"])
+
+    def test_demo_api_grouped_name_search_only_uses_infix_fallback_after_fts_miss(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-bolt-token-match",
+                    oracle_id="api-bolt-token-oracle",
+                    name="Lightning Bolt",
+                    collector_number="65",
+                    lang="en",
+                    released_at="2026-04-01",
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-bolt-infix-only",
+                    oracle_id="api-bolt-infix-oracle",
+                    name="Thunderbolt",
+                    collector_number="66",
+                    lang="en",
+                    released_at="2026-04-02",
+                    is_default_add_searchable=1,
+                )
+
+                response = client.get("/cards/search/names", params={"query": "bolt"})
+                self.assertEqual(200, response.status_code)
+                self.assertEqual(1, response.json()["total_count"])
+                self.assertFalse(response.json()["has_more"])
+                self.assertEqual(
+                    ["Lightning Bolt"],
+                    [row["name"] for row in response.json()["items"]],
+                )
 
     def test_demo_api_grouped_name_search_uses_popularity_within_lexical_buckets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -4322,10 +4725,20 @@ class WebApiTest(unittest.TestCase):
                 self.assertTrue(created.json()["created"])
                 self.assertEqual("Collection", created.json()["inventory"]["display_name"])
                 self.assertEqual("shared-user-collection", created.json()["inventory"]["slug"])
+                self.assertIsNone(created.json()["inventory"]["default_location"])
+                self.assertIsNone(created.json()["inventory"]["default_tags"])
+                self.assertIsNone(created.json()["inventory"]["notes"])
+                self.assertIsNone(created.json()["inventory"]["acquisition_price"])
+                self.assertIsNone(created.json()["inventory"]["acquisition_currency"])
 
                 inventories = client.get("/inventories", headers=user_headers)
                 self.assertEqual(200, inventories.status_code)
                 self.assertEqual(["shared-user-collection"], [row["slug"] for row in inventories.json()])
+                self.assertIsNone(inventories.json()[0]["default_location"])
+                self.assertIsNone(inventories.json()[0]["default_tags"])
+                self.assertIsNone(inventories.json()[0]["notes"])
+                self.assertIsNone(inventories.json()[0]["acquisition_price"])
+                self.assertIsNone(inventories.json()[0]["acquisition_currency"])
 
                 repeated = client.post("/me/bootstrap", headers=user_headers)
                 self.assertEqual(200, repeated.status_code)

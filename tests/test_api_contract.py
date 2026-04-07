@@ -18,11 +18,14 @@ from mtg_source_stack.api.request_models import (
     BulkInventoryItemMutationRequest,
     DecklistImportRequest,
     DeckUrlImportRequest,
+    InventoryCreateRequest,
     InventoryDuplicateRequest,
     InventoryTransferRequest,
     PatchInventoryItemRequest,
+    SetInventoryItemPrintingRequest,
 )
 from mtg_source_stack.api.response_models import (
+    AddInventoryItemResponse,
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
     CatalogNameSearchResponse,
@@ -33,11 +36,20 @@ from mtg_source_stack.api.response_models import (
     DecklistImportResponse,
     DeckUrlImportResponse,
     DefaultInventoryBootstrapResponse,
+    InventoryCreateResponse,
     InventoryDuplicateResponse,
+    InventoryListRowResponse,
     InventoryTransferResponse,
     OwnedInventoryRowResponse,
+    RemoveInventoryItemResponse,
     SetAcquisitionResponse,
+    SetConditionResponse,
     SetFinishResponse,
+    SetLocationResponse,
+    SetNotesResponse,
+    SetPrintingResponse,
+    SetQuantityResponse,
+    SetTagsResponse,
 )
 from mtg_source_stack.db.schema import initialize_database, require_current_schema
 from mtg_source_stack.errors import ConflictError, NotFoundError, SchemaNotReadyError, ValidationError
@@ -54,6 +66,7 @@ from mtg_source_stack.inventory.service import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OPENAPI_SNAPSHOT_PATH = REPO_ROOT / "contracts" / "openapi.json"
+DEMO_PAYLOADS_DIR = REPO_ROOT / "contracts" / "demo_payloads"
 OPENAPI_SNAPSHOT_REFRESH_COMMAND = dedent(
     """\
     PYTHONPATH=src python3 - <<'PY'
@@ -178,6 +191,7 @@ class ApiContractTest(RepoSmokeTestCase):
             {
                 "item_id": 1,
                 "scryfall_id": "card-1",
+                "oracle_id": "oracle-lightning-bolt",
                 "name": "Lightning Bolt",
                 "set_code": "lea",
                 "set_name": "Limited Edition Alpha",
@@ -234,8 +248,38 @@ class ApiContractTest(RepoSmokeTestCase):
                 "slug": "alice-collection",
                 "display_name": "Collection",
                 "description": None,
+                "default_location": None,
+                "default_tags": None,
+                "notes": None,
+                "acquisition_price": None,
+                "acquisition_currency": None,
             },
         }
+        inventory_create_payload = {
+            "inventory_id": 7,
+            "slug": "alice-collection",
+            "display_name": "Collection",
+            "description": "Main inventory",
+            "default_location": "Binder A",
+            "default_tags": "modern, staples",
+            "notes": "Main trade stock",
+            "acquisition_price": "42.50",
+            "acquisition_currency": "USD",
+        }
+        inventory_list_payload = [
+            {
+                "slug": "alice-collection",
+                "display_name": "Collection",
+                "description": "Main inventory",
+                "default_location": "Binder A",
+                "default_tags": "modern, staples",
+                "notes": "Main trade stock",
+                "acquisition_price": "42.50",
+                "acquisition_currency": "USD",
+                "item_rows": 12,
+                "total_cards": 45,
+            }
+        ]
         csv_import_payload = {
             "csv_filename": "inventory_import.csv",
             "detected_format": "generic_csv",
@@ -257,6 +301,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "csv_row": 2,
                     "inventory": "personal",
                     "card_name": "Lightning Bolt",
+                    "oracle_id": "oracle-lightning-bolt",
                     "set_code": "lea",
                     "set_name": "Limited Edition Alpha",
                     "collector_number": "161",
@@ -297,6 +342,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "section": "mainboard",
                     "inventory": "personal",
                     "card_name": "Lightning Bolt",
+                    "oracle_id": "oracle-lightning-bolt",
                     "set_code": "lea",
                     "set_name": "Limited Edition Alpha",
                     "collector_number": "161",
@@ -340,6 +386,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "section": "commander",
                     "inventory": "personal",
                     "card_name": "Lightning Bolt",
+                    "oracle_id": "oracle-lightning-bolt",
                     "set_code": "lea",
                     "set_name": "Limited Edition Alpha",
                     "collector_number": "161",
@@ -371,6 +418,8 @@ class ApiContractTest(RepoSmokeTestCase):
                 "has_more": False,
             }
         )
+        inventory_create = InventoryCreateResponse.model_validate(inventory_create_payload)
+        inventory_list = [InventoryListRowResponse.model_validate(row) for row in inventory_list_payload]
         bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
         csv_import = CsvImportResponse.model_validate(csv_import_payload)
         decklist_import = DecklistImportResponse.model_validate(decklist_import_payload)
@@ -378,6 +427,7 @@ class ApiContractTest(RepoSmokeTestCase):
         error = ApiErrorResponse.model_validate(error_payload)
 
         self.assertEqual("2.50", owned.acquisition_price)
+        self.assertEqual("oracle-lightning-bolt", owned.oracle_id)
         self.assertEqual("3.00", owned.unit_price)
         self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
         self.assertEqual(["normal", "foil"], owned.allowed_finishes)
@@ -389,6 +439,12 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
         self.assertEqual(1, catalog_name_result.total_count)
         self.assertFalse(catalog_name_result.has_more)
+        self.assertEqual("Binder A", inventory_create.default_location)
+        self.assertEqual("modern, staples", inventory_create.default_tags)
+        self.assertEqual("42.50", inventory_create.acquisition_price)
+        self.assertEqual("USD", inventory_create.acquisition_currency)
+        self.assertEqual("Main trade stock", inventory_list[0].notes)
+        self.assertEqual(45, inventory_list[0].total_cards)
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("generic_csv", csv_import.detected_format)
@@ -427,6 +483,30 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
         self.assertIn("prefers English mainstream-paper printings", add_properties["oracle_id"]["description"])
 
+        inventory_create_schema = InventoryCreateRequest.model_json_schema()
+        inventory_create_properties = inventory_create_schema["properties"]
+        self.assertEqual("string", inventory_create_properties["slug"]["type"])
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["default_location"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["default_tags"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["notes"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["acquisition_price"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_properties["acquisition_currency"]["anyOf"],
+        )
+
         decklist_schema = DecklistImportRequest.model_json_schema()
         decklist_properties = decklist_schema["properties"]
         self.assertEqual(False, decklist_properties["dry_run"]["default"])
@@ -452,17 +532,91 @@ class ApiContractTest(RepoSmokeTestCase):
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]
+        self.assertEqual("string", owned_properties["oracle_id"]["type"])
         self.assertEqual(["normal", "foil", "etched"], owned_properties["finish"]["enum"])
         self.assertEqual(["normal", "foil", "etched"], owned_properties["allowed_finishes"]["items"]["enum"])
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", owned_properties["condition_code"]["description"])
         self.assertIn("Canonical language codes: en, ja, de, fr", owned_properties["language_code"]["description"])
         self.assertEqual(["explicit", "defaulted"], owned_properties["printing_selection_mode"]["enum"])
 
+        inventory_list_schema = InventoryListRowResponse.model_json_schema()
+        inventory_list_properties = inventory_list_schema["properties"]
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["default_location"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["default_tags"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["notes"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["acquisition_price"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_list_properties["acquisition_currency"]["anyOf"],
+        )
+
+        inventory_create_response_schema = InventoryCreateResponse.model_json_schema()
+        inventory_create_response_properties = inventory_create_response_schema["properties"]
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["default_location"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["default_tags"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["notes"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["acquisition_price"]["anyOf"],
+        )
+        self.assertEqual(
+            [{"type": "string"}, {"type": "null"}],
+            inventory_create_response_properties["acquisition_currency"]["anyOf"],
+        )
+
         set_finish_schema = SetFinishResponse.model_json_schema()
+        self.assertEqual("string", set_finish_schema["properties"]["oracle_id"]["type"])
         self.assertEqual(
             ["explicit", "defaulted"],
             set_finish_schema["properties"]["printing_selection_mode"]["enum"],
         )
+        set_printing_request_schema = SetInventoryItemPrintingRequest.model_json_schema()
+        self.assertIn(
+            "different printing of the same oracle card",
+            set_printing_request_schema["description"],
+        )
+        self.assertIn(
+            "confirm a defaulted row as explicit",
+            set_printing_request_schema["description"],
+        )
+        self.assertIn(
+            "normal > foil > etched",
+            set_printing_request_schema["properties"]["finish"]["description"],
+        )
+        self.assertIn(
+            "confirmation-only",
+            set_printing_request_schema["properties"]["finish"]["description"],
+        )
+        self.assertIn(
+            "merge is true for printing changes",
+            set_printing_request_schema["properties"]["keep_acquisition"]["description"],
+        )
+
+        set_printing_schema = SetPrintingResponse.model_json_schema()
+        self.assertEqual("set_printing", set_printing_schema["properties"]["operation"]["const"])
+        self.assertEqual("string", set_printing_schema["properties"]["old_scryfall_id"]["type"])
+        self.assertEqual("string", set_printing_schema["properties"]["old_language_code"]["type"])
 
         catalog_schema = CatalogSearchRowResponse.model_json_schema()
         catalog_properties = catalog_schema["properties"]
@@ -514,7 +668,7 @@ class ApiContractTest(RepoSmokeTestCase):
             bulk_properties["operation"]["enum"],
         )
         self.assertEqual(1, bulk_properties["item_ids"]["minItems"])
-        self.assertEqual(100, bulk_properties["item_ids"]["maxItems"])
+        self.assertEqual(200, bulk_properties["item_ids"]["maxItems"])
         self.assertIn("Omit this field for non-tag bulk operations", bulk_properties["tags"]["description"])
         self.assertIn("Required for set_quantity", bulk_properties["quantity"]["description"])
         self.assertIn("Used by set_notes", bulk_properties["notes"]["description"])
@@ -611,6 +765,11 @@ class ApiContractTest(RepoSmokeTestCase):
                     "slug": "source-copy",
                     "display_name": "Source Copy",
                     "description": "Original description",
+                    "default_location": None,
+                    "default_tags": None,
+                    "notes": None,
+                    "acquisition_price": None,
+                    "acquisition_currency": None,
                 },
                 "transfer": {
                     "source_inventory": "source",
@@ -668,6 +827,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "operation": "set_acquisition",
                 "inventory": "personal",
                 "card_name": "Sol Ring",
+                "oracle_id": "oracle-sol-ring",
                 "set_code": "cmd",
                 "set_name": "Commander",
                 "collector_number": "260",
@@ -688,6 +848,66 @@ class ApiContractTest(RepoSmokeTestCase):
             }
         )
         self.assertEqual("set_acquisition", acquisition_response.operation)
+
+        printing_response = SetPrintingResponse.model_validate(
+            {
+                "operation": "set_printing",
+                "inventory": "personal",
+                "card_name": "Sol Ring",
+                "oracle_id": "oracle-sol-ring",
+                "set_code": "sld",
+                "set_name": "Secret Lair",
+                "collector_number": "99",
+                "scryfall_id": "sld-sol-ring",
+                "item_id": 15,
+                "quantity": 1,
+                "finish": "foil",
+                "condition_code": "NM",
+                "language_code": "en",
+                "location": "Artifacts Binder",
+                "acquisition_price": "3.50",
+                "acquisition_currency": "USD",
+                "notes": None,
+                "tags": ["commander", "artifact"],
+                "printing_selection_mode": "explicit",
+                "old_scryfall_id": "cmd-sol-ring",
+                "old_finish": "normal",
+                "old_language_code": "en",
+                "merged": False,
+                "merged_source_item_id": None,
+            }
+        )
+        self.assertEqual("set_printing", printing_response.operation)
+
+    def test_demo_payload_examples_validate_against_models(self) -> None:
+        example_validators = {
+            "inventories_list.json": lambda payload: [
+                InventoryListRowResponse.model_validate(item) for item in payload
+            ],
+            "bootstrap_default_inventory_response.json": DefaultInventoryBootstrapResponse.model_validate,
+            "owned_items.json": lambda payload: [
+                OwnedInventoryRowResponse.model_validate(item) for item in payload
+            ],
+            "patch_printing_request.json": SetInventoryItemPrintingRequest.model_validate,
+            "add_item_response.json": AddInventoryItemResponse.model_validate,
+            "delete_item_response.json": RemoveInventoryItemResponse.model_validate,
+            "patch_quantity_response.json": SetQuantityResponse.model_validate,
+            "patch_finish_response.json": SetFinishResponse.model_validate,
+            "patch_location_response.json": SetLocationResponse.model_validate,
+            "patch_condition_response.json": SetConditionResponse.model_validate,
+            "patch_notes_response.json": SetNotesResponse.model_validate,
+            "patch_tags_response.json": SetTagsResponse.model_validate,
+            "patch_acquisition_response.json": SetAcquisitionResponse.model_validate,
+            "patch_printing_response.json": SetPrintingResponse.model_validate,
+            "csv_import_response.json": CsvImportResponse.model_validate,
+            "decklist_import_response.json": DecklistImportResponse.model_validate,
+            "deck_url_import_response.json": DeckUrlImportResponse.model_validate,
+        }
+
+        for filename, validator in example_validators.items():
+            with self.subTest(filename=filename):
+                payload = json.loads((DEMO_PAYLOADS_DIR / filename).read_text(encoding="utf-8"))
+                validator(payload)
 
     def test_create_inventory_conflict_raises_conflict_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -9,6 +9,7 @@ export interface ApiErrorEnvelope {
 export type CatalogScope = "default" | "all";
 export type FinishValue = "normal" | "foil" | "etched";
 export type FinishInput = FinishValue | "nonfoil";
+export type PrintingSelectionMode = "explicit" | "defaulted";
 export type ConditionCode =
   | "M"
   | "NM"
@@ -66,12 +67,16 @@ export type DeckUrlProvider =
   | "mtgtop8"
   | "tappedout"
   | (string & {});
-export type PrintingSelectionMode = "explicit" | "defaulted";
 
 export interface InventorySummary {
   slug: string;
   display_name: string;
   description: string | null;
+  default_location: string | null;
+  default_tags: string | null;
+  notes: string | null;
+  acquisition_price: string | null;
+  acquisition_currency: string | null;
   item_rows: number;
   total_cards: number;
 }
@@ -80,6 +85,11 @@ export interface InventoryCreateRequest {
   slug: string;
   display_name: string;
   description?: string | null;
+  default_location?: string | null;
+  default_tags?: string | null;
+  notes?: string | null;
+  acquisition_price?: string | null;
+  acquisition_currency?: string | null;
 }
 
 export interface InventoryCreateResponse {
@@ -87,6 +97,11 @@ export interface InventoryCreateResponse {
   slug: string;
   display_name: string;
   description: string | null;
+  default_location: string | null;
+  default_tags: string | null;
+  notes: string | null;
+  acquisition_price: string | null;
+  acquisition_currency: string | null;
 }
 
 export interface CatalogSearchRow {
@@ -125,6 +140,7 @@ export interface CatalogNameSearchResult {
 export interface OwnedInventoryRow {
   item_id: number;
   scryfall_id: string;
+  oracle_id: string;
   name: string;
   set_code: string;
   set_name: string;
@@ -189,6 +205,11 @@ type PatchMergeOptions = {
   merge?: boolean;
 };
 
+type PrintingChangeMergeOptions = {
+  keep_acquisition?: InventoryAcquisitionMergePolicy | null;
+  merge?: boolean;
+};
+
 export type PatchInventoryItemRequest =
   | { quantity: number }
   | { finish: FinishInput }
@@ -207,6 +228,11 @@ export type PatchInventoryItemRequest =
   | {
       clear_acquisition: true;
     };
+
+export type SetInventoryItemPrintingRequest = PrintingChangeMergeOptions & {
+  scryfall_id: string;
+  finish?: FinishInput;
+};
 
 export type BulkInventoryItemOperation =
   | "add_tags"
@@ -295,6 +321,7 @@ export type BulkInventoryItemMutationRequest =
 interface InventoryItemMutationBase {
   inventory: string;
   card_name: string;
+  oracle_id: string;
   set_code: string;
   set_name: string;
   collector_number: string;
@@ -366,6 +393,15 @@ export interface SetAcquisitionPatchResponse
   operation: "set_acquisition";
   old_acquisition_price: string | null;
   old_acquisition_currency: string | null;
+}
+
+export interface SetPrintingResponse extends InventoryItemMutationBase {
+  operation: "set_printing";
+  old_scryfall_id: string;
+  old_finish: FinishValue;
+  old_language_code: LanguageCode;
+  merged: boolean;
+  merged_source_item_id?: number | null;
 }
 
 export type InventoryItemPatchResponse =

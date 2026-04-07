@@ -321,12 +321,7 @@ def search_card_names(
     limit: int = DEFAULT_SEARCH_LIMIT,
     scope: str | None = None,
 ) -> CatalogNameSearchResult:
-    if not query.strip():
-        raise ValidationError("query is required.")
-    normalized_scope = normalize_catalog_search_scope(scope)
-    validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
-    require_current_schema(db_path)
-    with connect(db_path) as connection:
+    def _load_grouped_rows(*, include_substring_fallback: bool) -> list[sqlite3.Row]:
         search_cte = """
         WITH search_match AS (
             SELECT
@@ -337,36 +332,40 @@ def search_card_names(
         """
         search_join = "LEFT JOIN search_match ON 1 = 0"
         where_parts: list[str] = []
-        where_params: list[Any] = []
+        match_params: list[Any] = []
         fts_query = build_catalog_search_fts_query(query) if not exact else None
+
         if exact:
             where_parts.append("LOWER(mtg_cards.name) = LOWER(?)")
-            where_params.append(query)
+            match_params.append(query)
+        elif include_substring_fallback:
+            where_parts.append("LOWER(mtg_cards.name) LIKE LOWER(?)")
+            match_params.append(f"%{query}%")
         else:
-            where_parts.append("(search_match.scryfall_id IS NOT NULL OR LOWER(mtg_cards.name) LIKE LOWER(?))")
-            where_params.append(f"%{query}%")
-            if fts_query is not None:
-                search_cte = """
-                WITH search_match AS (
-                    SELECT
-                        scryfall_id,
-                        bm25(mtg_cards_fts) AS search_rank
-                    FROM mtg_cards_fts
-                    WHERE mtg_cards_fts MATCH ?
-                )
-                """
-                search_join = "LEFT JOIN search_match ON search_match.scryfall_id = mtg_cards.scryfall_id"
+            if fts_query is None:
+                return []
+            search_cte = """
+            WITH search_match AS (
+                SELECT
+                    scryfall_id,
+                    rank AS search_rank
+                FROM mtg_cards_fts
+                WHERE mtg_cards_fts MATCH ?
+            )
+            """
+            search_join = "LEFT JOIN search_match ON search_match.scryfall_id = mtg_cards.scryfall_id"
+            where_parts.append("search_match.scryfall_id IS NOT NULL")
 
-        scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
         add_catalog_scope_filter(where_parts, scope=normalized_scope)
 
         params: list[Any] = []
-        if not exact and fts_query is not None:
+        if not exact and not include_substring_fallback and fts_query is not None:
             params.append(fts_query)
         params.extend([query, f"{query}%"])
-        params.extend(where_params)
+        params.extend(match_params)
         params.append(limit)
-        rows = connection.execute(
+
+        return connection.execute(
             f"""
             {search_cte},
             matched_printings AS (
@@ -452,6 +451,19 @@ def search_card_names(
             """,
             params,
         ).fetchall()
+
+    if not query.strip():
+        raise ValidationError("query is required.")
+    normalized_scope = normalize_catalog_search_scope(scope)
+    scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
+    validate_limit_value(limit, maximum=MAX_SEARCH_LIMIT)
+    require_current_schema(db_path)
+    with connect(db_path) as connection:
+        rows = _load_grouped_rows(include_substring_fallback=False)
+        if not exact and not rows:
+            # Keep infix rescue available without paying for it on ordinary
+            # token/prefix searches that already produced grouped matches.
+            rows = _load_grouped_rows(include_substring_fallback=True)
         if not rows:
             return CatalogNameSearchResult(items=[], total_count=0, has_more=False)
 
@@ -811,7 +823,7 @@ def resolve_card_row(
     if scryfall_id:
         row = connection.execute(
             """
-            SELECT scryfall_id, name, set_code, set_name, collector_number, lang, finishes_json
+            SELECT scryfall_id, oracle_id, name, set_code, set_name, collector_number, lang, finishes_json
             FROM mtg_cards
             WHERE scryfall_id = ?
             """,

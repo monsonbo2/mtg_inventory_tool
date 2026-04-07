@@ -69,7 +69,16 @@ def get_inventory_row(connection: sqlite3.Connection, slug: str) -> sqlite3.Row:
     slug = normalize_inventory_slug(slug)
     row = connection.execute(
         """
-        SELECT id, slug, display_name
+        SELECT
+            id,
+            slug,
+            display_name,
+            description,
+            default_location,
+            default_tags,
+            notes,
+            acquisition_price,
+            acquisition_currency
         FROM inventories
         WHERE slug = ?
         """,
@@ -94,7 +103,16 @@ def get_or_create_inventory_row(
 
     row = connection.execute(
         """
-        SELECT id, slug, display_name
+        SELECT
+            id,
+            slug,
+            display_name,
+            description,
+            default_location,
+            default_tags,
+            notes,
+            acquisition_price,
+            acquisition_currency
         FROM inventories
         WHERE slug = ?
         """,
@@ -106,7 +124,16 @@ def get_or_create_inventory_row(
             """
             INSERT INTO inventories (slug, display_name)
             VALUES (?, ?)
-            RETURNING id, slug, display_name
+            RETURNING
+                id,
+                slug,
+                display_name,
+                description,
+                default_location,
+                default_tags,
+                notes,
+                acquisition_price,
+                acquisition_currency
             """,
             (slug, display_name or slug),
         )
@@ -129,6 +156,7 @@ def get_inventory_item_row(connection: sqlite3.Connection, inventory_slug: str, 
             ii.inventory_id,
             i.slug AS inventory,
             ii.scryfall_id,
+            c.oracle_id,
             c.name AS card_name,
             c.set_code,
             c.set_name,
@@ -161,6 +189,7 @@ def inventory_item_result_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "inventory": row["inventory"],
         "card_name": row["card_name"],
+        "oracle_id": row["oracle_id"],
         "set_code": row["set_code"],
         "set_name": row["set_name"],
         "collector_number": row["collector_number"],
@@ -197,6 +226,7 @@ def find_inventory_item_collision(
             ii.inventory_id,
             i.slug AS inventory,
             ii.scryfall_id,
+            c.oracle_id,
             c.name AS card_name,
             c.set_code,
             c.set_name,

@@ -133,6 +133,11 @@ class InventoryAccessTest(unittest.TestCase):
             self.assertTrue(created.created)
             self.assertEqual("Collection", created.inventory.display_name)
             self.assertEqual("alice-collection", created.inventory.slug)
+            self.assertIsNone(created.inventory.default_location)
+            self.assertIsNone(created.inventory.default_tags)
+            self.assertIsNone(created.inventory.notes)
+            self.assertIsNone(created.inventory.acquisition_price)
+            self.assertIsNone(created.inventory.acquisition_currency)
 
             repeated = ensure_default_inventory(
                 db_path,

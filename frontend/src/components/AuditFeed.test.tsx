@@ -8,6 +8,11 @@ const inventory: InventorySummary = {
   slug: "personal",
   display_name: "Personal Collection",
   description: "Main demo inventory",
+  default_location: null,
+  default_tags: null,
+  notes: null,
+  acquisition_price: null,
+  acquisition_currency: null,
   item_rows: 1,
   total_cards: 3,
 };

@@ -25,6 +25,7 @@ from mtg_source_stack.inventory.response_models import (
     SetFinishResult,
     SetLocationResult,
     SetNotesResult,
+    SetPrintingResult,
     SetQuantityResult,
     SetTagsResult,
     SplitRowResult,
@@ -41,6 +42,7 @@ from mtg_source_stack.inventory.service import (
     list_card_printings_for_oracle,
     list_inventory_audit_events,
     list_inventory_memberships,
+    list_inventories,
     list_owned_filtered,
     list_price_gaps,
     merge_rows,
@@ -55,6 +57,7 @@ from mtg_source_stack.inventory.service import (
     set_finish,
     set_location,
     set_notes,
+    set_printing,
     set_quantity,
     set_tags,
     split_row,
@@ -1346,6 +1349,40 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("substring-group-oracle", result.items[0].oracle_id)
             self.assertEqual("Lightning Bolt", result.items[0].name)
 
+    def test_search_card_names_does_not_broaden_to_infix_matches_when_fts_already_found_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="bolt-token-match",
+                oracle_id="bolt-token-oracle",
+                name="Lightning Bolt",
+                collector_number="42",
+                lang="en",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="bolt-infix-only",
+                oracle_id="bolt-infix-oracle",
+                name="Thunderbolt",
+                collector_number="43",
+                lang="en",
+                released_at="2026-04-02",
+                is_default_add_searchable=1,
+            )
+
+            result = search_card_names(db_path, query="bolt", exact=False, limit=10)
+
+            self.assertEqual(1, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual(1, len(result.items))
+            self.assertEqual("bolt-token-oracle", result.items[0].oracle_id)
+            self.assertEqual("Lightning Bolt", result.items[0].name)
+
     def test_search_card_names_prefers_popular_prefix_matches_within_lexical_buckets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -1798,21 +1835,157 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 slug="personal",
                 display_name="Personal Collection",
                 description="Main binder inventory",
+                default_location=" Binder A ",
+                default_tags="Burn,  Modern, burn",
+                notes=" Main collection notes ",
+                acquisition_price="12.50",
+                acquisition_currency="usd",
             )
 
             self.assertEqual(1, result.inventory_id)
             self.assertEqual("personal", result.slug)
             self.assertEqual("Personal Collection", result.display_name)
             self.assertEqual("Main binder inventory", result.description)
+            self.assertEqual("Binder A", result.default_location)
+            self.assertEqual("burn, modern", result.default_tags)
+            self.assertEqual("Main collection notes", result.notes)
+            self.assertEqual(Decimal("12.50"), result.acquisition_price)
+            self.assertEqual("USD", result.acquisition_currency)
             self.assertEqual(
                 {
                     "inventory_id": 1,
                     "slug": "personal",
                     "display_name": "Personal Collection",
                     "description": "Main binder inventory",
+                    "default_location": "Binder A",
+                    "default_tags": "burn, modern",
+                    "notes": "Main collection notes",
+                    "acquisition_price": "12.50",
+                    "acquisition_currency": "USD",
                 },
                 serialize_response(result),
             )
+
+            listed = list_inventories(db_path)
+            self.assertEqual(1, len(listed))
+            self.assertEqual("Binder A", listed[0].default_location)
+            self.assertEqual("burn, modern", listed[0].default_tags)
+            self.assertEqual("Main collection notes", listed[0].notes)
+            self.assertEqual(Decimal("12.50"), listed[0].acquisition_price)
+            self.assertEqual("USD", listed[0].acquisition_currency)
+
+    def test_add_card_uses_inventory_default_location_and_tags_when_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                default_location="Binder A",
+                default_tags="Burn, Modern",
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location=None,
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags=None,
+            )
+
+            self.assertEqual("Binder A", added.location)
+            self.assertEqual(["burn", "modern"], added.tags)
+
+    def test_add_card_merges_inventory_default_tags_with_explicit_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                default_tags="Burn, Modern",
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="Deckbox",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags="Foil, burn",
+            )
+
+            self.assertEqual("Deckbox", added.location)
+            self.assertEqual(["burn", "modern", "foil"], added.tags)
+
+    def test_add_card_blank_location_and_tags_bypass_inventory_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                default_location="Binder A",
+                default_tags="Burn, Modern",
+            )
+
+            added = add_card(
+                db_path,
+                inventory_slug="personal",
+                inventory_display_name=None,
+                scryfall_id="race-card-1",
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                quantity=1,
+                condition_code="NM",
+                finish="normal",
+                language_code="en",
+                location="   ",
+                acquisition_price=None,
+                acquisition_currency=None,
+                notes=None,
+                tags="   ",
+            )
+
+            self.assertIsNone(added.location)
+            self.assertEqual([], added.tags)
 
     def test_write_services_require_prepared_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3668,6 +3841,11 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 slug="source",
                 display_name="Source Collection",
                 description="Original description",
+                default_location="Trade Binder",
+                default_tags="trade, staples",
+                notes="Source inventory notes",
+                acquisition_price="25.00",
+                acquisition_currency="USD",
                 actor_id="owner-user",
             )
             self._insert_inventory_item(db_path, inventory_slug="source", scryfall_id="copy-card", quantity=2)
@@ -3686,6 +3864,11 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("source", result.source_inventory)
             self.assertEqual("source-copy", result.inventory.slug)
             self.assertEqual("Original description", result.inventory.description)
+            self.assertEqual("Trade Binder", result.inventory.default_location)
+            self.assertEqual("trade, staples", result.inventory.default_tags)
+            self.assertEqual("Source inventory notes", result.inventory.notes)
+            self.assertEqual(Decimal("25.00"), result.inventory.acquisition_price)
+            self.assertEqual("USD", result.inventory.acquisition_currency)
             self.assertEqual("all_items", result.transfer.selection_kind)
             self.assertEqual(2, result.transfer.copied_count)
 
@@ -4601,6 +4784,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             self.assertIsInstance(add_result, AddCardResult)
             self.assertEqual(["commander", "trade"], add_result.tags)
+            self.assertEqual("oracle-typed-1", add_result.oracle_id)
             self.assertEqual("explicit", add_result.printing_selection_mode)
 
             # The direct service API should accept actor/request metadata once
@@ -4725,6 +4909,460 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 ).fetchone()
 
             self.assertEqual("explicit", merged_row["printing_selection_mode"])
+
+    def test_set_printing_updates_to_sibling_printing_and_preserves_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-old-en",
+                oracle_id="printing-oracle-1",
+                name="Printing Test Card",
+                set_code="old",
+                set_name="Old Set",
+                collector_number="7",
+                lang="en",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-new-ja",
+                oracle_id="printing-oracle-1",
+                name="Printing Test Card",
+                set_code="neo",
+                set_name="New Set",
+                collector_number="8",
+                lang="ja",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-old-en",
+                quantity=2,
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                acquisition_price="1.50",
+                acquisition_currency="USD",
+                notes="Signed copy",
+                tags_json='["favorite"]',
+                printing_selection_mode="defaulted",
+            )
+
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            result = set_printing(
+                db_path,
+                inventory_slug="personal",
+                item_id=item_id,
+                scryfall_id="printing-new-ja",
+                request_id="req-set-printing",
+            )
+
+            self.assertIsInstance(result, SetPrintingResult)
+            self.assertEqual("set_printing", result.operation)
+            self.assertEqual("printing-old-en", result.old_scryfall_id)
+            self.assertEqual("normal", result.old_finish)
+            self.assertEqual("en", result.old_language_code)
+            self.assertEqual("printing-new-ja", result.scryfall_id)
+            self.assertEqual("printing-oracle-1", result.oracle_id)
+            self.assertEqual("normal", result.finish)
+            self.assertEqual("ja", result.language_code)
+            self.assertEqual(2, result.quantity)
+            self.assertEqual("Binder A", result.location)
+            self.assertEqual(Decimal("1.50"), result.acquisition_price)
+            self.assertEqual("USD", result.acquisition_currency)
+            self.assertEqual("Signed copy", result.notes)
+            self.assertEqual(["favorite"], result.tags)
+            self.assertEqual("explicit", result.printing_selection_mode)
+            self.assertFalse(result.merged)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual("set_printing", audit_rows[0].action)
+            self.assertEqual("printing-old-en", audit_rows[0].metadata["old_scryfall_id"])
+            self.assertEqual("printing-new-ja", audit_rows[0].metadata["new_scryfall_id"])
+            self.assertEqual("normal", audit_rows[0].metadata["new_finish"])
+            self.assertEqual("ja", audit_rows[0].metadata["new_language_code"])
+
+    def test_set_printing_auto_selects_a_supported_finish_when_current_finish_is_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-old-normal",
+                oracle_id="printing-oracle-2",
+                name="Finish Drift Card",
+                set_code="old",
+                set_name="Old Set",
+                collector_number="10",
+                lang="en",
+                finishes_json='["normal"]',
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-new-foil",
+                oracle_id="printing-oracle-2",
+                name="Finish Drift Card",
+                set_code="sld",
+                set_name="Secret Lair",
+                collector_number="11",
+                lang="en",
+                finishes_json='["foil"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-old-normal",
+                finish="normal",
+                language_code="en",
+            )
+
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            result = set_printing(
+                db_path,
+                inventory_slug="personal",
+                item_id=item_id,
+                scryfall_id="printing-new-foil",
+            )
+
+            self.assertEqual("printing-new-foil", result.scryfall_id)
+            self.assertEqual("foil", result.finish)
+            self.assertEqual("normal", result.old_finish)
+            self.assertEqual("explicit", result.printing_selection_mode)
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertTrue(audit_rows[0].metadata["auto_selected_finish"])
+
+    def test_set_printing_rejects_non_sibling_printings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-current",
+                oracle_id="printing-oracle-3",
+                name="Sibling Card",
+                finishes_json='["normal"]',
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-other-card",
+                oracle_id="printing-oracle-4",
+                name="Different Card",
+                set_code="oth",
+                collector_number="2",
+                finishes_json='["normal"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-current",
+            )
+
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "Target printing must belong to the same oracle card",
+            ):
+                set_printing(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=item_id,
+                    scryfall_id="printing-other-card",
+                )
+
+    def test_set_printing_conflict_requires_merge_and_merge_promotes_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-source",
+                oracle_id="printing-oracle-5",
+                name="Merge Printing Card",
+                set_code="old",
+                collector_number="1",
+                lang="en",
+                finishes_json='["normal"]',
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-target",
+                oracle_id="printing-oracle-5",
+                name="Merge Printing Card",
+                set_code="new",
+                collector_number="2",
+                lang="en",
+                finishes_json='["normal"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-source",
+                quantity=2,
+                location="Binder A",
+                printing_selection_mode="defaulted",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-target",
+                quantity=1,
+                location="Binder A",
+                printing_selection_mode="defaulted",
+            )
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    "SELECT id, scryfall_id FROM inventory_items ORDER BY id"
+                ).fetchall()
+            source_item_id = int(rows[0]["id"])
+
+            with self.assertRaisesRegex(ConflictError, "Changing printing would collide"):
+                set_printing(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=source_item_id,
+                    scryfall_id="printing-target",
+                )
+
+            result = set_printing(
+                db_path,
+                inventory_slug="personal",
+                item_id=source_item_id,
+                scryfall_id="printing-target",
+                merge=True,
+            )
+
+            self.assertTrue(result.merged)
+            self.assertEqual(source_item_id, result.merged_source_item_id)
+            self.assertEqual(3, result.quantity)
+            self.assertEqual("printing-target", result.scryfall_id)
+            self.assertEqual("explicit", result.printing_selection_mode)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(owned_rows))
+            self.assertEqual("explicit", owned_rows[0].printing_selection_mode)
+
+    def test_set_printing_can_confirm_a_defaulted_row_without_changing_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-confirm",
+                oracle_id="printing-oracle-6",
+                name="Confirm Printing Card",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-confirm",
+                finish="normal",
+                language_code="en",
+                printing_selection_mode="defaulted",
+            )
+
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            result = set_printing(
+                db_path,
+                inventory_slug="personal",
+                item_id=item_id,
+                scryfall_id="printing-confirm",
+            )
+
+            self.assertEqual("printing-confirm", result.scryfall_id)
+            self.assertEqual("normal", result.finish)
+            self.assertEqual("explicit", result.printing_selection_mode)
+            self.assertFalse(result.merged)
+
+    def test_set_printing_rejects_same_printing_finish_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-same-id",
+                oracle_id="printing-oracle-7",
+                name="Same Printing Card",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-same-id",
+                finish="normal",
+                language_code="en",
+                printing_selection_mode="defaulted",
+            )
+
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "finish and language stay unchanged",
+            ):
+                set_printing(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=item_id,
+                    scryfall_id="printing-same-id",
+                    finish="foil",
+                )
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(1, len(owned_rows))
+            self.assertEqual("normal", owned_rows[0].finish)
+            self.assertEqual("defaulted", owned_rows[0].printing_selection_mode)
+
+    def test_set_printing_rejects_same_printing_finish_changes_even_with_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="printing-same-id-merge",
+                oracle_id="printing-oracle-8",
+                name="Same Printing Merge Card",
+                finishes_json='["normal","foil"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-same-id-merge",
+                quantity=2,
+                finish="normal",
+                language_code="en",
+                location="Binder A",
+                printing_selection_mode="defaulted",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="printing-same-id-merge",
+                quantity=1,
+                finish="foil",
+                language_code="en",
+                location="Binder A",
+                printing_selection_mode="explicit",
+            )
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    "SELECT id FROM inventory_items WHERE finish = 'normal'"
+                ).fetchall()
+            source_item_id = int(rows[0]["id"])
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "finish and language stay unchanged",
+            ):
+                set_printing(
+                    db_path,
+                    inventory_slug="personal",
+                    item_id=source_item_id,
+                    scryfall_id="printing-same-id-merge",
+                    finish="foil",
+                    merge=True,
+                )
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(2, len(owned_rows))
+            rows_by_finish = {row.finish: row.quantity for row in owned_rows}
+            self.assertEqual({"normal": 2, "foil": 1}, rows_by_finish)
 
     def test_price_gaps_and_reconcile_use_latest_snapshot_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -4923,6 +5561,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
 
             self.assertEqual(1, len(owned_rows))
+            self.assertEqual("oracle-1", owned_rows[0].oracle_id)
             self.assertEqual("USD", owned_rows[0].currency)
             self.assertEqual("https://example.test/cards/price-card-1-small.jpg", owned_rows[0].image_uri_small)
             self.assertEqual("https://example.test/cards/price-card-1-normal.jpg", owned_rows[0].image_uri_normal)

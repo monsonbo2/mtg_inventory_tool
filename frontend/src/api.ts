@@ -22,6 +22,8 @@ import type {
   InventoryItemPatchResponse,
   InventoryItemMutationResponse,
   InventorySummary,
+  SetInventoryItemPrintingRequest,
+  SetPrintingResponse,
   InventoryTransferRequest,
   InventoryTransferResponse,
   ListCardPrintingsParams,
@@ -438,6 +440,20 @@ export async function patchInventoryItem(
 ) {
   return requestJson<InventoryItemPatchResponse>(
     `/inventories/${encodeURIComponent(inventorySlug)}/items/${itemId}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function setInventoryItemPrinting(
+  inventorySlug: string,
+  itemId: number,
+  payload: SetInventoryItemPrintingRequest,
+) {
+  return requestJson<SetPrintingResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/items/${itemId}/printing`,
     {
       method: "PATCH",
       body: payload,
