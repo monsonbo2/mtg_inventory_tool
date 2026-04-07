@@ -249,8 +249,8 @@ def _normalize_bulk_item_ids(item_ids: list[int]) -> list[int]:
         raise ValidationError("item_ids must include at least one item id.")
     if len(set(item_ids)) != len(item_ids):
         raise ValidationError("item_ids must not contain duplicates.")
-    if len(item_ids) > 100:
-        raise ValidationError("item_ids must not contain more than 100 ids.")
+    if len(item_ids) > 200:
+        raise ValidationError("item_ids must not contain more than 200 ids.")
     return list(item_ids)
 
 

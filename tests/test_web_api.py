@@ -665,7 +665,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 bulk_request_schema["properties"]["operation"]["enum"],
             )
             self.assertEqual(1, bulk_request_schema["properties"]["item_ids"]["minItems"])
-            self.assertEqual(100, bulk_request_schema["properties"]["item_ids"]["maxItems"])
+            self.assertEqual(200, bulk_request_schema["properties"]["item_ids"]["maxItems"])
             self.assertIn("Used by set_location", bulk_request_schema["properties"]["location"]["description"])
             self.assertIn("Only applies to set_location", bulk_request_schema["properties"]["clear_location"]["description"])
             self.assertIn("Used by set_condition", bulk_request_schema["properties"]["condition_code"]["description"])

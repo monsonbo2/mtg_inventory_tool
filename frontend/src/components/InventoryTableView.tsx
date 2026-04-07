@@ -329,10 +329,10 @@ export function InventoryTableView(props: {
           )}
           {exceedsBulkSelectionLimit ? (
             <span className="table-selection-summary-accent">
-              Bulk tag actions currently support up to 100 selected rows per request.
+              Bulk tag actions currently support up to 200 selected rows per request.
             </span>
           ) : (
-            <span>Bulk tag actions currently support up to 100 rows per request.</span>
+            <span>Bulk tag actions currently support up to 200 rows per request.</span>
           )}
         </div>
 

@@ -330,7 +330,7 @@ class BulkInventoryItemMutationRequest(ApiBaseModel):
         "set_location",
         "set_condition",
     ]
-    item_ids: list[int] = Field(min_length=1, max_length=100)
+    item_ids: list[int] = Field(min_length=1, max_length=200)
     tags: list[str] | None = Field(default=None, description=BULK_TAGS_DESCRIPTION)
     quantity: int | None = Field(default=None, description=BULK_QUANTITY_DESCRIPTION)
     notes: str | None = Field(default=None, description=BULK_NOTES_DESCRIPTION)

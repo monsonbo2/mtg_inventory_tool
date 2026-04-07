@@ -29,7 +29,7 @@ import type {
   ViewRefreshOutcome,
 } from "../uiTypes";
 
-const BULK_MUTATION_MAX_ITEMS = 100;
+const BULK_MUTATION_MAX_ITEMS = 200;
 
 type UseInventoryMutationsOptions = {
   selectedInventory: string | null;

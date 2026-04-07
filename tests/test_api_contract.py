@@ -668,7 +668,7 @@ class ApiContractTest(RepoSmokeTestCase):
             bulk_properties["operation"]["enum"],
         )
         self.assertEqual(1, bulk_properties["item_ids"]["minItems"])
-        self.assertEqual(100, bulk_properties["item_ids"]["maxItems"])
+        self.assertEqual(200, bulk_properties["item_ids"]["maxItems"])
         self.assertIn("Omit this field for non-tag bulk operations", bulk_properties["tags"]["description"])
         self.assertIn("Required for set_quantity", bulk_properties["quantity"]["description"])
         self.assertIn("Used by set_notes", bulk_properties["notes"]["description"])

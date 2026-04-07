@@ -486,7 +486,7 @@
             "items": {
               "type": "integer"
             },
-            "maxItems": 100,
+            "maxItems": 200,
             "minItems": 1,
             "title": "Item Ids",
             "type": "array"
