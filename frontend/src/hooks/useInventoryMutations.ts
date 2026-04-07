@@ -6,11 +6,17 @@ import {
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
+  importCsv,
+  importDecklist,
+  importDeckUrl,
   patchInventoryItem,
 } from "../api";
 import type {
   AddInventoryItemRequest,
-  BulkTagMutationOperation,
+  BulkInventoryItemMutationRequest,
+  CsvImportResponse,
+  DeckUrlImportResponse,
+  DecklistImportResponse,
   InventoryCreateRequest,
   PatchInventoryItemRequest,
 } from "../types";
@@ -30,6 +36,11 @@ import type {
 
 const BULK_MUTATION_MAX_ITEMS = 100;
 
+type InventoryImportResponse =
+  | CsvImportResponse
+  | DeckUrlImportResponse
+  | DecklistImportResponse;
+
 type UseInventoryMutationsOptions = {
   selectedInventory: string | null;
   describeInventory: (inventorySlug: string) => string;
@@ -46,7 +57,7 @@ type UseInventoryMutationsOptions = {
 export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   const [busyItem, setBusyItem] = useState<ItemMutationState | null>(null);
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
-  const [bulkTagsBusy, setBulkTagsBusy] = useState(false);
+  const [bulkMutationBusy, setBulkMutationBusy] = useState(false);
   const [createInventoryBusy, setCreateInventoryBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
 
@@ -79,9 +90,15 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     };
   }, [notice]);
 
-  async function refreshAfterMutation(inventorySlug: string, successMessage: string) {
+  async function refreshAfterMutation(
+    inventorySlug: string,
+    successMessage: string,
+    refreshOptions: { reloadInventories?: boolean } = {},
+  ) {
     try {
-      await options.loadInventoryOverview(inventorySlug, { reloadInventories: true });
+      await options.loadInventoryOverview(inventorySlug, {
+        reloadInventories: refreshOptions.reloadInventories ?? true,
+      });
       showNotice(successMessage, "success");
     } catch {
       showNotice(
@@ -138,6 +155,58 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
+  function getImportCardCount(response: InventoryImportResponse) {
+    return response.summary.total_card_quantity || response.rows_written;
+  }
+
+  function getImportSuccessMessage(
+    response: InventoryImportResponse,
+    inventorySlug: string,
+    inventoryLabel?: string | null,
+  ) {
+    const importedCount = getImportCardCount(response);
+    const destinationLabel = inventoryLabel || options.describeInventory(inventorySlug);
+    return `Imported ${importedCount} card${
+      importedCount === 1 ? "" : "s"
+    } into ${destinationLabel}.`;
+  }
+
+  async function handleImportResponse(
+    inventorySlug: string,
+    inventoryLabel: string | null | undefined,
+    fallbackMessage: string,
+    loadResponse: () => Promise<InventoryImportResponse>,
+  ) {
+    clearNotice();
+
+    try {
+      const response = await loadResponse();
+      if (!response.ready_to_commit || response.resolution_issues.length > 0) {
+        showNotice(
+          "This import still needs manual resolution. The preview flow is not wired into the frontend yet.",
+          "error",
+        );
+        return false;
+      }
+
+      const importingIntoDifferentCollection = inventorySlug !== options.selectedInventory;
+      if (importingIntoDifferentCollection) {
+        await options.reloadInventorySummaries(inventorySlug);
+      }
+
+      await refreshAfterMutation(
+        inventorySlug,
+        getImportSuccessMessage(response, inventorySlug, inventoryLabel),
+        { reloadInventories: !importingIntoDifferentCollection },
+      );
+      options.resetSearchWorkspace();
+      return true;
+    } catch (error) {
+      showNotice(toUserMessage(error, fallbackMessage), "error");
+      return false;
+    }
+  }
+
   async function handleCreateInventory(
     payload: InventoryCreateRequest,
   ): Promise<InventoryCreateResult> {
@@ -154,7 +223,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
           : `Created ${response.display_name}. The collection list could not refresh automatically.`,
         refreshed ? "success" : "error",
       );
-      return { ok: true };
+      return { ok: true, inventory: response };
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 409) {
         return { ok: false, reason: "conflict" };
@@ -164,6 +233,72 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     } finally {
       setCreateInventoryBusy(false);
     }
+  }
+
+  async function handleImportDecklist(
+    deckText: string,
+    inventorySlug: string | null,
+    inventoryLabel?: string | null,
+  ) {
+    if (!inventorySlug) {
+      showNotice("Choose a collection before importing cards.");
+      return false;
+    }
+
+    return handleImportResponse(
+      inventorySlug,
+      inventoryLabel,
+      "Could not import cards from text.",
+      () =>
+        importDecklist({
+          deck_text: deckText,
+          default_inventory: inventorySlug,
+        }),
+    );
+  }
+
+  async function handleImportDeckUrl(
+    sourceUrl: string,
+    inventorySlug: string | null,
+    inventoryLabel?: string | null,
+  ) {
+    if (!inventorySlug) {
+      showNotice("Choose a collection before importing cards.");
+      return false;
+    }
+
+    return handleImportResponse(
+      inventorySlug,
+      inventoryLabel,
+      "Could not import cards from the deck URL.",
+      () =>
+        importDeckUrl({
+          source_url: sourceUrl,
+          default_inventory: inventorySlug,
+        }),
+    );
+  }
+
+  async function handleImportCsv(
+    file: Blob,
+    inventorySlug: string | null,
+    inventoryLabel?: string | null,
+  ) {
+    if (!inventorySlug) {
+      showNotice("Choose a collection before importing cards.");
+      return false;
+    }
+
+    return handleImportResponse(
+      inventorySlug,
+      inventoryLabel,
+      "Could not import cards from the CSV file.",
+      () =>
+        importCsv({
+          file,
+          default_inventory: inventorySlug,
+        }),
+    );
   }
 
   async function handlePatchItem(
@@ -218,10 +353,66 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
-  async function handleBulkTagMutation(
-    operation: BulkTagMutationOperation,
-    tags: string[],
-  ) {
+  function getBulkMutationSelectionError(payload: BulkInventoryItemMutationRequest) {
+    if (!payload.item_ids.length) {
+      return "Select at least one entry before making bulk changes.";
+    }
+
+    if (payload.item_ids.length > BULK_MUTATION_MAX_ITEMS) {
+      return `Bulk edit currently supports up to ${BULK_MUTATION_MAX_ITEMS} entries at a time.`;
+    }
+
+    return null;
+  }
+
+  function getBulkMutationValidationError(payload: BulkInventoryItemMutationRequest) {
+    switch (payload.operation) {
+      case "add_tags":
+      case "remove_tags":
+      case "set_tags":
+        return payload.tags.length === 0
+          ? "Enter at least one tag before running this bulk tag action."
+          : null;
+      case "set_location":
+        return "location" in payload || "clear_location" in payload
+          ? null
+          : "Enter a location or clear the current one before running this bulk edit.";
+      case "set_notes":
+        return "notes" in payload || "clear_notes" in payload
+          ? null
+          : "Enter notes or clear the current notes before running this bulk edit.";
+      case "clear_tags":
+      case "set_quantity":
+      case "set_acquisition":
+      case "set_finish":
+      case "set_condition":
+        return null;
+    }
+  }
+
+  function getBulkMutationFallbackMessage(payload: BulkInventoryItemMutationRequest) {
+    switch (payload.operation) {
+      case "add_tags":
+      case "remove_tags":
+      case "set_tags":
+      case "clear_tags":
+        return "Could not apply the bulk tag action.";
+      case "set_location":
+        return "Could not update the location on the selected entries.";
+      case "set_notes":
+        return "Could not update notes on the selected entries.";
+      case "set_quantity":
+        return "Could not update quantity on the selected entries.";
+      case "set_acquisition":
+        return "Could not update acquisition details on the selected entries.";
+      case "set_finish":
+        return "Could not update finish on the selected entries.";
+      case "set_condition":
+        return "Could not update condition on the selected entries.";
+    }
+  }
+
+  async function handleBulkMutation(payload: BulkInventoryItemMutationRequest) {
     const inventorySlug = requireSelectedInventory(
       "Select a collection before making changes.",
     );
@@ -229,39 +420,23 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       return false;
     }
 
-    if (!options.selectedItemIds.length) {
-      showNotice("Select at least one entry before updating tags.");
+    const selectionError = getBulkMutationSelectionError(payload);
+    if (selectionError) {
+      showNotice(selectionError, "error");
       return false;
     }
 
-    if (options.selectedItemIds.length > BULK_MUTATION_MAX_ITEMS) {
-      showNotice(
-        `Bulk tag actions currently support up to ${BULK_MUTATION_MAX_ITEMS} entries at a time.`,
-        "error",
-      );
+    const validationError = getBulkMutationValidationError(payload);
+    if (validationError) {
+      showNotice(validationError, "error");
       return false;
     }
 
-    if (operation !== "clear_tags" && tags.length === 0) {
-      showNotice("Enter at least one tag before running this bulk tag action.");
-      return false;
-    }
-
-    setBulkTagsBusy(true);
+    setBulkMutationBusy(true);
     clearNotice();
 
     try {
-      const response =
-        operation === "clear_tags"
-          ? await bulkMutateInventoryItems(inventorySlug, {
-              operation,
-              item_ids: options.selectedItemIds,
-            })
-          : await bulkMutateInventoryItems(inventorySlug, {
-              operation,
-              item_ids: options.selectedItemIds,
-              tags,
-            });
+      const response = await bulkMutateInventoryItems(inventorySlug, payload);
       await refreshAfterMutation(
         inventorySlug,
         getBulkMutationSuccessMessage(
@@ -273,23 +448,29 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       options.clearSelectedItems();
       return true;
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not apply the bulk tag action."), "error");
+      showNotice(
+        toUserMessage(error, getBulkMutationFallbackMessage(payload)),
+        "error",
+      );
       return false;
     } finally {
-      setBulkTagsBusy(false);
+      setBulkMutationBusy(false);
     }
   }
 
   return {
     busyAddCardId,
-    bulkTagsBusy,
+    bulkMutationBusy,
     busyItem,
     clearNotice,
     createInventoryBusy,
     handleAddCard,
-    handleBulkTagMutation,
+    handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
+    handleImportCsv,
+    handleImportDecklist,
+    handleImportDeckUrl,
     handlePatchItem,
     notice,
     reportNotice,

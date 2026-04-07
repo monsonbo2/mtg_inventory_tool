@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type {
+  BulkInventoryItemMutationRequest,
   BulkTagMutationOperation,
   ConditionCode,
   FinishValue,
@@ -24,7 +26,10 @@ import {
   decimalToNumber,
   formatFinishLabel,
   formatLanguageCode,
+  getTagChipStyle,
   formatUsd,
+  formatLocationLabel,
+  normalizeOptionalText,
   parseTags,
   summarizeInlineText,
 } from "../uiHelpers";
@@ -57,34 +62,36 @@ function getColumnActionHint(column: InventoryTableColumnKey) {
   }
 }
 
-function shouldIgnoreRowSelectionClick(target: EventTarget | null) {
-  return target instanceof HTMLElement
-    ? Boolean(target.closest('input, button, a, select, textarea, label'))
-    : false;
-}
+type BulkEditorMode = "tags" | "location" | "notes";
 
 export function InventoryTableView(props: {
   items: OwnedInventoryRow[];
   allItemsCount: number;
   selectedItemIds: number[];
-  bulkTagsBusy: boolean;
+  bulkMutationBusy: boolean;
   sortState: InventoryTableSortState;
   filters: InventoryTableFilters;
   filterOptions: InventoryTableFilterOptions;
   onSortChange: (nextSort: InventoryTableSortState) => void;
   onFiltersChange: (nextFilters: InventoryTableFilters) => void;
-  onBulkTagsSubmit: (
-    operation: BulkTagMutationOperation,
-    tags: string[],
+  onBulkMutationSubmit: (
+    payload: BulkInventoryItemMutationRequest,
   ) => Promise<boolean>;
+  onSelectItem: (itemId: number, options?: { additive?: boolean; range?: boolean }) => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisible: () => void;
   onClearVisibleSelection: () => void;
   onClearSelection: () => void;
+  onOpenDetails: (itemId: number) => void;
 }) {
   const [activeColumn, setActiveColumn] = useState<InventoryTableColumnKey | null>(null);
+  const [bulkEditorOpen, setBulkEditorOpen] = useState(false);
+  const [bulkEditorMode, setBulkEditorMode] = useState<BulkEditorMode>("tags");
   const [bulkTagsInput, setBulkTagsInput] = useState("");
+  const [bulkLocationInput, setBulkLocationInput] = useState("");
+  const [bulkNotesInput, setBulkNotesInput] = useState("");
   const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const tableViewRef = useRef<HTMLDivElement | null>(null);
   const bulkTagsHintId = "table-bulk-tags-hint";
   const selectedItemIdSet = new Set(props.selectedItemIds);
   const selectedVisibleCount = props.items.filter((item) =>
@@ -97,6 +104,7 @@ export function InventoryTableView(props: {
   const activeFilterCount = getActiveInventoryTableFilterCount(props.filters);
   const parsedBulkTags = parseTags(bulkTagsInput);
   const exceedsBulkSelectionLimit = totalSelectedCount > 100;
+  const hasSelection = totalSelectedCount > 0;
   const selectedCountLabel =
     totalSelectedCount === 0
       ? "No entries selected"
@@ -111,6 +119,42 @@ export function InventoryTableView(props: {
       headerCheckboxRef.current.indeterminate = someVisibleSelected;
     }
   }, [someVisibleSelected]);
+
+  useEffect(() => {
+    if (!hasSelection) {
+      setBulkEditorOpen(false);
+    }
+  }, [hasSelection]);
+
+  useEffect(() => {
+    if (!activeColumn) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        tableViewRef.current &&
+        event.target instanceof Node &&
+        !tableViewRef.current.contains(event.target)
+      ) {
+        setActiveColumn(null);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setActiveColumn(null);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeColumn]);
 
   function updateFilters(nextPartial: Partial<InventoryTableFilters>) {
     props.onFiltersChange({
@@ -129,10 +173,76 @@ export function InventoryTableView(props: {
     setActiveColumn((current) => (current === column ? null : column));
   }
 
-  async function handleBulkAction(operation: BulkTagMutationOperation) {
-    const didApply = await props.onBulkTagsSubmit(operation, parsedBulkTags);
+  function handleRowClick(
+    event: ReactMouseEvent<HTMLTableRowElement>,
+    itemId: number,
+  ) {
+    props.onSelectItem(itemId, {
+      additive: event.ctrlKey || event.metaKey,
+      range: event.shiftKey,
+    });
+  }
+
+  async function handleBulkTagAction(operation: BulkTagMutationOperation) {
+    const didApply = await props.onBulkMutationSubmit(
+      operation === "clear_tags"
+        ? {
+            item_ids: props.selectedItemIds,
+            operation,
+          }
+        : {
+            item_ids: props.selectedItemIds,
+            operation,
+            tags: parsedBulkTags,
+          },
+    );
     if (didApply) {
       setBulkTagsInput("");
+      setBulkEditorOpen(false);
+    }
+  }
+
+  async function handleBulkLocationAction(clearLocation = false) {
+    const normalizedLocation = normalizeOptionalText(bulkLocationInput);
+    const didApply = await props.onBulkMutationSubmit(
+      clearLocation
+        ? {
+            item_ids: props.selectedItemIds,
+            operation: "set_location",
+            clear_location: true,
+          }
+        : {
+            item_ids: props.selectedItemIds,
+            operation: "set_location",
+            location: normalizedLocation ?? "",
+          },
+    );
+
+    if (didApply) {
+      setBulkLocationInput("");
+      setBulkEditorOpen(false);
+    }
+  }
+
+  async function handleBulkNotesAction(clearNotes = false) {
+    const normalizedNotes = normalizeOptionalText(bulkNotesInput);
+    const didApply = await props.onBulkMutationSubmit(
+      clearNotes
+        ? {
+            item_ids: props.selectedItemIds,
+            operation: "set_notes",
+            clear_notes: true,
+          }
+        : {
+            item_ids: props.selectedItemIds,
+            operation: "set_notes",
+            notes: normalizedNotes ?? "",
+          },
+    );
+
+    if (didApply) {
+      setBulkNotesInput("");
+      setBulkEditorOpen(false);
     }
   }
 
@@ -306,74 +416,63 @@ export function InventoryTableView(props: {
     }
   }
 
-  return (
-    <div className="inventory-table-view">
-      <div className="table-toolbar">
-        <div className="table-selection-summary">
-          <strong>{selectedCountLabel}</strong>
-          <span>{visibleRowsLabel}</span>
-          {activeFilterCount > 0 ? (
+  function renderBulkEditor() {
+    if (!hasSelection || !bulkEditorOpen) {
+      return null;
+    }
+
+    const normalizedLocation = normalizeOptionalText(bulkLocationInput);
+    const normalizedNotes = normalizeOptionalText(bulkNotesInput);
+
+    return (
+      <section aria-label="Bulk edit tray" className="table-bulk-tray">
+        <div className="table-bulk-tray-header">
+          <div>
+            <strong>Bulk edit</strong>
             <span>
-              {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"} active.
+              Applies to {totalSelectedCount} selected entr
+              {totalSelectedCount === 1 ? "y" : "ies"}.
             </span>
-          ) : null}
-          {hiddenSelectedCount > 0 ? (
-            <span className="table-selection-summary-accent">
-              {hiddenSelectedCount} selected entr{hiddenSelectedCount === 1 ? "y" : "ies"} hidden by
-              current filters.
-            </span>
-          ) : (
-            <span>
-              Bulk tag actions apply to all selected entries, including any hidden by filters.
-            </span>
-          )}
-          {exceedsBulkSelectionLimit ? (
-            <span className="table-selection-summary-accent">
-              Bulk tag actions currently support up to 100 selected entries per request.
-            </span>
-          ) : (
-            <span>Bulk tag actions currently support up to 100 entries per request.</span>
-          )}
+          </div>
+          <button
+            className="secondary-button table-bulk-tray-close"
+            onClick={() => setBulkEditorOpen(false)}
+            type="button"
+          >
+            Close
+          </button>
         </div>
 
-        <div className="table-toolbar-controls">
-          <div className="table-toolbar-actions">
+        <div aria-label="Bulk edit mode" className="table-bulk-mode-toggle" role="group">
+          {([
+            ["tags", "Tags"],
+            ["location", "Location"],
+            ["notes", "Notes"],
+          ] as Array<[BulkEditorMode, string]>).map(([mode, label]) => (
             <button
-              className="secondary-button"
-              disabled={activeFilterCount === 0}
-              onClick={() => {
-                props.onFiltersChange(createDefaultInventoryTableFilters());
-                setActiveColumn(null);
-              }}
+              aria-pressed={bulkEditorMode === mode}
+              className={
+                bulkEditorMode === mode
+                  ? "secondary-button table-bulk-mode-button table-bulk-mode-button-active"
+                  : "secondary-button table-bulk-mode-button"
+              }
+              key={mode}
+              onClick={() => setBulkEditorMode(mode)}
               type="button"
             >
-              Clear filters
+              {label}
             </button>
-            <button
-              className="secondary-button"
-              disabled={props.items.length === 0}
-              onClick={props.onSelectAllVisible}
-              type="button"
-            >
-              Select all visible
-            </button>
-            <button
-              className="secondary-button"
-              disabled={totalSelectedCount === 0}
-              onClick={props.onClearSelection}
-              type="button"
-            >
-              Clear selection
-            </button>
-          </div>
+          ))}
+        </div>
 
-          <div className="table-bulk-actions">
+        {bulkEditorMode === "tags" ? (
+          <div className="table-bulk-pane">
             <label className="field table-bulk-field">
-              <span>Bulk tags</span>
+              <span>Tag list</span>
               <input
                 aria-describedby={bulkTagsHintId}
                 className="text-input"
-                disabled={props.bulkTagsBusy}
+                disabled={props.bulkMutationBusy}
                 onChange={(event) => setBulkTagsInput(event.target.value)}
                 placeholder="e.g. burn, trade"
                 type="text"
@@ -381,19 +480,17 @@ export function InventoryTableView(props: {
               />
             </label>
             <span className="field-hint field-hint-info" id={bulkTagsHintId}>
-              Use comma-separated tags. These actions apply to every selected entry.
+              Add, remove, replace, or clear tags on every selected entry.
             </span>
-
             <div className="table-bulk-action-buttons">
               <button
                 className="secondary-button"
                 disabled={
-                  props.bulkTagsBusy ||
-                  totalSelectedCount === 0 ||
+                  props.bulkMutationBusy ||
                   exceedsBulkSelectionLimit ||
                   parsedBulkTags.length === 0
                 }
-                onClick={() => void handleBulkAction("add_tags")}
+                onClick={() => void handleBulkTagAction("add_tags")}
                 type="button"
               >
                 Add tags
@@ -401,12 +498,11 @@ export function InventoryTableView(props: {
               <button
                 className="secondary-button"
                 disabled={
-                  props.bulkTagsBusy ||
-                  totalSelectedCount === 0 ||
+                  props.bulkMutationBusy ||
                   exceedsBulkSelectionLimit ||
                   parsedBulkTags.length === 0
                 }
-                onClick={() => void handleBulkAction("remove_tags")}
+                onClick={() => void handleBulkTagAction("remove_tags")}
                 type="button"
               >
                 Remove tags
@@ -414,110 +510,195 @@ export function InventoryTableView(props: {
               <button
                 className="secondary-button"
                 disabled={
-                  props.bulkTagsBusy ||
-                  totalSelectedCount === 0 ||
+                  props.bulkMutationBusy ||
                   exceedsBulkSelectionLimit ||
                   parsedBulkTags.length === 0
                 }
-                onClick={() => void handleBulkAction("set_tags")}
+                onClick={() => void handleBulkTagAction("set_tags")}
                 type="button"
               >
                 Replace tags
               </button>
               <button
                 className="secondary-button"
-                disabled={
-                  props.bulkTagsBusy || totalSelectedCount === 0 || exceedsBulkSelectionLimit
-                }
-                onClick={() => void handleBulkAction("clear_tags")}
+                disabled={props.bulkMutationBusy || exceedsBulkSelectionLimit}
+                onClick={() => void handleBulkTagAction("clear_tags")}
                 type="button"
               >
                 Clear tags
               </button>
             </div>
           </div>
-        </div>
-      </div>
+        ) : null}
 
-      {activeColumn ? (
-        <section
-          aria-label={`${getInventoryTableColumnLabel(activeColumn)} column options`}
-          className="table-query-panel"
-        >
-          <div className="table-query-panel-header">
-            <div>
-              <strong>{getInventoryTableColumnLabel(activeColumn)}</strong>
-              <span>Sort or filter the current table view.</span>
+        {bulkEditorMode === "location" ? (
+          <div className="table-bulk-pane">
+            <label className="field table-bulk-field">
+              <span>Location</span>
+              <input
+                className="text-input"
+                disabled={props.bulkMutationBusy}
+                onChange={(event) => setBulkLocationInput(event.target.value)}
+                placeholder="e.g. Trade Binder"
+                type="text"
+                value={bulkLocationInput}
+              />
+            </label>
+            <span className="field-hint field-hint-info">
+              Set the selected entries to a new location, or clear their current location.
+            </span>
+            <div className="table-bulk-pane-actions">
+              <button
+                className="secondary-button"
+                disabled={
+                  props.bulkMutationBusy ||
+                  exceedsBulkSelectionLimit ||
+                  !normalizedLocation
+                }
+                onClick={() => void handleBulkLocationAction(false)}
+                type="button"
+              >
+                Set location
+              </button>
+              <button
+                className="secondary-button"
+                disabled={props.bulkMutationBusy || exceedsBulkSelectionLimit}
+                onClick={() => void handleBulkLocationAction(true)}
+                type="button"
+              >
+                Clear location
+              </button>
             </div>
-            <button
-              className="secondary-button table-query-close"
-              onClick={() => setActiveColumn(null)}
-              type="button"
-            >
-              Close
-            </button>
+          </div>
+        ) : null}
+
+        {bulkEditorMode === "notes" ? (
+          <div className="table-bulk-pane">
+            <label className="field table-bulk-field">
+              <span>Notes</span>
+              <textarea
+                className="text-input textarea-input"
+                disabled={props.bulkMutationBusy}
+                onChange={(event) => setBulkNotesInput(event.target.value)}
+                placeholder="Notes to replace on the selected entries"
+                rows={4}
+                value={bulkNotesInput}
+              />
+            </label>
+            <span className="field-hint field-hint-info">
+              Replace notes on every selected entry, or clear them entirely.
+            </span>
+            <div className="table-bulk-pane-actions">
+              <button
+                className="secondary-button"
+                disabled={
+                  props.bulkMutationBusy ||
+                  exceedsBulkSelectionLimit ||
+                  !normalizedNotes
+                }
+                onClick={() => void handleBulkNotesAction(false)}
+                type="button"
+              >
+                Replace notes
+              </button>
+              <button
+                className="secondary-button"
+                disabled={props.bulkMutationBusy || exceedsBulkSelectionLimit}
+                onClick={() => void handleBulkNotesAction(true)}
+                type="button"
+              >
+                Clear notes
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {exceedsBulkSelectionLimit ? (
+          <span className="table-selection-summary-accent">
+            Bulk edit currently supports up to 100 selected entries per request.
+          </span>
+        ) : null}
+      </section>
+    );
+  }
+
+  return (
+    <div className="inventory-table-view" ref={tableViewRef}>
+      <div className="table-toolbar-shell">
+        <div className="table-toolbar">
+          <div className="table-selection-summary">
+            <strong>{selectedCountLabel}</strong>
+            <div className="table-selection-summary-meta">
+              <span>{visibleRowsLabel}</span>
+              {activeFilterCount > 0 ? (
+                <span>{activeFilterCount} active filter{activeFilterCount === 1 ? "" : "s"}</span>
+              ) : null}
+              {hiddenSelectedCount > 0 ? (
+                <span className="table-selection-summary-accent">
+                  {hiddenSelectedCount} selected entr
+                  {hiddenSelectedCount === 1 ? "y" : "ies"} hidden by current filters.
+                </span>
+              ) : null}
+              {exceedsBulkSelectionLimit ? (
+                <span className="table-selection-summary-accent">
+                  Bulk edit limit: 100 entries.
+                </span>
+              ) : null}
+            </div>
           </div>
 
-          <div className="table-query-actions">
-            <button
-              aria-pressed={
-                props.sortState?.key === activeColumn && props.sortState.direction === "asc"
-              }
-              className={
-                props.sortState?.key === activeColumn && props.sortState.direction === "asc"
-                  ? "secondary-button table-query-action table-query-action-active"
-                  : "secondary-button table-query-action"
-              }
-              onClick={() =>
-                props.onSortChange({
-                  key: activeColumn,
-                  direction: "asc",
-                })
-              }
-              type="button"
-            >
-              {getInventoryTableSortActionLabel(activeColumn, "asc")}
-            </button>
-            <button
-              aria-pressed={
-                props.sortState?.key === activeColumn && props.sortState.direction === "desc"
-              }
-              className={
-                props.sortState?.key === activeColumn && props.sortState.direction === "desc"
-                  ? "secondary-button table-query-action table-query-action-active"
-                  : "secondary-button table-query-action"
-              }
-              onClick={() =>
-                props.onSortChange({
-                  key: activeColumn,
-                  direction: "desc",
-                })
-              }
-              type="button"
-            >
-              {getInventoryTableSortActionLabel(activeColumn, "desc")}
-            </button>
-            <button
-              className="secondary-button table-query-action"
-              disabled={props.sortState?.key !== activeColumn}
-              onClick={() => props.onSortChange(null)}
-              type="button"
-            >
-              Clear sort
-            </button>
-            <button
-              className="secondary-button table-query-action"
-              disabled={getInventoryTableColumnFilterCount(props.filters, activeColumn) === 0}
-              onClick={() => clearColumnFilters(activeColumn)}
-              type="button"
-            >
-              Clear column filters
-            </button>
-          </div>
+          <div className="table-toolbar-controls">
+            <div className="table-toolbar-actions">
+              {activeFilterCount > 0 ? (
+                <button
+                  className="secondary-button"
+                  onClick={() => {
+                    props.onFiltersChange(createDefaultInventoryTableFilters());
+                    setActiveColumn(null);
+                  }}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+              <button
+                className="secondary-button"
+                disabled={props.items.length === 0}
+                onClick={props.onSelectAllVisible}
+                type="button"
+              >
+                Select all visible
+              </button>
+            </div>
 
-          <div className="table-query-filter-shell">{renderActiveColumnFilters()}</div>
-        </section>
-      ) : null}
+            {hasSelection ? (
+              <div className="table-selection-actions">
+                <button
+                  className={
+                    bulkEditorOpen
+                      ? "secondary-button table-selection-action table-selection-action-active"
+                      : "secondary-button table-selection-action"
+                  }
+                  disabled={exceedsBulkSelectionLimit}
+                  onClick={() => setBulkEditorOpen((current) => !current)}
+                  type="button"
+                >
+                  Bulk edit
+                </button>
+                <button
+                  className="secondary-button table-selection-action"
+                  onClick={props.onClearSelection}
+                  type="button"
+                >
+                  Clear selection
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {renderBulkEditor()}
+      </div>
 
       <div className="inventory-table-shell">
         <table className="inventory-table">
@@ -546,48 +727,136 @@ export function InventoryTableView(props: {
                 const actionHint = getColumnActionHint(column);
 
                 return (
-                  <th key={column} scope="col">
-                    <button
-                      aria-expanded={isActive}
-                      aria-label={columnLabel}
-                      className={
-                        isActive
-                          ? "inventory-table-header-button inventory-table-header-button-active"
-                          : "inventory-table-header-button"
-                      }
-                      onClick={() => toggleColumn(column)}
-                      title={`${actionHint} options for ${columnLabel}`}
-                      type="button"
-                    >
-                      <span className="inventory-table-header-copy">
-                        <span className="inventory-table-header-label">{columnLabel}</span>
-                        <span aria-hidden="true" className="inventory-table-header-hint">
-                          {actionHint}
+                  <th className="inventory-table-header-cell" key={column} scope="col">
+                    <div className="inventory-table-header-stack">
+                      <button
+                        aria-expanded={isActive}
+                        aria-label={columnLabel}
+                        className={
+                          isActive
+                            ? "inventory-table-header-button inventory-table-header-button-active"
+                            : "inventory-table-header-button"
+                        }
+                        onClick={() => toggleColumn(column)}
+                        title={`${actionHint} options for ${columnLabel}`}
+                        type="button"
+                      >
+                        <span className="inventory-table-header-copy">
+                          <span className="inventory-table-header-label">{columnLabel}</span>
+                          <span aria-hidden="true" className="inventory-table-header-hint">
+                            {actionHint}
+                          </span>
                         </span>
-                      </span>
-                      <span className="inventory-table-header-meta">
-                        {isSorted ? (
-                          <span className="inventory-table-header-pill">
-                            {props.sortState?.direction === "asc" ? "Asc" : "Desc"}
+                        <span className="inventory-table-header-meta">
+                          {isSorted ? (
+                            <span className="inventory-table-header-pill">
+                              {props.sortState?.direction === "asc" ? "Asc" : "Desc"}
+                            </span>
+                          ) : null}
+                          {filterCount > 0 ? (
+                            <span className="inventory-table-header-pill inventory-table-header-pill-filter">
+                              {filterCount}
+                            </span>
+                          ) : null}
+                          <span
+                            aria-hidden="true"
+                            className={
+                              isActive
+                                ? "inventory-table-header-chevron inventory-table-header-chevron-active"
+                                : "inventory-table-header-chevron"
+                            }
+                          >
+                            ▾
                           </span>
-                        ) : null}
-                        {filterCount > 0 ? (
-                          <span className="inventory-table-header-pill inventory-table-header-pill-filter">
-                            {filterCount}
-                          </span>
-                        ) : null}
-                        <span
-                          aria-hidden="true"
-                          className={
-                            isActive
-                              ? "inventory-table-header-chevron inventory-table-header-chevron-active"
-                              : "inventory-table-header-chevron"
-                          }
+                        </span>
+                      </button>
+
+                      {isActive ? (
+                        <section
+                          aria-label={`${columnLabel} column options`}
+                          className="inventory-table-popover"
                         >
-                          ▾
-                        </span>
-                      </span>
-                    </button>
+                          <div className="inventory-table-popover-header">
+                            <div>
+                              <strong>{columnLabel}</strong>
+                              <span>Sort or filter this column.</span>
+                            </div>
+                            <button
+                              className="secondary-button inventory-table-popover-close"
+                              onClick={() => setActiveColumn(null)}
+                              type="button"
+                            >
+                              Close
+                            </button>
+                          </div>
+
+                          <div className="inventory-table-popover-actions">
+                            <button
+                              aria-pressed={
+                                props.sortState?.key === column &&
+                                props.sortState.direction === "asc"
+                              }
+                              className={
+                                props.sortState?.key === column &&
+                                props.sortState.direction === "asc"
+                                  ? "secondary-button inventory-table-popover-action inventory-table-popover-action-active"
+                                  : "secondary-button inventory-table-popover-action"
+                              }
+                              onClick={() =>
+                                props.onSortChange({
+                                  key: column,
+                                  direction: "asc",
+                                })
+                              }
+                              type="button"
+                            >
+                              {getInventoryTableSortActionLabel(column, "asc")}
+                            </button>
+                            <button
+                              aria-pressed={
+                                props.sortState?.key === column &&
+                                props.sortState.direction === "desc"
+                              }
+                              className={
+                                props.sortState?.key === column &&
+                                props.sortState.direction === "desc"
+                                  ? "secondary-button inventory-table-popover-action inventory-table-popover-action-active"
+                                  : "secondary-button inventory-table-popover-action"
+                              }
+                              onClick={() =>
+                                props.onSortChange({
+                                  key: column,
+                                  direction: "desc",
+                                })
+                              }
+                              type="button"
+                            >
+                              {getInventoryTableSortActionLabel(column, "desc")}
+                            </button>
+                            <button
+                              className="secondary-button inventory-table-popover-action"
+                              disabled={props.sortState?.key !== column}
+                              onClick={() => props.onSortChange(null)}
+                              type="button"
+                            >
+                              Clear sort
+                            </button>
+                            <button
+                              className="secondary-button inventory-table-popover-action"
+                              disabled={getInventoryTableColumnFilterCount(props.filters, column) === 0}
+                              onClick={() => clearColumnFilters(column)}
+                              type="button"
+                            >
+                              Clear column filters
+                            </button>
+                          </div>
+
+                          <div className="inventory-table-popover-filter-shell">
+                            {renderActiveColumnFilters()}
+                          </div>
+                        </section>
+                      ) : null}
+                    </div>
                   </th>
                 );
               })}
@@ -606,41 +875,76 @@ export function InventoryTableView(props: {
                         : "inventory-table-row"
                     }
                     key={item.item_id}
-                    onClick={(event) => {
-                      if (shouldIgnoreRowSelectionClick(event.target)) {
-                        return;
-                      }
-
-                      props.onToggleItemSelection(item.item_id);
-                    }}
+                    onClick={(event) => handleRowClick(event, item.item_id)}
                   >
                     <td className="inventory-table-checkbox-cell">
                       <input
                         aria-label={`Select ${item.name}`}
                         checked={isSelected}
-                        onClick={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                        }}
                         onChange={() => props.onToggleItemSelection(item.item_id)}
                         type="checkbox"
                       />
                     </td>
                     <td className="inventory-table-card-cell">
-                      <strong>{item.name}</strong>
-                      <span>
-                        #{item.collector_number}
-                        {item.notes ? ` · ${summarizeInlineText(item.notes, 26)}` : ""}
-                      </span>
+                      <button
+                        aria-label={`Open ${item.name} details`}
+                        className="inventory-table-card-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          props.onOpenDetails(item.item_id);
+                        }}
+                        type="button"
+                      >
+                        {item.name}
+                      </button>
+                      <div className="inventory-table-card-meta">
+                        <span>#{item.collector_number}</span>
+                        {item.notes ? <span>{summarizeInlineText(item.notes, 26)}</span> : null}
+                      </div>
                     </td>
-                    <td>
+                    <td className="inventory-table-set-cell">
                       <strong>{item.set_code.toUpperCase()}</strong>
                       <span>{item.set_name}</span>
                     </td>
-                    <td>{item.quantity}</td>
-                    <td>{formatFinishLabel(item.finish)}</td>
-                    <td>{item.condition_code}</td>
-                    <td>{formatLanguageCode(item.language_code)}</td>
-                    <td>{item.location || "Not set"}</td>
-                    <td>{item.tags.length ? item.tags.join(", ") : "No tags"}</td>
-                    <td>{formatUsd(decimalToNumber(item.est_value))}</td>
+                    <td className="inventory-table-number-cell">{item.quantity}</td>
+                    <td className="inventory-table-inline-cell">{formatFinishLabel(item.finish)}</td>
+                    <td className="inventory-table-inline-cell">{item.condition_code}</td>
+                    <td className="inventory-table-inline-cell">
+                      {formatLanguageCode(item.language_code)}
+                    </td>
+                    <td>
+                      <span className="inventory-table-location-pill">
+                        {formatLocationLabel(item.location)}
+                      </span>
+                    </td>
+                    <td>
+                      {item.tags.length ? (
+                        <div className="inventory-table-tag-list">
+                          {item.tags.slice(0, 2).map((tag) => (
+                            <span
+                              className="tag-chip subdued inventory-table-tag-chip"
+                              key={tag}
+                              style={getTagChipStyle(tag)}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {item.tags.length > 2 ? (
+                            <span className="inventory-table-tag-more">
+                              +{item.tags.length - 2}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="inventory-table-empty-value">No tags</span>
+                      )}
+                    </td>
+                    <td className="inventory-table-number-cell inventory-table-value-cell">
+                      {formatUsd(decimalToNumber(item.est_value))}
+                    </td>
                   </tr>
                 );
               })

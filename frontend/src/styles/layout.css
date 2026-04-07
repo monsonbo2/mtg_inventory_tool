@@ -232,7 +232,7 @@
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
   position: relative;
   z-index: 6;
 }
@@ -252,5 +252,20 @@
 }
 
 .sidebar-column {
-  align-self: start;
+  align-self: stretch;
+}
+
+.sidebar-column > .inventory-sidebar-panel,
+.workspace-search-column > .search-panel {
+  flex: 1 1 auto;
+}
+
+@media (min-width: 821px) {
+  .sidebar-column > .inventory-sidebar-panel.inventory-sidebar-panel-switcher-open {
+    flex: 0 0 auto;
+  }
+
+  .workspace-search-column > .search-panel.search-panel-results-open {
+    flex: 0 0 auto;
+  }
 }

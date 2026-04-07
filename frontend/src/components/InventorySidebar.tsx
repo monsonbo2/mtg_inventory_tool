@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import type { InventoryCreateRequest, InventorySummary } from "../types";
 import { normalizeInventorySlugInput, normalizeOptionalText } from "../uiHelpers";
@@ -37,14 +37,11 @@ function InventorySwitcherOption(props: {
   return (
     <button
       className="inventory-switcher-option"
-      data-autofocus={props.autoFocus ? "true" : undefined}
+      autoFocus={props.autoFocus}
       onClick={() => props.onSelect(props.inventory.slug)}
       type="button"
     >
-      <span className="inventory-switcher-option-name">{props.inventory.display_name}</span>
-      <span className="inventory-switcher-option-meta">
-        {props.inventory.item_rows} entr{props.inventory.item_rows === 1 ? "y" : "ies"} · {props.inventory.total_cards} cards
-      </span>
+      <InventoryCardSummary inventory={props.inventory} showDescription={false} />
     </button>
   );
 }
@@ -61,6 +58,10 @@ export function InventorySidebar(props: {
 }) {
   const [createFormOpen, setCreateFormOpen] = useState(false);
   const [changeCollectionOpen, setChangeCollectionOpen] = useState(false);
+  const inventorySwitcherId = useId();
+  const inventorySwitcherRef = useRef<HTMLDivElement | null>(null);
+  const inventorySwitcherListRef = useRef<HTMLDivElement | null>(null);
+  const [inventorySwitcherOverlayHeight, setInventorySwitcherOverlayHeight] = useState(0);
   const [displayName, setDisplayName] = useState("");
   const [slug, setSlug] = useState("");
   const [showShortNameField, setShowShortNameField] = useState(false);
@@ -87,6 +88,69 @@ export function InventorySidebar(props: {
       resetCreateForm();
     }
   }, [props.appShellState]);
+
+  useEffect(() => {
+    if (!changeCollectionOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (inventorySwitcherRef.current?.contains(target)) {
+        return;
+      }
+      setChangeCollectionOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [changeCollectionOpen]);
+
+  useLayoutEffect(() => {
+    if (!changeCollectionOpen) {
+      setInventorySwitcherOverlayHeight(0);
+      return;
+    }
+
+    function updateInventorySwitcherOverlayHeight() {
+      const switcherNode = inventorySwitcherRef.current;
+      const listNode = inventorySwitcherListRef.current;
+      if (!switcherNode || !listNode || window.innerWidth <= 820) {
+        setInventorySwitcherOverlayHeight(0);
+        return;
+      }
+
+      const computedStyle = window.getComputedStyle(switcherNode);
+      const rowGap = Number.parseFloat(computedStyle.rowGap || computedStyle.gap || "0");
+      setInventorySwitcherOverlayHeight(
+        Math.max(0, Math.round(listNode.getBoundingClientRect().height + rowGap)),
+      );
+    }
+
+    updateInventorySwitcherOverlayHeight();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            updateInventorySwitcherOverlayHeight();
+          });
+
+    if (resizeObserver && inventorySwitcherListRef.current) {
+      resizeObserver.observe(inventorySwitcherListRef.current);
+    }
+
+    window.addEventListener("resize", updateInventorySwitcherOverlayHeight);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateInventorySwitcherOverlayHeight);
+    };
+  }, [changeCollectionOpen]);
 
   function resetCreateForm() {
     setDisplayName("");
@@ -166,8 +230,12 @@ export function InventorySidebar(props: {
     }
   }
 
-  function openChangeCollection() {
-    setChangeCollectionOpen(true);
+  function toggleChangeCollection() {
+    if (!otherInventories.length) {
+      return;
+    }
+
+    setChangeCollectionOpen((current) => !current);
     setCreateFormOpen(false);
     resetCreateForm();
   }
@@ -175,10 +243,6 @@ export function InventorySidebar(props: {
   function handleSelectInventory(inventorySlug: string) {
     setChangeCollectionOpen(false);
     props.onSelectInventory(inventorySlug);
-  }
-
-  function closeChangeCollection() {
-    setChangeCollectionOpen(false);
   }
 
   function renderCreateForm() {
@@ -249,8 +313,22 @@ export function InventorySidebar(props: {
     );
   }
 
+  const inventorySidebarPanelStyle =
+    changeCollectionOpen && inventorySwitcherOverlayHeight > 0
+      ? {
+          ["--inventory-switcher-overlay-height" as string]: `${inventorySwitcherOverlayHeight}px`,
+        }
+      : undefined;
+
   return (
-    <section className="panel inventory-sidebar-panel">
+    <section
+      className={
+        changeCollectionOpen
+          ? "panel inventory-sidebar-panel inventory-sidebar-panel-switcher-open"
+          : "panel inventory-sidebar-panel"
+      }
+      style={inventorySidebarPanelStyle}
+    >
       {props.inventoryError && props.inventories.length && props.appShellState === "ready" ? (
         <p className="panel-error">Could not refresh the collection list right now.</p>
       ) : null}
@@ -273,32 +351,7 @@ export function InventorySidebar(props: {
         />
       ) : currentInventory ? (
         <>
-          <div className="inventory-focus-block">
-            <p className="section-kicker inventory-focus-kicker">Current Collection</p>
-            <div className="inventory-focus-card">
-              <InventoryCardSummary inventory={currentInventory} />
-            </div>
-          </div>
-
           <div className="inventory-sidebar-actions">
-            {otherInventories.length ? (
-              <button
-                aria-haspopup="dialog"
-                className="secondary-button inventory-sidebar-action inventory-sidebar-action-switch"
-                onClick={openChangeCollection}
-                type="button"
-              >
-                <span className="inventory-sidebar-action-content">
-                  <span className="inventory-sidebar-action-switch-label">
-                    Change Collection
-                  </span>
-                  <span className="inventory-sidebar-action-meta">
-                    {getInventoryCountLabel(props.inventories.length)} available
-                  </span>
-                </span>
-              </button>
-            ) : null}
-
             <button
               className="primary-button inventory-sidebar-action inventory-sidebar-action-create"
               onClick={openCreateForm}
@@ -310,6 +363,63 @@ export function InventorySidebar(props: {
               />
               <span className="inventory-sidebar-action-create-label">Create Collection</span>
             </button>
+          </div>
+
+          <div className="inventory-focus-block">
+            <p className="section-kicker inventory-focus-kicker">Current Collection</p>
+            <div className="inventory-switcher" ref={inventorySwitcherRef}>
+              {otherInventories.length ? (
+                <button
+                  aria-controls={inventorySwitcherId}
+                  aria-expanded={changeCollectionOpen}
+                  className={
+                    changeCollectionOpen
+                      ? "inventory-button inventory-focus-trigger inventory-button-active"
+                      : "inventory-button inventory-focus-trigger"
+                  }
+                  onClick={toggleChangeCollection}
+                  type="button"
+                >
+                  <span className="inventory-button-head inventory-focus-trigger-head">
+                    <span className="inventory-button-meta">
+                      {getInventoryCountLabel(props.inventories.length)} available
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={
+                        changeCollectionOpen
+                          ? "inventory-focus-trigger-indicator inventory-focus-trigger-indicator-open"
+                          : "inventory-focus-trigger-indicator"
+                      }
+                    >
+                      ▾
+                    </span>
+                  </span>
+                  <InventoryCardSummary inventory={currentInventory} showDescription={false} />
+                </button>
+              ) : (
+                <div className="inventory-focus-card">
+                  <InventoryCardSummary inventory={currentInventory} showDescription={false} />
+                </div>
+              )}
+
+              {changeCollectionOpen ? (
+                <div
+                  className="inventory-switcher-list"
+                  id={inventorySwitcherId}
+                  ref={inventorySwitcherListRef}
+                >
+                  {otherInventories.map((inventory, index) => (
+                    <InventorySwitcherOption
+                      key={inventory.slug}
+                      autoFocus={index === 0}
+                      inventory={inventory}
+                      onSelect={handleSelectInventory}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
 
         </>
@@ -350,25 +460,6 @@ export function InventorySidebar(props: {
         title="Create Collection"
       >
         {renderCreateForm()}
-      </ModalDialog>
-
-      <ModalDialog
-        isOpen={changeCollectionOpen}
-        kicker="Collections"
-        onClose={closeChangeCollection}
-        subtitle="Choose the collection you want to view and edit."
-        title="Change Collection"
-      >
-        <div className="inventory-switcher-modal-list">
-          {otherInventories.map((inventory, index) => (
-            <InventorySwitcherOption
-              key={inventory.slug}
-              autoFocus={index === 0}
-              inventory={inventory}
-              onSelect={handleSelectInventory}
-            />
-          ))}
-        </div>
       </ModalDialog>
     </section>
   );

@@ -1,4 +1,9 @@
-import type { InventoryAuditEvent, InventorySummary, OwnedInventoryRow } from "./types";
+import type {
+  InventoryAuditEvent,
+  InventoryCreateResponse,
+  InventorySummary,
+  OwnedInventoryRow,
+} from "./types";
 
 export type AsyncStatus = "idle" | "loading" | "ready" | "error";
 export type AppShellState =
@@ -29,6 +34,7 @@ export type NoticeState = {
 export type InventoryCreateResult =
   | {
       ok: true;
+      inventory: InventoryCreateResponse;
     }
   | {
       ok: false;

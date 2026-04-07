@@ -14,7 +14,6 @@ import {
 } from "../searchResultHelpers";
 import {
   FINISH_OPTIONS,
-  formatFinishLabel,
   formatLanguageCode,
   parseTags,
   toUserMessage,
@@ -36,18 +35,40 @@ const LANGUAGE_LABELS: Record<string, string> = {
   ph: "Phyrexian",
 };
 
+type PrintingLoadMode = "primary" | "all";
+
+function sortLanguageCodes(languageCodes: string[]) {
+  return [...languageCodes].sort((left, right) => {
+    if (left === "en") {
+      return -1;
+    }
+    if (right === "en") {
+      return 1;
+    }
+    return left.localeCompare(right);
+  });
+}
+
 export function SearchResultCard(props: {
   group: SearchCardGroup;
   busyPrintingId: string | null;
   canAdd: boolean;
-  onLoadPrintings: (group: SearchCardGroup) => Promise<CatalogPrintingLookupRow[]>;
+  onLoadPrintings: (
+    group: SearchCardGroup,
+    options?: { includeAllLanguages?: boolean },
+  ) => Promise<CatalogPrintingLookupRow[]>;
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
   const [printings, setPrintings] = useState<CatalogPrintingLookupRow[]>([]);
   const [printingStatus, setPrintingStatus] = useState<AsyncStatus>("idle");
   const [printingError, setPrintingError] = useState<string | null>(null);
-  const [hasLoadedExactPrintings, setHasLoadedExactPrintings] = useState(false);
+  const [loadedPrintingsMode, setLoadedPrintingsMode] = useState<
+    PrintingLoadMode | null
+  >(null);
+  const [printingLoadMode, setPrintingLoadMode] = useState<PrintingLoadMode | null>(
+    null,
+  );
   const [selectedPrintingId, setSelectedPrintingId] = useState("");
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
   const [selectedLanguageCode, setSelectedLanguageCode] = useState("en");
@@ -78,7 +99,8 @@ export function SearchResultCard(props: {
     setPrintings([]);
     setPrintingStatus("idle");
     setPrintingError(null);
-    setHasLoadedExactPrintings(false);
+    setLoadedPrintingsMode(null);
+    setPrintingLoadMode(null);
     setSelectedPrintingId("");
     setShowLanguagePicker(false);
     setSelectedLanguageCode("en");
@@ -91,12 +113,12 @@ export function SearchResultCard(props: {
   }, [props.group.groupId]);
 
   useEffect(() => {
-    if (hasLoadedExactPrintings || printingStatus !== "idle") {
+    if (loadedPrintingsMode !== null || printingStatus !== "idle") {
       return;
     }
 
-    void loadPrintings();
-  }, [hasLoadedExactPrintings, printingStatus, props.group.groupId]);
+    void loadPrintings("primary");
+  }, [loadedPrintingsMode, printingStatus, props.group.groupId]);
 
   const activePrinting =
     printings.find((printing) => printing.scryfall_id === selectedPrintingId) || null;
@@ -106,19 +128,24 @@ export function SearchResultCard(props: {
   const busy =
     props.busyPrintingId !== null &&
     props.busyPrintingId === effectivePrinting?.scryfall_id;
-  const availableLanguageCodes = Array.from(new Set(printings.map((printing) => printing.lang))).sort(
-    (left, right) => {
-      if (left === "en") {
-        return -1;
-      }
-      if (right === "en") {
-        return 1;
-      }
-      return left.localeCompare(right);
-    },
+  const availableLanguageCodes = sortLanguageCodes(
+    Array.from(new Set(printings.map((printing) => printing.lang))),
+  );
+  const allAvailableLanguageCodes = sortLanguageCodes(
+    props.group.availableLanguages.length
+      ? props.group.availableLanguages
+      : availableLanguageCodes,
   );
   const hasEnglishPrintings = availableLanguageCodes.includes("en");
-  const hasOtherLanguages = availableLanguageCodes.some((languageCode) => languageCode !== "en");
+  const hasLoadedPrimaryPrintings = loadedPrintingsMode !== null;
+  const hasLoadedAllPrintings = loadedPrintingsMode === "all";
+  const hasAdditionalLanguages = allAvailableLanguageCodes.some(
+    (languageCode) => !availableLanguageCodes.includes(languageCode),
+  );
+  const isLoadingInitialPrintings =
+    printingStatus === "loading" && printingLoadMode !== "all";
+  const isLoadingAllLanguages =
+    printingStatus === "loading" && printingLoadMode === "all";
   const visiblePrintings = showLanguagePicker
     ? printings.filter((printing) => printing.lang === selectedLanguageCode)
     : hasEnglishPrintings
@@ -144,7 +171,11 @@ export function SearchResultCard(props: {
     }
 
     setSelectedLanguageCode((current) => {
-      if (availableLanguageCodes.includes(current as (typeof availableLanguageCodes)[number])) {
+      if (
+        availableLanguageCodes.includes(
+          current as (typeof availableLanguageCodes)[number],
+        )
+      ) {
         return current;
       }
       return hasEnglishPrintings ? "en" : availableLanguageCodes[0];
@@ -156,7 +187,9 @@ export function SearchResultCard(props: {
       return;
     }
 
-    if (!visiblePrintings.some((printing) => printing.scryfall_id === selectedPrintingId)) {
+    if (
+      !visiblePrintings.some((printing) => printing.scryfall_id === selectedPrintingId)
+    ) {
       setSelectedPrintingId("");
     }
   }, [selectedPrintingId, visiblePrintings]);
@@ -182,13 +215,13 @@ export function SearchResultCard(props: {
       ? "Added"
       : !props.canAdd
         ? "Select collection"
-        : printingStatus === "loading"
+        : isLoadingInitialPrintings && !effectivePrinting
           ? "Loading printings..."
-        : needsPrintingSelection
-          ? "Select printing first"
-        : quantityIsValid
-          ? "Add to collection"
-          : "Enter valid qty";
+          : needsPrintingSelection
+            ? "Select printing first"
+            : quantityIsValid
+              ? "Add to collection"
+              : "Enter valid qty";
   const availableFinishes = FINISH_OPTIONS.filter((option) =>
     effectivePrinting?.finishes.includes(option.value),
   );
@@ -200,49 +233,90 @@ export function SearchResultCard(props: {
     ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}${
         activePrinting.is_default_add_choice ? " · Default add choice" : ""
       }`
-    : printingStatus === "loading"
-      ? "Loading the default printing for this card."
-      : defaultPrinting
-        ? `No printing selected. Add now to use the default choice, or pick another printing below.`
-      : hasLoadedExactPrintings
-        ? "Choose a printing below to add this card."
-        : "Choose a printing below before adding this card.";
+    : isLoadingAllLanguages
+      ? "Loading all available printings for this card."
+      : isLoadingInitialPrintings
+        ? "Loading quick-add printings for this card."
+        : defaultPrinting
+          ? "Ready to add with the default printing, or choose another printing below."
+          : hasLoadedPrimaryPrintings
+            ? "Choose a printing below to add this card."
+            : "Loading quick-add printings for this card.";
 
-  async function loadPrintings() {
-    if (printingStatus === "loading") {
+  async function loadPrintings(mode: PrintingLoadMode) {
+    if (
+      printingStatus === "loading" &&
+      printingLoadMode === mode
+    ) {
       return null;
     }
 
+    if (mode === "primary" && loadedPrintingsMode !== null) {
+      return (
+        printings.find((printing) => printing.scryfall_id === selectedPrintingId) ||
+        printings.find((printing) => printing.is_default_add_choice) ||
+        null
+      );
+    }
+
+    if (mode === "all" && loadedPrintingsMode === "all") {
+      return (
+        printings.find((printing) => printing.scryfall_id === selectedPrintingId) ||
+        printings.find((printing) => printing.is_default_add_choice) ||
+        null
+      );
+    }
+
     setPrintingStatus("loading");
+    setPrintingLoadMode(mode);
     setPrintingError(null);
 
     try {
-      const nextPrintings = await props.onLoadPrintings(props.group);
+      const nextPrintings = await props.onLoadPrintings(props.group, {
+        includeAllLanguages: mode === "all",
+      });
       const nextSelectedPrinting =
         nextPrintings.find((printing) => printing.scryfall_id === selectedPrintingId) ||
         null;
       const nextDefaultPrinting =
         nextPrintings.find((printing) => printing.is_default_add_choice) || null;
       const nextResolvedPrinting = nextSelectedPrinting || nextDefaultPrinting;
+      const preferredLanguageCode =
+        nextSelectedPrinting?.lang ||
+        nextResolvedPrinting?.lang ||
+        nextPrintings[0]?.lang ||
+        "en";
+
       setPrintings(nextPrintings);
       setSelectedPrintingId(nextSelectedPrinting?.scryfall_id || "");
+      setSelectedLanguageCode(preferredLanguageCode);
       setShowLanguagePicker(
-        Boolean(nextResolvedPrinting && nextResolvedPrinting.lang !== "en"),
+        mode === "all" &&
+          new Set(nextPrintings.map((printing) => printing.lang)).size > 1,
       );
-      setSelectedLanguageCode(nextResolvedPrinting?.lang || "en");
-      setHasLoadedExactPrintings(true);
+      setLoadedPrintingsMode(mode === "all" ? "all" : "primary");
       setPrintingStatus("ready");
+      setPrintingLoadMode(null);
       return nextResolvedPrinting;
     } catch (error) {
       setPrintingStatus("error");
+      setPrintingLoadMode(null);
       setPrintingError(toUserMessage(error, "Could not load printings for this card."));
       return null;
     }
   }
 
-  function ensurePrintingsLoaded() {
-    if (!hasLoadedExactPrintings) {
-      void loadPrintings();
+  function ensurePrimaryPrintingsLoaded() {
+    if (!hasLoadedPrimaryPrintings) {
+      void loadPrintings("primary");
+    }
+  }
+
+  async function handleLoadAllLanguages() {
+    const nextResolvedPrinting = await loadPrintings("all");
+    if (nextResolvedPrinting) {
+      setSelectedLanguageCode(nextResolvedPrinting.lang);
+      setShowLanguagePicker(true);
     }
   }
 
@@ -255,7 +329,7 @@ export function SearchResultCard(props: {
     }
 
     const resolvedPrinting =
-      effectivePrinting || (!hasLoadedExactPrintings ? await loadPrintings() : null);
+      effectivePrinting || (!hasLoadedPrimaryPrintings ? await loadPrintings("primary") : null);
 
     if (!resolvedPrinting) {
       props.onNotice("Choose a printing before adding this card.", "error");
@@ -309,8 +383,8 @@ export function SearchResultCard(props: {
                 busy ||
                 !props.canAdd ||
                 !quantityIsValid ||
-                printingStatus === "loading" ||
-                (hasLoadedExactPrintings && !effectivePrinting)
+                (isLoadingInitialPrintings && !effectivePrinting) ||
+                (hasLoadedPrimaryPrintings && !effectivePrinting)
               }
               type="submit"
             >
@@ -336,7 +410,7 @@ export function SearchResultCard(props: {
                   setSelectedPrintingId(event.target.value);
                   setRecentlyAdded(false);
                 }}
-                onFocus={ensurePrintingsLoaded}
+                onFocus={ensurePrimaryPrintingsLoaded}
                 value={selectedPrintingId}
               >
                 <option value="">{printingsAvailableLabel}</option>
@@ -386,17 +460,18 @@ export function SearchResultCard(props: {
               </select>
             </label>
 
-            {hasLoadedExactPrintings && hasOtherLanguages && !showLanguagePicker ? (
+            {hasAdditionalLanguages && !hasLoadedAllPrintings ? (
               <div className="search-printing-helper">
                 <button
                   className="field-link-button"
+                  disabled={isLoadingAllLanguages}
                   onClick={() => {
-                    setShowLanguagePicker(true);
+                    void handleLoadAllLanguages();
                     setRecentlyAdded(false);
                   }}
                   type="button"
                 >
-                  Other languages available
+                  {isLoadingAllLanguages ? "Loading all languages..." : "Load all languages"}
                 </button>
               </div>
             ) : null}
@@ -407,7 +482,7 @@ export function SearchResultCard(props: {
                   <select
                     aria-label="Language"
                     className="text-input"
-                    disabled={busy}
+                    disabled={busy || isLoadingAllLanguages}
                     id={languageFieldId}
                     onChange={(event) => {
                       setSelectedLanguageCode(event.target.value);
@@ -415,7 +490,7 @@ export function SearchResultCard(props: {
                     }}
                     value={selectedLanguageCode}
                   >
-                    {availableLanguageCodes.map((languageCode) => (
+                    {allAvailableLanguageCodes.map((languageCode) => (
                       <option key={languageCode} value={languageCode}>
                         {LANGUAGE_LABELS[languageCode] || formatLanguageCode(languageCode)}
                       </option>
@@ -426,9 +501,13 @@ export function SearchResultCard(props: {
             ) : null}
           </div>
 
-          {printingStatus === "loading" ? (
+          {isLoadingInitialPrintings ? (
             <p className="field-hint field-hint-info">
-              Loading printings for {props.group.name}...
+              Loading quick-add printings for {props.group.name}...
+            </p>
+          ) : isLoadingAllLanguages ? (
+            <p className="field-hint field-hint-info">
+              Loading all available languages for {props.group.name}...
             </p>
           ) : printingStatus === "error" ? (
             <div className="search-printing-state">
@@ -438,27 +517,23 @@ export function SearchResultCard(props: {
               <button
                 className="secondary-button"
                 onClick={() => {
-                  void loadPrintings();
+                  void loadPrintings(hasLoadedPrimaryPrintings ? "all" : "primary");
                 }}
                 type="button"
               >
                 Retry loading printings
               </button>
             </div>
-          ) : !hasLoadedExactPrintings ? (
-            <p className="field-hint field-hint-info">
-              Loading the default printing for this card.
-            </p>
-          ) : !activePrinting && defaultPrinting ? (
-            <p className="field-hint field-hint-info">
-              No printing selected. Add now to use the default choice, or choose one below.
-            </p>
-          ) : !activePrinting ? (
+          ) : !activePrinting && !defaultPrinting && hasLoadedPrimaryPrintings ? (
             <p className="field-hint field-hint-info">
               Choose a printing to finish adding this card.
             </p>
+          ) : hasAdditionalLanguages && !hasLoadedAllPrintings ? (
+            <p className="field-hint field-hint-info">
+              Showing add-ready printings first. Load all languages to browse every
+              available printing for this card.
+            </p>
           ) : null}
-
         </div>
 
         <div className="form-section form-section-muted">

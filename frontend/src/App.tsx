@@ -142,13 +142,16 @@ export default function App() {
   });
   const {
     collectionView,
+    collectionSearchQuery,
     detailModalItemId,
     focusedItemId,
     handleClearSelectedItems,
     handleClearVisibleSelectedItems,
     handleCollectionViewChange,
     handleCloseItemDetails,
+    handleCollectionSearchQueryChange,
     handleOpenItemDetails,
+    handleSelectTableItem,
     handleSelectAllVisibleItems,
     handleToggleItemSelection,
     selectedItemIds,
@@ -157,6 +160,7 @@ export default function App() {
     tableFilterOptions,
     tableFilters,
     tableSort,
+    visibleCollectionItems,
     visibleTableItems,
   } = useCollectionViewState({
     items,
@@ -164,14 +168,17 @@ export default function App() {
   });
   const {
     busyAddCardId,
-    bulkTagsBusy,
+    bulkMutationBusy,
     busyItem,
     clearNotice,
     createInventoryBusy,
     handleAddCard,
-    handleBulkTagMutation,
+    handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
+    handleImportCsv,
+    handleImportDecklist,
+    handleImportDeckUrl,
     handlePatchItem,
     notice,
     reportNotice,
@@ -196,6 +203,7 @@ export default function App() {
   const searchPanelState = {
     activeSearchGroupId,
     busyAddCardId,
+    inventories,
     searchResultsVisible,
     searchWorkspaceMode,
     search: {
@@ -220,6 +228,10 @@ export default function App() {
   };
   const searchPanelActions = {
     onAdd: handleAddCard,
+    onCreateInventory: handleCreateInventory,
+    onImportCsv: handleImportCsv,
+    onImportDeckUrl: handleImportDeckUrl,
+    onImportDecklist: handleImportDecklist,
     onLoadPrintings: loadSearchGroupPrintings,
     onNotice: reportNotice,
     onSearchFieldFocus: handleSearchFieldFocus,
@@ -237,16 +249,18 @@ export default function App() {
   const collectionPanelState = {
     collection: {
       busyItem,
+      searchQuery: collectionSearchQuery,
       detailModalItemId,
       focusedItemId,
       items,
+      visibleItems: visibleCollectionItems,
       view: collectionView,
       viewError,
       viewStatus,
     },
     selectedInventoryRow,
     table: {
-      bulkTagsBusy,
+      bulkMutationBusy,
       filterOptions: tableFilterOptions,
       filters: tableFilters,
       items: visibleTableItems,
@@ -255,16 +269,18 @@ export default function App() {
     },
   };
   const collectionPanelActions = {
-    onBulkTagsSubmit: handleBulkTagMutation,
+    onBulkMutationSubmit: handleBulkMutation,
     onClearSelectedItems: handleClearSelectedItems,
     onClearVisibleSelectedItems: handleClearVisibleSelectedItems,
     onCollectionViewChange: handleCollectionViewChange,
     onCloseItemDetails: handleCloseItemDetails,
+    onCollectionSearchQueryChange: handleCollectionSearchQueryChange,
     onDelete: handleDeleteItem,
     onNotice: reportNotice,
     onOpenActivity: () => setActivityOpen(true),
     onOpenItemDetails: handleOpenItemDetails,
     onPatch: handlePatchItem,
+    onSelectTableItem: handleSelectTableItem,
     onSelectAllVisibleItems: handleSelectAllVisibleItems,
     onTableFiltersChange: setTableFilters,
     onTableSortChange: setTableSort,

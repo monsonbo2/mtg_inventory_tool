@@ -34,6 +34,7 @@ backend requests.
 | `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
 | `full_catalog_demo_bootstrap_compatibility.md` | [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21) | Done | Boyd | full-catalog demo bootstrap is now resolver-driven against the real current Scryfall catalog |
 | `inventory_transfer_api.md` | [#30](https://github.com/monsonbo2/mtg_inventory_tool/issues/30) | Done | Boyd | atomic transfer now supports copy/move, selected rows or `all_items`, merge/fail conflict policy, dry-run, and dual-inventory auth |
+| `local_first_bootstrap_and_printing_lookup_support.md` | [#39](https://github.com/monsonbo2/mtg_inventory_tool/issues/39) | Proposed | Unassigned | local-app startup semantics and a lighter quick-add printing lookup path need backend contract guidance |
 | `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Done | Steve | PATCH stays single-mutation-only and now returns an explicit `operation` discriminator |
 | `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Done | Steve | canonical values, defaults, and finish aliases published in API contract |
 

@@ -1,5 +1,5 @@
 import type {
-  BulkTagMutationOperation,
+  BulkInventoryItemMutationRequest,
   InventorySummary,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
@@ -22,15 +22,17 @@ type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
   collection: {
     busyItem: { itemId: number; action: ItemMutationAction } | null;
+    searchQuery: string;
     detailModalItemId: number | null;
     focusedItemId: number | null;
     items: OwnedInventoryRow[];
+    visibleItems: OwnedInventoryRow[];
     view: "browse" | "table" | "detailed";
     viewError: string | null;
     viewStatus: AsyncStatus;
   };
   table: {
-    bulkTagsBusy: boolean;
+    bulkMutationBusy: boolean;
     filterOptions: InventoryTableFilterOptions;
     filters: InventoryTableFilters;
     items: OwnedInventoryRow[];
@@ -48,15 +50,19 @@ type OwnedCollectionPanelActions = {
   onDelete: (itemId: number, cardName: string) => Promise<void>;
   onNotice: (message: string, tone?: NoticeTone) => void;
   onCollectionViewChange: (nextView: "browse" | "table" | "detailed") => void;
+  onCollectionSearchQueryChange: (nextQuery: string) => void;
   onCloseItemDetails: () => void;
   onOpenItemDetails: (itemId: number) => void;
   onTableSortChange: (nextSort: InventoryTableSortState) => void;
   onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
-  onBulkTagsSubmit: (
-    operation: BulkTagMutationOperation,
-    tags: string[],
+  onBulkMutationSubmit: (
+    payload: BulkInventoryItemMutationRequest,
   ) => Promise<boolean>;
   onOpenActivity: () => void;
+  onSelectTableItem: (
+    itemId: number,
+    options?: { additive?: boolean; range?: boolean },
+  ) => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisibleItems: () => void;
   onClearVisibleSelectedItems: () => void;
@@ -162,6 +168,23 @@ export function OwnedCollectionPanel(props: {
         </div>
       </div>
 
+      {props.state.selectedInventoryRow ? (
+        <div className="collection-search-row">
+          <label className="field collection-search-field">
+            <span>Search this collection</span>
+            <input
+              className="text-input"
+              onChange={(event) =>
+                props.actions.onCollectionSearchQueryChange(event.target.value)
+              }
+              placeholder="e.g. Lightning Bolt"
+              type="text"
+              value={props.state.collection.searchQuery}
+            />
+          </label>
+        </div>
+      ) : null}
+
       {props.state.collection.viewError && props.state.collection.items.length ? (
         <p className="panel-error">Could not refresh this collection right now.</p>
       ) : null}
@@ -190,46 +213,58 @@ export function OwnedCollectionPanel(props: {
             variant="error"
           />
         ) : props.state.collection.items.length ? (
-          props.state.collection.view === "browse" ? (
-            <CompactInventoryList
-              busyItem={props.state.collection.busyItem}
-              items={props.state.collection.items}
-              onOpenDetails={props.actions.onOpenItemDetails}
-              onPatch={props.actions.onPatch}
-            />
-          ) : props.state.collection.view === "table" ? (
-            <InventoryTableView
-              allItemsCount={props.state.collection.items.length}
-              bulkTagsBusy={props.state.table.bulkTagsBusy}
-              filterOptions={props.state.table.filterOptions}
-              filters={props.state.table.filters}
-              items={props.state.table.items}
-              onBulkTagsSubmit={props.actions.onBulkTagsSubmit}
-              onClearSelection={props.actions.onClearSelectedItems}
-              onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
-              onFiltersChange={props.actions.onTableFiltersChange}
-              onSelectAllVisible={props.actions.onSelectAllVisibleItems}
-              onSortChange={props.actions.onTableSortChange}
-              onToggleItemSelection={props.actions.onToggleItemSelection}
-              selectedItemIds={props.state.table.selectedItemIds}
-              sortState={props.state.table.sort}
-            />
-          ) : (
-            props.state.collection.items.map((item) => (
-              <OwnedItemCard
-                busyAction={
-                  props.state.collection.busyItem?.itemId === item.item_id
-                    ? props.state.collection.busyItem.action
-                    : null
-                }
-                item={item}
-                key={item.item_id}
-                focused={props.state.collection.focusedItemId === item.item_id}
-                onDelete={props.actions.onDelete}
-                onNotice={props.actions.onNotice}
+          props.state.collection.visibleItems.length ? (
+            props.state.collection.view === "browse" ? (
+              <CompactInventoryList
+                busyItem={props.state.collection.busyItem}
+                items={props.state.collection.visibleItems}
+                onOpenDetails={props.actions.onOpenItemDetails}
                 onPatch={props.actions.onPatch}
               />
-            ))
+            ) : props.state.collection.view === "table" ? (
+              <InventoryTableView
+                allItemsCount={props.state.collection.items.length}
+                bulkMutationBusy={props.state.table.bulkMutationBusy}
+                filterOptions={props.state.table.filterOptions}
+                filters={props.state.table.filters}
+                items={props.state.table.items}
+                onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
+                onClearSelection={props.actions.onClearSelectedItems}
+                onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
+                onFiltersChange={props.actions.onTableFiltersChange}
+                onOpenDetails={props.actions.onOpenItemDetails}
+                onSelectItem={props.actions.onSelectTableItem}
+                onSelectAllVisible={props.actions.onSelectAllVisibleItems}
+                onSortChange={props.actions.onTableSortChange}
+                onToggleItemSelection={props.actions.onToggleItemSelection}
+                selectedItemIds={props.state.table.selectedItemIds}
+                sortState={props.state.table.sort}
+              />
+            ) : (
+              props.state.collection.visibleItems.map((item) => (
+                <OwnedItemCard
+                  busyAction={
+                    props.state.collection.busyItem?.itemId === item.item_id
+                      ? props.state.collection.busyItem.action
+                      : null
+                  }
+                  item={item}
+                  key={item.item_id}
+                  focused={props.state.collection.focusedItemId === item.item_id}
+                  onDelete={props.actions.onDelete}
+                  onNotice={props.actions.onNotice}
+                  onPatch={props.actions.onPatch}
+                />
+              ))
+            )
+          ) : (
+            <div className="collection-search-empty">
+              <strong>No matching cards</strong>
+              <span>
+                Try a different card name or clear the collection search to bring
+                entries back into view.
+              </span>
+            </div>
           )
         ) : (
           <PanelState

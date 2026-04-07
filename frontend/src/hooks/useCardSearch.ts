@@ -12,6 +12,7 @@ import {
 import type {
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
+  CatalogScope,
 } from "../types";
 import { toUserMessage } from "../uiHelpers";
 import type { AsyncStatus } from "../uiTypes";
@@ -21,13 +22,33 @@ const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 const AUTOCOMPLETE_LIMIT = 8;
 const SEARCH_GROUP_INITIAL_LIMIT = 8;
 const SEARCH_GROUP_PAGE_SIZE = 10;
-const SEARCH_GROUP_PREFETCH_LIMIT = SEARCH_GROUP_INITIAL_LIMIT + SEARCH_GROUP_PAGE_SIZE;
+const SEARCH_GROUP_PREFETCH_LIMIT =
+  SEARCH_GROUP_INITIAL_LIMIT + SEARCH_GROUP_PAGE_SIZE;
+
+type SearchPrintingsMode = "primary" | "all";
 
 type UseCardSearchOptions = {
   onSearchActivity?: () => void;
 };
 
+function getScopeQueryValue(scope: CatalogScope): CatalogScope | undefined {
+  return scope === "all" ? "all" : undefined;
+}
+
+function getSuggestionCacheKey(query: string, scope: CatalogScope) {
+  return `${scope}:${query}`;
+}
+
+function getPrintingLookupCacheKey(
+  groupId: string,
+  scope: CatalogScope,
+  mode: SearchPrintingsMode,
+) {
+  return `${groupId}:${scope}:${mode}`;
+}
+
 export function useCardSearch(options: UseCardSearchOptions = {}) {
+  const [searchScope, setSearchScope] = useState<CatalogScope>("default");
   const [searchStatus, setSearchStatus] = useState<AsyncStatus>("idle");
   const [suggestionStatus, setSuggestionStatus] = useState<AsyncStatus>("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -35,23 +56,40 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CatalogNameSearchRow[]>([]);
   const [searchTotalCount, setSearchTotalCount] = useState(0);
-  const [searchGroupVisibleLimit, setSearchGroupVisibleLimit] = useState(SEARCH_GROUP_INITIAL_LIMIT);
-  const [searchRequestedLimit, setSearchRequestedLimit] = useState(SEARCH_GROUP_PREFETCH_LIMIT);
+  const [searchGroupVisibleLimit, setSearchGroupVisibleLimit] = useState(
+    SEARCH_GROUP_INITIAL_LIMIT,
+  );
+  const [searchRequestedLimit, setSearchRequestedLimit] = useState(
+    SEARCH_GROUP_PREFETCH_LIMIT,
+  );
   const [searchCanLoadMore, setSearchCanLoadMore] = useState(false);
   const [searchLoadMoreBusy, setSearchLoadMoreBusy] = useState(false);
-  const [activeSearchGroupId, setActiveSearchGroupId] = useState<string | null>(null);
+  const [activeSearchGroupId, setActiveSearchGroupId] = useState<string | null>(
+    null,
+  );
   const [searchResultsVisible, setSearchResultsVisible] = useState(false);
-  const [searchWorkspaceMode, setSearchWorkspaceMode] = useState<"browse" | "focus">("browse");
-  const [suggestionResults, setSuggestionResults] = useState<CatalogNameSearchRow[]>([]);
+  const [searchWorkspaceMode, setSearchWorkspaceMode] = useState<"browse" | "focus">(
+    "browse",
+  );
+  const [suggestionResults, setSuggestionResults] = useState<
+    CatalogNameSearchRow[]
+  >([]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
   const suggestionLookupRequestIdRef = useRef(0);
   const suggestionCacheRef = useRef<Record<string, CatalogNameSearchRow[]>>({});
-  const printingLookupCacheRef = useRef<Record<string, CatalogPrintingLookupRow[]>>({});
+  const printingLookupCacheRef = useRef<Record<string, CatalogPrintingLookupRow[]>>(
+    {},
+  );
   const printingLookupPromisesRef = useRef<
     Record<string, Promise<CatalogPrintingLookupRow[]>>
   >({});
   const skipSuggestionFetchQueryRef = useRef<string | null>(null);
+  const searchScopeRef = useRef<CatalogScope>("default");
+
+  useEffect(() => {
+    searchScopeRef.current = searchScope;
+  }, [searchScope]);
 
   useEffect(() => {
     const trimmed = searchQuery.trim();
@@ -72,7 +110,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       return;
     }
 
-    const cachedResults = suggestionCacheRef.current[normalizedQuery];
+    const cacheKey = getSuggestionCacheKey(normalizedQuery, searchScope);
+    const cachedResults = suggestionCacheRef.current[cacheKey];
     if (cachedResults) {
       setSuggestionStatus("ready");
       setSuggestionError(null);
@@ -89,12 +128,13 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       void searchCardNames({
         query: trimmed,
         limit: AUTOCOMPLETE_LIMIT,
+        scope: getScopeQueryValue(searchScope),
       })
         .then((response) => {
           if (requestId !== suggestionLookupRequestIdRef.current) {
             return;
           }
-          suggestionCacheRef.current[normalizedQuery] = response.items;
+          suggestionCacheRef.current[cacheKey] = response.items;
           setSuggestionResults(response.items);
           setSuggestionStatus("ready");
           setHighlightedSuggestionIndex(response.items.length ? 0 : -1);
@@ -113,7 +153,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [searchQuery]);
+  }, [searchQuery, searchScope]);
 
   function closeSuggestionList() {
     setSuggestionOpen(false);
@@ -131,6 +171,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     suggestionLookupRequestIdRef.current += 1;
     skipSuggestionFetchQueryRef.current = null;
     setSearchQuery("");
+    setSearchScope("default");
     setSearchResults([]);
     setSearchTotalCount(0);
     setActiveSearchGroupId(null);
@@ -189,6 +230,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     runOptions: {
       loadingMore?: boolean;
       requestLimit?: number;
+      scope?: CatalogScope;
       visibleLimit?: number;
     } = {},
   ) {
@@ -196,7 +238,10 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     const loadingMore = runOptions.loadingMore ?? false;
     const requestLimit = runOptions.requestLimit ?? SEARCH_GROUP_PREFETCH_LIMIT;
     const visibleLimit = runOptions.visibleLimit ?? SEARCH_GROUP_INITIAL_LIMIT;
+    const scope = runOptions.scope ?? searchScopeRef.current;
+
     if (!trimmed) {
+      setSearchScope("default");
       setSearchResults([]);
       setSearchTotalCount(0);
       setActiveSearchGroupId(null);
@@ -207,6 +252,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       resetSearchPagination();
       return;
     }
+
+    setSearchScope(scope);
 
     if (!loadingMore) {
       options.onSearchActivity?.();
@@ -225,6 +272,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       const response = await searchCardNames({
         query: trimmed,
         limit: requestLimit,
+        scope: getScopeQueryValue(scope),
       });
       const nextResults = response.items;
       const nextVisibleLimit = Math.min(visibleLimit, nextResults.length);
@@ -272,6 +320,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   function handleSearchQueryChange(value: string) {
     skipSuggestionFetchQueryRef.current = null;
     setSearchQuery(value);
+    setSearchScope("default");
     setSearchResults([]);
     setSearchTotalCount(0);
     setActiveSearchGroupId(null);
@@ -328,7 +377,10 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   }
 
   function handleSearchResultsLoadMore() {
-    const hiddenLoadedResultCount = Math.max(0, searchResults.length - searchGroupVisibleLimit);
+    const hiddenLoadedResultCount = Math.max(
+      0,
+      searchResults.length - searchGroupVisibleLimit,
+    );
     const nextVisibleLimit = searchGroupVisibleLimit + SEARCH_GROUP_PAGE_SIZE;
 
     if (hiddenLoadedResultCount > 0) {
@@ -347,22 +399,47 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     });
   }
 
+  function handleSearchScopeBroaden() {
+    if (!searchQuery.trim()) {
+      return;
+    }
+
+    void runCardSearch(searchQuery, { scope: "all" });
+  }
+
+  function handleSearchScopeReset() {
+    if (!searchQuery.trim()) {
+      setSearchScope("default");
+      return;
+    }
+
+    void runCardSearch(searchQuery, { scope: "default" });
+  }
+
   function moveSearchGroupSelection(direction: 1 | -1) {
     const visibleSearchResults = searchResults.slice(0, searchGroupVisibleLimit);
-    if (!searchResultsVisible || searchWorkspaceMode !== "browse" || visibleSearchResults.length <= 1) {
+    if (
+      !searchResultsVisible ||
+      searchWorkspaceMode !== "browse" ||
+      visibleSearchResults.length <= 1
+    ) {
       return;
     }
 
     const currentIndex = Math.max(
       0,
-      visibleSearchResults.findIndex((result) => result.oracle_id === activeSearchGroupId),
+      visibleSearchResults.findIndex(
+        (result) => result.oracle_id === activeSearchGroupId,
+      ),
     );
     const nextIndex = Math.min(
       visibleSearchResults.length - 1,
       Math.max(0, currentIndex + direction),
     );
     setActiveSearchGroupId(
-      visibleSearchResults[nextIndex]?.oracle_id || visibleSearchResults[0]?.oracle_id || null,
+      visibleSearchResults[nextIndex]?.oracle_id ||
+        visibleSearchResults[0]?.oracle_id ||
+        null,
     );
   }
 
@@ -417,40 +494,60 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     }
   }
 
-  async function loadSearchGroupPrintings(group: SearchCardGroup) {
-    const cachedPrintings = printingLookupCacheRef.current[group.groupId];
+  async function loadSearchGroupPrintings(
+    group: SearchCardGroup,
+    options: {
+      includeAllLanguages?: boolean;
+    } = {},
+  ) {
+    const mode: SearchPrintingsMode = options.includeAllLanguages ? "all" : "primary";
+    const scope = searchScopeRef.current;
+    const cacheKey = getPrintingLookupCacheKey(group.groupId, scope, mode);
+    const cachedPrintings = printingLookupCacheRef.current[cacheKey];
     if (cachedPrintings) {
       return cachedPrintings;
     }
 
-    const inFlightRequest = printingLookupPromisesRef.current[group.groupId];
+    const inFlightRequest = printingLookupPromisesRef.current[cacheKey];
     if (inFlightRequest) {
       return inFlightRequest;
     }
 
-    const request = listCardPrintings(group.oracleId, { lang: "all" })
+    const params = {
+      lang: mode === "all" ? ("all" as const) : undefined,
+      scope: getScopeQueryValue(scope),
+    };
+    const request =
+      mode === "all" || scope === "all"
+        ? listCardPrintings(group.oracleId, params)
+        : listCardPrintings(group.oracleId);
+
+    const trackedRequest = request
       .then((nextPrintings) => {
         if (!nextPrintings.length) {
           throw new Error(`No printings are currently available for ${group.name}.`);
         }
-        printingLookupCacheRef.current[group.groupId] = nextPrintings;
-        delete printingLookupPromisesRef.current[group.groupId];
+        printingLookupCacheRef.current[cacheKey] = nextPrintings;
+        delete printingLookupPromisesRef.current[cacheKey];
         return nextPrintings;
       })
       .catch((error) => {
-        delete printingLookupPromisesRef.current[group.groupId];
+        delete printingLookupPromisesRef.current[cacheKey];
         throw error;
       });
 
-    printingLookupPromisesRef.current[group.groupId] = request;
-    return request;
+    printingLookupPromisesRef.current[cacheKey] = trackedRequest;
+    return trackedRequest;
   }
 
   const searchLoadedHiddenResultCount = Math.max(
     0,
     searchResults.length - searchGroupVisibleLimit,
   );
-  const searchHiddenResultCount = Math.max(0, searchTotalCount - searchGroupVisibleLimit);
+  const searchHiddenResultCount = Math.max(
+    0,
+    searchTotalCount - searchGroupVisibleLimit,
+  );
   const visibleSearchResults = searchResults.slice(0, searchGroupVisibleLimit);
   const searchGroups = createSearchCardGroups(visibleSearchResults);
 
@@ -459,6 +556,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     handleSearchInputKeyDown,
     handleSearchQueryChange,
     handleSearchResultsLoadMore,
+    handleSearchScopeBroaden,
+    handleSearchScopeReset,
     handleSearchSubmit,
     dismissSearchResults,
     handleSearchGroupSelect,
@@ -469,17 +568,18 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     highlightedSuggestionIndex,
     loadSearchGroupPrintings,
     resetSearchWorkspace,
-    searchError,
     searchCanLoadMore: searchLoadedHiddenResultCount > 0 || searchCanLoadMore,
+    searchError,
     searchGroups,
     searchHiddenResultCount,
     searchLoadedHiddenResultCount,
     searchLoadMoreBusy,
     searchQuery,
     searchResultsVisible,
+    searchScope,
+    searchStatus,
     searchTotalCount,
     searchWorkspaceMode,
-    searchStatus,
     setHighlightedSuggestionIndex,
     suggestionError,
     suggestionOpen,
