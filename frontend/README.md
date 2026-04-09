@@ -11,9 +11,11 @@ Use these as the integration contract:
 
 - `../docs/api_v1_contract.md`
 - `../docs/frontend_handoff.md`
-- `../docs/frontend_backend_requests/`
 - `../contracts/openapi.json`
 - `../contracts/demo_payloads/`
+
+Use `../docs/frontend_backend_requests/` only when a GitHub issue points to a
+supporting spec or historical note.
 
 ## Stack
 
@@ -130,4 +132,6 @@ Current Vite proxy:
 - Request backend contract changes instead of editing backend files directly.
   Use `../docs/frontend_backend_requests/README.md` and the GitHub issue
   template at `../.github/ISSUE_TEMPLATE/frontend-backend-request.yml`.
+  GitHub issues and PRs are the only live tracking surface; local request docs
+  are optional supporting specs and historical context.
 - Do not duplicate backend business rules unless they are purely presentational.

@@ -1,10 +1,6 @@
 # Frontend Backend Request: Inventory Transfer API
 
-Status: Done
-Owner: Boyd
-GitHub issue: [#30](https://github.com/monsonbo2/mtg_inventory_tool/issues/30)
-Implementation PR: Commits `c8c042f`, `537de8e`
-Last updated: 2026-04-06
+Related GitHub issue: [#30](https://github.com/monsonbo2/mtg_inventory_tool/issues/30)
 
 ## Frontend Backend Request
 
@@ -13,10 +9,12 @@ Feature / screen:
 Inventory-to-inventory actions such as copy selected rows, move selected rows,
 and eventually duplicate or merge inventories.
 
-Current blocker:
+Current context:
 
-Resolved. The backend now owns this workflow directly instead of forcing the
-frontend to emulate copy/move by chaining row reads, adds, and deletes.
+The backend now owns this workflow directly instead of forcing the frontend to
+emulate copy/move by chaining row reads, adds, and deletes. This supporting
+note keeps the original request details together with the current shipped
+behavior.
 
 Endpoint involved:
 

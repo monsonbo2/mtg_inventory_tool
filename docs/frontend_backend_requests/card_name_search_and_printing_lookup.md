@@ -1,10 +1,6 @@
 # Frontend Backend Request: Card-Name Search And Printing Lookup
 
-Status: Done
-Owner: Boyd
-GitHub issue: [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16)
-Implementation PR: Commit `b409f56`
-Last updated: 2026-04-02
+Related GitHub issue: [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16)
 
 ## Frontend Backend Request
 

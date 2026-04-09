@@ -1,9 +1,11 @@
 # ROADMAP.md
 
-Working roadmap and status note for this repo.
+Historical roadmap context for this repo.
 
-This file is where branch-era planning, recent milestone lists, and “what
-probably comes next” notes can live without crowding `AGENTS.md`.
+GitHub issues and pull requests are the only active work-tracking surface.
+This file is background context for recent milestones and likely workstreams,
+and it may drift between commits without being kept in sync with live ticket
+status.
 
 ## Recent Baseline Milestones
 
@@ -76,8 +78,7 @@ state.
 
 - Does the current shared-service rollout behave cleanly behind the real proxy
   and verified auth headers?
-- Are GitHub issue states and local request docs aligned with the actual branch
-  state?
+- Are GitHub issues / PRs aligned with the actual branch state?
 - What is the next product feature branch after Phase 2 merge:
   frontend integration of the current bulk / transfer features, pasted list
   import, or something else?

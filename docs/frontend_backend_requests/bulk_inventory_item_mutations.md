@@ -1,14 +1,10 @@
 # Frontend Backend Request: Bulk Inventory Item Mutations
 
-Status: Done
-Owner: Boyd
-GitHub issue: Not linked yet
-Implementation PR: Not linked yet
-Last updated: 2026-04-04
-
-Resolved. The backend now exposes `POST /inventories/{inventory_slug}/items/bulk`
-on the final generic route shape, and the shipped operation set is broader than
-the original tag-only MVP:
+This supporting note preserves the original request plus the current shipped
+bulk-mutation contract. The backend now exposes
+`POST /inventories/{inventory_slug}/items/bulk` on the final generic route
+shape, and the shipped operation set is broader than the original tag-only
+MVP:
 
 - `add_tags`
 - `remove_tags`

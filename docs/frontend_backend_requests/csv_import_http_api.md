@@ -1,10 +1,6 @@
 # Frontend Backend Request: CSV Import HTTP API
 
-Status: Done
-Owner: Boyd
-GitHub issue: [#25](https://github.com/monsonbo2/mtg_inventory_tool/issues/25)
-Implementation PR: Commits `69afeb7`..`9169928`, merged via `485f937`
-Last updated: 2026-04-04
+Related GitHub issue: [#25](https://github.com/monsonbo2/mtg_inventory_tool/issues/25)
 
 ## Frontend Backend Request
 
@@ -12,10 +8,11 @@ Feature / screen:
 
 CSV import flow in the web frontend
 
-Current blocker:
+Current context:
 
-Resolved. The backend now exposes `POST /imports/csv` and the frontend can
-build directly against the HTTP contract.
+The backend now exposes `POST /imports/csv`, so the frontend can build
+directly against the HTTP contract. This supporting note keeps the original
+request details together with the current shipped behavior.
 
 Current implemented behavior:
 

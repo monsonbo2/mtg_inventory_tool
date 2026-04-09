@@ -1,56 +1,24 @@
 # Frontend Backend Requests
 
-This folder is the home for frontend-requested backend/API changes.
+This folder holds optional supporting specs and historical notes for
+frontend-requested backend/API changes.
 
-Use this README as the process guide and template whenever frontend work needs
-to ask for a backend contract change.
+GitHub issues and pull requests are the only official tracking surface for
+status, ownership, priority, and discussion. Use this README as the process
+guide and supporting-doc template whenever frontend work needs to ask for a
+backend contract change.
 
-## Official Tracking Surface
+## Tracking Policy
 
-Use these three pieces together:
-
-- request doc in `docs/frontend_backend_requests/`
-- GitHub issue created from `.github/ISSUE_TEMPLATE/frontend-backend-request.yml`
-- status row in the table below
-
-Use the markdown file for the detailed spec, the GitHub issue for live status
-and discussion, and the table below as the quick in-repo index.
-
-## Status Index
-
-Use this table as the lightweight in-repo status board for active frontend
-backend requests.
-
-| Request | Issue / PR | Status | Owner | Notes |
-| --- | --- | --- | --- | --- |
-| `api_base_path_compatibility.md` | [#7](https://github.com/monsonbo2/mtg_inventory_tool/issues/7) | Superseded | Steve | handled by frontend proxy rewrite strategy |
-| `bulk_inventory_item_mutations.md` | Not linked yet | Done | Boyd | generic bulk route now supports tags, quantity, notes, acquisition, finish, location, and condition mutations |
-| `card_name_search_and_printing_lookup.md` | [#16](https://github.com/monsonbo2/mtg_inventory_tool/issues/16) | Done | Boyd | implemented via grouped name search plus oracle printings lookup in commit `b409f56` |
-| `card_name_search_relevance_ranking.md` | [#29](https://github.com/monsonbo2/mtg_inventory_tool/issues/29) | Proposed | Unassigned | name-search ordering should add backend relevance signals so common cards surface ahead of obscure lexical matches |
-| `card_image_fields_for_visual_ui.md` | [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11) | Done | Steve | stored image URLs exposed in search and owned-item responses |
-| `csv_import_http_api.md` | [#25](https://github.com/monsonbo2/mtg_inventory_tool/issues/25) | Done | Boyd | HTTP CSV import now ships with preview/commit, multipart upload, and structured resolution issues |
-| `default_printing_resolution_policy.md` | [#23](https://github.com/monsonbo2/mtg_inventory_tool/issues/23) | Done | Boyd | `oracle_id` quick-add now publishes the default printing policy as stable contract behavior |
-| `playable_card_search_scope.md` | [#22](https://github.com/monsonbo2/mtg_inventory_tool/issues/22) | Done | Boyd | default app-facing search is now narrowed to the mainline add flow, with additive `scope=all` support for intentional broad catalog search |
-| `expanded_frontend_demo_seed_data.md` | [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10) | Done | Steve | richer deterministic demo bootstrap with empty-state inventory |
-| `full_catalog_demo_bootstrap_compatibility.md` | [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21) | Done | Boyd | full-catalog demo bootstrap is now resolver-driven against the real current Scryfall catalog |
-| `inventory_transfer_api.md` | [#30](https://github.com/monsonbo2/mtg_inventory_tool/issues/30) | Done | Boyd | atomic transfer now supports copy/move, selected rows or `all_items`, merge/fail conflict policy, dry-run, and dual-inventory auth |
-| `local_first_bootstrap_and_printing_lookup_support.md` | [#39](https://github.com/monsonbo2/mtg_inventory_tool/issues/39) | Proposed | Unassigned | local-app startup semantics and a lighter quick-add printing lookup path need backend contract guidance |
-| `patch_operation_contract_clarity.md` | [#9](https://github.com/monsonbo2/mtg_inventory_tool/issues/9) | Done | Steve | PATCH stays single-mutation-only and now returns an explicit `operation` discriminator |
-| `published_value_enums_and_defaults.md` | [#8](https://github.com/monsonbo2/mtg_inventory_tool/issues/8) | Done | Steve | canonical values, defaults, and finish aliases published in API contract |
-
-Update this table when a request changes status or gets tied to a GitHub issue
-or implementation PR.
-
-### Suggested Status Values
-
-- `Proposed`
-- `Triaged`
-- `Accepted`
-- `In Progress`
-- `Done`
-- `Blocked`
-- `Declined`
-- `Superseded`
+- Open or update a GitHub issue using
+  `.github/ISSUE_TEMPLATE/frontend-backend-request.yml`.
+- Open the GitHub issue first and keep status, ownership, priority, discussion,
+  implementation progress, and closure there.
+- If extra contract detail or examples are helpful, create or update a
+  supporting markdown doc in this folder.
+- If a supporting doc exists, link it from the GitHub issue.
+- Do not track status, owner, implementation PR state, or “last updated” data
+  in this folder. Keep that live state in GitHub only.
 
 ## Purpose
 
@@ -113,13 +81,7 @@ Each frontend-to-backend request should include:
 ## Suggested Template
 
 ```md
-## Frontend Backend Request
-
-Status: Proposed
-Owner: Unassigned
-GitHub issue: Not linked yet
-Implementation PR: Not linked yet
-Last updated: YYYY-MM-DD
+# Frontend Backend Request: Short Title
 
 Feature / screen:
 
@@ -142,14 +104,14 @@ Compatibility note:
 
 ## How To Use This Folder
 
-- Put each concrete frontend request in its own markdown file in this folder.
+- Put each concrete supporting doc in its own markdown file in this folder.
 - Use a short descriptive filename such as:
   - `api_base_path_compatibility.md`
   - `patch_operation_contract_clarity.md`
-- Keep each request concrete and contract-focused.
-- Include the metadata header from the template in every request file.
-- Keep the status row in the table above in sync with the current GitHub issue
-  or PR state.
+- Keep each doc concrete and contract-focused.
+- Do not add local status, owner, PR-state, or “last updated” metadata.
+- Do not maintain a local issue index or local state mirror in this folder.
+- Use GitHub issues and PRs for all live tracking updates.
 
 ## Review Expectations
 
@@ -166,11 +128,10 @@ Compatibility note:
 
 For each frontend-to-backend request:
 
-1. Create or update the markdown file in this folder.
-2. Open a GitHub issue using:
+1. Open a GitHub issue using:
    `.github/ISSUE_TEMPLATE/frontend-backend-request.yml`
-3. Link the request doc from the issue and the issue from the request doc.
-4. Add the issue link to the status table in this README.
+2. If helpful, create or update a supporting markdown file in this folder.
+3. Link the supporting doc from the issue when both exist.
 
 The important thing is to keep the request concrete and contract-focused.
 
@@ -178,12 +139,8 @@ The important thing is to keep the request concrete and contract-focused.
 
 For each new request:
 
-1. Create or update the markdown file in this folder using the template below.
-2. Open a GitHub issue for the request using the frontend backend request
-   template, or record the active PR if the request is being handled
-   immediately.
-3. Add the issue or PR link to the status table in this README.
-4. Update the status value as the request moves from `Proposed` to `Done` or
-   another final state.
-5. When a request is completed, link the implementation PR or commit in the
-   issue/PR column or notes column.
+1. Open the GitHub issue first.
+2. Add or update a supporting doc only when extra contract detail is useful.
+3. Keep status, ownership, discussion, implementation links, and closure in
+   GitHub.
+4. Do not update local docs just to mirror ticket state changes.

@@ -1,10 +1,6 @@
 # Frontend Backend Request: Expanded Frontend Demo Seed Data
 
-Status: Done
-Owner: Steve
-GitHub issue: [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10)
-Implementation PR: Commit `385c1be`
-Last updated: 2026-04-01
+Related GitHub issue: [#10](https://github.com/monsonbo2/mtg_inventory_tool/issues/10)
 
 ## Frontend Backend Request
 

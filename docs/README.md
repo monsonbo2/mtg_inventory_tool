@@ -16,8 +16,9 @@ If you're building against the current demo web API shell, read
 If you're preparing a separate frontend sandbox, also read
 `frontend_handoff.md`, `../frontend/README.md`, `frontend_build_checklist.md`,
 `frontend_search_autocomplete_checklist.md`,
-`frontend_demo_refinement_handoff.md`, `frontend_backend_requests/`, and
-`../contracts/README.md`.
+`frontend_demo_refinement_handoff.md`, and `../contracts/README.md`.
+Use `frontend_backend_requests/` only when a GitHub issue links to a specific
+supporting spec or historical note.
 
 ## Current Runtime Docs
 
@@ -46,8 +47,10 @@ If you're preparing a separate frontend sandbox, also read
   the current backend import/export/API slice, including the still-missing
   narrative import/export guide.
 - `frontend_backend_requests/`
-  Folder of frontend-requested backend/API changes, with
-  `frontend_backend_requests/README.md` as the process guide and template.
+  Optional supporting specs and historical notes for frontend-requested
+  backend/API changes. GitHub issues and PRs hold the live status, ownership,
+  and discussion state, with `frontend_backend_requests/README.md` as the
+  process guide.
 - `shared_service_deploy.md`
   First-live deployment runbook for the current single-host shared-service API
   posture.

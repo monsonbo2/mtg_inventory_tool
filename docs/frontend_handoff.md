@@ -32,12 +32,16 @@ replicate Python-side business logic.
 The frontend sandbox should treat these as the source of truth:
 
 - `docs/api_v1_contract.md`
-- `docs/frontend_backend_requests/`
 - `contracts/openapi.json`
 - `contracts/demo_payloads/`
 
 Those files define the response shapes, error envelope, and example payloads
 the UI should expect.
+
+Use `docs/frontend_backend_requests/` only as optional supporting context when
+a GitHub issue links to a specific request doc. GitHub issues and pull requests
+are the only live tracking surface for request status, ownership, and
+discussion.
 
 ## Demo Scope
 
@@ -247,9 +251,13 @@ export default {
   backend contract change.
 - Backend changes should be requested as API-contract work, not merged in as
   opportunistic UI edits.
-- Use `docs/frontend_backend_requests/README.md` plus the GitHub issue template
-  at `.github/ISSUE_TEMPLATE/frontend-backend-request.yml` for frontend
-  requests into the backend/API layer.
+- Open or update a GitHub issue with
+  `.github/ISSUE_TEMPLATE/frontend-backend-request.yml` for frontend requests
+  into the backend/API layer. Use
+  `docs/frontend_backend_requests/README.md` only when extra supporting
+  contract detail is worth keeping in-repo. Keep live tracking in GitHub
+  issues/PRs only; local request docs are optional supporting specs, not
+  status boards.
 - The frontend may do UX validation, but backend validation remains the source
   of truth.
 - In `local_demo`, `X-Actor-Id` is ignored by default by the API shell. Audit

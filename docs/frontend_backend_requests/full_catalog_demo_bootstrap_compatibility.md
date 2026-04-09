@@ -1,14 +1,11 @@
 # Frontend Backend Request: Full-Catalog Demo Bootstrap Compatibility
 
-Status: Done
-Owner: Boyd
-GitHub issue: [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21)
-Implementation PR: Commit `c88f80a`
-Last updated: 2026-04-04
+Related GitHub issue: [#21](https://github.com/monsonbo2/mtg_inventory_tool/issues/21)
 
-Resolved. The backend-owned full-catalog demo bootstrap is now resolver-driven
-instead of depending on brittle hard-coded printings that drift against the
-current upstream Scryfall catalog.
+This supporting note preserves the original request plus the current
+full-catalog bootstrap behavior. The backend-owned full-catalog demo bootstrap
+is now resolver-driven instead of depending on brittle hard-coded printings
+that drift against the current upstream Scryfall catalog.
 
 Current implemented behavior:
 

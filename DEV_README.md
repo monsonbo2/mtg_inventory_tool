@@ -295,13 +295,14 @@ PY
 
 ## Agent Workflow Notes
 
-- GitHub issues are the primary ticket source of truth.
-- Local planning docs under `docs/frontend_backend_requests/` are useful
-  context, but they are not the authoritative ticket state.
+- GitHub issues and pull requests are the only ticket tracking source of truth.
+- Local planning docs under `docs/frontend_backend_requests/` and `ROADMAP.md`
+  are useful context, but they are not authoritative ticket state and should
+  not be used as live status boards.
 - GitHub issues and pull requests share one number sequence. A missing issue
   number may actually be a PR.
 - If work for a ticket lands in a commit, update the GitHub issue as part of
-  that workflow. Editing only a local request doc is not sufficient.
+  that workflow. Editing only a local doc is not sufficient.
 - Keep behavior changes and regression tests together when possible.
 - Prefer additive API changes over overloading existing routes.
 - Be careful around demo/bootstrap scripts: they are part of the effective

@@ -1,13 +1,10 @@
 # Frontend Backend Request: Default Printing Resolution Policy
 
-Status: Done
-Owner: Boyd
-GitHub issue: [#23](https://github.com/monsonbo2/mtg_inventory_tool/issues/23)
-Implementation PR: Commits `3a1cfca`, `3c7aff1`
-Last updated: 2026-04-04
+Related GitHub issue: [#23](https://github.com/monsonbo2/mtg_inventory_tool/issues/23)
 
-Resolved. The backend now publishes the `oracle_id` quick-add default printing
-policy as stable contract behavior.
+This supporting note preserves the original request plus the current published
+quick-add default printing policy. The backend now treats the `oracle_id`
+resolution behavior below as stable contract behavior.
 
 Current implemented behavior:
 

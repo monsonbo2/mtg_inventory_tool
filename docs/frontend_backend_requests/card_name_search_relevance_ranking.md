@@ -1,10 +1,6 @@
 ## Frontend Backend Request
 
-Status: Proposed
-Owner: Unassigned
-GitHub issue: [#29](https://github.com/monsonbo2/mtg_inventory_tool/issues/29)
-Implementation PR: Not linked yet
-Last updated: 2026-04-03
+Related GitHub issue: [#29](https://github.com/monsonbo2/mtg_inventory_tool/issues/29)
 
 Feature / screen:
 

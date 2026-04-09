@@ -1,10 +1,6 @@
 # Frontend Backend Request: Playable Card Search Scope
 
-Status: Done
-Owner: Boyd
-GitHub issue: [#22](https://github.com/monsonbo2/mtg_inventory_tool/issues/22)
-Implementation PR: Commits `b58f089`, `c1a5976`, `49f333e`
-Last updated: 2026-04-02
+Related GitHub issue: [#22](https://github.com/monsonbo2/mtg_inventory_tool/issues/22)
 
 ## Frontend Backend Request
 

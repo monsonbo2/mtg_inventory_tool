@@ -1,10 +1,6 @@
 # Frontend Backend Request: Card Image Fields For Visual UI
 
-Status: Done
-Owner: Steve
-GitHub issue: [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11)
-Implementation PR: Commit `51c1828`
-Last updated: 2026-04-01
+Related GitHub issue: [#11](https://github.com/monsonbo2/mtg_inventory_tool/issues/11)
 
 ## Frontend Backend Request
 

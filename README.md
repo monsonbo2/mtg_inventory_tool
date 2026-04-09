@@ -26,11 +26,13 @@ If you're planning backend or API work, the live runtime contract starts with
 `docs/api_v1_contract.md`.
 
 If you're planning frontend work, start with `docs/frontend_handoff.md`,
-`frontend/README.md`, `docs/frontend_backend_requests/`, and
-`contracts/openapi.json`.
-Use the GitHub issue template at
+`frontend/README.md`, and `contracts/openapi.json`.
+Use `docs/frontend_backend_requests/` only when a GitHub issue links to a
+supporting spec or historical note. Use the GitHub issue template at
 `.github/ISSUE_TEMPLATE/frontend-backend-request.yml` for new frontend backend
-requests.
+requests. GitHub issues and PRs are the only live tracking surface; files under
+`docs/frontend_backend_requests/` are optional supporting specs and historical
+context, not the authoritative ticket state.
 
 ## Current Runtime Shape
 
@@ -433,7 +435,8 @@ checkout in multi-repo environments.
   Frontend/backend ownership boundary, demo scope, and integration rules for a
   UI specialist.
 - `docs/frontend_backend_requests/`
-  Request folder and tracking process for frontend-requested backend/API work.
+  Optional supporting specs and historical notes for frontend-requested
+  backend/API work. GitHub issues and PRs are the only live tracker.
 - `contracts/`
   OpenAPI snapshot and example JSON payloads for frontend integration.
 - `scripts/`

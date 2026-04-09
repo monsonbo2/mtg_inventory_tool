@@ -8,18 +8,18 @@ body:
         Use this form when frontend work is blocked by the published backend/API contract.
 
         Before submitting:
-        - create or update the matching request doc in `docs/frontend_backend_requests/`
         - confirm the issue is not purely presentational or UI-only
         - link the relevant contract artifacts and example payloads when possible
+        - optionally link a supporting doc in `docs/frontend_backend_requests/` if one exists
 
   - type: input
     id: request_doc
     attributes:
-      label: Request doc path
-      description: Link or path to the matching markdown request in `docs/frontend_backend_requests/`.
+      label: Supporting doc path
+      description: Optional link or path to a supporting markdown request doc in `docs/frontend_backend_requests/`.
       placeholder: docs/frontend_backend_requests/example_request.md
     validations:
-      required: true
+      required: false
 
   - type: input
     id: feature_screen
@@ -116,8 +116,6 @@ body:
     attributes:
       label: Working agreement
       options:
-        - label: I created or updated the matching request doc in `docs/frontend_backend_requests/`.
-          required: true
         - label: This request is about backend/API contract behavior, not a UI-only choice.
           required: true
         - label: I am not directly editing backend files under `src/mtg_source_stack/` for this request.
