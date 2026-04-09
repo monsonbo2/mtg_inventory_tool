@@ -1,14 +1,4 @@
-ALTER TABLE inventories
-ADD COLUMN default_location TEXT;
-
-ALTER TABLE inventories
-ADD COLUMN default_tags TEXT;
-
-ALTER TABLE inventories
-ADD COLUMN notes TEXT;
-
-ALTER TABLE inventories
-ADD COLUMN acquisition_price NUMERIC;
-
-ALTER TABLE inventories
-ADD COLUMN acquisition_currency TEXT;
+-- Add inventory-level default metadata columns when inventories exists.
+-- The migrator prepares these columns directly so this migration remains
+-- compatible with legacy/dev databases that already have the columns but do
+-- not yet have schema_migrations tracking recorded.

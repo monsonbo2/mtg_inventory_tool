@@ -120,19 +120,41 @@ def _prepare_migration(connection: sqlite3.Connection, migration: MigrationFile)
             CHECK (printing_selection_mode IN ('explicit', 'defaulted'))
             """
         )
-    if migration.version == 11 and not table_exists(connection, "inventories"):
-        connection.execute(
-            """
-            CREATE TABLE inventories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                slug TEXT NOT NULL UNIQUE,
-                display_name TEXT NOT NULL,
-                description TEXT,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    if migration.version == 11:
+        if not table_exists(connection, "inventories"):
+            connection.execute(
+                """
+                CREATE TABLE inventories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    slug TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL,
+                    description TEXT,
+                    default_location TEXT,
+                    default_tags TEXT,
+                    notes TEXT,
+                    acquisition_price NUMERIC,
+                    acquisition_currency TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
             )
-            """
-        )
+            return
+
+        for column_name, column_type in (
+            ("default_location", "TEXT"),
+            ("default_tags", "TEXT"),
+            ("notes", "TEXT"),
+            ("acquisition_price", "NUMERIC"),
+            ("acquisition_currency", "TEXT"),
+        ):
+            if not column_exists(connection, "inventories", column_name):
+                connection.execute(
+                    f"""
+                    ALTER TABLE inventories
+                    ADD COLUMN {column_name} {column_type}
+                    """
+                )
 
 
 def migrate_connection(connection: sqlite3.Connection) -> list[MigrationFile]:
