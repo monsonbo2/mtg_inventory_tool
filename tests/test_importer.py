@@ -692,6 +692,168 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(0, stats.rows_skipped)
             self.assertEqual([("normal", 3.5)], [(row["finish"], row["price_value"]) for row in rows])
 
+    def test_import_mtgjson_prices_unions_linked_uuid_provider_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            prices_path = Path(tmp_dir) / "prices.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        mtgjson_uuid,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-3', 'oracle-3', 'uuid-primary', 'Union Price Test', 'tst', 'Test Set', '3')
+                    """
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO mtgjson_card_links (mtgjson_uuid, scryfall_id)
+                    VALUES (?, 'card-3')
+                    """,
+                    [
+                        ("uuid-primary",),
+                        ("uuid-secondary",),
+                    ],
+                )
+                connection.commit()
+
+            prices_payload = {
+                "data": {
+                    "uuid-secondary": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 3.50}},
+                            }
+                        }
+                    },
+                    "uuid-primary": {
+                        "paper": {
+                            "cardkingdom": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 4.25}},
+                            },
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 3.50}},
+                            },
+                        }
+                    },
+                }
+            }
+            prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_prices
+
+            stats = import_mtgjson_prices(db_path, prices_path)
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT provider, price_value
+                    FROM price_snapshots
+                    WHERE scryfall_id = 'card-3'
+                    ORDER BY provider
+                    """
+                ).fetchall()
+
+            self.assertEqual(2, stats.rows_seen)
+            self.assertEqual(2, stats.rows_written)
+            self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual(
+                [("cardkingdom", 4.25), ("tcgplayer", 3.5)],
+                [(row["provider"], row["price_value"]) for row in rows],
+            )
+
+    def test_import_mtgjson_prices_prefers_compatibility_uuid_on_conflicting_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            prices_path = Path(tmp_dir) / "prices.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        mtgjson_uuid,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES (
+                        'card-4',
+                        'oracle-4',
+                        'uuid-preferred',
+                        'Conflict Price Test',
+                        'tst',
+                        'Test Set',
+                        '4'
+                    )
+                    """
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO mtgjson_card_links (mtgjson_uuid, scryfall_id)
+                    VALUES (?, 'card-4')
+                    """,
+                    [
+                        ("uuid-alt",),
+                        ("uuid-preferred",),
+                    ],
+                )
+                connection.commit()
+
+            prices_payload = {
+                "data": {
+                    "uuid-alt": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 1.50}},
+                            }
+                        }
+                    },
+                    "uuid-preferred": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 2.25}},
+                            }
+                        }
+                    },
+                }
+            }
+            prices_path.write_text(json.dumps(prices_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_prices
+
+            stats = import_mtgjson_prices(db_path, prices_path)
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    """
+                    SELECT provider, price_value
+                    FROM price_snapshots
+                    WHERE scryfall_id = 'card-4'
+                    """
+                ).fetchone()
+
+            self.assertEqual(2, stats.rows_seen)
+            self.assertEqual(1, stats.rows_written)
+            self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual(("tcgplayer", 2.25), (row["provider"], row["price_value"]))
+
     def test_sync_bulk_downloads_and_imports_from_override_urls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

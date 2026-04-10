@@ -91,6 +91,10 @@ def _merge_identifier_import_rows(rows: list[IdentifierImportRow]) -> Identifier
     )
 
 
+def _price_uuid_preference(uuid: str, *, preferred_uuid: str | None) -> tuple[int, str]:
+    return (0 if preferred_uuid is not None and uuid == preferred_uuid else 1, uuid)
+
+
 def import_mtgjson_identifiers(
     db_path: str | Path,
     json_path: str | Path,
@@ -227,16 +231,35 @@ def import_mtgjson_prices(
 
     initialize_database(db_path)
     with connect(db_path) as connection:
-        rows = connection.execute(
+        link_rows = connection.execute(
             """
             SELECT mtgjson_uuid, scryfall_id
+            FROM mtgjson_card_links
+            """
+        ).fetchall()
+        card_rows = connection.execute(
+            """
+            SELECT scryfall_id, mtgjson_uuid
             FROM mtg_cards
-            WHERE mtgjson_uuid IS NOT NULL
             """
         ).fetchall()
         # MTGJSON price payloads are keyed by UUID, so build the lookup once
         # instead of querying the catalog row-by-row during import.
-        uuid_to_scryfall = {row["mtgjson_uuid"]: row["scryfall_id"] for row in rows}
+        uuid_to_scryfall = {
+            row["mtgjson_uuid"]: row["scryfall_id"]
+            for row in link_rows
+            if row["mtgjson_uuid"] is not None and row["scryfall_id"] is not None
+        }
+        preferred_uuid_by_scryfall = {
+            row["scryfall_id"]: row["mtgjson_uuid"]
+            for row in card_rows
+            if row["scryfall_id"] is not None and row["mtgjson_uuid"] is not None
+        }
+        for row in card_rows:
+            mtgjson_uuid = row["mtgjson_uuid"]
+            scryfall_id = row["scryfall_id"]
+            if mtgjson_uuid is not None and scryfall_id is not None:
+                uuid_to_scryfall.setdefault(mtgjson_uuid, scryfall_id)
 
     stats = ImportStats()
     snapshot_taken = False
@@ -271,74 +294,121 @@ def import_mtgjson_prices(
         price_value = excluded.price_value
     """
 
-    with connect(db_path) as connection:
-        for index, (uuid, price_formats) in enumerate(data.items(), start=1):
-            if limit is not None and index > limit:
-                break
+    merged_price_rows: dict[
+        tuple[str, str, str, str, str, str, str],
+        tuple[Any, str],
+    ] = {}
 
-            stats.rows_seen += 1
-            if not isinstance(price_formats, dict):
-                stats.rows_skipped += 1
+    for index, (uuid, price_formats) in enumerate(data.items(), start=1):
+        if limit is not None and index > limit:
+            break
+
+        stats.rows_seen += 1
+        if not isinstance(price_formats, dict):
+            stats.rows_skipped += 1
+            continue
+
+        mtgjson_uuid = str(uuid)
+        scryfall_id = uuid_to_scryfall.get(mtgjson_uuid)
+        if scryfall_id is None:
+            stats.rows_skipped += 1
+            continue
+
+        wrote_for_card = False
+        for channel_payload in price_formats.values():
+            if not isinstance(channel_payload, dict):
                 continue
 
-            scryfall_id = uuid_to_scryfall.get(str(uuid))
-            if scryfall_id is None:
-                stats.rows_skipped += 1
-                continue
-
-            wrote_for_card = False
-            for channel_payload in price_formats.values():
-                if not isinstance(channel_payload, dict):
+            for provider, provider_payload in channel_payload.items():
+                if not isinstance(provider_payload, dict):
                     continue
 
-                for provider, provider_payload in channel_payload.items():
-                    if not isinstance(provider_payload, dict):
+                currency = str(first_non_empty(provider_payload.get("currency"), DEFAULT_PRICE_CURRENCY)).upper()
+                # Step 2 intentionally constrains imported market data to a
+                # single currency so downstream pricing reads stay
+                # unambiguous. Non-USD snapshots are ignored for now.
+                if currency != DEFAULT_PRICE_CURRENCY:
+                    continue
+                for price_kind in ("retail", "buylist"):
+                    price_points = provider_payload.get(price_kind)
+                    if not isinstance(price_points, dict):
                         continue
 
-                    currency = str(first_non_empty(provider_payload.get("currency"), DEFAULT_PRICE_CURRENCY)).upper()
-                    # Step 2 intentionally constrains imported market data to a
-                    # single currency so downstream pricing reads stay
-                    # unambiguous. Non-USD snapshots are ignored for now.
-                    if currency != DEFAULT_PRICE_CURRENCY:
-                        continue
-                    for price_kind in ("retail", "buylist"):
-                        price_points = provider_payload.get(price_kind)
-                        if not isinstance(price_points, dict):
+                    for finish, dated_points in price_points.items():
+                        normalized_finish = normalize_price_snapshot_finish(str(finish))
+                        if normalized_finish is None:
                             continue
+                        if isinstance(dated_points, dict):
+                            items = dated_points.items()
+                        else:
+                            items = []
 
-                        for finish, dated_points in price_points.items():
-                            normalized_finish = normalize_price_snapshot_finish(str(finish))
-                            if normalized_finish is None:
+                        for snapshot_date, price_value in items:
+                            decimal_price = coerce_decimal(price_value)
+                            if decimal_price is None:
                                 continue
-                            if isinstance(dated_points, dict):
-                                items = dated_points.items()
-                            else:
-                                items = []
 
-                            for snapshot_date, price_value in items:
-                                decimal_price = coerce_decimal(price_value)
-                                if decimal_price is None:
-                                    continue
+                            wrote_for_card = True
+                            key = (
+                                scryfall_id,
+                                provider,
+                                price_kind,
+                                normalized_finish,
+                                currency,
+                                str(snapshot_date),
+                                source_name,
+                            )
+                            existing_entry = merged_price_rows.get(key)
+                            if existing_entry is None:
+                                merged_price_rows[key] = (decimal_price, mtgjson_uuid)
+                                continue
 
-                                maybe_before_write()
-                                connection.execute(
-                                    sql,
-                                    (
-                                        scryfall_id,
-                                        provider,
-                                        price_kind,
-                                        normalized_finish,
-                                        currency,
-                                        str(snapshot_date),
-                                        decimal_price,
-                                        source_name,
-                                    ),
-                                )
-                                wrote_for_card = True
-                                stats.rows_written += 1
+                            existing_price, existing_uuid = existing_entry
+                            preferred_uuid = preferred_uuid_by_scryfall.get(scryfall_id)
+                            if (
+                                decimal_price == existing_price
+                                and _price_uuid_preference(mtgjson_uuid, preferred_uuid=preferred_uuid)
+                                < _price_uuid_preference(existing_uuid, preferred_uuid=preferred_uuid)
+                            ):
+                                merged_price_rows[key] = (decimal_price, mtgjson_uuid)
+                            elif (
+                                decimal_price != existing_price
+                                and _price_uuid_preference(mtgjson_uuid, preferred_uuid=preferred_uuid)
+                                < _price_uuid_preference(existing_uuid, preferred_uuid=preferred_uuid)
+                            ):
+                                merged_price_rows[key] = (decimal_price, mtgjson_uuid)
 
-            if not wrote_for_card:
-                stats.rows_skipped += 1
+        if not wrote_for_card:
+            stats.rows_skipped += 1
+
+    with connect(db_path) as connection:
+        if merged_price_rows:
+            maybe_before_write()
+            connection.executemany(
+                sql,
+                [
+                    (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        price_value,
+                        row_source_name,
+                    )
+                    for (
+                        scryfall_id,
+                        provider,
+                        price_kind,
+                        finish,
+                        currency,
+                        snapshot_date,
+                        row_source_name,
+                    ), (price_value, _source_uuid) in sorted(merged_price_rows.items())
+                ],
+            )
+            stats.rows_written = len(merged_price_rows)
 
         connection.commit()
 
