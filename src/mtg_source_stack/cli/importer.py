@@ -23,6 +23,16 @@ from ..importer.service import (
     print_sync_bulk_result,
     sync_bulk,
 )
+from ..importer.sync_tracking import (
+    file_artifact_info,
+    finish_sync_run,
+    finish_sync_step,
+    import_stats_dict,
+    record_sync_artifact,
+    record_sync_issue,
+    start_sync_run,
+    start_sync_step,
+)
 
 
 def build_snapshot_callback(
@@ -47,6 +57,71 @@ def build_snapshot_callback(
         return snapshot
 
     return ensure_snapshot, current_snapshot
+
+
+def _ensure_existing_json_file(path: str | Path) -> None:
+    if not Path(path).exists():
+        raise ValueError(f"Could not read JSON file '{path}'.")
+
+
+def _record_local_artifact(
+    db_path: str | Path,
+    run_id: int,
+    *,
+    artifact_role: str,
+    path: str | Path,
+) -> None:
+    info = file_artifact_info(path)
+    record_sync_artifact(
+        db_path,
+        run_id,
+        artifact_role=artifact_role,
+        local_path=info["local_path"],
+        bytes_written=info["bytes_written"],
+        sha256=info["sha256"],
+    )
+
+
+def _run_tracked_step(
+    db_path: str | Path,
+    run_id: int,
+    *,
+    step_name: str,
+    operation: Callable[[], Any],
+    details: dict[str, Any] | None = None,
+) -> Any:
+    step_id = start_sync_step(db_path, run_id, step_name=step_name, details=details)
+    try:
+        result = operation()
+    except Exception as exc:
+        finish_sync_step(
+            db_path,
+            step_id,
+            status="failed",
+            details={**(details or {}), "error": str(exc)},
+        )
+        raise
+
+    if hasattr(result, "rows_seen") and hasattr(result, "rows_written") and hasattr(result, "rows_skipped"):
+        finish_sync_step(
+            db_path,
+            step_id,
+            status="succeeded",
+            stats=result,
+            details=details,
+        )
+    else:
+        finish_sync_step(
+            db_path,
+            step_id,
+            status="succeeded",
+            details=details,
+        )
+    return result
+
+
+def _summary_for_stats(**stats: Any) -> dict[str, Any]:
+    return {label: import_stats_dict(value) for label, value in stats.items()}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -163,6 +238,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    tracked_db_path: str | Path | None = None
+    tracked_run_id: int | None = None
+    tracked_snapshot_getter: Callable[[], dict[str, Any] | None] | None = None
     try:
         if args.command == "init-db":
             initialize_database(args.db)
@@ -209,60 +287,193 @@ def main() -> None:
             return
 
         if args.command == "import-scryfall":
+            _ensure_existing_json_file(args.json)
+            initialize_database(args.db)
             ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_scryfall")
-            stats = import_scryfall_cards(args.db, args.json, args.limit, before_write=ensure_snapshot)
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
+                args.db,
+                run_kind="import_scryfall",
+                limit_value=args.limit,
+            )
+            print(f"run_id: {tracked_run_id}")
+            _record_local_artifact(args.db, tracked_run_id, artifact_role="scryfall_json", path=args.json)
+            stats = _run_tracked_step(
+                args.db,
+                tracked_run_id,
+                step_name="import_scryfall",
+                operation=lambda: import_scryfall_cards(args.db, args.json, args.limit, before_write=ensure_snapshot),
+                details={"input_path": str(Path(args.json).resolve())},
+            )
             snapshot = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=snapshot["snapshot_path"] if snapshot is not None else None,
+                summary=_summary_for_stats(import_scryfall=stats),
+            )
+            tracked_run_id = None
             if snapshot is not None:
                 print(f"snapshot: {snapshot['snapshot_path']}")
             print_stats("import-scryfall", stats)
             return
 
         if args.command == "import-identifiers":
+            _ensure_existing_json_file(args.json)
+            initialize_database(args.db)
             ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_identifiers")
-            stats = import_mtgjson_identifiers(args.db, args.json, args.limit, before_write=ensure_snapshot)
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
+                args.db,
+                run_kind="import_identifiers",
+                limit_value=args.limit,
+            )
+            print(f"run_id: {tracked_run_id}")
+            _record_local_artifact(args.db, tracked_run_id, artifact_role="mtgjson_identifiers", path=args.json)
+            stats = _run_tracked_step(
+                args.db,
+                tracked_run_id,
+                step_name="import_identifiers",
+                operation=lambda: import_mtgjson_identifiers(args.db, args.json, args.limit, before_write=ensure_snapshot),
+                details={"input_path": str(Path(args.json).resolve())},
+            )
             snapshot = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=snapshot["snapshot_path"] if snapshot is not None else None,
+                summary=_summary_for_stats(import_identifiers=stats),
+            )
+            tracked_run_id = None
             if snapshot is not None:
                 print(f"snapshot: {snapshot['snapshot_path']}")
             print_stats("import-identifiers", stats)
             return
 
         if args.command == "import-prices":
+            _ensure_existing_json_file(args.json)
+            initialize_database(args.db)
             ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_prices")
-            stats = import_mtgjson_prices(
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
                 args.db,
-                args.json,
-                args.limit,
-                args.source_name,
-                before_write=ensure_snapshot,
+                run_kind="import_prices",
+                source_name=args.source_name,
+                limit_value=args.limit,
+            )
+            print(f"run_id: {tracked_run_id}")
+            _record_local_artifact(args.db, tracked_run_id, artifact_role="mtgjson_prices", path=args.json)
+            stats = _run_tracked_step(
+                args.db,
+                tracked_run_id,
+                step_name="import_prices",
+                operation=lambda: import_mtgjson_prices(
+                    args.db,
+                    args.json,
+                    args.limit,
+                    args.source_name,
+                    before_write=ensure_snapshot,
+                ),
+                details={
+                    "input_path": str(Path(args.json).resolve()),
+                    "source_name": args.source_name,
+                },
             )
             snapshot = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=snapshot["snapshot_path"] if snapshot is not None else None,
+                summary=_summary_for_stats(import_prices=stats),
+            )
+            tracked_run_id = None
             if snapshot is not None:
                 print(f"snapshot: {snapshot['snapshot_path']}")
             print_stats("import-prices", stats)
             return
 
         if args.command == "import-all":
+            _ensure_existing_json_file(args.scryfall_json)
+            _ensure_existing_json_file(args.identifiers_json)
+            _ensure_existing_json_file(args.prices_json)
+            initialize_database(args.db)
             ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_import_all")
-            scryfall_stats = import_scryfall_cards(
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
                 args.db,
-                args.scryfall_json,
-                args.limit,
-                before_write=ensure_snapshot,
+                run_kind="import_all",
+                source_name=args.source_name,
+                limit_value=args.limit,
             )
-            identifier_stats = import_mtgjson_identifiers(
+            print(f"run_id: {tracked_run_id}")
+            _record_local_artifact(args.db, tracked_run_id, artifact_role="scryfall_json", path=args.scryfall_json)
+            _record_local_artifact(
                 args.db,
-                args.identifiers_json,
-                args.limit,
-                before_write=ensure_snapshot,
+                tracked_run_id,
+                artifact_role="mtgjson_identifiers",
+                path=args.identifiers_json,
             )
-            price_stats = import_mtgjson_prices(
+            _record_local_artifact(args.db, tracked_run_id, artifact_role="mtgjson_prices", path=args.prices_json)
+            scryfall_stats = _run_tracked_step(
                 args.db,
-                args.prices_json,
-                args.limit,
-                args.source_name,
-                before_write=ensure_snapshot,
+                tracked_run_id,
+                step_name="import_scryfall",
+                operation=lambda: import_scryfall_cards(
+                    args.db,
+                    args.scryfall_json,
+                    args.limit,
+                    before_write=ensure_snapshot,
+                ),
+                details={"input_path": str(Path(args.scryfall_json).resolve())},
+            )
+            identifier_stats = _run_tracked_step(
+                args.db,
+                tracked_run_id,
+                step_name="import_identifiers",
+                operation=lambda: import_mtgjson_identifiers(
+                    args.db,
+                    args.identifiers_json,
+                    args.limit,
+                    before_write=ensure_snapshot,
+                ),
+                details={"input_path": str(Path(args.identifiers_json).resolve())},
+            )
+            price_stats = _run_tracked_step(
+                args.db,
+                tracked_run_id,
+                step_name="import_prices",
+                operation=lambda: import_mtgjson_prices(
+                    args.db,
+                    args.prices_json,
+                    args.limit,
+                    args.source_name,
+                    before_write=ensure_snapshot,
+                ),
+                details={
+                    "input_path": str(Path(args.prices_json).resolve()),
+                    "source_name": args.source_name,
+                },
             )
             snapshot = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=snapshot["snapshot_path"] if snapshot is not None else None,
+                summary=_summary_for_stats(
+                    import_scryfall=scryfall_stats,
+                    import_identifiers=identifier_stats,
+                    import_prices=price_stats,
+                ),
+            )
+            tracked_run_id = None
             if snapshot is not None:
                 print(f"snapshot: {snapshot['snapshot_path']}")
             print_stats("import-scryfall", scryfall_stats)
@@ -271,7 +482,17 @@ def main() -> None:
             return
 
         if args.command == "sync-bulk":
+            initialize_database(args.db)
             ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_sync_bulk")
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
+                args.db,
+                run_kind="sync_bulk",
+                source_name=args.source_name,
+                limit_value=args.limit,
+            )
+            print(f"run_id: {tracked_run_id}")
             result = sync_bulk(
                 args.db,
                 cache_dir=args.cache_dir,
@@ -283,10 +504,85 @@ def main() -> None:
                 source_name=args.source_name,
                 before_write=ensure_snapshot,
             )
+            for download in result["downloads"]:
+                artifact_role = {
+                    "scryfall_default_cards.json": "scryfall_bulk",
+                    "AllIdentifiers.json.gz": "mtgjson_identifiers",
+                    "AllPricesToday.json.gz": "mtgjson_prices",
+                }.get(download.label, download.label)
+                record_sync_artifact(
+                    args.db,
+                    tracked_run_id,
+                    artifact_role=artifact_role,
+                    source_url=download.url,
+                    local_path=str(download.path.resolve()),
+                    bytes_written=download.bytes_written,
+                    sha256=download.sha256,
+                    etag=download.etag,
+                    last_modified=download.last_modified,
+                )
+            for step_name, stats_key, elapsed_key in (
+                ("import_scryfall", "scryfall_stats", "scryfall_elapsed_seconds"),
+                ("import_identifiers", "identifier_stats", "identifier_elapsed_seconds"),
+                ("import_prices", "price_stats", "price_elapsed_seconds"),
+            ):
+                step_id = start_sync_step(
+                    args.db,
+                    tracked_run_id,
+                    step_name=step_name,
+                    details={"elapsed_seconds": round(result[elapsed_key], 6)},
+                )
+                finish_sync_step(
+                    args.db,
+                    step_id,
+                    status="succeeded",
+                    stats=result[stats_key],
+                    details={"elapsed_seconds": round(result[elapsed_key], 6)},
+                )
             result["snapshot"] = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=result["snapshot"]["snapshot_path"] if result["snapshot"] is not None else None,
+                summary={
+                    "downloads": [
+                        {
+                            "label": download.label,
+                            "bytes_written": download.bytes_written,
+                            "sha256": download.sha256,
+                        }
+                        for download in result["downloads"]
+                    ],
+                    **_summary_for_stats(
+                        import_scryfall=result["scryfall_stats"],
+                        import_identifiers=result["identifier_stats"],
+                        import_prices=result["price_stats"],
+                    ),
+                },
+            )
+            tracked_run_id = None
             print_sync_bulk_result(result)
             return
 
         parser.error(f"Unknown command {args.command}")
-    except (OSError, ValueError) as exc:
-        parser.exit(status=2, message=f"Error: {exc}\n")
+    except Exception as exc:
+        if tracked_run_id is not None and tracked_db_path is not None:
+            snapshot = tracked_snapshot_getter() if tracked_snapshot_getter is not None else None
+            finish_sync_run(
+                tracked_db_path,
+                tracked_run_id,
+                status="failed",
+                snapshot_path=snapshot["snapshot_path"] if snapshot is not None else None,
+                summary={"error": str(exc)},
+            )
+            record_sync_issue(
+                tracked_db_path,
+                tracked_run_id,
+                level="error",
+                code=type(exc).__name__,
+                message=str(exc),
+            )
+        if isinstance(exc, (OSError, ValueError)):
+            parser.exit(status=2, message=f"Error: {exc}\n")
+        raise

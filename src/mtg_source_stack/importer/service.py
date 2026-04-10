@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -33,6 +35,9 @@ class DownloadResult:
     url: str
     path: Path
     bytes_written: int
+    sha256: str
+    etag: str | None
+    last_modified: str | None
 
 
 def open_text(path: str | Path):
@@ -82,19 +87,25 @@ def download_to_path(
 ) -> DownloadResult:
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
     with open_url(url, headers=headers, timeout=timeout) as response, path.open("wb") as handle:
         total = 0
+        response_headers = response.headers
         while True:
             chunk = response.read(1024 * 1024)
             if not chunk:
                 break
             handle.write(chunk)
+            digest.update(chunk)
             total += len(chunk)
     return DownloadResult(
         label=path.name,
         url=url,
         path=path,
         bytes_written=total,
+        sha256=digest.hexdigest(),
+        etag=response_headers.get("ETag"),
+        last_modified=response_headers.get("Last-Modified"),
     )
 
 
@@ -240,17 +251,28 @@ def sync_bulk(
 
     # The imports are ordered to establish catalog rows first, then enrich them
     # with identifier crosswalks, and finally attach price snapshots.
+    scryfall_started = time.perf_counter()
     scryfall_stats = import_scryfall_cards(db_path, downloads[0].path, limit, before_write=before_write)
+    scryfall_elapsed_seconds = time.perf_counter() - scryfall_started
+
+    identifier_started = time.perf_counter()
     identifier_stats = import_mtgjson_identifiers(db_path, downloads[1].path, limit, before_write=before_write)
+    identifier_elapsed_seconds = time.perf_counter() - identifier_started
+
+    price_started = time.perf_counter()
     price_stats = import_mtgjson_prices(db_path, downloads[2].path, limit, source_name, before_write=before_write)
+    price_elapsed_seconds = time.perf_counter() - price_started
 
     return {
         "db_path": str(Path(db_path)),
         "cache_dir": str(cache_path),
         "downloads": downloads,
         "scryfall_stats": scryfall_stats,
+        "scryfall_elapsed_seconds": scryfall_elapsed_seconds,
         "identifier_stats": identifier_stats,
+        "identifier_elapsed_seconds": identifier_elapsed_seconds,
         "price_stats": price_stats,
+        "price_elapsed_seconds": price_elapsed_seconds,
         "source_name": source_name,
         "scryfall_bulk_type": scryfall_bulk_type,
     }

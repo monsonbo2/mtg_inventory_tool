@@ -108,6 +108,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("0010 add inventory printing selection mode", migrate_output)
             self.assertIn("0011 add inventory metadata defaults", migrate_output)
             self.assertIn("0012 add mtgjson card links", migrate_output)
+            self.assertIn("0013 add sync run tracking", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",
@@ -527,6 +528,7 @@ class CliSmokeTest(RepoSmokeTestCase):
                 "--prices-json",
                 str(prices_path),
             )
+            self.assertIn("run_id:", import_output)
             self.assertIn("import-scryfall: seen=1 written=1 skipped=0", import_output)
             self.assertIn("import-identifiers: seen=1 written=1 skipped=0", import_output)
             self.assertIn("import-prices: seen=1 written=2 skipped=0", import_output)

@@ -82,6 +82,18 @@ class SchemaMigrationTest(unittest.TestCase):
                 mtgjson_card_links_exists = connection.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtgjson_card_links'"
                 ).fetchone()[0]
+                sync_runs_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_runs'"
+                ).fetchone()[0]
+                sync_run_steps_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_steps'"
+                ).fetchone()[0]
+                sync_run_artifacts_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_artifacts'"
+                ).fetchone()[0]
+                sync_run_issues_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_issues'"
+                ).fetchone()[0]
                 mtg_card_columns = {
                     row["name"]
                     for row in connection.execute("PRAGMA table_info(mtg_cards)").fetchall()
@@ -91,13 +103,17 @@ class SchemaMigrationTest(unittest.TestCase):
                     for row in connection.execute("PRAGMA table_info(inventories)").fetchall()
                 }
 
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)
-            self.assertEqual(12, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
+            self.assertEqual(13, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
             self.assertEqual(1, inventory_memberships_exists)
             self.assertEqual(1, actor_default_inventories_exists)
             self.assertEqual(1, mtgjson_card_links_exists)
+            self.assertEqual(1, sync_runs_exists)
+            self.assertEqual(1, sync_run_steps_exists)
+            self.assertEqual(1, sync_run_artifacts_exists)
+            self.assertEqual(1, sync_run_issues_exists)
             self.assertTrue(
                 {
                     "layout",
@@ -133,7 +149,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(12, len(rows))
+            self.assertEqual(13, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -148,6 +164,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (10, "add inventory printing selection mode"),
                     (11, "add inventory metadata defaults"),
                     (12, "add mtgjson card links"),
+                    (13, "add sync run tracking"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -214,13 +231,25 @@ class SchemaMigrationTest(unittest.TestCase):
                 mtgjson_card_links_exists = migrated.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtgjson_card_links'"
                 ).fetchone()[0]
+                sync_runs_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_runs'"
+                ).fetchone()[0]
+                sync_run_steps_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_steps'"
+                ).fetchone()[0]
+                sync_run_artifacts_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_artifacts'"
+                ).fetchone()[0]
+                sync_run_issues_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_issues'"
+                ).fetchone()[0]
                 inventory_columns = {row["name"] for row in migrated.execute("PRAGMA table_info(inventories)")}
 
             self.assertIn("tags_json", columns)
             self.assertIn("printing_selection_mode", columns)
             self.assertEqual("[]", tags_value)
             self.assertEqual("explicit", printing_selection_mode)
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
@@ -228,6 +257,10 @@ class SchemaMigrationTest(unittest.TestCase):
             self.assertEqual(1, memberships_exists)
             self.assertEqual(1, actor_default_inventories_exists)
             self.assertEqual(1, mtgjson_card_links_exists)
+            self.assertEqual(1, sync_runs_exists)
+            self.assertEqual(1, sync_run_steps_exists)
+            self.assertEqual(1, sync_run_artifacts_exists)
+            self.assertEqual(1, sync_run_issues_exists)
             self.assertTrue(
                 {
                     "default_location",
@@ -312,7 +345,7 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
 
     def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
         for type_line, expected in (
@@ -414,4 +447,4 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("uuid-1", "card-with-uuid")], [(row["mtgjson_uuid"], row["scryfall_id"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
