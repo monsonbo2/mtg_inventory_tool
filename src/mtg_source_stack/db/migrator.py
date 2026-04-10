@@ -155,6 +155,17 @@ def _prepare_migration(connection: sqlite3.Connection, migration: MigrationFile)
                     ADD COLUMN {column_name} {column_type}
                     """
                 )
+    if (
+        migration.version == 12
+        and table_exists(connection, "mtg_cards")
+        and not column_exists(connection, "mtg_cards", "mtgjson_uuid")
+    ):
+        connection.execute(
+            """
+            ALTER TABLE mtg_cards
+            ADD COLUMN mtgjson_uuid TEXT
+            """
+        )
 
 
 def migrate_connection(connection: sqlite3.Connection) -> list[MigrationFile]:

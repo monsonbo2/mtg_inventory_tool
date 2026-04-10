@@ -79,6 +79,9 @@ class SchemaMigrationTest(unittest.TestCase):
                 actor_default_inventories_exists = connection.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'actor_default_inventories'"
                 ).fetchone()[0]
+                mtgjson_card_links_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtgjson_card_links'"
+                ).fetchone()[0]
                 mtg_card_columns = {
                     row["name"]
                     for row in connection.execute("PRAGMA table_info(mtg_cards)").fetchall()
@@ -88,12 +91,13 @@ class SchemaMigrationTest(unittest.TestCase):
                     for row in connection.execute("PRAGMA table_info(inventories)").fetchall()
                 }
 
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], versions)
-            self.assertEqual(11, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)
+            self.assertEqual(12, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
             self.assertEqual(1, inventory_memberships_exists)
             self.assertEqual(1, actor_default_inventories_exists)
+            self.assertEqual(1, mtgjson_card_links_exists)
             self.assertTrue(
                 {
                     "layout",
@@ -129,7 +133,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(11, len(rows))
+            self.assertEqual(12, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -143,6 +147,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (9, "add catalog relevance rank"),
                     (10, "add inventory printing selection mode"),
                     (11, "add inventory metadata defaults"),
+                    (12, "add mtgjson card links"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -206,19 +211,23 @@ class SchemaMigrationTest(unittest.TestCase):
                 actor_default_inventories_exists = migrated.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'actor_default_inventories'"
                 ).fetchone()[0]
+                mtgjson_card_links_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mtgjson_card_links'"
+                ).fetchone()[0]
                 inventory_columns = {row["name"] for row in migrated.execute("PRAGMA table_info(inventories)")}
 
             self.assertIn("tags_json", columns)
             self.assertIn("printing_selection_mode", columns)
             self.assertEqual("[]", tags_value)
             self.assertEqual("explicit", printing_selection_mode)
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
             self.assertEqual(1, fts_exists)
             self.assertEqual(1, memberships_exists)
             self.assertEqual(1, actor_default_inventories_exists)
+            self.assertEqual(1, mtgjson_card_links_exists)
             self.assertTrue(
                 {
                     "default_location",
@@ -303,7 +312,7 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)
 
     def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
         for type_line, expected in (
@@ -347,3 +356,62 @@ class SchemaMigrationTest(unittest.TestCase):
                 self.assertEqual("[]", row["promo_types_json"])
                 self.assertIsNone(row["edhrec_rank"])
                 self.assertEqual(expected, row["is_default_add_searchable"])
+
+    def test_initialize_database_backfills_mtgjson_card_links_from_existing_card_uuid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "legacy-mtgjson-links.db"
+
+            connection = sqlite3.connect(db_path)
+            connection.executescript(
+                """
+                CREATE TABLE mtg_cards (
+                    scryfall_id TEXT PRIMARY KEY,
+                    mtgjson_uuid TEXT UNIQUE
+                );
+
+                CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                INSERT INTO mtg_cards (scryfall_id, mtgjson_uuid)
+                VALUES
+                    ('card-with-uuid', 'uuid-1'),
+                    ('card-without-uuid', NULL);
+
+                INSERT INTO schema_migrations (version, name)
+                VALUES
+                    (1, 'mvp base'),
+                    (2, 'add tags json'),
+                    (3, 'add inventory audit log'),
+                    (4, 'add card search fts'),
+                    (5, 'normalize price snapshot finishes'),
+                    (6, 'add inventory memberships'),
+                    (7, 'add actor default inventories'),
+                    (8, 'add catalog classification fields'),
+                    (9, 'add catalog relevance rank'),
+                    (10, 'add inventory printing selection mode'),
+                    (11, 'add inventory metadata defaults');
+                """
+            )
+            connection.commit()
+            connection.close()
+
+            initialize_database(db_path)
+
+            with connect(db_path) as migrated:
+                rows = migrated.execute(
+                    """
+                    SELECT mtgjson_uuid, scryfall_id
+                    FROM mtgjson_card_links
+                    ORDER BY mtgjson_uuid
+                    """
+                ).fetchall()
+                versions = [
+                    row["version"]
+                    for row in migrated.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
+                ]
+
+            self.assertEqual([("uuid-1", "card-with-uuid")], [(row["mtgjson_uuid"], row["scryfall_id"]) for row in rows])
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], versions)

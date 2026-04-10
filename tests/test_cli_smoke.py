@@ -107,6 +107,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("0009 add catalog relevance rank", migrate_output)
             self.assertIn("0010 add inventory printing selection mode", migrate_output)
             self.assertIn("0011 add inventory metadata defaults", migrate_output)
+            self.assertIn("0012 add mtgjson card links", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",
