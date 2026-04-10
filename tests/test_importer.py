@@ -442,6 +442,154 @@ class ImporterTest(RepoSmokeTestCase):
                 self.assertEqual(layout, row["layout"])
                 self.assertEqual(1, row["is_default_add_searchable"])
 
+    def test_import_mtgjson_identifiers_merges_duplicate_scryfall_rows_and_links_all_uuids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            identifiers_path = Path(tmp_dir) / "identifiers.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-1', 'oracle-1', 'Front // Back', 'tst', 'Test Set', '1')
+                    """
+                )
+                connection.commit()
+
+            identifiers_payload = {
+                "data": {
+                    "uuid-back": {
+                        "name": "Front // Back",
+                        "side": "b",
+                        "identifiers": {
+                            "scryfallId": "card-1",
+                            "cardKingdomId": "202",
+                            "mcmId": "303",
+                            "cardsphereId": "404",
+                        },
+                    },
+                    "uuid-front": {
+                        "name": "Front // Back",
+                        "side": "a",
+                        "identifiers": {
+                            "scryfallId": "card-1",
+                            "tcgplayerProductId": "101",
+                        },
+                    },
+                }
+            }
+            identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_identifiers
+
+            stats = import_mtgjson_identifiers(db_path, identifiers_path)
+
+            with connect(db_path) as connection:
+                card_row = connection.execute(
+                    """
+                    SELECT
+                        mtgjson_uuid,
+                        tcgplayer_product_id,
+                        cardkingdom_id,
+                        cardmarket_id,
+                        cardsphere_id
+                    FROM mtg_cards
+                    WHERE scryfall_id = 'card-1'
+                    """
+                ).fetchone()
+                link_rows = connection.execute(
+                    """
+                    SELECT mtgjson_uuid, scryfall_id
+                    FROM mtgjson_card_links
+                    ORDER BY mtgjson_uuid
+                    """
+                ).fetchall()
+
+            self.assertEqual(2, stats.rows_seen)
+            self.assertEqual(1, stats.rows_written)
+            self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual(
+                ("uuid-back", "101", "202", "303", "404"),
+                (
+                    card_row["mtgjson_uuid"],
+                    card_row["tcgplayer_product_id"],
+                    card_row["cardkingdom_id"],
+                    card_row["cardmarket_id"],
+                    card_row["cardsphere_id"],
+                ),
+            )
+            self.assertEqual(
+                [("uuid-back", "card-1"), ("uuid-front", "card-1")],
+                [(row["mtgjson_uuid"], row["scryfall_id"]) for row in link_rows],
+            )
+
+    def test_import_mtgjson_identifiers_can_match_known_uuid_without_scryfall_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            identifiers_path = Path(tmp_dir) / "identifiers.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        mtgjson_uuid,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-2', 'oracle-2', 'uuid-known', 'Known UUID Card', 'tst', 'Test Set', '2')
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtgjson_card_links (mtgjson_uuid, scryfall_id)
+                    VALUES ('uuid-known', 'card-2')
+                    """
+                )
+                connection.commit()
+
+            identifiers_payload = {
+                "data": {
+                    "uuid-known": {
+                        "name": "Known UUID Card",
+                        "identifiers": {
+                            "tcgplayerProductId": "999",
+                        },
+                    }
+                }
+            }
+            identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_identifiers
+
+            stats = import_mtgjson_identifiers(db_path, identifiers_path)
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    """
+                    SELECT mtgjson_uuid, tcgplayer_product_id
+                    FROM mtg_cards
+                    WHERE scryfall_id = 'card-2'
+                    """
+                ).fetchone()
+
+            self.assertEqual(1, stats.rows_seen)
+            self.assertEqual(1, stats.rows_written)
+            self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual(("uuid-known", "999"), (row["mtgjson_uuid"], row["tcgplayer_product_id"]))
+
     def test_import_mtgjson_prices_skips_non_usd_provider_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
