@@ -168,48 +168,239 @@ def import_mtgjson_identifiers(
 
         grouped_rows.setdefault(target_scryfall_id, []).append(row)
 
+    merged_rows = {
+        scryfall_id: _merge_identifier_import_rows(rows_for_card)
+        for scryfall_id, rows_for_card in grouped_rows.items()
+    }
+    link_rows = sorted(
+        {
+            (row.mtgjson_uuid, scryfall_id)
+            for scryfall_id, rows_for_card in grouped_rows.items()
+            for row in rows_for_card
+            if row.mtgjson_uuid is not None
+        }
+    )
+    stats.details = {
+        "matched_cards": len(grouped_rows),
+        "staged_link_rows": len(link_rows),
+    }
+    if not merged_rows:
+        stats.details["changed_cards"] = 0
+        stats.details["no_op_cards"] = 0
+        stats.details["link_rows_written"] = 0
+        return stats
+
+    card_change_predicate = """
+        (updates.mtgjson_uuid IS NOT NULL AND COALESCE(cards.mtgjson_uuid, '') <> updates.mtgjson_uuid)
+        OR (
+            updates.tcgplayer_product_id IS NOT NULL
+            AND COALESCE(cards.tcgplayer_product_id, '') <> updates.tcgplayer_product_id
+        )
+        OR (
+            updates.cardkingdom_id IS NOT NULL
+            AND COALESCE(cards.cardkingdom_id, '') <> updates.cardkingdom_id
+        )
+        OR (
+            updates.cardmarket_id IS NOT NULL
+            AND COALESCE(cards.cardmarket_id, '') <> updates.cardmarket_id
+        )
+        OR (
+            updates.cardsphere_id IS NOT NULL
+            AND COALESCE(cards.cardsphere_id, '') <> updates.cardsphere_id
+        )
+    """
+
     with connect(db_path) as connection:
-        for scryfall_id, rows_for_card in grouped_rows.items():
-            merged_row = _merge_identifier_import_rows(rows_for_card)
-            maybe_before_write()
-            cursor = connection.execute(
-                """
-                UPDATE mtg_cards
-                SET
-                    mtgjson_uuid = COALESCE(?, mtgjson_uuid),
-                    tcgplayer_product_id = COALESCE(?, tcgplayer_product_id),
-                    cardkingdom_id = COALESCE(?, cardkingdom_id),
-                    cardmarket_id = COALESCE(?, cardmarket_id),
-                    cardsphere_id = COALESCE(?, cardsphere_id),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE scryfall_id = ?
-                """,
+        connection.executescript(
+            """
+            CREATE TEMP TABLE temp_identifier_card_updates (
+                scryfall_id TEXT PRIMARY KEY,
+                mtgjson_uuid TEXT,
+                tcgplayer_product_id TEXT,
+                cardkingdom_id TEXT,
+                cardmarket_id TEXT,
+                cardsphere_id TEXT
+            );
+            CREATE TEMP TABLE temp_identifier_links (
+                mtgjson_uuid TEXT PRIMARY KEY,
+                scryfall_id TEXT NOT NULL
+            );
+            CREATE TEMP TABLE temp_identifier_changed_cards (
+                scryfall_id TEXT PRIMARY KEY,
+                mtgjson_uuid TEXT,
+                tcgplayer_product_id TEXT,
+                cardkingdom_id TEXT,
+                cardmarket_id TEXT,
+                cardsphere_id TEXT
+            );
+            CREATE TEMP TABLE temp_identifier_changed_links (
+                mtgjson_uuid TEXT PRIMARY KEY,
+                scryfall_id TEXT NOT NULL
+            );
+            """
+        )
+        connection.executemany(
+            """
+            INSERT INTO temp_identifier_card_updates (
+                scryfall_id,
+                mtgjson_uuid,
+                tcgplayer_product_id,
+                cardkingdom_id,
+                cardmarket_id,
+                cardsphere_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
                 (
+                    scryfall_id,
                     merged_row.mtgjson_uuid,
                     merged_row.tcgplayer_product_id,
                     merged_row.cardkingdom_id,
                     merged_row.cardmarket_id,
                     merged_row.cardsphere_id,
-                    scryfall_id,
-                ),
+                )
+                for scryfall_id, merged_row in sorted(merged_rows.items())
+            ],
+        )
+        if link_rows:
+            connection.executemany(
+                """
+                INSERT INTO temp_identifier_links (mtgjson_uuid, scryfall_id)
+                VALUES (?, ?)
+                """,
+                link_rows,
             )
-            if not cursor.rowcount:
-                continue
+        connection.execute(
+            f"""
+            INSERT INTO temp_identifier_changed_cards (
+                scryfall_id,
+                mtgjson_uuid,
+                tcgplayer_product_id,
+                cardkingdom_id,
+                cardmarket_id,
+                cardsphere_id
+            )
+            SELECT
+                updates.scryfall_id,
+                updates.mtgjson_uuid,
+                updates.tcgplayer_product_id,
+                updates.cardkingdom_id,
+                updates.cardmarket_id,
+                updates.cardsphere_id
+            FROM temp_identifier_card_updates AS updates
+            JOIN mtg_cards AS cards
+                ON cards.scryfall_id = updates.scryfall_id
+            WHERE {card_change_predicate}
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO temp_identifier_changed_links (mtgjson_uuid, scryfall_id)
+            SELECT
+                links.mtgjson_uuid,
+                links.scryfall_id
+            FROM temp_identifier_links AS links
+            LEFT JOIN mtgjson_card_links AS existing
+                ON existing.mtgjson_uuid = links.mtgjson_uuid
+            WHERE existing.mtgjson_uuid IS NULL OR existing.scryfall_id <> links.scryfall_id
+            """
+        )
 
+        changed_card_ids = {
+            row["scryfall_id"]
+            for row in connection.execute(
+                """
+                SELECT scryfall_id
+                FROM temp_identifier_changed_cards
+                UNION
+                SELECT DISTINCT scryfall_id
+                FROM temp_identifier_changed_links
+                """
+            ).fetchall()
+        }
+        link_rows_written = connection.execute(
+            "SELECT COUNT(*) FROM temp_identifier_changed_links"
+        ).fetchone()[0]
+        stats.rows_written = len(changed_card_ids)
+        stats.details["changed_cards"] = stats.rows_written
+        stats.details["no_op_cards"] = max(len(grouped_rows) - stats.rows_written, 0)
+        stats.details["link_rows_written"] = int(link_rows_written)
+
+        if changed_card_ids or link_rows_written:
+            maybe_before_write()
+        if changed_card_ids:
+            connection.execute(
+                """
+                UPDATE mtg_cards
+                SET
+                    mtgjson_uuid = COALESCE(
+                        (
+                            SELECT updates.mtgjson_uuid
+                            FROM temp_identifier_changed_cards AS updates
+                            WHERE updates.scryfall_id = mtg_cards.scryfall_id
+                        ),
+                        mtgjson_uuid
+                    ),
+                    tcgplayer_product_id = COALESCE(
+                        (
+                            SELECT updates.tcgplayer_product_id
+                            FROM temp_identifier_changed_cards AS updates
+                            WHERE updates.scryfall_id = mtg_cards.scryfall_id
+                        ),
+                        tcgplayer_product_id
+                    ),
+                    cardkingdom_id = COALESCE(
+                        (
+                            SELECT updates.cardkingdom_id
+                            FROM temp_identifier_changed_cards AS updates
+                            WHERE updates.scryfall_id = mtg_cards.scryfall_id
+                        ),
+                        cardkingdom_id
+                    ),
+                    cardmarket_id = COALESCE(
+                        (
+                            SELECT updates.cardmarket_id
+                            FROM temp_identifier_changed_cards AS updates
+                            WHERE updates.scryfall_id = mtg_cards.scryfall_id
+                        ),
+                        cardmarket_id
+                    ),
+                    cardsphere_id = COALESCE(
+                        (
+                            SELECT updates.cardsphere_id
+                            FROM temp_identifier_changed_cards AS updates
+                            WHERE updates.scryfall_id = mtg_cards.scryfall_id
+                        ),
+                        cardsphere_id
+                    ),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE scryfall_id IN (
+                    SELECT scryfall_id
+                    FROM temp_identifier_changed_cards
+                )
+                """
+            )
+        if link_rows_written:
             connection.executemany(
                 """
                 INSERT INTO mtgjson_card_links (mtgjson_uuid, scryfall_id)
                 VALUES (?, ?)
                 ON CONFLICT(mtgjson_uuid) DO UPDATE SET
                     scryfall_id = excluded.scryfall_id
+                WHERE mtgjson_card_links.scryfall_id <> excluded.scryfall_id
                 """,
                 [
-                    (row.mtgjson_uuid, scryfall_id)
-                    for row in rows_for_card
-                    if row.mtgjson_uuid is not None
+                    (row["mtgjson_uuid"], row["scryfall_id"])
+                    for row in connection.execute(
+                        """
+                        SELECT mtgjson_uuid, scryfall_id
+                        FROM temp_identifier_changed_links
+                        ORDER BY mtgjson_uuid
+                        """
+                    ).fetchall()
                 ],
             )
-            stats.rows_written += 1
 
         connection.commit()
 

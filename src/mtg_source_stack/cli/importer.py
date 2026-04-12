@@ -82,6 +82,24 @@ def _record_local_artifact(
     )
 
 
+def _merge_step_details(
+    base_details: dict[str, Any] | None,
+    stats: Any | None = None,
+    *,
+    elapsed_seconds: float | None = None,
+    error: Exception | None = None,
+) -> dict[str, Any] | None:
+    merged: dict[str, Any] = dict(base_details or {})
+    result_details = getattr(stats, "details", None)
+    if isinstance(result_details, dict):
+        merged.update(result_details)
+    if elapsed_seconds is not None:
+        merged["elapsed_seconds"] = round(elapsed_seconds, 6)
+    if error is not None:
+        merged["error"] = str(error)
+    return merged or None
+
+
 def _run_tracked_step(
     db_path: str | Path,
     run_id: int,
@@ -98,7 +116,7 @@ def _run_tracked_step(
             db_path,
             step_id,
             status="failed",
-            details={**(details or {}), "error": str(exc)},
+            details=_merge_step_details(details, error=exc),
         )
         raise
 
@@ -108,7 +126,7 @@ def _run_tracked_step(
             step_id,
             status="succeeded",
             stats=result,
-            details=details,
+            details=_merge_step_details(details, result),
         )
     else:
         finish_sync_step(
@@ -493,18 +511,7 @@ def main() -> None:
                 limit_value=args.limit,
             )
             print(f"run_id: {tracked_run_id}")
-            result = sync_bulk(
-                args.db,
-                cache_dir=args.cache_dir,
-                scryfall_metadata_url=args.scryfall_metadata_url,
-                scryfall_bulk_type=args.scryfall_bulk_type,
-                mtgjson_identifiers_url=args.mtgjson_identifiers_url,
-                mtgjson_prices_url=args.mtgjson_prices_url,
-                limit=args.limit,
-                source_name=args.source_name,
-                before_write=ensure_snapshot,
-            )
-            for download in result["downloads"]:
+            def on_download(download: Any) -> None:
                 artifact_role = {
                     "scryfall_default_cards.json": "scryfall_bulk",
                     "AllIdentifiers.json.gz": "mtgjson_identifiers",
@@ -521,24 +528,41 @@ def main() -> None:
                     etag=download.etag,
                     last_modified=download.last_modified,
                 )
-            for step_name, stats_key, elapsed_key in (
-                ("import_scryfall", "scryfall_stats", "scryfall_elapsed_seconds"),
-                ("import_identifiers", "identifier_stats", "identifier_elapsed_seconds"),
-                ("import_prices", "price_stats", "price_elapsed_seconds"),
-            ):
+
+            def on_step(
+                step_name: str,
+                status: str,
+                stats: Any | None,
+                elapsed_seconds: float,
+                error: Exception | None,
+            ) -> None:
                 step_id = start_sync_step(
                     args.db,
                     tracked_run_id,
                     step_name=step_name,
-                    details={"elapsed_seconds": round(result[elapsed_key], 6)},
+                    details=_merge_step_details(None, stats, elapsed_seconds=elapsed_seconds, error=error),
                 )
                 finish_sync_step(
                     args.db,
                     step_id,
-                    status="succeeded",
-                    stats=result[stats_key],
-                    details={"elapsed_seconds": round(result[elapsed_key], 6)},
+                    status=status,
+                    stats=stats,
+                    details=_merge_step_details(None, stats, elapsed_seconds=elapsed_seconds, error=error),
                 )
+
+            result = sync_bulk(
+                args.db,
+                cache_dir=args.cache_dir,
+                scryfall_metadata_url=args.scryfall_metadata_url,
+                scryfall_bulk_type=args.scryfall_bulk_type,
+                mtgjson_identifiers_url=args.mtgjson_identifiers_url,
+                mtgjson_prices_url=args.mtgjson_prices_url,
+                limit=args.limit,
+                source_name=args.source_name,
+                before_write=ensure_snapshot,
+                on_download=on_download,
+                on_step=on_step,
+            )
             result["snapshot"] = get_snapshot()
             finish_sync_run(
                 args.db,

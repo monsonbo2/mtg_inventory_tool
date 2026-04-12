@@ -590,6 +590,82 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(0, stats.rows_skipped)
             self.assertEqual(("uuid-known", "999"), (row["mtgjson_uuid"], row["tcgplayer_product_id"]))
 
+    def test_import_mtgjson_identifiers_skips_no_op_card_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            identifiers_path = Path(tmp_dir) / "identifiers.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-noop', 'oracle-noop', 'No-Op Card', 'tst', 'Test Set', '7')
+                    """
+                )
+                connection.commit()
+
+            identifiers_payload = {
+                "data": {
+                    "uuid-noop": {
+                        "identifiers": {
+                            "scryfallId": "card-noop",
+                            "tcgplayerProductId": "7001",
+                        }
+                    }
+                }
+            }
+            identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_identifiers
+
+            first_stats = import_mtgjson_identifiers(db_path, identifiers_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    UPDATE mtg_cards
+                    SET updated_at = '2000-01-01 00:00:00'
+                    WHERE scryfall_id = 'card-noop'
+                    """
+                )
+                connection.commit()
+
+            second_stats = import_mtgjson_identifiers(db_path, identifiers_path)
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    """
+                    SELECT mtgjson_uuid, tcgplayer_product_id, updated_at
+                    FROM mtg_cards
+                    WHERE scryfall_id = 'card-noop'
+                    """
+                ).fetchone()
+                link_count = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM mtgjson_card_links
+                    WHERE scryfall_id = 'card-noop'
+                    """
+                ).fetchone()[0]
+
+            self.assertEqual(1, first_stats.rows_written)
+            self.assertEqual(1, second_stats.rows_seen)
+            self.assertEqual(0, second_stats.rows_written)
+            self.assertEqual(0, second_stats.rows_skipped)
+            self.assertEqual(
+                {"matched_cards": 1, "staged_link_rows": 1, "changed_cards": 0, "no_op_cards": 1, "link_rows_written": 0},
+                second_stats.details,
+            )
+            self.assertEqual(("uuid-noop", "7001", "2000-01-01 00:00:00"), tuple(row))
+            self.assertEqual(1, link_count)
+
     def test_import_mtgjson_prices_skips_non_usd_provider_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -1080,6 +1156,201 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(
                 ("error", "ValueError", "Expected MTGJSON prices to contain an object at payload['data']."),
                 (issue_row["level"], issue_row["code"], issue_row["message"]),
+            )
+
+    def test_sync_bulk_records_partial_artifacts_when_download_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            cache_dir = tmp / "cache"
+            metadata_path = tmp / "scryfall_bulk_metadata.json"
+            scryfall_bulk_path = tmp / "default_cards.json"
+            missing_identifiers_path = tmp / "missing-identifiers.json.gz"
+            prices_path = tmp / "AllPricesToday.json.gz"
+
+            scryfall_payload = [
+                {
+                    "id": "sync-download-fail-1",
+                    "oracle_id": "sync-download-fail-oracle-1",
+                    "name": "Sync Download Failure Card",
+                    "set": "syn",
+                    "set_name": "Sync Set",
+                    "collector_number": "90",
+                    "lang": "en",
+                    "rarity": "rare",
+                    "released_at": "2026-01-01",
+                    "colors": ["U"],
+                    "color_identity": ["U"],
+                    "finishes": ["nonfoil"],
+                    "legalities": {"commander": "legal"},
+                    "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                }
+            ]
+            metadata_payload = {
+                "data": [
+                    {
+                        "type": "default_cards",
+                        "download_uri": scryfall_bulk_path.as_uri(),
+                    }
+                ]
+            }
+            prices_payload = {"data": {}}
+
+            scryfall_bulk_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
+            metadata_path.write_text(json.dumps(metadata_payload), encoding="utf-8")
+            with gzip.open(prices_path, "wt", encoding="utf-8") as handle:
+                json.dump(prices_payload, handle)
+
+            result = self.run_failing_importer(
+                "sync-bulk",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--scryfall-metadata-url",
+                metadata_path.as_uri(),
+                "--mtgjson-identifiers-url",
+                missing_identifiers_path.as_uri(),
+                "--mtgjson-prices-url",
+                prices_path.as_uri(),
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertTrue(db_path.exists())
+
+            with connect(db_path) as connection:
+                run_row = connection.execute(
+                    """
+                    SELECT run_kind, status
+                    FROM sync_runs
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                step_count = connection.execute("SELECT COUNT(*) FROM sync_run_steps").fetchone()[0]
+                artifact_rows = connection.execute(
+                    """
+                    SELECT artifact_role, local_path
+                    FROM sync_run_artifacts
+                    ORDER BY artifact_role
+                    """
+                ).fetchall()
+
+            self.assertEqual(("sync_bulk", "failed"), (run_row["run_kind"], run_row["status"]))
+            self.assertEqual(0, step_count)
+            self.assertEqual(
+                [("scryfall_bulk", str((cache_dir / "scryfall_default_cards.json").resolve()))],
+                [(row["artifact_role"], row["local_path"]) for row in artifact_rows],
+            )
+
+    def test_sync_bulk_records_failed_import_step_when_late_stage_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            cache_dir = tmp / "cache"
+            metadata_path = tmp / "scryfall_bulk_metadata.json"
+            scryfall_bulk_path = tmp / "default_cards.json"
+            identifiers_path = tmp / "AllIdentifiers.json.gz"
+            prices_path = tmp / "AllPricesToday.json.gz"
+
+            scryfall_payload = [
+                {
+                    "id": "sync-fail-1",
+                    "oracle_id": "sync-fail-oracle-1",
+                    "name": "Sync Failure Card",
+                    "set": "syn",
+                    "set_name": "Sync Set",
+                    "collector_number": "91",
+                    "lang": "en",
+                    "rarity": "rare",
+                    "released_at": "2026-01-01",
+                    "colors": ["U"],
+                    "color_identity": ["U"],
+                    "finishes": ["nonfoil"],
+                    "legalities": {"commander": "legal"},
+                    "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                }
+            ]
+            identifiers_payload = {
+                "data": {
+                    "uuid-sync-fail-1": {
+                        "identifiers": {
+                            "scryfallId": "sync-fail-1",
+                            "tcgplayerProductId": "901",
+                        }
+                    }
+                }
+            }
+            prices_payload = {"data": []}
+            metadata_payload = {
+                "data": [
+                    {
+                        "type": "default_cards",
+                        "download_uri": scryfall_bulk_path.as_uri(),
+                    }
+                ]
+            }
+
+            scryfall_bulk_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
+            metadata_path.write_text(json.dumps(metadata_payload), encoding="utf-8")
+            with gzip.open(identifiers_path, "wt", encoding="utf-8") as handle:
+                json.dump(identifiers_payload, handle)
+            with gzip.open(prices_path, "wt", encoding="utf-8") as handle:
+                json.dump(prices_payload, handle)
+
+            result = self.run_failing_importer(
+                "sync-bulk",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--scryfall-metadata-url",
+                metadata_path.as_uri(),
+                "--mtgjson-identifiers-url",
+                identifiers_path.as_uri(),
+                "--mtgjson-prices-url",
+                prices_path.as_uri(),
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertIn("Expected MTGJSON prices to contain an object", result.stderr)
+
+            with connect(db_path) as connection:
+                run_row = connection.execute(
+                    """
+                    SELECT run_kind, status
+                    FROM sync_runs
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                step_rows = connection.execute(
+                    """
+                    SELECT step_name, status
+                    FROM sync_run_steps
+                    ORDER BY id
+                    """
+                ).fetchall()
+                artifact_rows = connection.execute(
+                    """
+                    SELECT artifact_role
+                    FROM sync_run_artifacts
+                    ORDER BY artifact_role
+                    """
+                ).fetchall()
+
+            self.assertEqual(("sync_bulk", "failed"), (run_row["run_kind"], run_row["status"]))
+            self.assertEqual(
+                [
+                    ("import_scryfall", "succeeded"),
+                    ("import_identifiers", "succeeded"),
+                    ("import_prices", "failed"),
+                ],
+                [(row["step_name"], row["status"]) for row in step_rows],
+            )
+            self.assertEqual(
+                ["mtgjson_identifiers", "mtgjson_prices", "scryfall_bulk"],
+                [row["artifact_role"] for row in artifact_rows],
             )
 
     def test_sync_bulk_downloads_and_imports_from_override_urls(self) -> None:
