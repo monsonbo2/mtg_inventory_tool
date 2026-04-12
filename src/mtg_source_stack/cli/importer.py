@@ -20,8 +20,12 @@ from ..importer.service import (
     print_snapshot_created,
     print_snapshot_list,
     print_stats,
+    print_sync_result,
     print_sync_bulk_result,
     sync_bulk,
+    sync_identifiers,
+    sync_prices,
+    sync_scryfall,
 )
 from ..importer.sync_tracking import (
     file_artifact_info,
@@ -142,6 +146,80 @@ def _summary_for_stats(**stats: Any) -> dict[str, Any]:
     return {label: import_stats_dict(value) for label, value in stats.items()}
 
 
+def _artifact_role_for_download(label: str) -> str:
+    return {
+        "scryfall_default_cards.json": "scryfall_bulk",
+        "AllIdentifiers.json.gz": "mtgjson_identifiers",
+        "AllPricesToday.json.gz": "mtgjson_prices",
+    }.get(label, label)
+
+
+def _build_sync_tracking_callbacks(
+    db_path: str | Path,
+    run_id: int,
+) -> tuple[
+    Callable[[Any], None],
+    Callable[[str, str, Any | None, float, Exception | None], None],
+]:
+    def on_download(download: Any) -> None:
+        record_sync_artifact(
+            db_path,
+            run_id,
+            artifact_role=_artifact_role_for_download(download.label),
+            source_url=download.url,
+            local_path=str(download.path.resolve()),
+            bytes_written=download.bytes_written,
+            sha256=download.sha256,
+            etag=download.etag,
+            last_modified=download.last_modified,
+        )
+
+    def on_step(
+        step_name: str,
+        status: str,
+        stats: Any | None,
+        elapsed_seconds: float,
+        error: Exception | None,
+    ) -> None:
+        details = _merge_step_details(None, stats, elapsed_seconds=elapsed_seconds, error=error)
+        step_id = start_sync_step(
+            db_path,
+            run_id,
+            step_name=step_name,
+            details=details,
+        )
+        finish_sync_step(
+            db_path,
+            step_id,
+            status=status,
+            stats=stats,
+            details=details,
+        )
+
+    return on_download, on_step
+
+
+def _sync_summary_for_result(result: dict[str, Any]) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "downloads": [
+            {
+                "label": download.label,
+                "bytes_written": download.bytes_written,
+                "sha256": download.sha256,
+            }
+            for download in result["downloads"]
+        ]
+    }
+    for label, key in (
+        ("import_scryfall", "scryfall_stats"),
+        ("import_identifiers", "identifier_stats"),
+        ("import_prices", "price_stats"),
+    ):
+        if key in result:
+            summary.update(_summary_for_stats(**{label: result[key]}))
+    return summary
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Initialize and import the MTG MVP schema from local Scryfall and MTGJSON bulk files.",
@@ -245,6 +323,67 @@ def build_parser() -> argparse.ArgumentParser:
         help="MTGJSON AllIdentifiers download URL.",
     )
     sync_bulk_parser.add_argument(
+        "--mtgjson-prices-url",
+        default=MTGJSON_PRICES_URL,
+        help="MTGJSON AllPricesToday download URL.",
+    )
+
+    sync_scryfall_parser = subparsers.add_parser(
+        "sync-scryfall",
+        help="Download the latest Scryfall bulk file and import it.",
+    )
+    sync_scryfall_parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    sync_scryfall_parser.add_argument(
+        "--cache-dir",
+        default=str(DEFAULT_BULK_CACHE_DIR),
+        help="Directory to store the downloaded bulk files.",
+    )
+    sync_scryfall_parser.add_argument("--limit", type=int, help="Optional max number of rows to import.")
+    sync_scryfall_parser.add_argument(
+        "--scryfall-bulk-type",
+        default=DEFAULT_SCRYFALL_BULK_TYPE,
+        help="Scryfall bulk type to download, such as default_cards.",
+    )
+    sync_scryfall_parser.add_argument(
+        "--scryfall-metadata-url",
+        default=SCRYFALL_BULK_METADATA_URL,
+        help="Scryfall bulk metadata URL.",
+    )
+
+    sync_identifiers_parser = subparsers.add_parser(
+        "sync-identifiers",
+        help="Download the latest MTGJSON AllIdentifiers file and import it.",
+    )
+    sync_identifiers_parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    sync_identifiers_parser.add_argument(
+        "--cache-dir",
+        default=str(DEFAULT_BULK_CACHE_DIR),
+        help="Directory to store the downloaded bulk files.",
+    )
+    sync_identifiers_parser.add_argument("--limit", type=int, help="Optional max number of rows to import.")
+    sync_identifiers_parser.add_argument(
+        "--mtgjson-identifiers-url",
+        default=MTGJSON_IDENTIFIERS_URL,
+        help="MTGJSON AllIdentifiers download URL.",
+    )
+
+    sync_prices_parser = subparsers.add_parser(
+        "sync-prices",
+        help="Download the latest MTGJSON AllPricesToday file and import it.",
+    )
+    sync_prices_parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    sync_prices_parser.add_argument(
+        "--cache-dir",
+        default=str(DEFAULT_BULK_CACHE_DIR),
+        help="Directory to store the downloaded bulk files.",
+    )
+    sync_prices_parser.add_argument("--limit", type=int, help="Optional max number of rows to import.")
+    sync_prices_parser.add_argument(
+        "--source-name",
+        default="mtgjson_all_prices_today",
+        help="Source label stored in price_snapshots.source_name.",
+    )
+    sync_prices_parser.add_argument(
         "--mtgjson-prices-url",
         default=MTGJSON_PRICES_URL,
         help="MTGJSON AllPricesToday download URL.",
@@ -511,44 +650,7 @@ def main() -> None:
                 limit_value=args.limit,
             )
             print(f"run_id: {tracked_run_id}")
-            def on_download(download: Any) -> None:
-                artifact_role = {
-                    "scryfall_default_cards.json": "scryfall_bulk",
-                    "AllIdentifiers.json.gz": "mtgjson_identifiers",
-                    "AllPricesToday.json.gz": "mtgjson_prices",
-                }.get(download.label, download.label)
-                record_sync_artifact(
-                    args.db,
-                    tracked_run_id,
-                    artifact_role=artifact_role,
-                    source_url=download.url,
-                    local_path=str(download.path.resolve()),
-                    bytes_written=download.bytes_written,
-                    sha256=download.sha256,
-                    etag=download.etag,
-                    last_modified=download.last_modified,
-                )
-
-            def on_step(
-                step_name: str,
-                status: str,
-                stats: Any | None,
-                elapsed_seconds: float,
-                error: Exception | None,
-            ) -> None:
-                step_id = start_sync_step(
-                    args.db,
-                    tracked_run_id,
-                    step_name=step_name,
-                    details=_merge_step_details(None, stats, elapsed_seconds=elapsed_seconds, error=error),
-                )
-                finish_sync_step(
-                    args.db,
-                    step_id,
-                    status=status,
-                    stats=stats,
-                    details=_merge_step_details(None, stats, elapsed_seconds=elapsed_seconds, error=error),
-                )
+            on_download, on_step = _build_sync_tracking_callbacks(args.db, tracked_run_id)
 
             result = sync_bulk(
                 args.db,
@@ -569,24 +671,124 @@ def main() -> None:
                 tracked_run_id,
                 status="succeeded",
                 snapshot_path=result["snapshot"]["snapshot_path"] if result["snapshot"] is not None else None,
-                summary={
-                    "downloads": [
-                        {
-                            "label": download.label,
-                            "bytes_written": download.bytes_written,
-                            "sha256": download.sha256,
-                        }
-                        for download in result["downloads"]
-                    ],
-                    **_summary_for_stats(
-                        import_scryfall=result["scryfall_stats"],
-                        import_identifiers=result["identifier_stats"],
-                        import_prices=result["price_stats"],
-                    ),
-                },
+                summary=_sync_summary_for_result(result),
             )
             tracked_run_id = None
             print_sync_bulk_result(result)
+            return
+
+        if args.command == "sync-scryfall":
+            initialize_database(args.db)
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_sync_scryfall")
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
+                args.db,
+                run_kind="sync_scryfall",
+                limit_value=args.limit,
+            )
+            print(f"run_id: {tracked_run_id}")
+            on_download, on_step = _build_sync_tracking_callbacks(args.db, tracked_run_id)
+            result = sync_scryfall(
+                args.db,
+                cache_dir=args.cache_dir,
+                scryfall_metadata_url=args.scryfall_metadata_url,
+                scryfall_bulk_type=args.scryfall_bulk_type,
+                limit=args.limit,
+                before_write=ensure_snapshot,
+                on_download=on_download,
+                on_step=on_step,
+            )
+            result["snapshot"] = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=result["snapshot"]["snapshot_path"] if result["snapshot"] is not None else None,
+                summary=_sync_summary_for_result(result),
+            )
+            tracked_run_id = None
+            print_sync_result(
+                "sync-scryfall",
+                result,
+                stat_labels=[("import-scryfall", "scryfall_stats")],
+            )
+            return
+
+        if args.command == "sync-identifiers":
+            initialize_database(args.db)
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_sync_identifiers")
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
+                args.db,
+                run_kind="sync_identifiers",
+                limit_value=args.limit,
+            )
+            print(f"run_id: {tracked_run_id}")
+            on_download, on_step = _build_sync_tracking_callbacks(args.db, tracked_run_id)
+            result = sync_identifiers(
+                args.db,
+                cache_dir=args.cache_dir,
+                mtgjson_identifiers_url=args.mtgjson_identifiers_url,
+                limit=args.limit,
+                before_write=ensure_snapshot,
+                on_download=on_download,
+                on_step=on_step,
+            )
+            result["snapshot"] = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=result["snapshot"]["snapshot_path"] if result["snapshot"] is not None else None,
+                summary=_sync_summary_for_result(result),
+            )
+            tracked_run_id = None
+            print_sync_result(
+                "sync-identifiers",
+                result,
+                stat_labels=[("import-identifiers", "identifier_stats")],
+            )
+            return
+
+        if args.command == "sync-prices":
+            initialize_database(args.db)
+            ensure_snapshot, get_snapshot = build_snapshot_callback(args.db, label="before_sync_prices")
+            tracked_db_path = args.db
+            tracked_snapshot_getter = get_snapshot
+            tracked_run_id = start_sync_run(
+                args.db,
+                run_kind="sync_prices",
+                source_name=args.source_name,
+                limit_value=args.limit,
+            )
+            print(f"run_id: {tracked_run_id}")
+            on_download, on_step = _build_sync_tracking_callbacks(args.db, tracked_run_id)
+            result = sync_prices(
+                args.db,
+                cache_dir=args.cache_dir,
+                mtgjson_prices_url=args.mtgjson_prices_url,
+                limit=args.limit,
+                source_name=args.source_name,
+                before_write=ensure_snapshot,
+                on_download=on_download,
+                on_step=on_step,
+            )
+            result["snapshot"] = get_snapshot()
+            finish_sync_run(
+                args.db,
+                tracked_run_id,
+                status="succeeded",
+                snapshot_path=result["snapshot"]["snapshot_path"] if result["snapshot"] is not None else None,
+                summary=_sync_summary_for_result(result),
+            )
+            tracked_run_id = None
+            print_sync_result(
+                "sync-prices",
+                result,
+                stat_labels=[("import-prices", "price_stats")],
+            )
             return
 
         parser.error(f"Unknown command {args.command}")

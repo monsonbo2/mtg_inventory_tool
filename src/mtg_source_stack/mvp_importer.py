@@ -42,7 +42,11 @@ from .importer.service import (
     print_snapshot_created,
     print_snapshot_list,
     print_stats,
+    print_sync_result,
     print_sync_bulk_result,
+    sync_identifiers,
+    sync_prices,
+    sync_scryfall,
     sync_bulk,
     text_or_none,
 )

@@ -20,6 +20,9 @@ HTTP_HEADERS = {
     "User-Agent": "mtg-source-stack-sync/0.1 (+local bulk refresh)",
     "Accept": "application/json",
 }
+SCRYFALL_BULK_CACHE_FILENAME = "scryfall_default_cards.json"
+MTGJSON_IDENTIFIERS_CACHE_FILENAME = "AllIdentifiers.json.gz"
+MTGJSON_PRICES_CACHE_FILENAME = "AllPricesToday.json.gz"
 
 
 @dataclass(slots=True)
@@ -204,6 +207,153 @@ def print_restore_snapshot_result(result: dict[str, Any]) -> None:
         print(f"pre_restore_snapshot: {pre_restore_snapshot['snapshot_path']}")
 
 
+def _ensure_cache_dir(cache_dir: str | Path) -> Path:
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(parents=True, exist_ok=True)
+    return cache_path
+
+
+def _download_sync_artifact(
+    url: str,
+    destination: str | Path,
+    *,
+    on_download: Callable[[DownloadResult], None] | None = None,
+) -> DownloadResult:
+    download = download_to_path(
+        url,
+        destination,
+        headers=HTTP_HEADERS,
+        timeout=300,
+    )
+    if on_download is not None:
+        on_download(download)
+    return download
+
+
+def _run_sync_step(
+    step_name: str,
+    operation: Callable[[], ImportStats],
+    *,
+    on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+) -> tuple[ImportStats, float]:
+    started = time.perf_counter()
+    try:
+        stats = operation()
+    except Exception as exc:
+        elapsed_seconds = time.perf_counter() - started
+        if on_step is not None:
+            on_step(step_name, "failed", None, elapsed_seconds, exc)
+        raise
+    elapsed_seconds = time.perf_counter() - started
+    if on_step is not None:
+        on_step(step_name, "succeeded", stats, elapsed_seconds, None)
+    return stats, elapsed_seconds
+
+
+def sync_scryfall(
+    db_path: str | Path,
+    *,
+    cache_dir: str | Path,
+    scryfall_metadata_url: str = SCRYFALL_BULK_METADATA_URL,
+    scryfall_bulk_type: str = DEFAULT_SCRYFALL_BULK_TYPE,
+    limit: int | None = None,
+    before_write: Callable[[], Any] | None = None,
+    on_download: Callable[[DownloadResult], None] | None = None,
+    on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+) -> dict[str, Any]:
+    from .scryfall import import_scryfall_cards
+
+    cache_path = _ensure_cache_dir(cache_dir)
+    scryfall_download_url = find_scryfall_bulk_download_url(
+        scryfall_metadata_url,
+        bulk_type=scryfall_bulk_type,
+    )
+    download = _download_sync_artifact(
+        scryfall_download_url,
+        cache_path / SCRYFALL_BULK_CACHE_FILENAME,
+        on_download=on_download,
+    )
+    scryfall_stats, scryfall_elapsed_seconds = _run_sync_step(
+        "import_scryfall",
+        lambda: import_scryfall_cards(db_path, download.path, limit, before_write=before_write),
+        on_step=on_step,
+    )
+    return {
+        "db_path": str(Path(db_path)),
+        "cache_dir": str(cache_path),
+        "downloads": [download],
+        "scryfall_stats": scryfall_stats,
+        "scryfall_elapsed_seconds": scryfall_elapsed_seconds,
+        "scryfall_bulk_type": scryfall_bulk_type,
+    }
+
+
+def sync_identifiers(
+    db_path: str | Path,
+    *,
+    cache_dir: str | Path,
+    mtgjson_identifiers_url: str = MTGJSON_IDENTIFIERS_URL,
+    limit: int | None = None,
+    before_write: Callable[[], Any] | None = None,
+    on_download: Callable[[DownloadResult], None] | None = None,
+    on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+) -> dict[str, Any]:
+    from .mtgjson import import_mtgjson_identifiers
+
+    cache_path = _ensure_cache_dir(cache_dir)
+    download = _download_sync_artifact(
+        mtgjson_identifiers_url,
+        cache_path / MTGJSON_IDENTIFIERS_CACHE_FILENAME,
+        on_download=on_download,
+    )
+    identifier_stats, identifier_elapsed_seconds = _run_sync_step(
+        "import_identifiers",
+        lambda: import_mtgjson_identifiers(db_path, download.path, limit, before_write=before_write),
+        on_step=on_step,
+    )
+    return {
+        "db_path": str(Path(db_path)),
+        "cache_dir": str(cache_path),
+        "downloads": [download],
+        "identifier_stats": identifier_stats,
+        "identifier_elapsed_seconds": identifier_elapsed_seconds,
+    }
+
+
+def sync_prices(
+    db_path: str | Path,
+    *,
+    cache_dir: str | Path,
+    mtgjson_prices_url: str = MTGJSON_PRICES_URL,
+    limit: int | None = None,
+    source_name: str = "mtgjson_all_prices_today",
+    before_write: Callable[[], Any] | None = None,
+    on_download: Callable[[DownloadResult], None] | None = None,
+    on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+) -> dict[str, Any]:
+    from .mtgjson import import_mtgjson_prices
+
+    cache_path = _ensure_cache_dir(cache_dir)
+    download = _download_sync_artifact(
+        mtgjson_prices_url,
+        cache_path / MTGJSON_PRICES_CACHE_FILENAME,
+        on_download=on_download,
+    )
+    price_stats, price_elapsed_seconds = _run_sync_step(
+        "import_prices",
+        lambda: import_mtgjson_prices(db_path, download.path, limit, source_name, before_write=before_write),
+        on_step=on_step,
+    )
+    return {
+        "db_path": str(Path(db_path)),
+        "cache_dir": str(cache_path),
+        "downloads": [download],
+        "price_stats": price_stats,
+        "price_elapsed_seconds": price_elapsed_seconds,
+        "source_name": source_name,
+    }
+
+
 def sync_bulk(
     db_path: str | Path,
     *,
@@ -221,8 +371,7 @@ def sync_bulk(
     from .mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
     from .scryfall import import_scryfall_cards
 
-    cache_path = Path(cache_dir)
-    cache_path.mkdir(parents=True, exist_ok=True)
+    cache_path = _ensure_cache_dir(cache_dir)
 
     scryfall_download_url = find_scryfall_bulk_download_url(
         scryfall_metadata_url,
@@ -237,43 +386,29 @@ def sync_bulk(
         (mtgjson_identifiers_url, cache_path / "AllIdentifiers.json.gz"),
         (mtgjson_prices_url, cache_path / "AllPricesToday.json.gz"),
     ):
-        download = download_to_path(
+        download = _download_sync_artifact(
             download_url,
             destination,
-            headers=HTTP_HEADERS,
-            timeout=300,
+            on_download=on_download,
         )
         downloads.append(download)
-        if on_download is not None:
-            on_download(download)
 
     # The imports are ordered to establish catalog rows first, then enrich them
     # with identifier crosswalks, and finally attach price snapshots.
-    def run_step(step_name: str, operation: Callable[[], ImportStats]) -> tuple[ImportStats, float]:
-        started = time.perf_counter()
-        try:
-            stats = operation()
-        except Exception as exc:
-            elapsed_seconds = time.perf_counter() - started
-            if on_step is not None:
-                on_step(step_name, "failed", None, elapsed_seconds, exc)
-            raise
-        elapsed_seconds = time.perf_counter() - started
-        if on_step is not None:
-            on_step(step_name, "succeeded", stats, elapsed_seconds, None)
-        return stats, elapsed_seconds
-
-    scryfall_stats, scryfall_elapsed_seconds = run_step(
+    scryfall_stats, scryfall_elapsed_seconds = _run_sync_step(
         "import_scryfall",
         lambda: import_scryfall_cards(db_path, downloads[0].path, limit, before_write=before_write),
+        on_step=on_step,
     )
-    identifier_stats, identifier_elapsed_seconds = run_step(
+    identifier_stats, identifier_elapsed_seconds = _run_sync_step(
         "import_identifiers",
         lambda: import_mtgjson_identifiers(db_path, downloads[1].path, limit, before_write=before_write),
+        on_step=on_step,
     )
-    price_stats, price_elapsed_seconds = run_step(
+    price_stats, price_elapsed_seconds = _run_sync_step(
         "import_prices",
         lambda: import_mtgjson_prices(db_path, downloads[2].path, limit, source_name, before_write=before_write),
+        on_step=on_step,
     )
 
     return {
@@ -291,8 +426,13 @@ def sync_bulk(
     }
 
 
-def print_sync_bulk_result(result: dict[str, Any]) -> None:
-    print("sync-bulk completed")
+def print_sync_result(
+    command_name: str,
+    result: dict[str, Any],
+    *,
+    stat_labels: list[tuple[str, str]],
+) -> None:
+    print(f"{command_name} completed")
     print(f"database: {result['db_path']}")
     if result.get("snapshot") is not None:
         print(f"snapshot: {result['snapshot']['snapshot_path']}")
@@ -300,6 +440,18 @@ def print_sync_bulk_result(result: dict[str, Any]) -> None:
     print("downloads:")
     for download in result["downloads"]:
         print(f"  {download.label}: {download.path} ({format_bytes(download.bytes_written)})")
-    print_stats("import-scryfall", result["scryfall_stats"])
-    print_stats("import-identifiers", result["identifier_stats"])
-    print_stats("import-prices", result["price_stats"])
+    for label, key in stat_labels:
+        if key in result:
+            print_stats(label, result[key])
+
+
+def print_sync_bulk_result(result: dict[str, Any]) -> None:
+    print_sync_result(
+        "sync-bulk",
+        result,
+        stat_labels=[
+            ("import-scryfall", "scryfall_stats"),
+            ("import-identifiers", "identifier_stats"),
+            ("import-prices", "price_stats"),
+        ],
+    )
