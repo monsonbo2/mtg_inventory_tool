@@ -666,6 +666,86 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(("uuid-noop", "7001", "2000-01-01 00:00:00"), tuple(row))
             self.assertEqual(1, link_count)
 
+    def test_iter_json_object_items_reads_gzip_data_object(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            payload_path = Path(tmp_dir) / "payload.json.gz"
+            payload = {
+                "meta": {"date": "2026-04-12", "version": "5.2.2"},
+                "data": {
+                    "uuid-stream-1": {"name": "Stream Card One", "identifiers": {"scryfallId": "stream-1"}},
+                    "uuid-stream-2": {"name": "Stream Card Two", "identifiers": {"scryfallId": "stream-2"}},
+                },
+                "links": {"self": "https://example.test/all-identifiers"},
+            }
+            with gzip.open(payload_path, mode="wt", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+
+            from mtg_source_stack.importer.service import iter_json_object_items
+
+            items = list(iter_json_object_items(payload_path, top_level_key="data"))
+
+            self.assertEqual(
+                [
+                    ("uuid-stream-1", {"name": "Stream Card One", "identifiers": {"scryfallId": "stream-1"}}),
+                    ("uuid-stream-2", {"name": "Stream Card Two", "identifiers": {"scryfallId": "stream-2"}}),
+                ],
+                items,
+            )
+
+    def test_import_mtgjson_identifiers_accepts_gzip_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            identifiers_path = Path(tmp_dir) / "identifiers.json.gz"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-gzip', 'oracle-gzip', 'Gzip Identifier Card', 'tst', 'Test Set', '8')
+                    """
+                )
+                connection.commit()
+
+            identifiers_payload = {
+                "meta": {"date": "2026-04-12"},
+                "data": {
+                    "uuid-gzip": {
+                        "identifiers": {
+                            "scryfallId": "card-gzip",
+                            "tcgplayerProductId": "8001",
+                        }
+                    }
+                },
+            }
+            with gzip.open(identifiers_path, mode="wt", encoding="utf-8") as handle:
+                json.dump(identifiers_payload, handle)
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_identifiers
+
+            stats = import_mtgjson_identifiers(db_path, identifiers_path)
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    """
+                    SELECT mtgjson_uuid, tcgplayer_product_id
+                    FROM mtg_cards
+                    WHERE scryfall_id = 'card-gzip'
+                    """
+                ).fetchone()
+
+            self.assertEqual(1, stats.rows_seen)
+            self.assertEqual(1, stats.rows_written)
+            self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual(("uuid-gzip", "8001"), (row["mtgjson_uuid"], row["tcgplayer_product_id"]))
+
     def test_import_mtgjson_prices_skips_non_usd_provider_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -767,6 +847,69 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(1, stats.rows_written)
             self.assertEqual(0, stats.rows_skipped)
             self.assertEqual([("normal", 3.5)], [(row["finish"], row["price_value"]) for row in rows])
+
+    def test_import_mtgjson_prices_accepts_gzip_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            prices_path = Path(tmp_dir) / "prices.json.gz"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        mtgjson_uuid,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-gzip-price', 'oracle-gzip-price', 'uuid-gzip-price', 'Gzip Price Card', 'tst', 'Test Set', '9')
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtgjson_card_links (mtgjson_uuid, scryfall_id)
+                    VALUES ('uuid-gzip-price', 'card-gzip-price')
+                    """
+                )
+                connection.commit()
+
+            prices_payload = {
+                "meta": {"date": "2026-04-12"},
+                "data": {
+                    "uuid-gzip-price": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 9.75}},
+                            }
+                        }
+                    }
+                },
+            }
+            with gzip.open(prices_path, mode="wt", encoding="utf-8") as handle:
+                json.dump(prices_payload, handle)
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_prices
+
+            stats = import_mtgjson_prices(db_path, prices_path)
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    """
+                    SELECT provider, price_value
+                    FROM price_snapshots
+                    WHERE scryfall_id = 'card-gzip-price'
+                    """
+                ).fetchone()
+
+            self.assertEqual(1, stats.rows_seen)
+            self.assertEqual(1, stats.rows_written)
+            self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual(("tcgplayer", 9.75), (row["provider"], row["price_value"]))
 
     def test_import_mtgjson_prices_unions_linked_uuid_provider_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -8,7 +8,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator, TextIO
 from urllib.error import HTTPError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
@@ -83,6 +83,152 @@ def load_json(path: str | Path) -> Any:
         raise ValueError(
             f"Could not parse JSON file '{path}': {exc.msg} at line {exc.lineno}, column {exc.colno}."
         ) from exc
+
+
+class _JsonValueStream:
+    def __init__(self, handle: TextIO, *, chunk_size: int = 1024 * 1024) -> None:
+        self._handle = handle
+        self._chunk_size = chunk_size
+        self._decoder = json.JSONDecoder()
+        self._buffer = ""
+        self._position = 0
+        self._eof = False
+
+    def _read_more(self) -> bool:
+        if self._eof:
+            return False
+        chunk = self._handle.read(self._chunk_size)
+        if chunk == "":
+            self._eof = True
+            return False
+        self._buffer += chunk
+        return True
+
+    def _compact(self) -> None:
+        if self._position > self._chunk_size:
+            self._buffer = self._buffer[self._position :]
+            self._position = 0
+
+    def _ensure_buffered(self) -> bool:
+        while self._position >= len(self._buffer):
+            if not self._read_more():
+                return False
+        return True
+
+    def skip_whitespace(self) -> None:
+        while True:
+            if not self._ensure_buffered():
+                return
+            start = self._position
+            while self._position < len(self._buffer) and self._buffer[self._position].isspace():
+                self._position += 1
+            if self._position < len(self._buffer) or self._eof:
+                self._compact()
+                return
+            if self._position == start and not self._read_more():
+                return
+
+    def _require_char(self, expected: str) -> None:
+        self.skip_whitespace()
+        if not self._ensure_buffered():
+            raise ValueError("Unexpected end of JSON input.")
+        actual = self._buffer[self._position]
+        if actual != expected:
+            raise ValueError(f"Expected '{expected}' in JSON input, found '{actual}'.")
+        self._position += 1
+        self._compact()
+
+    def _consume_char(self, expected: str) -> bool:
+        self.skip_whitespace()
+        if not self._ensure_buffered():
+            return False
+        if self._buffer[self._position] != expected:
+            return False
+        self._position += 1
+        self._compact()
+        return True
+
+    def peek_char(self) -> str:
+        self.skip_whitespace()
+        if not self._ensure_buffered():
+            raise ValueError("Unexpected end of JSON input.")
+        return self._buffer[self._position]
+
+    def decode_value(self) -> Any:
+        self.skip_whitespace()
+        while True:
+            if not self._ensure_buffered():
+                raise ValueError("Unexpected end of JSON input.")
+            try:
+                value, end = self._decoder.raw_decode(self._buffer, self._position)
+            except json.JSONDecodeError as exc:
+                if not self._read_more():
+                    raise ValueError(f"Could not parse JSON input: {exc.msg}.") from exc
+                continue
+            self._position = end
+            self._compact()
+            return value
+
+    def ensure_root_object(self) -> None:
+        self._require_char("{")
+
+    def ensure_input_consumed(self) -> None:
+        self.skip_whitespace()
+        if self._ensure_buffered():
+            raise ValueError("Expected end of JSON input after top-level object.")
+
+    def iter_object_items(self) -> Iterator[tuple[str, Any]]:
+        self._require_char("{")
+        if self._consume_char("}"):
+            return
+        while True:
+            key = self.decode_value()
+            if not isinstance(key, str):
+                raise ValueError("Expected object keys in JSON input to be strings.")
+            self._require_char(":")
+            value = self.decode_value()
+            yield key, value
+            if self._consume_char(","):
+                continue
+            self._require_char("}")
+            return
+
+
+def iter_json_object_items(
+    path: str | Path,
+    *,
+    top_level_key: str,
+) -> Iterator[tuple[str, Any]]:
+    try:
+        with open_text(path) as handle:
+            stream = _JsonValueStream(handle)
+            stream.ensure_root_object()
+            found_key = False
+            if stream._consume_char("}"):
+                raise ValueError(f"Expected JSON object to contain an object at payload['{top_level_key}'].")
+            while True:
+                key = stream.decode_value()
+                if not isinstance(key, str):
+                    raise ValueError("Expected object keys in JSON input to be strings.")
+                stream._require_char(":")
+                if key == top_level_key:
+                    if stream.peek_char() != "{":
+                        raise ValueError(
+                            f"Expected JSON object to contain an object at payload['{top_level_key}']."
+                        )
+                    found_key = True
+                    yield from stream.iter_object_items()
+                else:
+                    stream.decode_value()
+                if stream._consume_char(","):
+                    continue
+                stream._require_char("}")
+                break
+            if not found_key:
+                raise ValueError(f"Expected JSON object to contain an object at payload['{top_level_key}'].")
+            stream.ensure_input_consumed()
+    except OSError as exc:
+        raise ValueError(f"Could not read JSON file '{path}'.") from exc
 
 
 def open_url(url: str, headers: dict[str, str] | None = None, timeout: int = 120):

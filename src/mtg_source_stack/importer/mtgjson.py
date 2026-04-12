@@ -11,7 +11,7 @@ from ..db.schema import initialize_database
 from ..inventory.money import coerce_decimal
 from ..inventory.normalize import normalize_price_snapshot_finish
 from ..pricing import DEFAULT_PRICE_CURRENCY
-from .service import ImportStats, first_non_empty, load_json, text_or_none
+from .service import ImportStats, first_non_empty, iter_json_object_items, text_or_none
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +95,21 @@ def _price_uuid_preference(uuid: str, *, preferred_uuid: str | None) -> tuple[in
     return (0 if preferred_uuid is not None and uuid == preferred_uuid else 1, uuid)
 
 
+def _iter_mtgjson_data_items(
+    json_path: str | Path,
+    *,
+    payload_label: str,
+):
+    try:
+        yield from iter_json_object_items(json_path, top_level_key="data")
+    except ValueError as exc:
+        if str(exc) == "Expected JSON object to contain an object at payload['data'].":
+            raise ValueError(
+                f"Expected MTGJSON {payload_label} to contain an object at payload['data']."
+            ) from exc
+        raise
+
+
 def import_mtgjson_identifiers(
     db_path: str | Path,
     json_path: str | Path,
@@ -102,11 +117,6 @@ def import_mtgjson_identifiers(
     *,
     before_write: Callable[[], Any] | None = None,
 ) -> ImportStats:
-    payload = load_json(json_path)
-    data = payload.get("data", {}) if isinstance(payload, dict) else {}
-    if not isinstance(data, dict):
-        raise ValueError("Expected MTGJSON identifiers to contain an object at payload['data'].")
-
     stats = ImportStats()
     initialize_database(db_path)
     snapshot_taken = False
@@ -144,7 +154,10 @@ def import_mtgjson_identifiers(
 
     grouped_rows: dict[str, list[IdentifierImportRow]] = {}
 
-    for index, (uuid, identifier_record) in enumerate(data.items(), start=1):
+    for index, (uuid, identifier_record) in enumerate(
+        _iter_mtgjson_data_items(json_path, payload_label="identifiers"),
+        start=1,
+    ):
         if limit is not None and index > limit:
             break
 
@@ -415,11 +428,6 @@ def import_mtgjson_prices(
     *,
     before_write: Callable[[], Any] | None = None,
 ) -> ImportStats:
-    payload = load_json(json_path)
-    data = payload.get("data", {}) if isinstance(payload, dict) else {}
-    if not isinstance(data, dict):
-        raise ValueError("Expected MTGJSON prices to contain an object at payload['data'].")
-
     initialize_database(db_path)
     with connect(db_path) as connection:
         link_rows = connection.execute(
@@ -490,7 +498,10 @@ def import_mtgjson_prices(
         tuple[Any, str],
     ] = {}
 
-    for index, (uuid, price_formats) in enumerate(data.items(), start=1):
+    for index, (uuid, price_formats) in enumerate(
+        _iter_mtgjson_data_items(json_path, payload_label="prices"),
+        start=1,
+    ):
         if limit is not None and index > limit:
             break
 
