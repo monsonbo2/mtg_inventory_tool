@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any, Callable
 
 from ..db.connection import connect
@@ -117,9 +118,11 @@ def import_mtgjson_identifiers(
     *,
     before_write: Callable[[], Any] | None = None,
 ) -> ImportStats:
+    total_started = time.perf_counter()
     stats = ImportStats()
     initialize_database(db_path)
     snapshot_taken = False
+    phase_seconds: dict[str, float] = {}
 
     def maybe_before_write() -> None:
         nonlocal snapshot_taken
@@ -127,6 +130,7 @@ def import_mtgjson_identifiers(
             before_write()
             snapshot_taken = True
 
+    preload_started = time.perf_counter()
     with connect(db_path) as connection:
         known_rows = connection.execute(
             """
@@ -151,9 +155,11 @@ def import_mtgjson_identifiers(
         scryfall_id = row["scryfall_id"]
         if mtgjson_uuid is not None and scryfall_id is not None:
             uuid_to_scryfall.setdefault(mtgjson_uuid, scryfall_id)
+    phase_seconds["preload"] = round(time.perf_counter() - preload_started, 6)
 
     grouped_rows: dict[str, list[IdentifierImportRow]] = {}
 
+    scan_started = time.perf_counter()
     for index, (uuid, identifier_record) in enumerate(
         _iter_mtgjson_data_items(json_path, payload_label="identifiers"),
         start=1,
@@ -180,7 +186,9 @@ def import_mtgjson_identifiers(
             continue
 
         grouped_rows.setdefault(target_scryfall_id, []).append(row)
+    phase_seconds["scan"] = round(time.perf_counter() - scan_started, 6)
 
+    merge_started = time.perf_counter()
     merged_rows = {
         scryfall_id: _merge_identifier_import_rows(rows_for_card)
         for scryfall_id, rows_for_card in grouped_rows.items()
@@ -193,14 +201,17 @@ def import_mtgjson_identifiers(
             if row.mtgjson_uuid is not None
         }
     )
+    phase_seconds["merge"] = round(time.perf_counter() - merge_started, 6)
     stats.details = {
         "matched_cards": len(grouped_rows),
         "staged_link_rows": len(link_rows),
+        "phase_seconds": phase_seconds,
     }
     if not merged_rows:
         stats.details["changed_cards"] = 0
         stats.details["no_op_cards"] = 0
         stats.details["link_rows_written"] = 0
+        stats.details["import_total_seconds"] = round(time.perf_counter() - total_started, 6)
         return stats
 
     card_change_predicate = """
@@ -224,6 +235,7 @@ def import_mtgjson_identifiers(
     """
 
     with connect(db_path) as connection:
+        stage_started = time.perf_counter()
         connection.executescript(
             """
             CREATE TEMP TABLE temp_identifier_card_updates (
@@ -284,6 +296,8 @@ def import_mtgjson_identifiers(
                 """,
                 link_rows,
             )
+        phase_seconds["stage"] = round(time.perf_counter() - stage_started, 6)
+        detect_started = time.perf_counter()
         connection.execute(
             f"""
             INSERT INTO temp_identifier_changed_cards (
@@ -335,6 +349,7 @@ def import_mtgjson_identifiers(
         link_rows_written = connection.execute(
             "SELECT COUNT(*) FROM temp_identifier_changed_links"
         ).fetchone()[0]
+        phase_seconds["detect_changes"] = round(time.perf_counter() - detect_started, 6)
         stats.rows_written = len(changed_card_ids)
         stats.details["changed_cards"] = stats.rows_written
         stats.details["no_op_cards"] = max(len(grouped_rows) - stats.rows_written, 0)
@@ -342,6 +357,7 @@ def import_mtgjson_identifiers(
 
         if changed_card_ids or link_rows_written:
             maybe_before_write()
+        write_started = time.perf_counter()
         if changed_card_ids:
             connection.execute(
                 """
@@ -416,7 +432,9 @@ def import_mtgjson_identifiers(
             )
 
         connection.commit()
+        phase_seconds["write"] = round(time.perf_counter() - write_started, 6)
 
+    stats.details["import_total_seconds"] = round(time.perf_counter() - total_started, 6)
     return stats
 
 
@@ -428,7 +446,10 @@ def import_mtgjson_prices(
     *,
     before_write: Callable[[], Any] | None = None,
 ) -> ImportStats:
+    total_started = time.perf_counter()
     initialize_database(db_path)
+    phase_seconds: dict[str, float] = {}
+    preload_started = time.perf_counter()
     with connect(db_path) as connection:
         link_rows = connection.execute(
             """
@@ -459,6 +480,7 @@ def import_mtgjson_prices(
             scryfall_id = row["scryfall_id"]
             if mtgjson_uuid is not None and scryfall_id is not None:
                 uuid_to_scryfall.setdefault(mtgjson_uuid, scryfall_id)
+    phase_seconds["preload"] = round(time.perf_counter() - preload_started, 6)
 
     stats = ImportStats()
     snapshot_taken = False
@@ -497,7 +519,9 @@ def import_mtgjson_prices(
         tuple[str, str, str, str, str, str, str],
         tuple[Any, str],
     ] = {}
+    conflict_rows = 0
 
+    scan_started = time.perf_counter()
     for index, (uuid, price_formats) in enumerate(
         _iter_mtgjson_data_items(json_path, payload_label="prices"),
         start=1,
@@ -578,11 +602,16 @@ def import_mtgjson_prices(
                                 and _price_uuid_preference(mtgjson_uuid, preferred_uuid=preferred_uuid)
                                 < _price_uuid_preference(existing_uuid, preferred_uuid=preferred_uuid)
                             ):
+                                conflict_rows += 1
                                 merged_price_rows[key] = (decimal_price, mtgjson_uuid)
+                            elif decimal_price != existing_price:
+                                conflict_rows += 1
 
         if not wrote_for_card:
             stats.rows_skipped += 1
+    phase_seconds["scan"] = round(time.perf_counter() - scan_started, 6)
 
+    write_started = time.perf_counter()
     with connect(db_path) as connection:
         if merged_price_rows:
             maybe_before_write()
@@ -613,5 +642,12 @@ def import_mtgjson_prices(
             stats.rows_written = len(merged_price_rows)
 
         connection.commit()
+    phase_seconds["write"] = round(time.perf_counter() - write_started, 6)
+    stats.details = {
+        "merged_price_rows": len(merged_price_rows),
+        "conflict_rows": conflict_rows,
+        "phase_seconds": phase_seconds,
+        "import_total_seconds": round(time.perf_counter() - total_started, 6),
+    }
 
     return stats

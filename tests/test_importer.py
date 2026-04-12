@@ -659,12 +659,64 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(1, second_stats.rows_seen)
             self.assertEqual(0, second_stats.rows_written)
             self.assertEqual(0, second_stats.rows_skipped)
-            self.assertEqual(
-                {"matched_cards": 1, "staged_link_rows": 1, "changed_cards": 0, "no_op_cards": 1, "link_rows_written": 0},
-                second_stats.details,
-            )
+            self.assertEqual(1, second_stats.details["matched_cards"])
+            self.assertEqual(1, second_stats.details["staged_link_rows"])
+            self.assertEqual(0, second_stats.details["changed_cards"])
+            self.assertEqual(1, second_stats.details["no_op_cards"])
+            self.assertEqual(0, second_stats.details["link_rows_written"])
+            self.assertIn("phase_seconds", second_stats.details)
+            self.assertIn("import_total_seconds", second_stats.details)
             self.assertEqual(("uuid-noop", "7001", "2000-01-01 00:00:00"), tuple(row))
             self.assertEqual(1, link_count)
+
+    def test_import_mtgjson_identifiers_reports_phase_timings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            identifiers_path = Path(tmp_dir) / "identifiers.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-phases', 'oracle-phases', 'Phase Card', 'tst', 'Test Set', '70')
+                    """
+                )
+                connection.commit()
+
+            identifiers_payload = {
+                "data": {
+                    "uuid-phases": {
+                        "identifiers": {
+                            "scryfallId": "card-phases",
+                            "tcgplayerProductId": "7002",
+                        }
+                    }
+                }
+            }
+            identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_identifiers
+
+            stats = import_mtgjson_identifiers(db_path, identifiers_path)
+
+            self.assertEqual(1, stats.rows_written)
+            self.assertIsInstance(stats.details["import_total_seconds"], float)
+            self.assertGreaterEqual(stats.details["import_total_seconds"], 0.0)
+            self.assertEqual(
+                {"preload", "scan", "merge", "stage", "detect_changes", "write"},
+                set(stats.details["phase_seconds"]),
+            )
+            for value in stats.details["phase_seconds"].values():
+                self.assertIsInstance(value, float)
+                self.assertGreaterEqual(value, 0.0)
 
     def test_iter_json_object_items_reads_gzip_data_object(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1071,6 +1123,9 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(2, stats.rows_seen)
             self.assertEqual(1, stats.rows_written)
             self.assertEqual(0, stats.rows_skipped)
+            self.assertEqual(1, stats.details["conflict_rows"])
+            self.assertEqual(1, stats.details["merged_price_rows"])
+            self.assertEqual({"preload", "scan", "write"}, set(stats.details["phase_seconds"]))
             self.assertEqual(("tcgplayer", 2.25), (row["provider"], row["price_value"]))
 
     def test_import_all_records_sync_run_steps_and_artifacts(self) -> None:
@@ -1151,7 +1206,7 @@ class ImporterTest(RepoSmokeTestCase):
                 ).fetchone()
                 step_rows = connection.execute(
                     """
-                    SELECT step_name, status, rows_seen, rows_written, rows_skipped
+                    SELECT step_name, status, rows_seen, rows_written, rows_skipped, details_json
                     FROM sync_run_steps
                     ORDER BY id
                     """
@@ -1192,6 +1247,10 @@ class ImporterTest(RepoSmokeTestCase):
                     for row in step_rows
                 ],
             )
+            for row in step_rows:
+                details = json.loads(row["details_json"])
+                self.assertIn("elapsed_seconds", details)
+                self.assertGreaterEqual(details["elapsed_seconds"], 0.0)
             self.assertEqual(
                 ["mtgjson_identifiers", "mtgjson_prices", "scryfall_json"],
                 [row["artifact_role"] for row in artifact_rows],
@@ -1691,6 +1750,7 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertIn("sync-scryfall completed", sync_output)
             self.assertIn("run_id:", sync_output)
             self.assertIn("import-scryfall: seen=1 written=1 skipped=0", sync_output)
+            self.assertIn("elapsed:", sync_output)
             self.assertTrue((cache_dir / "scryfall_default_cards.json").exists())
 
             with connect(db_path) as connection:
@@ -1773,6 +1833,8 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertIn("sync-identifiers completed", sync_output)
             self.assertIn("run_id:", sync_output)
             self.assertIn("import-identifiers: seen=1 written=1 skipped=0", sync_output)
+            self.assertIn("phases:", sync_output)
+            self.assertIn("details: matched_cards=1 changed_cards=1", sync_output)
             self.assertTrue((cache_dir / "AllIdentifiers.json.gz").exists())
 
             with connect(db_path) as connection:
@@ -1872,6 +1934,7 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertIn("sync-prices completed", sync_output)
             self.assertIn("run_id:", sync_output)
             self.assertIn("import-prices: seen=1 written=1 skipped=0", sync_output)
+            self.assertIn("phases:", sync_output)
             self.assertTrue((cache_dir / "AllPricesToday.json.gz").exists())
 
             with connect(db_path) as connection:

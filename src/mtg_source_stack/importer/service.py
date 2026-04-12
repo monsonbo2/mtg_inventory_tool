@@ -47,6 +47,19 @@ class DownloadResult:
     downloaded: bool
 
 
+def _merge_import_stats_details(
+    stats: ImportStats,
+    extra_details: dict[str, Any] | None = None,
+) -> ImportStats:
+    merged: dict[str, Any] = {}
+    if isinstance(stats.details, dict):
+        merged.update(stats.details)
+    if extra_details:
+        merged.update(extra_details)
+    stats.details = merged or None
+    return stats
+
+
 def file_digest_info(path: str | Path) -> dict[str, Any]:
     file_path = Path(path)
     digest = hashlib.sha256()
@@ -395,11 +408,39 @@ def format_bytes(num_bytes: int) -> str:
 def print_stats(label: str, stats: ImportStats) -> None:
     summary = f"{label}: seen={stats.rows_seen} written={stats.rows_written} skipped={stats.rows_skipped}"
     skip_reason = None
+    elapsed_seconds = None
+    phase_seconds = None
+    detail_parts: list[str] = []
     if isinstance(stats.details, dict):
         skip_reason = stats.details.get("skip_reason")
+        elapsed_seconds = stats.details.get("elapsed_seconds")
+        phase_seconds = stats.details.get("phase_seconds")
+        for detail_key in (
+            "matched_cards",
+            "changed_cards",
+            "no_op_cards",
+            "staged_link_rows",
+            "link_rows_written",
+            "merged_price_rows",
+            "conflict_rows",
+        ):
+            if detail_key in stats.details:
+                detail_parts.append(f"{detail_key}={stats.details[detail_key]}")
     if skip_reason:
         summary = f"{summary} ({skip_reason})"
     print(summary)
+    if isinstance(elapsed_seconds, (int, float)):
+        print(f"  elapsed: {elapsed_seconds:.3f}s")
+    if isinstance(phase_seconds, dict) and phase_seconds:
+        phase_summary = " ".join(
+            f"{phase_name}={float(seconds):.3f}s"
+            for phase_name, seconds in phase_seconds.items()
+            if isinstance(seconds, (int, float))
+        )
+        if phase_summary:
+            print(f"  phases: {phase_summary}")
+    if detail_parts:
+        print(f"  details: {' '.join(detail_parts)}")
 
 
 def format_snapshot_brief(snapshot: dict[str, Any]) -> str:
@@ -481,6 +522,7 @@ def _run_sync_step(
             on_step(step_name, "failed", None, elapsed_seconds, exc)
         raise
     elapsed_seconds = time.perf_counter() - started
+    _merge_import_stats_details(stats, {"elapsed_seconds": round(elapsed_seconds, 6)})
     if on_step is not None:
         on_step(step_name, "succeeded", stats, elapsed_seconds, None)
     return stats, elapsed_seconds
@@ -498,6 +540,7 @@ def _run_or_skip_sync_step(
     if skip_reason is not None:
         stats = ImportStats(details={"skip_reason": skip_reason})
         elapsed_seconds = 0.0
+        _merge_import_stats_details(stats, {"elapsed_seconds": round(elapsed_seconds, 6)})
         if on_step is not None:
             on_step(step_name, "skipped", stats, elapsed_seconds, None)
         return stats, elapsed_seconds

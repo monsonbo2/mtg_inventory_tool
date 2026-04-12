@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -116,31 +117,37 @@ def _run_tracked_step(
     details: dict[str, Any] | None = None,
 ) -> Any:
     step_id = start_sync_step(db_path, run_id, step_name=step_name, details=details)
+    started = time.perf_counter()
     try:
         result = operation()
     except Exception as exc:
+        elapsed_seconds = time.perf_counter() - started
         finish_sync_step(
             db_path,
             step_id,
             status="failed",
-            details=_merge_step_details(details, error=exc),
+            details=_merge_step_details(details, error=exc, elapsed_seconds=elapsed_seconds),
         )
         raise
 
+    elapsed_seconds = time.perf_counter() - started
     if hasattr(result, "rows_seen") and hasattr(result, "rows_written") and hasattr(result, "rows_skipped"):
+        result_details = _merge_step_details(details, result, elapsed_seconds=elapsed_seconds)
+        if result_details is not None:
+            result.details = result_details
         finish_sync_step(
             db_path,
             step_id,
             status="succeeded",
             stats=result,
-            details=_merge_step_details(details, result),
+            details=result_details,
         )
     else:
         finish_sync_step(
             db_path,
             step_id,
             status="succeeded",
-            details=details,
+            details=_merge_step_details(details, elapsed_seconds=elapsed_seconds),
         )
     return result
 
