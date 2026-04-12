@@ -1767,6 +1767,356 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual([("import_prices", "succeeded")], [(row["step_name"], row["status"]) for row in sync_steps])
             self.assertEqual(["mtgjson_prices"], [row["artifact_role"] for row in artifacts])
 
+    def test_sync_scryfall_skips_unchanged_artifact_on_repeat_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            cache_dir = tmp / "cache"
+            metadata_path = tmp / "scryfall_bulk_metadata.json"
+            scryfall_bulk_path = tmp / "default_cards.json"
+
+            scryfall_payload = [
+                {
+                    "id": "sync-scryfall-repeat-1",
+                    "oracle_id": "sync-scryfall-repeat-oracle-1",
+                    "name": "Repeat Sync Scryfall Card",
+                    "set": "syn",
+                    "set_name": "Sync Set",
+                    "collector_number": "110",
+                    "lang": "en",
+                    "rarity": "rare",
+                    "released_at": "2026-01-01",
+                    "colors": ["U"],
+                    "color_identity": ["U"],
+                    "finishes": ["nonfoil"],
+                    "legalities": {"commander": "legal"},
+                    "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                }
+            ]
+            metadata_payload = {
+                "data": [
+                    {
+                        "type": "default_cards",
+                        "download_uri": scryfall_bulk_path.as_uri(),
+                    }
+                ]
+            }
+
+            scryfall_bulk_path.write_text(json.dumps(scryfall_payload), encoding="utf-8")
+            metadata_path.write_text(json.dumps(metadata_payload), encoding="utf-8")
+
+            self.run_importer(
+                "sync-scryfall",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--scryfall-metadata-url",
+                metadata_path.as_uri(),
+            )
+            second_output = self.run_importer(
+                "sync-scryfall",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--scryfall-metadata-url",
+                metadata_path.as_uri(),
+            )
+
+            self.assertIn("artifact unchanged since run 1", second_output)
+            with connect(db_path) as connection:
+                step_rows = connection.execute(
+                    """
+                    SELECT step_name, status
+                    FROM sync_run_steps
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+            self.assertEqual(
+                [("import_scryfall", "succeeded"), ("import_scryfall", "skipped")],
+                [(row["step_name"], row["status"]) for row in step_rows],
+            )
+
+    def test_sync_identifiers_skips_unchanged_artifact_on_repeat_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            cache_dir = tmp / "cache"
+            identifiers_path = tmp / "AllIdentifiers.json.gz"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('sync-identifiers-repeat-1', 'oracle-sync-identifiers-repeat-1', 'Repeat Sync Identifiers Card', 'syn', 'Sync Set', '111')
+                    """
+                )
+                connection.commit()
+
+            identifiers_payload = {
+                "data": {
+                    "uuid-sync-identifiers-repeat-1": {
+                        "identifiers": {
+                            "scryfallId": "sync-identifiers-repeat-1",
+                            "tcgplayerProductId": "11101",
+                        }
+                    }
+                }
+            }
+            with gzip.open(identifiers_path, "wt", encoding="utf-8") as handle:
+                json.dump(identifiers_payload, handle)
+
+            self.run_importer(
+                "sync-identifiers",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--mtgjson-identifiers-url",
+                identifiers_path.as_uri(),
+            )
+            second_output = self.run_importer(
+                "sync-identifiers",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--mtgjson-identifiers-url",
+                identifiers_path.as_uri(),
+            )
+
+            self.assertIn("artifact unchanged since run 1", second_output)
+            with connect(db_path) as connection:
+                step_rows = connection.execute(
+                    """
+                    SELECT step_name, status
+                    FROM sync_run_steps
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+            self.assertEqual(
+                [("import_identifiers", "succeeded"), ("import_identifiers", "skipped")],
+                [(row["step_name"], row["status"]) for row in step_rows],
+            )
+
+    def test_sync_prices_skips_unchanged_artifact_on_repeat_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            cache_dir = tmp / "cache"
+            prices_path = tmp / "AllPricesToday.json.gz"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        mtgjson_uuid,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('sync-prices-repeat-1', 'oracle-sync-prices-repeat-1', 'uuid-sync-prices-repeat-1', 'Repeat Sync Prices Card', 'syn', 'Sync Set', '112')
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtgjson_card_links (mtgjson_uuid, scryfall_id)
+                    VALUES ('uuid-sync-prices-repeat-1', 'sync-prices-repeat-1')
+                    """
+                )
+                connection.commit()
+
+            prices_payload = {
+                "data": {
+                    "uuid-sync-prices-repeat-1": {
+                        "paper": {
+                            "tcgplayer": {
+                                "currency": "USD",
+                                "retail": {"normal": {"2026-03-27": 12.25}},
+                            }
+                        }
+                    }
+                }
+            }
+            with gzip.open(prices_path, "wt", encoding="utf-8") as handle:
+                json.dump(prices_payload, handle)
+
+            self.run_importer(
+                "sync-prices",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--mtgjson-prices-url",
+                prices_path.as_uri(),
+            )
+            second_output = self.run_importer(
+                "sync-prices",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--mtgjson-prices-url",
+                prices_path.as_uri(),
+            )
+
+            self.assertIn("artifact unchanged since run 1", second_output)
+            with connect(db_path) as connection:
+                step_rows = connection.execute(
+                    """
+                    SELECT step_name, status
+                    FROM sync_run_steps
+                    ORDER BY id
+                    """
+                ).fetchall()
+
+            self.assertEqual(
+                [("import_prices", "succeeded"), ("import_prices", "skipped")],
+                [(row["step_name"], row["status"]) for row in step_rows],
+            )
+
+    def test_sync_identifiers_reimports_after_later_scryfall_sync_changes_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            cache_dir = tmp / "cache"
+            metadata_path = tmp / "scryfall_bulk_metadata.json"
+            scryfall_bulk_path = tmp / "default_cards.json"
+            identifiers_path = tmp / "AllIdentifiers.json.gz"
+
+            initial_scryfall_payload = [
+                {
+                    "id": "sync-identifiers-dependency-1",
+                    "oracle_id": "oracle-sync-identifiers-dependency-1",
+                    "name": "Dependency Card One",
+                    "set": "syn",
+                    "set_name": "Sync Set",
+                    "collector_number": "113",
+                    "lang": "en",
+                    "rarity": "rare",
+                    "released_at": "2026-01-01",
+                    "colors": ["U"],
+                    "color_identity": ["U"],
+                    "finishes": ["nonfoil"],
+                    "legalities": {"commander": "legal"},
+                    "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                }
+            ]
+            expanded_scryfall_payload = initial_scryfall_payload + [
+                {
+                    "id": "sync-identifiers-dependency-2",
+                    "oracle_id": "oracle-sync-identifiers-dependency-2",
+                    "name": "Dependency Card Two",
+                    "set": "syn",
+                    "set_name": "Sync Set",
+                    "collector_number": "114",
+                    "lang": "en",
+                    "rarity": "rare",
+                    "released_at": "2026-01-01",
+                    "colors": ["U"],
+                    "color_identity": ["U"],
+                    "finishes": ["nonfoil"],
+                    "legalities": {"commander": "legal"},
+                    "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                }
+            ]
+            metadata_payload = {
+                "data": [
+                    {
+                        "type": "default_cards",
+                        "download_uri": scryfall_bulk_path.as_uri(),
+                    }
+                ]
+            }
+            identifiers_payload = {
+                "data": {
+                    "uuid-sync-identifiers-dependency-1": {
+                        "identifiers": {
+                            "scryfallId": "sync-identifiers-dependency-1",
+                            "tcgplayerProductId": "11301",
+                        }
+                    },
+                    "uuid-sync-identifiers-dependency-2": {
+                        "identifiers": {
+                            "scryfallId": "sync-identifiers-dependency-2",
+                            "tcgplayerProductId": "11401",
+                        }
+                    },
+                }
+            }
+
+            scryfall_bulk_path.write_text(json.dumps(initial_scryfall_payload), encoding="utf-8")
+            metadata_path.write_text(json.dumps(metadata_payload), encoding="utf-8")
+            with gzip.open(identifiers_path, "wt", encoding="utf-8") as handle:
+                json.dump(identifiers_payload, handle)
+
+            self.run_importer(
+                "sync-scryfall",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--scryfall-metadata-url",
+                metadata_path.as_uri(),
+            )
+            self.run_importer(
+                "sync-identifiers",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--mtgjson-identifiers-url",
+                identifiers_path.as_uri(),
+            )
+
+            scryfall_bulk_path.write_text(json.dumps(expanded_scryfall_payload), encoding="utf-8")
+            self.run_importer(
+                "sync-scryfall",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--scryfall-metadata-url",
+                metadata_path.as_uri(),
+            )
+            final_output = self.run_importer(
+                "sync-identifiers",
+                "--db",
+                str(db_path),
+                "--cache-dir",
+                str(cache_dir),
+                "--mtgjson-identifiers-url",
+                identifiers_path.as_uri(),
+            )
+
+            self.assertNotIn("artifact unchanged since run 2", final_output)
+            self.assertIn("import-identifiers: seen=2 written=1 skipped=0", final_output)
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    """
+                    SELECT mtgjson_uuid, tcgplayer_product_id
+                    FROM mtg_cards
+                    WHERE scryfall_id = 'sync-identifiers-dependency-2'
+                    """
+                ).fetchone()
+
+            self.assertEqual(("uuid-sync-identifiers-dependency-2", "11401"), (row["mtgjson_uuid"], row["tcgplayer_product_id"]))
+
     def test_remove_card_creates_snapshot_and_restore_snapshot_recovers_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

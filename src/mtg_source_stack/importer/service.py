@@ -9,6 +9,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import HTTPError
+from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 DEFAULT_BULK_CACHE_DIR = Path("var") / "bulk_cache" / "latest"
@@ -42,6 +44,24 @@ class DownloadResult:
     sha256: str
     etag: str | None
     last_modified: str | None
+    downloaded: bool
+
+
+def file_digest_info(path: str | Path) -> dict[str, Any]:
+    file_path = Path(path)
+    digest = hashlib.sha256()
+    with file_path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return {
+        "path": file_path,
+        "bytes_written": file_path.stat().st_size,
+        "sha256": digest.hexdigest(),
+        "last_modified": str(int(file_path.stat().st_mtime)),
+    }
 
 
 def open_text(path: str | Path):
@@ -88,11 +108,70 @@ def download_to_path(
     *,
     headers: dict[str, str] | None = None,
     timeout: int = 120,
+    if_none_match: str | None = None,
+    if_modified_since: str | None = None,
 ) -> DownloadResult:
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
+    parsed_url = urlparse(url)
+    if parsed_url.scheme == "file":
+        source_path = Path(unquote(parsed_url.path))
+        source_info = file_digest_info(source_path)
+        if path.exists():
+            destination_info = file_digest_info(path)
+            if destination_info["sha256"] == source_info["sha256"]:
+                return DownloadResult(
+                    label=path.name,
+                    url=url,
+                    path=path,
+                    bytes_written=destination_info["bytes_written"],
+                    sha256=destination_info["sha256"],
+                    etag=None,
+                    last_modified=source_info["last_modified"],
+                    downloaded=False,
+                )
+        with source_path.open("rb") as source_handle, path.open("wb") as destination_handle:
+            while True:
+                chunk = source_handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                destination_handle.write(chunk)
+        destination_info = file_digest_info(path)
+        return DownloadResult(
+            label=path.name,
+            url=url,
+            path=path,
+            bytes_written=destination_info["bytes_written"],
+            sha256=destination_info["sha256"],
+            etag=None,
+            last_modified=source_info["last_modified"],
+            downloaded=True,
+        )
+
     digest = hashlib.sha256()
-    with open_url(url, headers=headers, timeout=timeout) as response, path.open("wb") as handle:
+    request_headers = dict(headers or {})
+    if path.exists():
+        if if_none_match is not None:
+            request_headers["If-None-Match"] = if_none_match
+        if if_modified_since is not None:
+            request_headers["If-Modified-Since"] = if_modified_since
+    try:
+        response_context = open_url(url, headers=request_headers, timeout=timeout)
+    except HTTPError as exc:
+        if exc.code == 304 and path.exists():
+            destination_info = file_digest_info(path)
+            return DownloadResult(
+                label=path.name,
+                url=url,
+                path=path,
+                bytes_written=destination_info["bytes_written"],
+                sha256=destination_info["sha256"],
+                etag=exc.headers.get("ETag") or if_none_match,
+                last_modified=exc.headers.get("Last-Modified") or if_modified_since,
+                downloaded=False,
+            )
+        raise
+    with response_context as response, path.open("wb") as handle:
         total = 0
         response_headers = response.headers
         while True:
@@ -110,6 +189,7 @@ def download_to_path(
         sha256=digest.hexdigest(),
         etag=response_headers.get("ETag"),
         last_modified=response_headers.get("Last-Modified"),
+        downloaded=True,
     )
 
 
@@ -167,7 +247,13 @@ def format_bytes(num_bytes: int) -> str:
 
 
 def print_stats(label: str, stats: ImportStats) -> None:
-    print(f"{label}: seen={stats.rows_seen} written={stats.rows_written} skipped={stats.rows_skipped}")
+    summary = f"{label}: seen={stats.rows_seen} written={stats.rows_written} skipped={stats.rows_skipped}"
+    skip_reason = None
+    if isinstance(stats.details, dict):
+        skip_reason = stats.details.get("skip_reason")
+    if skip_reason:
+        summary = f"{summary} ({skip_reason})"
+    print(summary)
 
 
 def format_snapshot_brief(snapshot: dict[str, Any]) -> str:
@@ -218,12 +304,16 @@ def _download_sync_artifact(
     destination: str | Path,
     *,
     on_download: Callable[[DownloadResult], None] | None = None,
+    if_none_match: str | None = None,
+    if_modified_since: str | None = None,
 ) -> DownloadResult:
     download = download_to_path(
         url,
         destination,
         headers=HTTP_HEADERS,
         timeout=300,
+        if_none_match=if_none_match,
+        if_modified_since=if_modified_since,
     )
     if on_download is not None:
         on_download(download)
@@ -250,6 +340,24 @@ def _run_sync_step(
     return stats, elapsed_seconds
 
 
+def _run_or_skip_sync_step(
+    step_name: str,
+    download: DownloadResult,
+    operation: Callable[[], ImportStats],
+    *,
+    should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
+    on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+) -> tuple[ImportStats, float]:
+    skip_reason = should_skip_step(step_name, download) if should_skip_step is not None else None
+    if skip_reason is not None:
+        stats = ImportStats(details={"skip_reason": skip_reason})
+        elapsed_seconds = 0.0
+        if on_step is not None:
+            on_step(step_name, "skipped", stats, elapsed_seconds, None)
+        return stats, elapsed_seconds
+    return _run_sync_step(step_name, operation, on_step=on_step)
+
+
 def sync_scryfall(
     db_path: str | Path,
     *,
@@ -260,6 +368,9 @@ def sync_scryfall(
     before_write: Callable[[], Any] | None = None,
     on_download: Callable[[DownloadResult], None] | None = None,
     on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+    should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
+    if_none_match: str | None = None,
+    if_modified_since: str | None = None,
 ) -> dict[str, Any]:
     from .scryfall import import_scryfall_cards
 
@@ -272,10 +383,14 @@ def sync_scryfall(
         scryfall_download_url,
         cache_path / SCRYFALL_BULK_CACHE_FILENAME,
         on_download=on_download,
+        if_none_match=if_none_match,
+        if_modified_since=if_modified_since,
     )
-    scryfall_stats, scryfall_elapsed_seconds = _run_sync_step(
+    scryfall_stats, scryfall_elapsed_seconds = _run_or_skip_sync_step(
         "import_scryfall",
+        download,
         lambda: import_scryfall_cards(db_path, download.path, limit, before_write=before_write),
+        should_skip_step=should_skip_step,
         on_step=on_step,
     )
     return {
@@ -297,6 +412,9 @@ def sync_identifiers(
     before_write: Callable[[], Any] | None = None,
     on_download: Callable[[DownloadResult], None] | None = None,
     on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+    should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
+    if_none_match: str | None = None,
+    if_modified_since: str | None = None,
 ) -> dict[str, Any]:
     from .mtgjson import import_mtgjson_identifiers
 
@@ -305,10 +423,14 @@ def sync_identifiers(
         mtgjson_identifiers_url,
         cache_path / MTGJSON_IDENTIFIERS_CACHE_FILENAME,
         on_download=on_download,
+        if_none_match=if_none_match,
+        if_modified_since=if_modified_since,
     )
-    identifier_stats, identifier_elapsed_seconds = _run_sync_step(
+    identifier_stats, identifier_elapsed_seconds = _run_or_skip_sync_step(
         "import_identifiers",
+        download,
         lambda: import_mtgjson_identifiers(db_path, download.path, limit, before_write=before_write),
+        should_skip_step=should_skip_step,
         on_step=on_step,
     )
     return {
@@ -330,6 +452,9 @@ def sync_prices(
     before_write: Callable[[], Any] | None = None,
     on_download: Callable[[DownloadResult], None] | None = None,
     on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+    should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
+    if_none_match: str | None = None,
+    if_modified_since: str | None = None,
 ) -> dict[str, Any]:
     from .mtgjson import import_mtgjson_prices
 
@@ -338,10 +463,14 @@ def sync_prices(
         mtgjson_prices_url,
         cache_path / MTGJSON_PRICES_CACHE_FILENAME,
         on_download=on_download,
+        if_none_match=if_none_match,
+        if_modified_since=if_modified_since,
     )
-    price_stats, price_elapsed_seconds = _run_sync_step(
+    price_stats, price_elapsed_seconds = _run_or_skip_sync_step(
         "import_prices",
+        download,
         lambda: import_mtgjson_prices(db_path, download.path, limit, source_name, before_write=before_write),
+        should_skip_step=should_skip_step,
         on_step=on_step,
     )
     return {
@@ -367,6 +496,8 @@ def sync_bulk(
     before_write: Callable[[], Any] | None = None,
     on_download: Callable[[DownloadResult], None] | None = None,
     on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
+    should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
+    download_hints: dict[str, dict[str, str | None]] | None = None,
 ) -> dict[str, Any]:
     from .mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
     from .scryfall import import_scryfall_cards
@@ -382,32 +513,41 @@ def sync_bulk(
     # the exact files that were used to populate the database.
     downloads: list[DownloadResult] = []
     for download_url, destination in (
-        (scryfall_download_url, cache_path / "scryfall_default_cards.json"),
-        (mtgjson_identifiers_url, cache_path / "AllIdentifiers.json.gz"),
-        (mtgjson_prices_url, cache_path / "AllPricesToday.json.gz"),
+        (scryfall_download_url, cache_path / SCRYFALL_BULK_CACHE_FILENAME),
+        (mtgjson_identifiers_url, cache_path / MTGJSON_IDENTIFIERS_CACHE_FILENAME),
+        (mtgjson_prices_url, cache_path / MTGJSON_PRICES_CACHE_FILENAME),
     ):
+        hints = (download_hints or {}).get(destination.name, {})
         download = _download_sync_artifact(
             download_url,
             destination,
             on_download=on_download,
+            if_none_match=hints.get("etag"),
+            if_modified_since=hints.get("last_modified"),
         )
         downloads.append(download)
 
     # The imports are ordered to establish catalog rows first, then enrich them
     # with identifier crosswalks, and finally attach price snapshots.
-    scryfall_stats, scryfall_elapsed_seconds = _run_sync_step(
+    scryfall_stats, scryfall_elapsed_seconds = _run_or_skip_sync_step(
         "import_scryfall",
+        downloads[0],
         lambda: import_scryfall_cards(db_path, downloads[0].path, limit, before_write=before_write),
+        should_skip_step=should_skip_step,
         on_step=on_step,
     )
-    identifier_stats, identifier_elapsed_seconds = _run_sync_step(
+    identifier_stats, identifier_elapsed_seconds = _run_or_skip_sync_step(
         "import_identifiers",
+        downloads[1],
         lambda: import_mtgjson_identifiers(db_path, downloads[1].path, limit, before_write=before_write),
+        should_skip_step=should_skip_step,
         on_step=on_step,
     )
-    price_stats, price_elapsed_seconds = _run_sync_step(
+    price_stats, price_elapsed_seconds = _run_or_skip_sync_step(
         "import_prices",
+        downloads[2],
         lambda: import_mtgjson_prices(db_path, downloads[2].path, limit, source_name, before_write=before_write),
+        should_skip_step=should_skip_step,
         on_step=on_step,
     )
 

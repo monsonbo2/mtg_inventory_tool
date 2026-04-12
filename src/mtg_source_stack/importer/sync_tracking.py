@@ -217,3 +217,95 @@ def record_sync_issue(
             (run_id, step_name, level, code, message, _json_text(payload)),
         )
         connection.commit()
+
+
+def latest_sync_artifact(
+    db_path: str | Path,
+    *,
+    artifact_role: str,
+    source_url: str,
+) -> dict[str, Any] | None:
+    with connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                artifacts.id,
+                artifacts.sync_run_id,
+                artifacts.source_url,
+                artifacts.local_path,
+                artifacts.bytes_written,
+                artifacts.sha256,
+                artifacts.etag,
+                artifacts.last_modified
+            FROM sync_run_artifacts AS artifacts
+            WHERE artifacts.artifact_role = ?
+              AND artifacts.source_url = ?
+            ORDER BY artifacts.id DESC
+            LIMIT 1
+            """,
+            (artifact_role, source_url),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def unchanged_import_skip_reason(
+    db_path: str | Path,
+    *,
+    step_name: str,
+    artifact_role: str,
+    source_url: str,
+    sha256: str,
+    limit_value: int | None,
+    source_name: str | None = None,
+    invalidated_by_steps: tuple[str, ...] = (),
+) -> str | None:
+    with connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                runs.id AS run_id,
+                runs.limit_value,
+                runs.source_name,
+                artifacts.sha256
+            FROM sync_runs AS runs
+            JOIN sync_run_steps AS steps
+                ON steps.sync_run_id = runs.id
+            JOIN sync_run_artifacts AS artifacts
+                ON artifacts.sync_run_id = runs.id
+            WHERE runs.status = 'succeeded'
+              AND steps.status = 'succeeded'
+              AND steps.step_name = ?
+              AND artifacts.artifact_role = ?
+              AND artifacts.source_url = ?
+            ORDER BY runs.id DESC
+            LIMIT 1
+            """,
+            (step_name, artifact_role, source_url),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["sha256"] != sha256:
+            return None
+        if row["limit_value"] != limit_value:
+            return None
+        if source_name is not None and row["source_name"] != source_name:
+            return None
+        if invalidated_by_steps:
+            placeholders = ",".join("?" for _ in invalidated_by_steps)
+            invalidation_row = connection.execute(
+                f"""
+                SELECT 1
+                FROM sync_runs AS runs
+                JOIN sync_run_steps AS steps
+                    ON steps.sync_run_id = runs.id
+                WHERE runs.status = 'succeeded'
+                  AND steps.status = 'succeeded'
+                  AND steps.step_name IN ({placeholders})
+                  AND runs.id > ?
+                LIMIT 1
+                """,
+                (*invalidated_by_steps, row["run_id"]),
+            ).fetchone()
+            if invalidation_row is not None:
+                return None
+    return f"artifact unchanged since run {row['run_id']}"
