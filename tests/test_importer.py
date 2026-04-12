@@ -1441,7 +1441,10 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(("sync_bulk", "failed"), (run_row["run_kind"], run_row["status"]))
             self.assertEqual(0, step_count)
             self.assertEqual(
-                [("scryfall_bulk", str((cache_dir / "scryfall_default_cards.json").resolve()))],
+                [
+                    ("scryfall_bulk", str((cache_dir / "scryfall_default_cards.json").resolve())),
+                    ("scryfall_bulk_metadata", str((cache_dir / "scryfall_bulk_metadata.json").resolve())),
+                ],
                 [(row["artifact_role"], row["local_path"]) for row in artifact_rows],
             )
 
@@ -1551,7 +1554,7 @@ class ImporterTest(RepoSmokeTestCase):
                 [(row["step_name"], row["status"]) for row in step_rows],
             )
             self.assertEqual(
-                ["mtgjson_identifiers", "mtgjson_prices", "scryfall_bulk"],
+                ["mtgjson_identifiers", "mtgjson_prices", "scryfall_bulk", "scryfall_bulk_metadata"],
                 [row["artifact_role"] for row in artifact_rows],
             )
 
@@ -1645,6 +1648,7 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertIn("import-scryfall: seen=1 written=1 skipped=0", sync_output)
             self.assertIn("import-identifiers: seen=1 written=1 skipped=0", sync_output)
             self.assertIn("import-prices: seen=1 written=1 skipped=0", sync_output)
+            self.assertTrue((cache_dir / "scryfall_bulk_metadata.json").exists())
             self.assertTrue((cache_dir / "scryfall_default_cards.json").exists())
             self.assertTrue((cache_dir / "AllIdentifiers.json.gz").exists())
             self.assertTrue((cache_dir / "AllPricesToday.json.gz").exists())
@@ -1692,7 +1696,7 @@ class ImporterTest(RepoSmokeTestCase):
                 [(row[0], row[1]) for row in sync_steps],
             )
             self.assertEqual(
-                ["mtgjson_identifiers", "mtgjson_prices", "scryfall_bulk"],
+                ["mtgjson_identifiers", "mtgjson_prices", "scryfall_bulk", "scryfall_bulk_metadata"],
                 [row[0] for row in artifacts],
             )
             self.assertTrue(all(row[1] for row in artifacts))
@@ -1751,6 +1755,7 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertIn("run_id:", sync_output)
             self.assertIn("import-scryfall: seen=1 written=1 skipped=0", sync_output)
             self.assertIn("elapsed:", sync_output)
+            self.assertTrue((cache_dir / "scryfall_bulk_metadata.json").exists())
             self.assertTrue((cache_dir / "scryfall_default_cards.json").exists())
 
             with connect(db_path) as connection:
@@ -1781,7 +1786,10 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(1, mtg_cards)
             self.assertEqual(("sync_scryfall", "succeeded"), (sync_run["run_kind"], sync_run["status"]))
             self.assertEqual([("import_scryfall", "succeeded")], [(row["step_name"], row["status"]) for row in sync_steps])
-            self.assertEqual(["scryfall_bulk"], [row["artifact_role"] for row in artifacts])
+            self.assertEqual(
+                ["scryfall_bulk", "scryfall_bulk_metadata"],
+                [row["artifact_role"] for row in artifacts],
+            )
 
     def test_sync_identifiers_downloads_and_imports_from_override_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

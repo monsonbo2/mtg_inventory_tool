@@ -14,10 +14,13 @@ from ..importer.scryfall import import_scryfall_cards
 from ..importer.service import (
     DEFAULT_BULK_CACHE_DIR,
     DEFAULT_SCRYFALL_BULK_TYPE,
+    MTGJSON_IDENTIFIERS_CACHE_FILENAME,
     MTGJSON_IDENTIFIERS_URL,
+    MTGJSON_PRICES_CACHE_FILENAME,
     MTGJSON_PRICES_URL,
+    SCRYFALL_BULK_CACHE_FILENAME,
+    SCRYFALL_BULK_METADATA_CACHE_FILENAME,
     SCRYFALL_BULK_METADATA_URL,
-    find_scryfall_bulk_download_url,
     print_restore_snapshot_result,
     print_snapshot_created,
     print_snapshot_list,
@@ -159,6 +162,7 @@ def _summary_for_stats(**stats: Any) -> dict[str, Any]:
 def _artifact_role_for_download(label: str) -> str:
     return {
         "scryfall_default_cards.json": "scryfall_bulk",
+        "scryfall_bulk_metadata.json": "scryfall_bulk_metadata",
         "AllIdentifiers.json.gz": "mtgjson_identifiers",
         "AllPricesToday.json.gz": "mtgjson_prices",
     }.get(label, label)
@@ -190,6 +194,23 @@ def _download_hints_for_url(
         db_path,
         artifact_role=artifact_role,
         source_url=source_url,
+    )
+    if artifact is None:
+        return {}
+    return {
+        "etag": artifact.get("etag"),
+        "last_modified": artifact.get("last_modified"),
+    }
+
+
+def _download_hints_for_latest_role(
+    db_path: str | Path,
+    *,
+    artifact_role: str,
+) -> dict[str, str | None]:
+    artifact = latest_sync_artifact(
+        db_path,
+        artifact_role=artifact_role,
     )
     if artifact is None:
         return {}
@@ -727,22 +748,22 @@ def main() -> None:
                 limit_value=args.limit,
                 source_name=args.source_name,
             )
-            scryfall_download_url = find_scryfall_bulk_download_url(
-                args.scryfall_metadata_url,
-                bulk_type=args.scryfall_bulk_type,
-            )
             download_hints = {
-                "scryfall_default_cards.json": _download_hints_for_url(
+                SCRYFALL_BULK_METADATA_CACHE_FILENAME: _download_hints_for_url(
+                    args.db,
+                    artifact_role="scryfall_bulk_metadata",
+                    source_url=args.scryfall_metadata_url,
+                ),
+                SCRYFALL_BULK_CACHE_FILENAME: _download_hints_for_latest_role(
                     args.db,
                     artifact_role="scryfall_bulk",
-                    source_url=scryfall_download_url,
                 ),
-                "AllIdentifiers.json.gz": _download_hints_for_url(
+                MTGJSON_IDENTIFIERS_CACHE_FILENAME: _download_hints_for_url(
                     args.db,
                     artifact_role="mtgjson_identifiers",
                     source_url=args.mtgjson_identifiers_url,
                 ),
-                "AllPricesToday.json.gz": _download_hints_for_url(
+                MTGJSON_PRICES_CACHE_FILENAME: _download_hints_for_url(
                     args.db,
                     artifact_role="mtgjson_prices",
                     source_url=args.mtgjson_prices_url,
@@ -792,14 +813,14 @@ def main() -> None:
                 tracked_run_id,
                 limit_value=args.limit,
             )
-            scryfall_download_url = find_scryfall_bulk_download_url(
-                args.scryfall_metadata_url,
-                bulk_type=args.scryfall_bulk_type,
+            metadata_download_hints = _download_hints_for_url(
+                args.db,
+                artifact_role="scryfall_bulk_metadata",
+                source_url=args.scryfall_metadata_url,
             )
-            download_hints = _download_hints_for_url(
+            bulk_download_hints = _download_hints_for_latest_role(
                 args.db,
                 artifact_role="scryfall_bulk",
-                source_url=scryfall_download_url,
             )
             result = sync_scryfall(
                 args.db,
@@ -811,8 +832,10 @@ def main() -> None:
                 on_download=on_download,
                 on_step=on_step,
                 should_skip_step=should_skip_step,
-                if_none_match=download_hints.get("etag"),
-                if_modified_since=download_hints.get("last_modified"),
+                metadata_if_none_match=metadata_download_hints.get("etag"),
+                metadata_if_modified_since=metadata_download_hints.get("last_modified"),
+                bulk_if_none_match=bulk_download_hints.get("etag"),
+                bulk_if_modified_since=bulk_download_hints.get("last_modified"),
             )
             result["snapshot"] = get_snapshot()
             finish_sync_run(

@@ -22,6 +22,7 @@ HTTP_HEADERS = {
     "User-Agent": "mtg-source-stack-sync/0.1 (+local bulk refresh)",
     "Accept": "application/json",
 }
+SCRYFALL_BULK_METADATA_CACHE_FILENAME = "scryfall_bulk_metadata.json"
 SCRYFALL_BULK_CACHE_FILENAME = "scryfall_default_cards.json"
 MTGJSON_IDENTIFIERS_CACHE_FILENAME = "AllIdentifiers.json.gz"
 MTGJSON_PRICES_CACHE_FILENAME = "AllPricesToday.json.gz"
@@ -379,6 +380,14 @@ def find_scryfall_bulk_download_url(
     bulk_type: str,
 ) -> str:
     payload = load_json_url(metadata_url, headers=HTTP_HEADERS, timeout=60)
+    return find_scryfall_bulk_download_url_from_payload(payload, bulk_type=bulk_type)
+
+
+def find_scryfall_bulk_download_url_from_payload(
+    payload: Any,
+    *,
+    bulk_type: str,
+) -> str:
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         raise ValueError("Expected Scryfall bulk metadata to contain a data list.")
 
@@ -392,6 +401,15 @@ def find_scryfall_bulk_download_url(
             return download_url
 
     raise ValueError(f"Could not find Scryfall bulk type '{bulk_type}' in metadata.")
+
+
+def find_scryfall_bulk_download_url_in_file(
+    metadata_path: str | Path,
+    *,
+    bulk_type: str,
+) -> str:
+    payload = load_json(metadata_path)
+    return find_scryfall_bulk_download_url_from_payload(payload, bulk_type=bulk_type)
 
 
 def format_bytes(num_bytes: int) -> str:
@@ -507,6 +525,26 @@ def _download_sync_artifact(
     return download
 
 
+def _download_scryfall_metadata(
+    metadata_url: str,
+    destination: str | Path,
+    *,
+    bulk_type: str,
+    on_download: Callable[[DownloadResult], None] | None = None,
+    if_none_match: str | None = None,
+    if_modified_since: str | None = None,
+) -> tuple[DownloadResult, str]:
+    metadata_download = _download_sync_artifact(
+        metadata_url,
+        destination,
+        on_download=on_download,
+        if_none_match=if_none_match,
+        if_modified_since=if_modified_since,
+    )
+    download_url = find_scryfall_bulk_download_url_in_file(metadata_download.path, bulk_type=bulk_type)
+    return metadata_download, download_url
+
+
 def _run_sync_step(
     step_name: str,
     operation: Callable[[], ImportStats],
@@ -558,22 +596,28 @@ def sync_scryfall(
     on_download: Callable[[DownloadResult], None] | None = None,
     on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
     should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
-    if_none_match: str | None = None,
-    if_modified_since: str | None = None,
+    metadata_if_none_match: str | None = None,
+    metadata_if_modified_since: str | None = None,
+    bulk_if_none_match: str | None = None,
+    bulk_if_modified_since: str | None = None,
 ) -> dict[str, Any]:
     from .scryfall import import_scryfall_cards
 
     cache_path = _ensure_cache_dir(cache_dir)
-    scryfall_download_url = find_scryfall_bulk_download_url(
+    metadata_download, scryfall_download_url = _download_scryfall_metadata(
         scryfall_metadata_url,
+        cache_path / SCRYFALL_BULK_METADATA_CACHE_FILENAME,
         bulk_type=scryfall_bulk_type,
+        on_download=on_download,
+        if_none_match=metadata_if_none_match,
+        if_modified_since=metadata_if_modified_since,
     )
     download = _download_sync_artifact(
         scryfall_download_url,
         cache_path / SCRYFALL_BULK_CACHE_FILENAME,
         on_download=on_download,
-        if_none_match=if_none_match,
-        if_modified_since=if_modified_since,
+        if_none_match=bulk_if_none_match,
+        if_modified_since=bulk_if_modified_since,
     )
     scryfall_stats, scryfall_elapsed_seconds = _run_or_skip_sync_step(
         "import_scryfall",
@@ -585,7 +629,7 @@ def sync_scryfall(
     return {
         "db_path": str(Path(db_path)),
         "cache_dir": str(cache_path),
-        "downloads": [download],
+        "downloads": [metadata_download, download],
         "scryfall_stats": scryfall_stats,
         "scryfall_elapsed_seconds": scryfall_elapsed_seconds,
         "scryfall_bulk_type": scryfall_bulk_type,
@@ -693,14 +737,20 @@ def sync_bulk(
 
     cache_path = _ensure_cache_dir(cache_dir)
 
-    scryfall_download_url = find_scryfall_bulk_download_url(
-        scryfall_metadata_url,
-        bulk_type=scryfall_bulk_type,
-    )
-
     # Download first and import from the cached artifacts so reruns can inspect
     # the exact files that were used to populate the database.
     downloads: list[DownloadResult] = []
+    metadata_hints = (download_hints or {}).get(SCRYFALL_BULK_METADATA_CACHE_FILENAME, {})
+    metadata_download, scryfall_download_url = _download_scryfall_metadata(
+        scryfall_metadata_url,
+        cache_path / SCRYFALL_BULK_METADATA_CACHE_FILENAME,
+        bulk_type=scryfall_bulk_type,
+        on_download=on_download,
+        if_none_match=metadata_hints.get("etag"),
+        if_modified_since=metadata_hints.get("last_modified"),
+    )
+    downloads.append(metadata_download)
+    bulk_downloads: list[DownloadResult] = []
     for download_url, destination in (
         (scryfall_download_url, cache_path / SCRYFALL_BULK_CACHE_FILENAME),
         (mtgjson_identifiers_url, cache_path / MTGJSON_IDENTIFIERS_CACHE_FILENAME),
@@ -715,27 +765,28 @@ def sync_bulk(
             if_modified_since=hints.get("last_modified"),
         )
         downloads.append(download)
+        bulk_downloads.append(download)
 
     # The imports are ordered to establish catalog rows first, then enrich them
     # with identifier crosswalks, and finally attach price snapshots.
     scryfall_stats, scryfall_elapsed_seconds = _run_or_skip_sync_step(
         "import_scryfall",
-        downloads[0],
-        lambda: import_scryfall_cards(db_path, downloads[0].path, limit, before_write=before_write),
+        bulk_downloads[0],
+        lambda: import_scryfall_cards(db_path, bulk_downloads[0].path, limit, before_write=before_write),
         should_skip_step=should_skip_step,
         on_step=on_step,
     )
     identifier_stats, identifier_elapsed_seconds = _run_or_skip_sync_step(
         "import_identifiers",
-        downloads[1],
-        lambda: import_mtgjson_identifiers(db_path, downloads[1].path, limit, before_write=before_write),
+        bulk_downloads[1],
+        lambda: import_mtgjson_identifiers(db_path, bulk_downloads[1].path, limit, before_write=before_write),
         should_skip_step=should_skip_step,
         on_step=on_step,
     )
     price_stats, price_elapsed_seconds = _run_or_skip_sync_step(
         "import_prices",
-        downloads[2],
-        lambda: import_mtgjson_prices(db_path, downloads[2].path, limit, source_name, before_write=before_write),
+        bulk_downloads[2],
+        lambda: import_mtgjson_prices(db_path, bulk_downloads[2].path, limit, source_name, before_write=before_write),
         should_skip_step=should_skip_step,
         on_step=on_step,
     )

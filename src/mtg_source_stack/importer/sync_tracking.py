@@ -223,28 +223,28 @@ def latest_sync_artifact(
     db_path: str | Path,
     *,
     artifact_role: str,
-    source_url: str,
+    source_url: str | None = None,
 ) -> dict[str, Any] | None:
+    query = """
+        SELECT
+            artifacts.id,
+            artifacts.sync_run_id,
+            artifacts.source_url,
+            artifacts.local_path,
+            artifacts.bytes_written,
+            artifacts.sha256,
+            artifacts.etag,
+            artifacts.last_modified
+        FROM sync_run_artifacts AS artifacts
+        WHERE artifacts.artifact_role = ?
+    """
+    params: list[Any] = [artifact_role]
+    if source_url is not None:
+        query += " AND artifacts.source_url = ?"
+        params.append(source_url)
+    query += " ORDER BY artifacts.id DESC LIMIT 1"
     with connect(db_path) as connection:
-        row = connection.execute(
-            """
-            SELECT
-                artifacts.id,
-                artifacts.sync_run_id,
-                artifacts.source_url,
-                artifacts.local_path,
-                artifacts.bytes_written,
-                artifacts.sha256,
-                artifacts.etag,
-                artifacts.last_modified
-            FROM sync_run_artifacts AS artifacts
-            WHERE artifacts.artifact_role = ?
-              AND artifacts.source_url = ?
-            ORDER BY artifacts.id DESC
-            LIMIT 1
-            """,
-            (artifact_role, source_url),
-        ).fetchone()
+        row = connection.execute(query, params).fetchone()
     return dict(row) if row is not None else None
 
 
