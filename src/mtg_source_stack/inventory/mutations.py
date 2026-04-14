@@ -1376,7 +1376,7 @@ def add_card_with_connection(
     condition_code: str,
     finish: str,
     language_code: str | None,
-    location: str,
+    location: str | None,
     acquisition_price: Decimal | None,
     acquisition_currency: str | None,
     notes: str | None,

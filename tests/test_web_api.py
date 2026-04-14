@@ -562,6 +562,7 @@ class WebApiSchemaTest(unittest.TestCase):
             add_request_schema = components["AddInventoryItemRequest"]
             self.assertIn("oracle_id", add_request_schema["properties"])
             self.assertNotIn("default", add_request_schema["properties"]["language_code"])
+            self.assertIsNone(add_request_schema["properties"]["location"].get("default"))
             self.assertIn(
                 "inherits the resolved printing language",
                 add_request_schema["properties"]["language_code"]["description"],
@@ -1201,7 +1202,7 @@ class WebApiTest(unittest.TestCase):
                         "display_name": "Personal Collection",
                         "description": "Main demo inventory",
                         "default_location": "Trade Binder",
-                        "default_tags": "staples, trade",
+                        "default_tags": "trade, staples",
                         "notes": "Main inventory notes",
                         "acquisition_price": "25.00",
                         "acquisition_currency": "USD",
@@ -1218,9 +1219,9 @@ class WebApiTest(unittest.TestCase):
                             "display_name": "Personal Collection",
                             "description": "Main demo inventory",
                             "default_location": "Trade Binder",
-                            "default_tags": "staples, trade",
+                            "default_tags": "trade, staples",
                             "notes": "Main inventory notes",
-                            "acquisition_price": "25.00",
+                            "acquisition_price": "25",
                             "acquisition_currency": "USD",
                             "item_rows": 0,
                             "total_cards": 0,
@@ -1240,7 +1241,7 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(201, added.status_code)
                 self.assertEqual("Trade Binder", added.json()["location"])
-                self.assertEqual(["staples", "trade"], added.json()["tags"])
+                self.assertEqual(["trade", "staples"], added.json()["tags"])
 
                 with connect(db_path) as connection:
                     item_row = connection.execute(
@@ -1249,7 +1250,7 @@ class WebApiTest(unittest.TestCase):
                     ).fetchone()
 
                 self.assertEqual("Trade Binder", item_row["location"])
-                self.assertEqual('["staples", "trade"]', item_row["tags_json"])
+                self.assertEqual(["trade", "staples"], json.loads(item_row["tags_json"]))
 
     def test_demo_api_csv_import_supports_preview_and_commit_but_not_implicit_inventory_creation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

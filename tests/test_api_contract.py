@@ -479,6 +479,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("NM", add_properties["condition_code"]["default"])
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", add_properties["condition_code"]["description"])
         self.assertIsNone(add_properties["language_code"]["default"])
+        self.assertIsNone(add_properties["location"]["default"])
         self.assertIn("inherits the resolved printing language", add_properties["language_code"]["description"])
         self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
         self.assertIn("prefers English mainstream-paper printings", add_properties["oracle_id"]["description"])

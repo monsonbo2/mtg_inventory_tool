@@ -265,7 +265,7 @@ class AddInventoryItemRequest(ApiBaseModel):
     condition_code: str = Field(default=DEFAULT_CONDITION_CODE, description=CONDITION_CODE_DESCRIPTION)
     finish: FinishInput = Field(default=DEFAULT_FINISH, description=FINISH_INPUT_DESCRIPTION)
     language_code: str | None = Field(default=None, description=ADD_LANGUAGE_CODE_DESCRIPTION)
-    location: str = ""
+    location: str | None = None
     acquisition_price: str | None = None
     acquisition_currency: str | None = None
     notes: str | None = None
