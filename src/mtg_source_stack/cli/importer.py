@@ -14,6 +14,7 @@ from ..importer.scryfall import import_scryfall_cards
 from ..importer.service import (
     DEFAULT_BULK_CACHE_DIR,
     DEFAULT_SCRYFALL_BULK_TYPE,
+    find_scryfall_bulk_download_url_in_file,
     MTGJSON_IDENTIFIERS_CACHE_FILENAME,
     MTGJSON_IDENTIFIERS_URL,
     MTGJSON_PRICES_CACHE_FILENAME,
@@ -203,21 +204,42 @@ def _download_hints_for_url(
     }
 
 
-def _download_hints_for_latest_role(
+def _scryfall_bulk_hints(
     db_path: str | Path,
     *,
-    artifact_role: str,
-) -> dict[str, str | None]:
-    artifact = latest_sync_artifact(
+    metadata_url: str,
+    bulk_type: str,
+) -> tuple[dict[str, str | None], str | None, dict[str, str | None]]:
+    metadata_hints = _download_hints_for_url(
         db_path,
-        artifact_role=artifact_role,
+        artifact_role="scryfall_bulk_metadata",
+        source_url=metadata_url,
     )
-    if artifact is None:
-        return {}
-    return {
-        "etag": artifact.get("etag"),
-        "last_modified": artifact.get("last_modified"),
-    }
+    metadata_artifact = latest_sync_artifact(
+        db_path,
+        artifact_role="scryfall_bulk_metadata",
+        source_url=metadata_url,
+    )
+    bulk_hint_url: str | None = None
+    if metadata_artifact is not None:
+        local_path = metadata_artifact.get("local_path")
+        if local_path:
+            metadata_path = Path(local_path)
+            if metadata_path.exists():
+                try:
+                    bulk_hint_url = find_scryfall_bulk_download_url_in_file(metadata_path, bulk_type=bulk_type)
+                except ValueError:
+                    bulk_hint_url = None
+    bulk_hints = (
+        _download_hints_for_url(
+            db_path,
+            artifact_role="scryfall_bulk",
+            source_url=bulk_hint_url,
+        )
+        if bulk_hint_url is not None
+        else {}
+    )
+    return metadata_hints, bulk_hint_url, bulk_hints
 
 
 def _build_sync_tracking_callbacks(
@@ -748,16 +770,14 @@ def main() -> None:
                 limit_value=args.limit,
                 source_name=args.source_name,
             )
+            metadata_download_hints, scryfall_bulk_hint_url, scryfall_bulk_download_hints = _scryfall_bulk_hints(
+                args.db,
+                metadata_url=args.scryfall_metadata_url,
+                bulk_type=args.scryfall_bulk_type,
+            )
             download_hints = {
-                SCRYFALL_BULK_METADATA_CACHE_FILENAME: _download_hints_for_url(
-                    args.db,
-                    artifact_role="scryfall_bulk_metadata",
-                    source_url=args.scryfall_metadata_url,
-                ),
-                SCRYFALL_BULK_CACHE_FILENAME: _download_hints_for_latest_role(
-                    args.db,
-                    artifact_role="scryfall_bulk",
-                ),
+                SCRYFALL_BULK_METADATA_CACHE_FILENAME: metadata_download_hints,
+                SCRYFALL_BULK_CACHE_FILENAME: scryfall_bulk_download_hints,
                 MTGJSON_IDENTIFIERS_CACHE_FILENAME: _download_hints_for_url(
                     args.db,
                     artifact_role="mtgjson_identifiers",
@@ -784,6 +804,7 @@ def main() -> None:
                 on_step=on_step,
                 should_skip_step=should_skip_step,
                 download_hints=download_hints,
+                scryfall_bulk_hint_url=scryfall_bulk_hint_url,
             )
             result["snapshot"] = get_snapshot()
             finish_sync_run(
@@ -813,14 +834,10 @@ def main() -> None:
                 tracked_run_id,
                 limit_value=args.limit,
             )
-            metadata_download_hints = _download_hints_for_url(
+            metadata_download_hints, scryfall_bulk_hint_url, bulk_download_hints = _scryfall_bulk_hints(
                 args.db,
-                artifact_role="scryfall_bulk_metadata",
-                source_url=args.scryfall_metadata_url,
-            )
-            bulk_download_hints = _download_hints_for_latest_role(
-                args.db,
-                artifact_role="scryfall_bulk",
+                metadata_url=args.scryfall_metadata_url,
+                bulk_type=args.scryfall_bulk_type,
             )
             result = sync_scryfall(
                 args.db,
@@ -834,6 +851,7 @@ def main() -> None:
                 should_skip_step=should_skip_step,
                 metadata_if_none_match=metadata_download_hints.get("etag"),
                 metadata_if_modified_since=metadata_download_hints.get("last_modified"),
+                bulk_hint_url=scryfall_bulk_hint_url,
                 bulk_if_none_match=bulk_download_hints.get("etag"),
                 bulk_if_modified_since=bulk_download_hints.get("last_modified"),
             )

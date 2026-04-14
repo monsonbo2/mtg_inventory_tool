@@ -234,6 +234,16 @@ Localhost API test layer:
 python3 -m unittest tests.test_web_api tests.test_api_app -q
 ```
 
+Importer benchmark:
+
+```bash
+python3 scripts/benchmark_import_pipeline.py \
+  --db /tmp/mtg_benchmark.db \
+  --scryfall-json /path/to/default-cards.json \
+  --identifiers-json /path/to/AllIdentifiers.json.gz \
+  --prices-json /path/to/AllPricesToday.json.gz
+```
+
 ## Contract Surfaces
 
 If backend behavior changes, inspect these together:

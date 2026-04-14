@@ -598,6 +598,7 @@ def sync_scryfall(
     should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
     metadata_if_none_match: str | None = None,
     metadata_if_modified_since: str | None = None,
+    bulk_hint_url: str | None = None,
     bulk_if_none_match: str | None = None,
     bulk_if_modified_since: str | None = None,
 ) -> dict[str, Any]:
@@ -612,12 +613,16 @@ def sync_scryfall(
         if_none_match=metadata_if_none_match,
         if_modified_since=metadata_if_modified_since,
     )
+    bulk_if_none_match_to_use = bulk_if_none_match if bulk_hint_url == scryfall_download_url else None
+    bulk_if_modified_since_to_use = (
+        bulk_if_modified_since if bulk_hint_url == scryfall_download_url else None
+    )
     download = _download_sync_artifact(
         scryfall_download_url,
         cache_path / SCRYFALL_BULK_CACHE_FILENAME,
         on_download=on_download,
-        if_none_match=bulk_if_none_match,
-        if_modified_since=bulk_if_modified_since,
+        if_none_match=bulk_if_none_match_to_use,
+        if_modified_since=bulk_if_modified_since_to_use,
     )
     scryfall_stats, scryfall_elapsed_seconds = _run_or_skip_sync_step(
         "import_scryfall",
@@ -731,6 +736,7 @@ def sync_bulk(
     on_step: Callable[[str, str, ImportStats | None, float, Exception | None], None] | None = None,
     should_skip_step: Callable[[str, DownloadResult], str | None] | None = None,
     download_hints: dict[str, dict[str, str | None]] | None = None,
+    scryfall_bulk_hint_url: str | None = None,
 ) -> dict[str, Any]:
     from .mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
     from .scryfall import import_scryfall_cards
@@ -757,6 +763,8 @@ def sync_bulk(
         (mtgjson_prices_url, cache_path / MTGJSON_PRICES_CACHE_FILENAME),
     ):
         hints = (download_hints or {}).get(destination.name, {})
+        if destination.name == SCRYFALL_BULK_CACHE_FILENAME and scryfall_bulk_hint_url != download_url:
+            hints = {}
         download = _download_sync_artifact(
             download_url,
             destination,

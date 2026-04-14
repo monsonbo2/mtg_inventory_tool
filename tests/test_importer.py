@@ -7,6 +7,7 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from mtg_source_stack.db.connection import SQLITE_BUSY_TIMEOUT_MS, connect
 from tests.common import RepoSmokeTestCase
@@ -1790,6 +1791,74 @@ class ImporterTest(RepoSmokeTestCase):
                 ["scryfall_bulk", "scryfall_bulk_metadata"],
                 [row["artifact_role"] for row in artifacts],
             )
+
+    def test_sync_scryfall_ignores_stale_bulk_validators_when_resolved_url_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            cache_dir = tmp / "cache"
+            metadata_path = cache_dir / "scryfall_bulk_metadata.json"
+            bulk_path = cache_dir / "scryfall_default_cards.json"
+            metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            metadata_path.write_text("{}", encoding="utf-8")
+            bulk_path.write_text("[]", encoding="utf-8")
+
+            from mtg_source_stack.importer.service import DownloadResult, ImportStats, sync_scryfall
+
+            metadata_download = DownloadResult(
+                label="scryfall_bulk_metadata.json",
+                url="https://metadata.example.test/bulk-data",
+                path=metadata_path,
+                bytes_written=2,
+                sha256="meta",
+                etag="meta-etag",
+                last_modified="meta-last",
+                downloaded=True,
+            )
+            bulk_download = DownloadResult(
+                label="scryfall_default_cards.json",
+                url="https://data.example.test/default-cards-new.json",
+                path=bulk_path,
+                bytes_written=2,
+                sha256="bulk",
+                etag="bulk-etag",
+                last_modified="bulk-last",
+                downloaded=True,
+            )
+            bulk_download_kwargs: dict[str, str | None] = {}
+
+            def fake_download(
+                url: str,
+                destination: str | Path,
+                *,
+                on_download=None,
+                if_none_match: str | None = None,
+                if_modified_since: str | None = None,
+            ):
+                self.assertEqual("https://data.example.test/default-cards-new.json", url)
+                bulk_download_kwargs["if_none_match"] = if_none_match
+                bulk_download_kwargs["if_modified_since"] = if_modified_since
+                return bulk_download
+
+            with patch(
+                "mtg_source_stack.importer.service._download_scryfall_metadata",
+                return_value=(metadata_download, "https://data.example.test/default-cards-new.json"),
+            ), patch(
+                "mtg_source_stack.importer.service._download_sync_artifact",
+                side_effect=fake_download,
+            ), patch(
+                "mtg_source_stack.importer.scryfall.import_scryfall_cards",
+                return_value=ImportStats(rows_seen=1, rows_written=1),
+            ):
+                result = sync_scryfall(
+                    tmp / "collection.db",
+                    cache_dir=cache_dir,
+                    bulk_hint_url="https://data.example.test/default-cards-old.json",
+                    bulk_if_none_match="old-etag",
+                    bulk_if_modified_since="old-last",
+                )
+
+            self.assertEqual({"if_none_match": None, "if_modified_since": None}, bulk_download_kwargs)
+            self.assertEqual(1, result["scryfall_stats"].rows_written)
 
     def test_sync_identifiers_downloads_and_imports_from_override_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
