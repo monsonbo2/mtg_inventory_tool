@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -16,6 +17,7 @@ from ..importer.service import (
     DEFAULT_BULK_CACHE_DIR,
     DEFAULT_SCRYFALL_BULK_TYPE,
     find_scryfall_bulk_download_url_in_file,
+    format_bytes,
     MTGJSON_IDENTIFIERS_CACHE_FILENAME,
     MTGJSON_IDENTIFIERS_URL,
     MTGJSON_PRICES_CACHE_FILENAME,
@@ -38,7 +40,9 @@ from ..importer.sync_tracking import (
     file_artifact_info,
     finish_sync_run,
     finish_sync_step,
+    get_sync_run_report,
     import_stats_dict,
+    list_sync_runs,
     latest_sync_artifact,
     record_sync_artifact,
     record_sync_issue,
@@ -398,6 +402,156 @@ def _print_search_index_check_result(result: Any) -> None:
     )
 
 
+def _truncate(value: str | None, width: int) -> str:
+    if value is None:
+        return ""
+    return value if len(value) <= width else f"{value[: max(width - 3, 0)]}..."
+
+
+def _step_status_summary(step_rows: list[dict[str, Any]], *, width: int = 48) -> str:
+    if not step_rows:
+        return ""
+    summary = ", ".join(f"{row['step_name']}:{row['status']}" for row in step_rows)
+    return _truncate(summary, width)
+
+
+def _print_sync_run_history(rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        print("No rows found.")
+        return
+    print_table(
+        [
+            {
+                "id": row["id"],
+                "kind": row["run_kind"],
+                "status": row["status"],
+                "started": row["started_at"],
+                "duration_s": row["duration_seconds"],
+                "source": row["source_name"] or "",
+                "steps": _step_status_summary(row["steps"]),
+                "issues": row["issue_count"],
+            }
+            for row in rows
+        ],
+        [
+            ("id", "id"),
+            ("kind", "kind"),
+            ("status", "status"),
+            ("started", "started"),
+            ("duration_s", "duration_s"),
+            ("source", "source"),
+            ("steps", "steps"),
+            ("issues", "issues"),
+        ],
+    )
+
+
+def _print_sync_run_summary(summary: dict[str, Any] | None) -> None:
+    if not summary:
+        return
+    print("summary:")
+    for key, value in summary.items():
+        if isinstance(value, dict) and {"rows_seen", "rows_written", "rows_skipped"}.issubset(value.keys()):
+            print(
+                f"  {key}: seen={value['rows_seen']} written={value['rows_written']} skipped={value['rows_skipped']}"
+            )
+        else:
+            print(f"  {key}: {json.dumps(value, ensure_ascii=True, sort_keys=True)}")
+
+
+def _print_sync_run_report(report: dict[str, Any]) -> None:
+    print(f"sync run {report['id']}")
+    print(f"kind: {report['run_kind']}")
+    print(f"status: {report['status']}")
+    print(f"trigger: {report['trigger_kind']}")
+    print(f"started_at: {report['started_at']}")
+    print(f"finished_at: {report['finished_at'] or ''}")
+    print(f"duration_s: {report['duration_seconds']}")
+    print(f"source_name: {report['source_name'] or ''}")
+    print(f"limit_value: {report['limit_value'] if report['limit_value'] is not None else ''}")
+    print(f"snapshot_path: {report['snapshot_path'] or ''}")
+    _print_sync_run_summary(report.get("summary"))
+
+    print("steps:")
+    if report["steps"]:
+        print_table(
+            [
+                {
+                    "step": row["step_name"],
+                    "status": row["status"],
+                    "seen": row["rows_seen"] if row["rows_seen"] is not None else "",
+                    "written": row["rows_written"] if row["rows_written"] is not None else "",
+                    "skipped": row["rows_skipped"] if row["rows_skipped"] is not None else "",
+                    "elapsed_s": row["duration_seconds"],
+                    "notes": _truncate(
+                        (
+                            (row["details"] or {}).get("skip_reason")
+                            or (row["details"] or {}).get("error")
+                            or ""
+                        ),
+                        48,
+                    ),
+                }
+                for row in report["steps"]
+            ],
+            [
+                ("step", "step"),
+                ("status", "status"),
+                ("seen", "seen"),
+                ("written", "written"),
+                ("skipped", "skipped"),
+                ("elapsed_s", "elapsed_s"),
+                ("notes", "notes"),
+            ],
+        )
+    else:
+        print("No rows found.")
+
+    print("artifacts:")
+    if report["artifacts"]:
+        print_table(
+            [
+                {
+                    "role": row["artifact_role"],
+                    "size": format_bytes(int(row["bytes_written"] or 0)) if row["bytes_written"] is not None else "",
+                    "source": _truncate(row["source_url"], 48),
+                    "local": _truncate(Path(row["local_path"]).name if row["local_path"] else "", 36),
+                }
+                for row in report["artifacts"]
+            ],
+            [
+                ("role", "role"),
+                ("size", "size"),
+                ("source", "source"),
+                ("local", "local"),
+            ],
+        )
+    else:
+        print("No rows found.")
+
+    print("issues:")
+    if report["issues"]:
+        print_table(
+            [
+                {
+                    "step": row["step_name"] or "",
+                    "level": row["level"],
+                    "code": row["code"],
+                    "message": _truncate(row["message"], 64),
+                }
+                for row in report["issues"]
+            ],
+            [
+                ("step", "step"),
+                ("level", "level"),
+                ("code", "code"),
+                ("message", "message"),
+            ],
+        )
+    else:
+        print("No rows found.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Initialize and import the MTG MVP schema from local Scryfall and MTGJSON bulk files.",
@@ -592,6 +746,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rebuild_search_index.add_argument("--snapshot-dir", help="Optional override directory for snapshots.")
 
+    list_sync_runs_parser = subparsers.add_parser(
+        "list-sync-runs",
+        help="Show recent importer and sync runs in a compact history table.",
+    )
+    list_sync_runs_parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    list_sync_runs_parser.add_argument("--limit", type=int, default=20, help="Maximum runs to show.")
+    list_sync_runs_parser.add_argument("--run-kind", help="Optional exact run_kind filter.")
+    list_sync_runs_parser.add_argument("--status", help="Optional exact status filter.")
+
+    show_sync_run_parser = subparsers.add_parser(
+        "show-sync-run",
+        help="Show a detailed report for one importer or sync run.",
+    )
+    show_sync_run_parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    show_sync_run_parser.add_argument("--run-id", required=True, type=int, help="Tracked sync run id.")
+
     return parser
 
 
@@ -644,6 +814,25 @@ def main() -> None:
             _print_search_index_check_result(check_result)
             if not check_result.is_healthy:
                 raise SystemExit(1)
+            return
+
+        if args.command == "list-sync-runs":
+            require_current_schema(args.db)
+            rows = list_sync_runs(
+                args.db,
+                limit=args.limit,
+                run_kind=args.run_kind,
+                status=args.status,
+            )
+            _print_sync_run_history(rows)
+            return
+
+        if args.command == "show-sync-run":
+            require_current_schema(args.db)
+            report = get_sync_run_report(args.db, run_id=args.run_id)
+            if report is None:
+                parser.exit(status=2, message=f"Error: No sync run found with id={args.run_id}.\n")
+            _print_sync_run_report(report)
             return
 
         if args.command == "snapshot-db":

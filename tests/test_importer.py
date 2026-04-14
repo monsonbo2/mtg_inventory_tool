@@ -1384,6 +1384,188 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertTrue(all(row["bytes_written"] > 0 for row in artifact_rows))
             self.assertTrue(all(row["sha256"] for row in artifact_rows))
 
+    def test_list_sync_runs_prints_human_friendly_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            scryfall_path = tmp / "scryfall.json"
+            identifiers_path = tmp / "identifiers.json"
+            prices_path = tmp / "prices.json"
+
+            scryfall_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "history-card-1",
+                            "oracle_id": "history-oracle-1",
+                            "name": "History Test Card",
+                            "set": "hst",
+                            "set_name": "History Set",
+                            "collector_number": "1",
+                            "lang": "en",
+                            "rarity": "rare",
+                            "released_at": "2026-01-01",
+                            "colors": ["U"],
+                            "color_identity": ["U"],
+                            "finishes": ["nonfoil"],
+                            "legalities": {"commander": "legal"},
+                            "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            identifiers_path.write_text(
+                json.dumps(
+                    {
+                        "data": {
+                            "uuid-history-1": {
+                                "identifiers": {
+                                    "scryfallId": "history-card-1",
+                                    "tcgplayerProductId": "5101",
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            prices_path.write_text(
+                json.dumps(
+                    {
+                        "data": {
+                            "uuid-history-1": {
+                                "paper": {
+                                    "tcgplayer": {
+                                        "currency": "USD",
+                                        "retail": {"normal": {"2026-03-27": 4.25}},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(scryfall_path),
+                "--identifiers-json",
+                str(identifiers_path),
+                "--prices-json",
+                str(prices_path),
+            )
+
+            history_output = self.run_importer(
+                "list-sync-runs",
+                "--db",
+                str(db_path),
+            )
+
+            self.assertIn("kind", history_output)
+            self.assertIn("import_all", history_output)
+            self.assertIn("succeeded", history_output)
+            self.assertIn("import_scryfall:succeeded", history_output)
+
+    def test_show_sync_run_prints_steps_artifacts_and_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+            scryfall_path = tmp / "scryfall.json"
+            identifiers_path = tmp / "identifiers.json"
+            prices_path = tmp / "prices.json"
+
+            scryfall_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "show-card-1",
+                            "oracle_id": "show-oracle-1",
+                            "name": "Show Test Card",
+                            "set": "shw",
+                            "set_name": "Show Set",
+                            "collector_number": "1",
+                            "lang": "en",
+                            "rarity": "rare",
+                            "released_at": "2026-01-01",
+                            "colors": ["R"],
+                            "color_identity": ["R"],
+                            "finishes": ["nonfoil"],
+                            "legalities": {"commander": "legal"},
+                            "purchase_uris": {"tcgplayer": "https://example.test/tcg"},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            identifiers_path.write_text(
+                json.dumps(
+                    {
+                        "data": {
+                            "uuid-show-1": {
+                                "identifiers": {
+                                    "scryfallId": "show-card-1",
+                                    "tcgplayerProductId": "5201",
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            prices_path.write_text(
+                json.dumps(
+                    {
+                        "data": {
+                            "uuid-show-1": {
+                                "paper": {
+                                    "tcgplayer": {
+                                        "currency": "USD",
+                                        "retail": {"normal": {"2026-03-27": 5.0}},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.run_importer(
+                "import-all",
+                "--db",
+                str(db_path),
+                "--scryfall-json",
+                str(scryfall_path),
+                "--identifiers-json",
+                str(identifiers_path),
+                "--prices-json",
+                str(prices_path),
+            )
+
+            with connect(db_path) as connection:
+                run_id = connection.execute("SELECT id FROM sync_runs ORDER BY id DESC LIMIT 1").fetchone()[0]
+
+            report_output = self.run_importer(
+                "show-sync-run",
+                "--db",
+                str(db_path),
+                "--run-id",
+                str(run_id),
+            )
+
+            self.assertIn(f"sync run {run_id}", report_output)
+            self.assertIn("summary:", report_output)
+            self.assertIn("steps:", report_output)
+            self.assertIn("artifacts:", report_output)
+            self.assertIn("issues:", report_output)
+            self.assertIn("import_identifiers", report_output)
+            self.assertIn("mtgjson_identifiers", report_output)
+
     def test_import_all_records_failed_sync_run_when_late_step_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

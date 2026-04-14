@@ -178,6 +178,30 @@ mtg-mvp-importer sync-bulk \
   --cache-dir "var/bulk_cache/latest"
 ```
 
+Recommended ongoing refresh cadence:
+
+```bash
+mtg-mvp-importer sync-scryfall --db "var/db/mtg_mvp.db" --cache-dir "var/bulk_cache/latest"
+mtg-mvp-importer sync-identifiers --db "var/db/mtg_mvp.db" --cache-dir "var/bulk_cache/latest"
+mtg-mvp-importer sync-prices --db "var/db/mtg_mvp.db" --cache-dir "var/bulk_cache/latest"
+```
+
+For most local or modest shared-service use, treat those commands as:
+
+- `sync-prices`: daily
+- `sync-scryfall`: weekly
+- `sync-identifiers`: weekly or less often
+- `sync-bulk`: catch-up/bootstrap command when you want one operator action to refresh everything
+
+Search index maintenance and sync history:
+
+```bash
+mtg-mvp-importer check-search-index --db "var/db/mtg_mvp.db"
+mtg-mvp-importer rebuild-search-index --db "var/db/mtg_mvp.db"
+mtg-mvp-importer list-sync-runs --db "var/db/mtg_mvp.db"
+mtg-mvp-importer show-sync-run --db "var/db/mtg_mvp.db" --run-id 42
+```
+
 Important upgrade note:
 
 - migration `0008` adds the durable catalog-classification fields used by the

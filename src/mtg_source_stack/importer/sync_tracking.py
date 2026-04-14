@@ -17,6 +17,12 @@ def _json_text(value: Any) -> str | None:
     return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 
+def _json_value(value: str | None) -> Any:
+    if value is None:
+        return None
+    return json.loads(value)
+
+
 def file_artifact_info(path: str | Path) -> dict[str, Any]:
     file_path = Path(path)
     digest = hashlib.sha256()
@@ -309,3 +315,195 @@ def unchanged_import_skip_reason(
             if invalidation_row is not None:
                 return None
     return f"artifact unchanged since run {row['run_id']}"
+
+
+def list_sync_runs(
+    db_path: str | Path,
+    *,
+    limit: int = 20,
+    run_kind: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT
+            runs.id,
+            runs.run_kind,
+            runs.status,
+            runs.trigger_kind,
+            runs.source_name,
+            runs.limit_value,
+            runs.snapshot_path,
+            runs.started_at,
+            runs.finished_at,
+            ROUND((julianday(COALESCE(runs.finished_at, CURRENT_TIMESTAMP)) - julianday(runs.started_at)) * 86400.0, 3)
+                AS duration_seconds,
+            COALESCE(step_counts.step_count, 0) AS step_count,
+            COALESCE(artifact_counts.artifact_count, 0) AS artifact_count,
+            COALESCE(issue_counts.issue_count, 0) AS issue_count,
+            runs.summary_json
+        FROM sync_runs AS runs
+        LEFT JOIN (
+            SELECT sync_run_id, COUNT(*) AS step_count
+            FROM sync_run_steps
+            GROUP BY sync_run_id
+        ) AS step_counts
+            ON step_counts.sync_run_id = runs.id
+        LEFT JOIN (
+            SELECT sync_run_id, COUNT(*) AS artifact_count
+            FROM sync_run_artifacts
+            GROUP BY sync_run_id
+        ) AS artifact_counts
+            ON artifact_counts.sync_run_id = runs.id
+        LEFT JOIN (
+            SELECT sync_run_id, COUNT(*) AS issue_count
+            FROM sync_run_issues
+            GROUP BY sync_run_id
+        ) AS issue_counts
+            ON issue_counts.sync_run_id = runs.id
+        WHERE 1 = 1
+    """
+    params: list[Any] = []
+    if run_kind is not None:
+        query += " AND runs.run_kind = ?"
+        params.append(run_kind)
+    if status is not None:
+        query += " AND runs.status = ?"
+        params.append(status)
+    query += " ORDER BY runs.id DESC LIMIT ?"
+    params.append(limit)
+
+    with connect(db_path) as connection:
+        run_rows = [dict(row) for row in connection.execute(query, params).fetchall()]
+        run_ids = [row["id"] for row in run_rows]
+        step_rows: dict[int, list[dict[str, Any]]] = {run_id: [] for run_id in run_ids}
+        if run_ids:
+            placeholders = ",".join("?" for _ in run_ids)
+            for row in connection.execute(
+                f"""
+                SELECT
+                    sync_run_id,
+                    step_name,
+                    status,
+                    rows_seen,
+                    rows_written,
+                    rows_skipped,
+                    details_json
+                FROM sync_run_steps
+                WHERE sync_run_id IN ({placeholders})
+                ORDER BY id
+                """,
+                run_ids,
+            ).fetchall():
+                step_rows[int(row["sync_run_id"])].append(dict(row))
+
+    for row in run_rows:
+        row["summary"] = _json_value(row.pop("summary_json"))
+        row["steps"] = step_rows.get(int(row["id"]), [])
+
+    return run_rows
+
+
+def get_sync_run_report(db_path: str | Path, *, run_id: int) -> dict[str, Any] | None:
+    with connect(db_path) as connection:
+        run_row = connection.execute(
+            """
+            SELECT
+                id,
+                run_kind,
+                status,
+                trigger_kind,
+                source_name,
+                limit_value,
+                snapshot_path,
+                started_at,
+                finished_at,
+                ROUND((julianday(COALESCE(finished_at, CURRENT_TIMESTAMP)) - julianday(started_at)) * 86400.0, 3)
+                    AS duration_seconds,
+                summary_json
+            FROM sync_runs
+            WHERE id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        if run_row is None:
+            return None
+
+        steps = [
+            {
+                **dict(row),
+                "details": _json_value(row["details_json"]),
+            }
+            for row in connection.execute(
+                """
+                SELECT
+                    step_name,
+                    status,
+                    rows_seen,
+                    rows_written,
+                    rows_skipped,
+                    details_json,
+                    started_at,
+                    finished_at,
+                    ROUND((julianday(COALESCE(finished_at, CURRENT_TIMESTAMP)) - julianday(started_at)) * 86400.0, 3)
+                        AS duration_seconds
+                FROM sync_run_steps
+                WHERE sync_run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+        ]
+        for step in steps:
+            step.pop("details_json", None)
+
+        artifacts = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT
+                    artifact_role,
+                    source_url,
+                    local_path,
+                    bytes_written,
+                    sha256,
+                    etag,
+                    last_modified,
+                    created_at
+                FROM sync_run_artifacts
+                WHERE sync_run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+        ]
+
+        issues = [
+            {
+                **dict(row),
+                "payload": _json_value(row["payload_json"]),
+            }
+            for row in connection.execute(
+                """
+                SELECT
+                    step_name,
+                    level,
+                    code,
+                    message,
+                    payload_json,
+                    created_at
+                FROM sync_run_issues
+                WHERE sync_run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+        ]
+        for issue in issues:
+            issue.pop("payload_json", None)
+
+    report = dict(run_row)
+    report["summary"] = _json_value(report.pop("summary_json"))
+    report["steps"] = steps
+    report["artifacts"] = artifacts
+    report["issues"] = issues
+    return report

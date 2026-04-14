@@ -251,6 +251,21 @@ python3 -m mtg_source_stack.mvp_importer check-search-index --db var/db/mtg_mvp.
 python3 -m mtg_source_stack.mvp_importer rebuild-search-index --db var/db/mtg_mvp.db
 ```
 
+Sync run history:
+
+```bash
+python3 -m mtg_source_stack.mvp_importer list-sync-runs --db var/db/mtg_mvp.db
+python3 -m mtg_source_stack.mvp_importer show-sync-run --db var/db/mtg_mvp.db --run-id 1
+```
+
+Suggested local/shared-service cadence:
+
+- `sync-prices`: daily
+- `sync-scryfall`: weekly
+- `sync-identifiers`: weekly or less often
+- `check-search-index`: after unusual repairs/import interruptions, or on a periodic ops check
+- `rebuild-search-index`: repair-only command when `check-search-index` reports drift
+
 ## Contract Surfaces
 
 If backend behavior changes, inspect these together:
