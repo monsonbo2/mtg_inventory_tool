@@ -244,6 +244,13 @@ python3 scripts/benchmark_import_pipeline.py \
   --prices-json /path/to/AllPricesToday.json.gz
 ```
 
+Search index maintenance:
+
+```bash
+python3 -m mtg_source_stack.mvp_importer check-search-index --db var/db/mtg_mvp.db
+python3 -m mtg_source_stack.mvp_importer rebuild-search-index --db var/db/mtg_mvp.db
+```
+
 ## Contract Surfaces
 
 If backend behavior changes, inspect these together:

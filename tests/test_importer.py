@@ -2524,6 +2524,165 @@ class ImporterTest(RepoSmokeTestCase):
 
             self.assertEqual(("uuid-sync-identifiers-dependency-2", "11401"), (row["mtgjson_uuid"], row["tcgplayer_product_id"]))
 
+    def test_check_search_index_reports_healthy_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES (
+                        'search-healthy-1',
+                        'oracle-search-healthy-1',
+                        'Healthy Search Card',
+                        'hlt',
+                        'Healthy Set',
+                        '1'
+                    )
+                    """
+                )
+                connection.commit()
+
+            output = self.run_importer(
+                "check-search-index",
+                "--db",
+                str(db_path),
+            )
+
+            self.assertIn("check-search-index completed", output)
+            self.assertIn("status: healthy", output)
+            self.assertIn("missing_rows=0 orphan_rows=0 duplicate_rows=0 mismatched_rows=0", output)
+
+    def test_check_search_index_detects_missing_orphan_duplicate_and_mismatched_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES (?, ?, ?, 'drf', 'Drift Set', ?)
+                    """,
+                    [
+                        ("search-missing-1", "oracle-search-missing-1", "Missing Search Card", "1"),
+                        ("search-mismatch-1", "oracle-search-mismatch-1", "Mismatch Search Card", "2"),
+                        ("search-duplicate-1", "oracle-search-duplicate-1", "Duplicate Search Card", "3"),
+                    ],
+                )
+                connection.execute(
+                    "DELETE FROM mtg_cards_fts WHERE scryfall_id = 'search-missing-1'"
+                )
+                connection.execute(
+                    """
+                    UPDATE mtg_cards_fts
+                    SET name = 'Mismatch Search Card Drifted'
+                    WHERE scryfall_id = 'search-mismatch-1'
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards_fts (scryfall_id, name, set_code, set_name, collector_number, lang)
+                    SELECT scryfall_id, name, set_code, set_name, collector_number, lang
+                    FROM mtg_cards_fts
+                    WHERE scryfall_id = 'search-duplicate-1'
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards_fts (scryfall_id, name, set_code, set_name, collector_number, lang)
+                    VALUES ('search-orphan-1', 'Orphan Search Card', 'drf', 'Drift Set', '9', 'en')
+                    """
+                )
+                connection.commit()
+
+            result = self.run_failing_importer(
+                "check-search-index",
+                "--db",
+                str(db_path),
+            )
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn("status: drift_detected", result.stdout)
+            self.assertIn("missing_rows=1 orphan_rows=1 duplicate_rows=1 mismatched_rows=1", result.stdout)
+            self.assertIn("missing rows preview:", result.stdout)
+            self.assertIn("orphan rows preview:", result.stdout)
+            self.assertIn("duplicate rows preview:", result.stdout)
+            self.assertIn("mismatched rows preview:", result.stdout)
+
+    def test_rebuild_search_index_repairs_detected_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            db_path = tmp / "collection.db"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES (?, ?, ?, 'fix', 'Fix Set', ?)
+                    """,
+                    [
+                        ("search-fix-1", "oracle-search-fix-1", "Fix Search Card", "1"),
+                        ("search-fix-2", "oracle-search-fix-2", "Fix Search Card Two", "2"),
+                    ],
+                )
+                connection.execute("DELETE FROM mtg_cards_fts WHERE scryfall_id = 'search-fix-1'")
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards_fts (scryfall_id, name, set_code, set_name, collector_number, lang)
+                    VALUES ('search-orphan-fix', 'Orphan Fix Card', 'fix', 'Fix Set', '8', 'en')
+                    """
+                )
+                connection.commit()
+
+            rebuild_output = self.run_importer(
+                "rebuild-search-index",
+                "--db",
+                str(db_path),
+            )
+
+            self.assertIn("snapshot:", rebuild_output)
+            self.assertIn("rebuild-search-index completed", rebuild_output)
+            self.assertIn("status: healthy", rebuild_output)
+            self.assertIn("missing_rows=0 orphan_rows=0 duplicate_rows=0 mismatched_rows=0", rebuild_output)
+
+            check_output = self.run_importer(
+                "check-search-index",
+                "--db",
+                str(db_path),
+            )
+            self.assertIn("status: healthy", check_output)
+
+            with connect(db_path) as connection:
+                mtg_card_count = connection.execute("SELECT COUNT(*) FROM mtg_cards").fetchone()[0]
+                fts_count = connection.execute("SELECT COUNT(*) FROM mtg_cards_fts").fetchone()[0]
+
+            self.assertEqual(mtg_card_count, fts_count)
+
     def test_remove_card_creates_snapshot_and_restore_snapshot_recovers_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

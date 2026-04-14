@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..db.connection import DEFAULT_DB_PATH, require_database_file
+from ..db.search_index import check_card_search_index, rebuild_card_search_index
 from ..db.migrator import migrate_database
-from ..db.schema import initialize_database
+from ..db.schema import initialize_database, require_current_schema
 from ..db.snapshots import create_database_snapshot, list_database_snapshots, restore_database_snapshot
 from ..importer.mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
 from ..importer.scryfall import import_scryfall_cards
@@ -45,6 +46,7 @@ from ..importer.sync_tracking import (
     start_sync_step,
     unchanged_import_skip_reason,
 )
+from ..inventory.report_helpers import print_table
 
 
 def build_snapshot_callback(
@@ -334,6 +336,68 @@ def _sync_summary_for_result(result: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+def _print_search_index_section(
+    title: str,
+    rows: list[dict[str, Any]],
+    columns: list[tuple[str, str]],
+) -> None:
+    if not rows:
+        return
+    print(f"{title}:")
+    print_table(rows, columns)
+
+
+def _print_search_index_check_result(result: Any) -> None:
+    status = "healthy" if result.is_healthy else "drift_detected"
+    print("check-search-index completed")
+    print(f"status: {status}")
+    print(
+        "summary: "
+        f"missing_rows={result.missing_count} "
+        f"orphan_rows={result.orphan_count} "
+        f"duplicate_rows={result.duplicate_count} "
+        f"mismatched_rows={result.mismatch_count}"
+    )
+    _print_search_index_section(
+        "missing rows preview",
+        result.missing_rows,
+        [
+            ("scryfall_id", "scryfall_id"),
+            ("name", "name"),
+            ("set_code", "set"),
+            ("collector_number", "number"),
+            ("lang", "lang"),
+        ],
+    )
+    _print_search_index_section(
+        "orphan rows preview",
+        result.orphan_rows,
+        [
+            ("scryfall_id", "scryfall_id"),
+            ("name", "name"),
+            ("set_code", "set"),
+            ("collector_number", "number"),
+            ("lang", "lang"),
+        ],
+    )
+    _print_search_index_section(
+        "duplicate rows preview",
+        result.duplicate_rows,
+        [
+            ("scryfall_id", "scryfall_id"),
+            ("row_count", "row_count"),
+        ],
+    )
+    _print_search_index_section(
+        "mismatched rows preview",
+        result.mismatch_rows,
+        [
+            ("scryfall_id", "scryfall_id"),
+            ("differences", "differences"),
+        ],
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Initialize and import the MTG MVP schema from local Scryfall and MTGJSON bulk files.",
@@ -503,6 +567,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="MTGJSON AllPricesToday download URL.",
     )
 
+    check_search_index = subparsers.add_parser(
+        "check-search-index",
+        help="Verify that mtg_cards_fts matches the searchable card catalog rows.",
+    )
+    check_search_index.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    check_search_index.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum preview rows to show for each drift category.",
+    )
+
+    rebuild_search_index = subparsers.add_parser(
+        "rebuild-search-index",
+        help="Rebuild mtg_cards_fts from the current mtg_cards rows.",
+    )
+    rebuild_search_index.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path.")
+    rebuild_search_index.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum preview rows to show in the post-rebuild verification report.",
+    )
+    rebuild_search_index.add_argument("--snapshot-dir", help="Optional override directory for snapshots.")
+
     return parser
 
 
@@ -527,6 +616,34 @@ def main() -> None:
                 print(f"Applied migrations: {details}")
             else:
                 print(f"Database at {Path(args.db)} is already at the current schema version.")
+            return
+
+        if args.command == "check-search-index":
+            require_current_schema(args.db)
+            result = check_card_search_index(args.db, limit=args.limit)
+            _print_search_index_check_result(result)
+            if not result.is_healthy:
+                raise SystemExit(1)
+            return
+
+        if args.command == "rebuild-search-index":
+            require_current_schema(args.db)
+            ensure_snapshot, get_snapshot = build_snapshot_callback(
+                args.db,
+                label="before_rebuild_search_index",
+                snapshot_dir=args.snapshot_dir,
+            )
+            snapshot = ensure_snapshot()
+            print(f"snapshot: {snapshot['snapshot_path']}")
+            rebuild_result = rebuild_card_search_index(args.db)
+            check_result = check_card_search_index(args.db, limit=args.limit)
+            print("rebuild-search-index completed")
+            print(f"previous_rows: {rebuild_result.previous_row_count}")
+            print(f"source_rows: {rebuild_result.source_row_count}")
+            print(f"rebuilt_rows: {rebuild_result.rebuilt_row_count}")
+            _print_search_index_check_result(check_result)
+            if not check_result.is_healthy:
+                raise SystemExit(1)
             return
 
         if args.command == "snapshot-db":
