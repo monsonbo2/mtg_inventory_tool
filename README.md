@@ -34,6 +34,9 @@ requests. GitHub issues and PRs are the only live tracking surface; files under
 `docs/frontend_backend_requests/` are optional supporting specs and historical
 context, not the authoritative ticket state.
 
+If you want the easiest-to-find snapshot of recent milestones, the current
+review branch context, and the likely next work sequence, read `ROADMAP.md`.
+
 ## Current Runtime Shape
 
 - The active runtime package lives in `src/mtg_source_stack/`.
