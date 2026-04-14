@@ -320,7 +320,9 @@ modes.
 Small default demo:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
+cd frontend
+npm install
+npm run demo:bootstrap -- --force
 ```
 
 This keeps the tiny built-in catalog and the curated richer demo inventory.
@@ -328,8 +330,7 @@ This keeps the tiny built-in catalog and the curated richer demo inventory.
 Full searchable catalog demo:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py \
-  --db var/db/frontend_demo.db \
+npm run demo:bootstrap -- \
   --force \
   --full-catalog \
   --scryfall-json /path/to/default-cards.json
@@ -342,6 +343,17 @@ printing policy used by the app, so upstream catalog drift fails early with a
 clear bootstrap error instead of a later finish-mismatch surprise. It is the
 better fit when the frontend should search a realistic card catalog while still
 keeping the owned demo rows intentionally curated.
+
+Recommended local API start from the frontend sandbox:
+
+```bash
+npm run backend:demo
+```
+
+The frontend demo launchers prefer the repo-local `.venv/bin/python` when it
+exists, force `PYTHONPATH` to this checkout, and avoid the false
+cross-checkout/schema-mismatch problems that can happen with a globally
+installed `mtg-web-api` wrapper.
 
 For the fuller maintenance surface, check `--help` on:
 

@@ -168,15 +168,16 @@ Use this as the first-pass UI-to-endpoint map:
 1. Bootstrap a local demo database:
 
    ```bash
-   python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
+   cd frontend
+   npm install
+   npm run demo:bootstrap -- --force
    ```
 
    Or, if you want the frontend to search a real imported catalog instead of
    the tiny built-in demo catalog:
 
    ```bash
-   python3 scripts/bootstrap_frontend_demo.py \
-     --db var/db/frontend_demo.db \
+   npm run demo:bootstrap -- \
      --force \
      --full-catalog \
      --scryfall-json /path/to/default-cards.json
@@ -200,24 +201,37 @@ Use this as the first-pass UI-to-endpoint map:
    - only reused older pre-`0008` databases need an extra Scryfall refresh
      before relying on the narrowed default search scope
 
-2. Start the backend locally:
+2. Install the backend web dependencies if you have not already:
 
    ```bash
+   cd ..
+   python3 -m venv .venv
+   . .venv/bin/activate
    pip install -e '.[web]'
-   mtg-web-api --db var/db/frontend_demo.db
+   cd frontend
+   ```
+
+   The frontend demo launchers prefer `../.venv/bin/python` automatically when
+   it exists. If you use a different environment, set
+   `MTG_FRONTEND_PYTHON=/path/to/python`.
+
+3. Start the backend locally:
+
+   ```bash
+   npm run backend:demo
    ```
 
    If you are working against an upgraded existing pre-`0008` database instead
    of a fresh bootstrap, run a fresh Scryfall import before relying on the
    narrowed default catalog search scope.
 
-3. Point the frontend at the local API base URL.
-4. Build against the published HTTP contract rather than backend internals.
+4. Point the frontend at the local API base URL.
+5. Build against the published HTTP contract rather than backend internals.
 
 ## Frontend Quick Start
 
 - Backend command:
-  `mtg-web-api --db var/db/frontend_demo.db`
+  `npm run backend:demo`
 - Expected API base URL:
   `http://127.0.0.1:8000`
 - Preferred browser-dev setup:

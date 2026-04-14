@@ -91,6 +91,7 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
 
             self.assertIn("Inventories seeded: personal, trade-binder", result.stdout)
             self.assertIn("Catalog mode: small", result.stdout)
+            self.assertIn("npm run backend:demo -- --db", result.stdout)
             self.assert_richer_demo_dataset(db_path)
 
     def test_bootstrap_full_catalog_mode_imports_real_cards_without_demo_catalog_rows(self) -> None:
@@ -118,6 +119,7 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
             self.assertIn("Inventories seeded: personal, trade-binder", result.stdout)
             self.assertIn("Scryfall cards imported: 12", result.stdout)
             self.assertIn("Curated owned-item demo rows resolved from imported catalog printings.", result.stdout)
+            self.assertIn("npm run backend:demo -- --db", result.stdout)
             self.assert_richer_demo_dataset(db_path)
 
             owned_rows = list_owned_filtered(

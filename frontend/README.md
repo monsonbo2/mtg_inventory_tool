@@ -49,35 +49,49 @@ root-mounted routes such as `/inventories` and `/cards/search`.
 
 ## Quick Start
 
-1. Bootstrap a demo database:
+1. Install the frontend dependencies:
 
    ```bash
-   python3 ../scripts/bootstrap_frontend_demo.py --db ../var/db/frontend_demo.db --force
+   npm install
    ```
 
-2. Install the backend web dependencies if you have not already:
+2. Bootstrap a demo database:
 
    ```bash
-   pip install -e '..[web]'
+   npm run demo:bootstrap -- --force
    ```
 
-3. Start the API from this checkout:
+   Pass extra bootstrap args through npm when needed:
+
+   ```bash
+   npm run demo:bootstrap -- --full-catalog --scryfall-json /path/to/default-cards.json --force
+   ```
+
+3. Install the backend web dependencies if you have not already:
+
+   ```bash
+   cd ..
+   python3 -m venv .venv
+   . .venv/bin/activate
+   pip install -e '.[web]'
+   cd frontend
+   ```
+
+   The frontend demo launchers prefer `../.venv/bin/python` automatically when
+   it exists. If you use a different environment, set
+   `MTG_FRONTEND_PYTHON=/path/to/python`.
+
+4. Start the API from this checkout:
 
    ```bash
    npm run backend:demo
    ```
 
-   This launcher forces `PYTHONPATH` to the current repo's `src/` tree before
-   starting the backend. Use it instead of a globally installed `mtg-web-api`
-   wrapper when you have more than one local checkout of `mtg_source_stack`, or
-   the demo can fail with a false `schema_not_ready` mismatch against another
-   repo's migration set.
-
-4. Install the frontend dependencies:
-
-   ```bash
-   npm install
-   ```
+   This launcher forces `PYTHONPATH` to the current repo's `src/` tree and
+   prefers the repo-local virtualenv before falling back to `python3`. Use it
+   instead of a globally installed `mtg-web-api` wrapper when you have more
+   than one local checkout of `mtg_source_stack`, or the demo can fail with a
+   false `schema_not_ready` mismatch against another repo's migration set.
 
 5. Start the frontend:
 

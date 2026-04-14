@@ -129,17 +129,18 @@ Migration `0008` note:
 Default demo bootstrap:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
+cd frontend
+npm run demo:bootstrap -- --force
 ```
 
 Full-catalog demo bootstrap:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py \
-  --db var/db/frontend_demo_full.db \
+npm run demo:bootstrap -- \
   --force \
   --full-catalog \
-  --scryfall-json /path/to/default-cards.json
+  --scryfall-json /path/to/default-cards.json \
+  --db ../var/db/frontend_demo_full.db
 ```
 
 Rules of thumb:

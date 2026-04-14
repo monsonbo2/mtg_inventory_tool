@@ -831,7 +831,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         print("Cards seeded for search: Lightning Bolt, Counterspell, Swords to Plowshares, Sol Ring, Forest")
     print("Suggested API start command:")
-    print(f"  mtg-web-api --db {db_path}")
+    print(f"  (cd frontend && npm run backend:demo -- --db {db_path})")
 
 
 if __name__ == "__main__":
