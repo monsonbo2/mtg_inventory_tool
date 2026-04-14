@@ -67,6 +67,21 @@ root-mounted routes such as `/inventories` and `/cards/search`.
    npm run demo:bootstrap -- --full-catalog --scryfall-json /path/to/default-cards.json --force
    ```
 
+   If you also want real MTGJSON-backed price snapshots in that full-catalog
+   demo database, provide both local MTGJSON files too:
+
+   ```bash
+   npm run demo:bootstrap -- \
+     --full-catalog \
+     --scryfall-json /path/to/default-cards.json \
+     --identifiers-json /path/to/AllIdentifiers.json \
+     --prices-json /path/to/AllPricesToday.json \
+     --force
+   ```
+
+   Without those MTGJSON inputs, full-catalog mode still uses the curated demo
+   price seed for the owned showcase rows only.
+
 3. Install the backend web dependencies if you have not already:
 
    ```bash

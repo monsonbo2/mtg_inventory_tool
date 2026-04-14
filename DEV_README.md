@@ -143,6 +143,18 @@ npm run demo:bootstrap -- \
   --db ../var/db/frontend_demo_full.db
 ```
 
+Optional full-catalog pricing import:
+
+```bash
+npm run demo:bootstrap -- \
+  --force \
+  --full-catalog \
+  --scryfall-json /path/to/default-cards.json \
+  --identifiers-json /path/to/AllIdentifiers.json \
+  --prices-json /path/to/AllPricesToday.json \
+  --db ../var/db/frontend_demo_full.db
+```
+
 Rules of thumb:
 
 - keep the default small demo mode fast and self-contained

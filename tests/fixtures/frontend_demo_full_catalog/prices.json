@@ -1,0 +1,82 @@
+{
+  "data": {
+    "uuid-brainstorm-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "normal": {
+              "2026-04-02": 1.11
+            }
+          }
+        }
+      }
+    },
+    "uuid-bolt-mainstream-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "normal": {
+              "2026-04-02": 3.33
+            },
+            "foil": {
+              "2026-04-02": 7.10
+            }
+          }
+        }
+      }
+    },
+    "uuid-counterspell-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "normal": {
+              "2026-04-02": 1.99
+            }
+          }
+        }
+      }
+    },
+    "uuid-forest-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "normal": {
+              "2026-04-02": 0.22
+            }
+          }
+        }
+      }
+    },
+    "uuid-swords-ja-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "normal": {
+              "2026-04-02": 4.44
+            }
+          }
+        }
+      }
+    },
+    "uuid-sol-ring-mainstream-1": {
+      "paper": {
+        "tcgplayer": {
+          "currency": "USD",
+          "retail": {
+            "normal": {
+              "2026-04-02": 2.05
+            },
+            "etched": {
+              "2026-04-02": 5.40
+            }
+          }
+        }
+      }
+    }
+  }
+}

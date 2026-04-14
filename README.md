@@ -344,6 +344,21 @@ clear bootstrap error instead of a later finish-mismatch surprise. It is the
 better fit when the frontend should search a realistic card catalog while still
 keeping the owned demo rows intentionally curated.
 
+If you also want real MTGJSON-backed price snapshots in that full-catalog demo
+database:
+
+```bash
+npm run demo:bootstrap -- \
+  --force \
+  --full-catalog \
+  --scryfall-json /path/to/default-cards.json \
+  --identifiers-json /path/to/AllIdentifiers.json \
+  --prices-json /path/to/AllPricesToday.json
+```
+
+Without those MTGJSON files, full-catalog mode keeps the curated demo price
+seed for the showcase owned rows only.
+
 Recommended local API start from the frontend sandbox:
 
 ```bash

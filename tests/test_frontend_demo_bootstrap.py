@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import json
 import subprocess
 import sys
@@ -118,6 +119,7 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
             self.assertIn("Catalog mode: full", result.stdout)
             self.assertIn("Inventories seeded: personal, trade-binder", result.stdout)
             self.assertIn("Scryfall cards imported: 12", result.stdout)
+            self.assertIn("Price mode: curated demo seed pricing.", result.stdout)
             self.assertIn("Curated owned-item demo rows resolved from imported catalog printings.", result.stdout)
             self.assertIn("npm run backend:demo -- --db", result.stdout)
             self.assert_richer_demo_dataset(db_path)
@@ -166,6 +168,86 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
             self.assertEqual(1, brainstorm_rows)
             self.assertEqual(0, owned_demo_rows)
 
+    def test_bootstrap_full_catalog_mode_can_import_real_prices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "frontend_demo_full_real_prices.db"
+            scryfall_json = fixture_path("frontend_demo_full_catalog", "scryfall.json")
+            identifiers_json = fixture_path("frontend_demo_full_catalog", "identifiers.json")
+            prices_json = fixture_path("frontend_demo_full_catalog", "prices.json")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/bootstrap_frontend_demo.py",
+                    "--db",
+                    str(db_path),
+                    "--force",
+                    "--full-catalog",
+                    "--scryfall-json",
+                    str(scryfall_json),
+                    "--identifiers-json",
+                    str(identifiers_json),
+                    "--prices-json",
+                    str(prices_json),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertIn("Catalog mode: full", result.stdout)
+            self.assertIn("MTGJSON identifier links imported: 6", result.stdout)
+            self.assertIn("MTGJSON price snapshots imported: 8", result.stdout)
+            self.assertIn("Price mode: imported MTGJSON pricing.", result.stdout)
+            self.assert_richer_demo_dataset(db_path)
+
+            owned_rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            owned_by_name = {row.name: row for row in owned_rows}
+            self.assertEqual(Decimal("7.10"), owned_by_name["Lightning Bolt"].unit_price)
+            self.assertEqual(Decimal("1.99"), owned_by_name["Counterspell"].unit_price)
+            self.assertEqual(Decimal("4.44"), owned_by_name["Swords to Plowshares"].unit_price)
+            self.assertEqual(Decimal("5.40"), owned_by_name["Sol Ring"].unit_price)
+
+            with connect(db_path) as connection:
+                mtgjson_price_rows = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM price_snapshots
+                    WHERE source_name = 'mtgjson_all_prices_today'
+                    """
+                ).fetchone()[0]
+                demo_seed_price_rows = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM price_snapshots
+                    WHERE source_name = 'demo-seed'
+                    """
+                ).fetchone()[0]
+                brainstorm_price_rows = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM price_snapshots
+                    WHERE scryfall_id = 'fixture-brainstorm-en'
+                    """
+                ).fetchone()[0]
+
+            self.assertEqual(8, mtgjson_price_rows)
+            self.assertEqual(0, demo_seed_price_rows)
+            self.assertEqual(1, brainstorm_price_rows)
+
     def test_bootstrap_full_catalog_mode_requires_scryfall_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "frontend_demo_missing_fixture.db"
@@ -186,6 +268,36 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
 
             self.assertNotEqual(0, result.returncode)
             self.assertIn("--scryfall-json is required with --full-catalog", result.stderr)
+
+    def test_bootstrap_full_catalog_mode_requires_identifiers_and_prices_together(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "frontend_demo_missing_prices.db"
+            scryfall_json = fixture_path("frontend_demo_full_catalog", "scryfall.json")
+            identifiers_json = fixture_path("frontend_demo_full_catalog", "identifiers.json")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/bootstrap_frontend_demo.py",
+                    "--db",
+                    str(db_path),
+                    "--force",
+                    "--full-catalog",
+                    "--scryfall-json",
+                    str(scryfall_json),
+                    "--identifiers-json",
+                    str(identifiers_json),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn(
+                "--identifiers-json and --prices-json must be provided together with --full-catalog.",
+                result.stderr,
+            )
 
     def test_bootstrap_full_catalog_mode_fails_fast_when_demo_finish_constraints_cannot_resolve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

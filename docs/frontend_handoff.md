@@ -183,11 +183,24 @@ Use this as the first-pass UI-to-endpoint map:
      --scryfall-json /path/to/default-cards.json
    ```
 
+   If you also want imported MTGJSON pricing in that full-catalog demo:
+
+   ```bash
+   npm run demo:bootstrap -- \
+     --force \
+     --full-catalog \
+     --scryfall-json /path/to/default-cards.json \
+     --identifiers-json /path/to/AllIdentifiers.json \
+     --prices-json /path/to/AllPricesToday.json
+   ```
+
    In full-catalog mode the bootstrap still creates the same curated demo
    inventories and owned-row states, but it resolves those rows against real
    imported printings using the same default `oracle_id` printing policy as the
    app. If the imported catalog cannot satisfy one of the intended demo states,
-   the bootstrap now fails early with a clear seed-resolution error.
+   the bootstrap now fails early with a clear seed-resolution error. Without the
+   optional MTGJSON files, full-catalog mode keeps the curated demo price seed
+   for the showcase owned rows only.
 
    Refresh guidance:
 

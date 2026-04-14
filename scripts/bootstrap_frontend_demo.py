@@ -17,6 +17,7 @@ if str(SRC_ROOT) not in sys.path:
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import NotFoundError, ValidationError
+from mtg_source_stack.importer.mtgjson import import_mtgjson_identifiers, import_mtgjson_prices
 from mtg_source_stack.importer.scryfall import import_scryfall_cards
 from mtg_source_stack.inventory.normalize import normalize_finish, validate_supported_finish
 from mtg_source_stack.inventory.service import (
@@ -72,6 +73,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--scryfall-json",
         help="Path to local Scryfall bulk JSON for --full-catalog mode.",
+    )
+    parser.add_argument(
+        "--identifiers-json",
+        help="Path to local MTGJSON AllIdentifiers JSON for importing real vendor links in --full-catalog mode.",
+    )
+    parser.add_argument(
+        "--prices-json",
+        help="Path to local MTGJSON AllPricesToday JSON for importing real price snapshots in --full-catalog mode.",
     )
     parser.add_argument(
         "--force",
@@ -527,7 +536,7 @@ def seed_small_demo_inventory_items(db_path: Path) -> None:
     )
 
 
-def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
+def seed_full_catalog_demo_inventory_items(db_path: Path, *, seed_demo_prices: bool) -> None:
     bolt = _add_full_catalog_demo_card(
         db_path,
         inventory_slug="personal",
@@ -704,63 +713,64 @@ def seed_full_catalog_demo_inventory_items(db_path: Path) -> None:
         request_id="seed-remove-forest",
     )
 
-    seed_price_snapshots(
-        db_path,
-        [
-            (bolt.scryfall_id, "tcgplayer", "retail", "normal", "USD", "2026-04-01", 2.50, "demo-seed"),
-            (bolt.scryfall_id, "tcgplayer", "retail", "foil", "USD", "2026-04-01", 6.75, "demo-seed"),
-            (
-                counterspell.scryfall_id,
-                "tcgplayer",
-                "retail",
-                "normal",
-                "USD",
-                "2026-04-01",
-                1.25,
-                "demo-seed",
-            ),
-            (
-                swords.scryfall_id,
-                "tcgplayer",
-                "retail",
-                "normal",
-                "USD",
-                "2026-04-01",
-                3.50,
-                "demo-seed",
-            ),
-            (
-                sol_ring.scryfall_id,
-                "tcgplayer",
-                "retail",
-                "normal",
-                "USD",
-                "2026-04-01",
-                1.75,
-                "demo-seed",
-            ),
-            (
-                sol_ring.scryfall_id,
-                "tcgplayer",
-                "retail",
-                "etched",
-                "USD",
-                "2026-04-01",
-                4.75,
-                "demo-seed",
-            ),
-            (
-                forest.scryfall_id,
-                "tcgplayer",
-                "retail",
-                "normal",
-                "USD",
-                "2026-04-01",
-                0.15,
-                "demo-seed",
-            ),
-        ],
-    )
+    if seed_demo_prices:
+        seed_price_snapshots(
+            db_path,
+            [
+                (bolt.scryfall_id, "tcgplayer", "retail", "normal", "USD", "2026-04-01", 2.50, "demo-seed"),
+                (bolt.scryfall_id, "tcgplayer", "retail", "foil", "USD", "2026-04-01", 6.75, "demo-seed"),
+                (
+                    counterspell.scryfall_id,
+                    "tcgplayer",
+                    "retail",
+                    "normal",
+                    "USD",
+                    "2026-04-01",
+                    1.25,
+                    "demo-seed",
+                ),
+                (
+                    swords.scryfall_id,
+                    "tcgplayer",
+                    "retail",
+                    "normal",
+                    "USD",
+                    "2026-04-01",
+                    3.50,
+                    "demo-seed",
+                ),
+                (
+                    sol_ring.scryfall_id,
+                    "tcgplayer",
+                    "retail",
+                    "normal",
+                    "USD",
+                    "2026-04-01",
+                    1.75,
+                    "demo-seed",
+                ),
+                (
+                    sol_ring.scryfall_id,
+                    "tcgplayer",
+                    "retail",
+                    "etched",
+                    "USD",
+                    "2026-04-01",
+                    4.75,
+                    "demo-seed",
+                ),
+                (
+                    forest.scryfall_id,
+                    "tcgplayer",
+                    "retail",
+                    "normal",
+                    "USD",
+                    "2026-04-01",
+                    0.15,
+                    "demo-seed",
+                ),
+            ],
+        )
 
 
 def import_full_demo_catalog(db_path: Path, *, scryfall_json: Path) -> int:
@@ -773,6 +783,8 @@ def bootstrap_demo_data(
     *,
     full_catalog: bool = False,
     scryfall_json: Path | None = None,
+    identifiers_json: Path | None = None,
+    prices_json: Path | None = None,
 ) -> dict[str, int | str]:
     initialize_database(db_path)
 
@@ -780,11 +792,24 @@ def bootstrap_demo_data(
         if scryfall_json is None:
             raise ValueError("scryfall_json is required when full_catalog is enabled.")
         catalog_rows = import_full_demo_catalog(db_path, scryfall_json=scryfall_json)
+        identifiers_rows = 0
+        imported_price_rows = 0
+        price_mode = "demo_seed"
+        if identifiers_json is not None and prices_json is not None:
+            identifiers_rows = int(import_mtgjson_identifiers(db_path, identifiers_json).rows_written)
+            imported_price_rows = int(import_mtgjson_prices(db_path, prices_json).rows_written)
+            price_mode = "imported"
         seed_demo_inventories(db_path)
-        seed_full_catalog_demo_inventory_items(db_path)
+        seed_full_catalog_demo_inventory_items(
+            db_path,
+            seed_demo_prices=(price_mode != "imported"),
+        )
         return {
             "catalog_mode": "full",
             "catalog_rows": catalog_rows,
+            "identifiers_rows": identifiers_rows,
+            "price_rows": imported_price_rows if price_mode == "imported" else 7,
+            "price_mode": price_mode,
         }
 
     seed_small_demo_catalog_and_prices(db_path)
@@ -801,11 +826,19 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     db_path = Path(args.db)
     scryfall_json = Path(args.scryfall_json) if args.scryfall_json is not None else None
+    identifiers_json = Path(args.identifiers_json) if args.identifiers_json is not None else None
+    prices_json = Path(args.prices_json) if args.prices_json is not None else None
 
     if args.full_catalog and scryfall_json is None:
         parser.error("--scryfall-json is required with --full-catalog.")
     if not args.full_catalog and scryfall_json is not None:
         parser.error("--scryfall-json is only used with --full-catalog.")
+    if args.full_catalog and (identifiers_json is None) != (prices_json is None):
+        parser.error("--identifiers-json and --prices-json must be provided together with --full-catalog.")
+    if not args.full_catalog and identifiers_json is not None:
+        parser.error("--identifiers-json is only used with --full-catalog.")
+    if not args.full_catalog and prices_json is not None:
+        parser.error("--prices-json is only used with --full-catalog.")
 
     if db_path.exists():
         if not args.force:
@@ -819,14 +852,22 @@ def main(argv: list[str] | None = None) -> None:
             db_path,
             full_catalog=args.full_catalog,
             scryfall_json=scryfall_json,
+            identifiers_json=identifiers_json,
+            prices_json=prices_json,
         )
-    except (NotFoundError, ValidationError) as exc:
+    except (NotFoundError, ValidationError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     print(f"Bootstrapped frontend demo data at {db_path}")
     print(f"Catalog mode: {summary['catalog_mode']}")
     print("Inventories seeded: personal, trade-binder")
     if args.full_catalog:
         print(f"Scryfall cards imported: {summary['catalog_rows']}")
+        if summary["price_mode"] == "imported":
+            print(f"MTGJSON identifier links imported: {summary['identifiers_rows']}")
+            print(f"MTGJSON price snapshots imported: {summary['price_rows']}")
+            print("Price mode: imported MTGJSON pricing.")
+        else:
+            print("Price mode: curated demo seed pricing.")
         print("Curated owned-item demo rows resolved from imported catalog printings.")
     else:
         print("Cards seeded for search: Lightning Bolt, Counterspell, Swords to Plowshares, Sol Ring, Forest")
