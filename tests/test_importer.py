@@ -670,6 +670,76 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual(("uuid-noop", "7001", "2000-01-01 00:00:00"), tuple(row))
             self.assertEqual(1, link_count)
 
+    def test_import_mtgjson_identifiers_does_not_rebuild_fts_rows_for_identifier_only_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            identifiers_path = Path(tmp_dir) / "identifiers.json"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES (?, ?, ?, 'tst', 'Test Set', ?)
+                    """,
+                    [
+                        ("card-search", "oracle-search", "Searchable Card", "1"),
+                        ("card-other", "oracle-other", "Other Card", "2"),
+                    ],
+                )
+                before_row = connection.execute(
+                    """
+                    SELECT rowid, scryfall_id, name, set_code, set_name, collector_number, lang
+                    FROM mtg_cards_fts
+                    WHERE scryfall_id = 'card-search'
+                    """
+                ).fetchone()
+
+            identifiers_payload = {
+                "data": {
+                    "uuid-search": {
+                        "identifiers": {
+                            "scryfallId": "card-search",
+                            "tcgplayerProductId": "123",
+                            "cardKingdomId": "456",
+                        }
+                    }
+                }
+            }
+            identifiers_path.write_text(json.dumps(identifiers_payload), encoding="utf-8")
+
+            from mtg_source_stack.importer.mtgjson import import_mtgjson_identifiers
+
+            stats = import_mtgjson_identifiers(db_path, identifiers_path)
+
+            with connect(db_path) as connection:
+                after_row = connection.execute(
+                    """
+                    SELECT rowid, scryfall_id, name, set_code, set_name, collector_number, lang
+                    FROM mtg_cards_fts
+                    WHERE scryfall_id = 'card-search'
+                    """
+                ).fetchone()
+                search_match = connection.execute(
+                    """
+                    SELECT scryfall_id
+                    FROM mtg_cards_fts
+                    WHERE mtg_cards_fts MATCH 'Searchable'
+                    ORDER BY scryfall_id
+                    """
+                ).fetchall()
+
+            self.assertEqual(1, stats.rows_written)
+            self.assertEqual(tuple(before_row), tuple(after_row))
+            self.assertEqual([("card-search",)], [tuple(row) for row in search_match])
+
     def test_import_mtgjson_identifiers_reports_phase_timings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -718,6 +788,60 @@ class ImporterTest(RepoSmokeTestCase):
             for value in stats.details["phase_seconds"].values():
                 self.assertIsInstance(value, float)
                 self.assertGreaterEqual(value, 0.0)
+
+    def test_name_updates_refresh_card_search_fts_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES ('card-fts', 'oracle-fts', 'Original Search Name', 'tst', 'Test Set', '1')
+                    """
+                )
+                original_match = connection.execute(
+                    """
+                    SELECT scryfall_id
+                    FROM mtg_cards_fts
+                    WHERE mtg_cards_fts MATCH 'Original'
+                    """
+                ).fetchall()
+
+                connection.execute(
+                    """
+                    UPDATE mtg_cards
+                    SET name = 'Updated Search Name'
+                    WHERE scryfall_id = 'card-fts'
+                    """
+                )
+
+                updated_match = connection.execute(
+                    """
+                    SELECT scryfall_id
+                    FROM mtg_cards_fts
+                    WHERE mtg_cards_fts MATCH 'Updated'
+                    """
+                ).fetchall()
+                stale_match = connection.execute(
+                    """
+                    SELECT scryfall_id
+                    FROM mtg_cards_fts
+                    WHERE mtg_cards_fts MATCH 'Original'
+                    """
+                ).fetchall()
+
+            self.assertEqual([("card-fts",)], [tuple(row) for row in original_match])
+            self.assertEqual([("card-fts",)], [tuple(row) for row in updated_match])
+            self.assertEqual([], stale_match)
 
     def test_iter_json_object_items_reads_gzip_data_object(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

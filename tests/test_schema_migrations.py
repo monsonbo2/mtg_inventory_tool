@@ -94,6 +94,13 @@ class SchemaMigrationTest(unittest.TestCase):
                 sync_run_issues_exists = connection.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_issues'"
                 ).fetchone()[0]
+                update_trigger_sql = connection.execute(
+                    """
+                    SELECT sql
+                    FROM sqlite_master
+                    WHERE type = 'trigger' AND name = 'trg_mtg_cards_au_fts'
+                    """
+                ).fetchone()[0]
                 mtg_card_columns = {
                     row["name"]
                     for row in connection.execute("PRAGMA table_info(mtg_cards)").fetchall()
@@ -103,8 +110,8 @@ class SchemaMigrationTest(unittest.TestCase):
                     for row in connection.execute("PRAGMA table_info(inventories)").fetchall()
                 }
 
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
-            self.assertEqual(13, latest_version)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)
+            self.assertEqual(14, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
             self.assertEqual(1, inventory_memberships_exists)
@@ -114,6 +121,11 @@ class SchemaMigrationTest(unittest.TestCase):
             self.assertEqual(1, sync_run_steps_exists)
             self.assertEqual(1, sync_run_artifacts_exists)
             self.assertEqual(1, sync_run_issues_exists)
+            self.assertIn(
+                "AFTER UPDATE OF scryfall_id, name, set_code, set_name, collector_number, lang ON mtg_cards",
+                update_trigger_sql,
+            )
+            self.assertIn("WHEN", update_trigger_sql)
             self.assertTrue(
                 {
                     "layout",
@@ -149,7 +161,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(13, len(rows))
+            self.assertEqual(14, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -165,6 +177,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (11, "add inventory metadata defaults"),
                     (12, "add mtgjson card links"),
                     (13, "add sync run tracking"),
+                    (14, "narrow card search fts updates"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -249,7 +262,7 @@ class SchemaMigrationTest(unittest.TestCase):
             self.assertIn("printing_selection_mode", columns)
             self.assertEqual("[]", tags_value)
             self.assertEqual("explicit", printing_selection_mode)
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
@@ -345,7 +358,7 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)
 
     def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
         for type_line, expected in (
@@ -447,4 +460,4 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("uuid-1", "card-with-uuid")], [(row["mtgjson_uuid"], row["scryfall_id"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], versions)
+            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)

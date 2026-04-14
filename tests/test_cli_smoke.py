@@ -109,6 +109,7 @@ class CliSmokeTest(RepoSmokeTestCase):
             self.assertIn("0011 add inventory metadata defaults", migrate_output)
             self.assertIn("0012 add mtgjson card links", migrate_output)
             self.assertIn("0013 add sync run tracking", migrate_output)
+            self.assertIn("0014 narrow card search fts updates", migrate_output)
 
             search_output = self.run_cli(
                 "search-cards",
