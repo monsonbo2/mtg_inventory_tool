@@ -2280,7 +2280,8 @@
 .compact-row-left {
   min-width: 0;
   align-items: center;
-  flex: 0 1 292px;
+  flex: 0 1 280px;
+  max-width: 300px;
   gap: 12px;
   align-self: center;
 }
@@ -2289,22 +2290,17 @@
   display: grid;
   gap: 6px;
   align-content: center;
-  justify-content: center;
+  justify-content: stretch;
   min-width: 0;
-}
-
-.compact-row-titlebar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+  flex: 1 1 auto;
+  width: 100%;
 }
 
 .compact-row-heading {
   display: grid;
   gap: 4px;
   align-content: center;
+  justify-items: start;
   min-width: 0;
 }
 
@@ -2313,7 +2309,9 @@
   font-size: 1.18rem;
   line-height: 1.08;
   letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: none;
 }
 
 .compact-row-copy .result-card-subtitle {
@@ -2321,11 +2319,12 @@
   font-size: 0.86rem;
   line-height: 1.35;
   color: var(--text-soft);
-  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: none;
 }
 
 .compact-row-detail-button {
-  flex-shrink: 0;
   margin-top: 0;
   text-align: left;
   white-space: nowrap;
@@ -2354,12 +2353,12 @@
 .compact-row-fields {
   display: grid;
   grid-template-columns:
-    minmax(92px, 0.84fr)
-    minmax(116px, 0.96fr)
-    minmax(134px, 1.08fr)
-    minmax(170px, 1.28fr)
-    minmax(108px, 0.94fr);
-  gap: 0;
+    minmax(82px, 92px)
+    minmax(128px, 144px)
+    minmax(160px, 1.3fr)
+    minmax(140px, 1fr)
+    minmax(98px, 108px);
+  gap: 12px;
   flex: 1 1 640px;
   min-width: 0;
   align-items: center;
@@ -2372,23 +2371,11 @@
 .compact-row-fields > * {
   min-width: 0;
   min-height: 100%;
-  padding: 0 12px;
-}
-
-.compact-row-fields > *:first-child {
-  padding-left: 0;
-}
-
-.compact-row-fields > *:last-child {
-  padding-right: 0;
-}
-
-.compact-row-fields > * + * {
-  border-left: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 0;
 }
 
 .compact-row-fields > :last-child {
-  padding-left: 16px;
+  padding-left: 6px;
   position: relative;
 }
 

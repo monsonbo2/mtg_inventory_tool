@@ -253,13 +253,8 @@ function CompactInventoryRow(props: {
           />
 
           <div className="compact-row-copy">
-            <div className="compact-row-titlebar">
-              <div className="compact-row-heading">
-                <h3>{props.item.name}</h3>
-                <p className="result-card-subtitle">
-                  {props.item.set_name} · #{props.item.collector_number}
-                </p>
-              </div>
+            <div className="compact-row-heading">
+              <h3>{props.item.name}</h3>
               <button
                 className="field-link-button compact-row-detail-button"
                 onClick={() => props.onOpenDetails(props.item.item_id)}
@@ -267,6 +262,9 @@ function CompactInventoryRow(props: {
               >
                 Open details
               </button>
+              <p className="result-card-subtitle">
+                {props.item.set_name} · #{props.item.collector_number}
+              </p>
             </div>
             {statusMessage ? <p className={statusClassName}>{statusMessage}</p> : null}
           </div>
