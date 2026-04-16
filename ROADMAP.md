@@ -3,84 +3,242 @@
 Historical roadmap context for this repo.
 
 GitHub issues and pull requests are the only active work-tracking surface.
-This file is background context for recent milestones and likely workstreams,
-and it may drift between commits without being kept in sync with live ticket
-status.
+This file is meant to be easy-to-find background context for recent branch
+milestones, current review context, and the next likely work sequence. It may
+drift between commits, so treat GitHub as the source of truth for live ticket
+status and ownership.
 
-## Recent Baseline Milestones
+## Current Checkpoint
 
-- `a4452d2` Add inventory membership foundations
-- `ab1b1db` Fix health previews and blank location responses
-- `cd433ad` Enforce inventory-scoped read access
-- `8b760ae` Enforce inventory write access by membership
-- `ecc5756` Add bulk inventory tag mutations
-- `5bfc988` Add default inventory bootstrap flow
-- `b58f089` Add catalog classification import fields
-- `c1a5976` Apply default add-search catalog scope
-- `49f333e` Add broad catalog search scope opt-in
-- `3a1cfca` Define oracle-id default printing ranking
-- `3c7aff1` Document oracle-id default printing policy
-- `c88f80a` Make full-catalog demo bootstrap resolver-driven
-- `4d8e97f` Fix grouped card-name search parameter ordering
-- `65fea2d` Add bulk finish mutation support
-- `2d002c6` Add bulk location mutation support
-- `ec20433` Add bulk condition mutation support
-- `c8c042f` Add whole-inventory transfer support
-- `537de8e` Add inventory duplication API
-- `f1220fa` Canonicalize inventory slug usage
-- `485f937` Merge import/export backend tools into this branch
-- `869717c` Fix CSV import multipart dependency handling
+Last refreshed: `2026-04-14`
 
-## Working Assumption
+Current review branch:
 
-After the Phase 2 merge point, expect new work to happen on focused feature
-branches rather than one long-lived integration branch.
+- `database-sync-optimization`
 
-Current frontend handoff status on `frontend_phase_2`:
+Open review PR:
 
-- the shared frontend API client now supports JSON requests, multipart CSV
-  upload, and CSV/text downloads
-- the frontend type surface and client wrappers now cover shared-service
-  bootstrap, import/export, transfer, duplicate, and the broader bulk-mutation
-  contract
-- the current demo UI still passes frontend tests/build on top of that refactor
-- the next frontend product branch should start with shared-service bootstrap
-  UX and permission-aware empty states, then move into import/export flows
-  before transfer/duplicate polish
+- `#42` `Optimize database sync and smooth demo setup`
+- <https://github.com/monsonbo2/mtg_inventory_tool/pull/42>
 
-For live branch priority, prefer:
+Mainline assumption:
+
+- `origin/HEAD` still points to `origin/master`
+
+## What Recently Landed On The Review Branch
+
+Sync and importer work:
+
+- sync run, step, artifact, and issue bookkeeping
+- split sync commands:
+  - `sync-scryfall`
+  - `sync-identifiers`
+  - `sync-prices`
+- unchanged-artifact skip behavior for sync/import runs
+- streamed MTGJSON identifier and price payload reads
+- importer timing and sync-history visibility
+- Scryfall metadata caching and safer validator reuse
+- search-index maintenance commands:
+  - `check-search-index`
+  - `rebuild-search-index`
+  - `list-sync-runs`
+  - `show-sync-run --run-id ...`
+
+Important performance result:
+
+- narrowing the `mtg_cards` FTS update trigger removed the main bulk identifier
+  import bottleneck
+- on the benchmark harness, `import-identifiers` dropped from effectively
+  `13m+` to about `12.8s`
+
+Frontend/demo work:
+
+- frontend demo launchers now prefer the repo-local `.venv/bin/python`
+- `frontend/` now has first-class:
+  - `npm run demo:bootstrap`
+  - `npm run backend:demo`
+- the demo bootstrap output and docs now point people to repo-local launchers
+  instead of a global `mtg-web-api` wrapper
+- full-catalog demo bootstrap now optionally supports real MTGJSON pricing when
+  both `--identifiers-json` and `--prices-json` are supplied alongside
+  `--scryfall-json`
+
+Recent commits worth knowing:
+
+- `213b7d6` `Smooth frontend demo setup flow`
+- `3cccf81` `Add priced full-catalog demo bootstrap`
+
+## Current Validation Snapshot
+
+Last known green checks on the review branch:
+
+- `PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -q`
+  - `391` passed, `75` skipped
+- `cd frontend && npm run test`
+  - `67` passed
+- `cd frontend && npm run build`
+  - passed
+- full-catalog priced demo bootstrap via npm
+  - passed with local fixture files
+
+## Recommended Next Issue Sequence
+
+If work resumes after PR `#42`, the best next sequence is:
+
+1. `#43` Shared-service onboarding-state contract clarity
+2. `#45` Shared-service validation fixtures for permission-aware frontend states
+3. `#44` Proxy-backed shared-service validation harness for `/api` rollout
+4. `#38` Optimize grouped name search latency on full-catalog demo DB
+5. Re-scope `#39` Local-first bootstrap and lightweight printing lookup support
+6. `#41` Support bulk inventory mutations across all filtered rows
+
+Why this order:
+
+- `#43` is likely the cheapest high-value shared-service issue
+- `#45` turns shared-service permission states into something repeatable
+- `#44` becomes much easier and more useful once those fixtures exist
+- `#38` is the sharpest remaining product-feel / demo-latency issue
+- `#39` is partly stale relative to the current code and should be narrowed
+  before more backend work is added
+- `#41` is the largest remaining feature contract and should follow the smaller
+  shared-service and demo-readiness wins
+
+## Open Issue Notes
+
+### `#43` Shared-service onboarding-state contract clarity
+
+Best first approach:
+
+- add a small machine-readable status route such as `/me/access-summary`
+- keep it focused on:
+  - `can_bootstrap`
+  - `has_readable_inventory`
+  - `visible_inventory_count`
+  - `default_inventory_slug`
+- document the frontend decision tree against that route
+
+Reasonable alternative:
+
+- docs-only decision tree using current `GET /inventories` plus
+  `POST /me/bootstrap`
+
+Why the route is preferred:
+
+- the frontend currently has to infer too much from multiple endpoints and
+  permission failures
+
+### `#45` Shared-service validation fixtures
+
+Best first approach:
+
+- add a scripted fixture bootstrap that seeds:
+  - one bootstrap-eligible editor
+  - one authenticated user with no memberships
+  - one read-only inventory member
+  - one write-capable member
+  - one global admin
+- publish the expected verified headers and visible inventory outcomes
+
+Reasonable alternative:
+
+- commit a prebuilt SQLite fixture DB
+
+Why the scripted fixture is preferred:
+
+- it survives migrations better and is easier to reason about than a binary DB
+  snapshot
+
+### `#44` Proxy-backed shared-service validation harness
+
+Best first approach:
+
+- add a lightweight committed reverse-proxy config for the exact `/api`
+  deployment shape
+- add a smoke-test path that validates:
+  - `/api` prefix stripping
+  - verified header injection
+  - denied client-supplied auth headers
+  - same-origin request behavior
+
+Reasonable alternative:
+
+- simulate the proxy in an in-process ASGI test harness
+
+Why the real proxy shape is preferred:
+
+- the issue is about rollout validation, not only backend unit correctness
+
+### `#38` Grouped name search latency
+
+Best first approach:
+
+- remove or sharply constrain the broad grouped-search substring fallback
+- rely on FTS plus exact/prefix ordering for the normal path
+- add benchmark coverage so future regressions are obvious
+
+Reasonable alternative:
+
+- build a dedicated grouped-name index keyed by `oracle_id`
+
+Why the tactical query fix is preferred first:
+
+- it is the likely first speed win with the lowest schema complexity
+
+### `#39` Local-first bootstrap and lightweight printing lookup support
+
+Current caution:
+
+- parts of the original issue are already partially satisfied by current code:
+  - `/me/bootstrap` is already idempotent
+  - printing lookup already defaults to an English-first subset and only loads
+    all languages on demand
+
+Best first approach:
+
+- re-scope or split the issue before implementation
+- keep only the work that is still actually missing
+
+Reasonable alternative:
+
+- add a lighter-weight printing summary route immediately
+
+Why re-scoping is preferred:
+
+- this issue is at risk of duplicating behavior the repo now already has
+
+### `#41` Filter-based bulk mutations
+
+Best first approach:
+
+- extend the existing bulk route to support a selection envelope
+  - explicit `item_ids`
+  - or backend-owned filters matching the inventory list route semantics
+- resolve the filtered selection inside the same transaction
+- return transfer-style summaries for large operations rather than giant ID
+  payloads
+
+Reasonable alternative:
+
+- add a sibling route such as `/items/bulk-filtered`
+
+Why the additive selection envelope is preferred:
+
+- it keeps one long-term bulk contract instead of splitting closely related
+  behavior across multiple endpoints
+
+## Current Working Assumptions
+
+- stay local-first and SQLite-first for now
+- treat `shared_service` as a modest single-host rollout shape, not a
+  horizontally scaled SaaS target
+- keep demo/bootstrap tooling as part of the supported developer experience, not
+  as throwaway scripts
+- prefer GitHub issues / PRs for live tracking, and use this file only as
+  quickly discoverable planning context
+
+## First Places To Look When This File Drifts
 
 1. `git status --short --branch`
-2. recent commits on the current branch
-3. GitHub issues / PRs
-
-Do not treat this file as a source of truth once it drifts from active git
-state.
-
-## Likely Workstreams
-
-1. Shared-service rollout validation behind the real reverse proxy and verified
-   auth headers.
-2. Frontend integration and handoff follow-through for:
-   - generalized bulk mutations
-   - transfer / duplicate inventory flows
-   - import / export preview and commit paths
-3. Issue and runbook hygiene around recently landed work such as:
-   - full-catalog demo bootstrap
-   - playable-card default search scope
-   - documented `oracle_id` default printing policy
-   - import / export operational notes
-4. Membership/bootstrap follow-through, especially the `POST /me/bootstrap`
-   first-run flow and operator runbooks.
-5. Later reporting/performance work once rollout behavior is stable.
-
-## Active Questions To Watch
-
-- Does the current shared-service rollout behave cleanly behind the real proxy
-  and verified auth headers?
-- Are GitHub issues / PRs aligned with the actual branch state?
-- What is the next product feature branch after Phase 2 merge:
-  frontend integration of the current bulk / transfer features, pasted list
-  import, or something else?
-- Are there any remaining operator runbook gaps around memberships, bootstrap,
-  catalog refresh expectations, or import/export dependencies?
+2. recent commits on the active branch
+3. open GitHub issues and pull requests
+4. the current PR description if a review branch is already open

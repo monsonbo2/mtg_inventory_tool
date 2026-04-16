@@ -34,6 +34,9 @@ requests. GitHub issues and PRs are the only live tracking surface; files under
 `docs/frontend_backend_requests/` are optional supporting specs and historical
 context, not the authoritative ticket state.
 
+If you want the easiest-to-find snapshot of recent milestones, the current
+review branch context, and the likely next work sequence, read `ROADMAP.md`.
+
 ## Current Runtime Shape
 
 - The active runtime package lives in `src/mtg_source_stack/`.
@@ -178,6 +181,30 @@ mtg-mvp-importer sync-bulk \
   --cache-dir "var/bulk_cache/latest"
 ```
 
+Recommended ongoing refresh cadence:
+
+```bash
+mtg-mvp-importer sync-scryfall --db "var/db/mtg_mvp.db" --cache-dir "var/bulk_cache/latest"
+mtg-mvp-importer sync-identifiers --db "var/db/mtg_mvp.db" --cache-dir "var/bulk_cache/latest"
+mtg-mvp-importer sync-prices --db "var/db/mtg_mvp.db" --cache-dir "var/bulk_cache/latest"
+```
+
+For most local or modest shared-service use, treat those commands as:
+
+- `sync-prices`: daily
+- `sync-scryfall`: weekly
+- `sync-identifiers`: weekly or less often
+- `sync-bulk`: catch-up/bootstrap command when you want one operator action to refresh everything
+
+Search index maintenance and sync history:
+
+```bash
+mtg-mvp-importer check-search-index --db "var/db/mtg_mvp.db"
+mtg-mvp-importer rebuild-search-index --db "var/db/mtg_mvp.db"
+mtg-mvp-importer list-sync-runs --db "var/db/mtg_mvp.db"
+mtg-mvp-importer show-sync-run --db "var/db/mtg_mvp.db" --run-id 42
+```
+
 Important upgrade note:
 
 - migration `0008` adds the durable catalog-classification fields used by the
@@ -296,7 +323,9 @@ modes.
 Small default demo:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
+cd frontend
+npm install
+npm run demo:bootstrap -- --force
 ```
 
 This keeps the tiny built-in catalog and the curated richer demo inventory.
@@ -304,8 +333,7 @@ This keeps the tiny built-in catalog and the curated richer demo inventory.
 Full searchable catalog demo:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py \
-  --db var/db/frontend_demo.db \
+npm run demo:bootstrap -- \
   --force \
   --full-catalog \
   --scryfall-json /path/to/default-cards.json
@@ -318,6 +346,32 @@ printing policy used by the app, so upstream catalog drift fails early with a
 clear bootstrap error instead of a later finish-mismatch surprise. It is the
 better fit when the frontend should search a realistic card catalog while still
 keeping the owned demo rows intentionally curated.
+
+If you also want real MTGJSON-backed price snapshots in that full-catalog demo
+database:
+
+```bash
+npm run demo:bootstrap -- \
+  --force \
+  --full-catalog \
+  --scryfall-json /path/to/default-cards.json \
+  --identifiers-json /path/to/AllIdentifiers.json \
+  --prices-json /path/to/AllPricesToday.json
+```
+
+Without those MTGJSON files, full-catalog mode keeps the curated demo price
+seed for the showcase owned rows only.
+
+Recommended local API start from the frontend sandbox:
+
+```bash
+npm run backend:demo
+```
+
+The frontend demo launchers prefer the repo-local `.venv/bin/python` when it
+exists, force `PYTHONPATH` to this checkout, and avoid the false
+cross-checkout/schema-mismatch problems that can happen with a globally
+installed `mtg-web-api` wrapper.
 
 For the fuller maintenance surface, check `--help` on:
 

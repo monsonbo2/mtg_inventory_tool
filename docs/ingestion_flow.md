@@ -15,7 +15,12 @@ screen request.
 The current importer writes into:
 
 - `mtg_cards`
+- `mtgjson_card_links`
 - `price_snapshots`
+- `sync_runs`
+- `sync_run_steps`
+- `sync_run_artifacts`
+- `sync_run_issues`
 
 The inventory domain separately writes:
 
@@ -26,7 +31,7 @@ The inventory domain separately writes:
 The normalized tables described in `docs/schema_full.sql` are future-target
 design notes, not the live ingestion model.
 
-## Daily Bulk Sync
+## Bulk Refresh Flow
 
 Current recommended order:
 
@@ -37,11 +42,12 @@ Current recommended order:
 5. Update `mtg_cards` vendor-id fields and `mtgjson_uuid` when a row matches by
    `scryfallId`, or by existing `mtgjson_uuid` for older linked rows.
 6. Download or locate MTGJSON `AllPricesToday`.
-7. Resolve MTGJSON UUIDs through the local `mtg_cards.mtgjson_uuid` mapping.
+7. Resolve MTGJSON UUIDs through the local `mtgjson_card_links` mapping, with
+   `mtg_cards.mtgjson_uuid` retained as a compatibility pointer.
 8. Insert or update `price_snapshots` rows by provider, finish, price kind,
    currency, and snapshot date.
-
-There is currently no `source_sync_runs` bookkeeping table in the live schema.
+9. Record the run, step, artifact, and issue metadata in the sync bookkeeping
+   tables.
 
 ## Current Lookup Behavior
 
@@ -108,10 +114,20 @@ If identifier matching fails:
 
 ## Suggested Job Cadence
 
-- Scryfall bulk catalog sync: daily
-- MTGJSON identifiers sync: daily or weekly
-- MTGJSON prices today sync: daily
+Current practical operator cadence:
+
+- `sync-prices`: daily
+- `sync-scryfall`: weekly
+- `sync-identifiers`: weekly or less often
+- `sync-bulk`: bootstrap/catch-up command when you want one operation to refresh everything
 - targeted live fetches: not part of the ordinary current runtime flow
+
+Operational safety commands:
+
+- `check-search-index`: verify that `mtg_cards_fts` still matches `mtg_cards`
+- `rebuild-search-index`: repair `mtg_cards_fts` from the current catalog rows
+- `list-sync-runs`: review recent tracked imports/syncs
+- `show-sync-run --run-id ...`: inspect one tracked run in detail
 
 ## Mapping Summary
 
@@ -137,13 +153,16 @@ Inventory app actions to local tables:
 1. Operator runs Scryfall bulk import.
 2. The importer upserts printings into `mtg_cards`.
 3. Operator runs MTGJSON identifier import.
-4. Matching rows in `mtg_cards` gain `mtgjson_uuid` and vendor identifiers.
+4. Matching rows in `mtg_cards` gain `mtgjson_uuid` and vendor identifiers, and
+   additional UUID links are stored in `mtgjson_card_links`.
 5. Operator runs MTGJSON price import.
-6. The importer resolves local `mtg_cards` rows by `mtgjson_uuid`.
+6. The importer resolves local `mtg_cards` rows through the tracked MTGJSON UUID
+   links.
 7. Imported prices are written into `price_snapshots`.
-8. User searches cards from the local catalog.
-9. User creates or increments an `inventory_items` row for the owned printing.
-10. Valuation and health queries join `inventory_items` to the latest matching
+8. The importer records run/step/artifact bookkeeping for operator review.
+9. User searches cards from the local catalog.
+10. User creates or increments an `inventory_items` row for the owned printing.
+11. Valuation and health queries join `inventory_items` to the latest matching
     `price_snapshots` rows.
 
 For upgraded existing catalogs, insert one more operator step after the schema

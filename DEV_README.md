@@ -129,17 +129,30 @@ Migration `0008` note:
 Default demo bootstrap:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py --db var/db/frontend_demo.db --force
+cd frontend
+npm run demo:bootstrap -- --force
 ```
 
 Full-catalog demo bootstrap:
 
 ```bash
-python3 scripts/bootstrap_frontend_demo.py \
-  --db var/db/frontend_demo_full.db \
+npm run demo:bootstrap -- \
   --force \
   --full-catalog \
-  --scryfall-json /path/to/default-cards.json
+  --scryfall-json /path/to/default-cards.json \
+  --db ../var/db/frontend_demo_full.db
+```
+
+Optional full-catalog pricing import:
+
+```bash
+npm run demo:bootstrap -- \
+  --force \
+  --full-catalog \
+  --scryfall-json /path/to/default-cards.json \
+  --identifiers-json /path/to/AllIdentifiers.json \
+  --prices-json /path/to/AllPricesToday.json \
+  --db ../var/db/frontend_demo_full.db
 ```
 
 Rules of thumb:
@@ -233,6 +246,38 @@ Localhost API test layer:
 ```bash
 python3 -m unittest tests.test_web_api tests.test_api_app -q
 ```
+
+Importer benchmark:
+
+```bash
+python3 scripts/benchmark_import_pipeline.py \
+  --db /tmp/mtg_benchmark.db \
+  --scryfall-json /path/to/default-cards.json \
+  --identifiers-json /path/to/AllIdentifiers.json.gz \
+  --prices-json /path/to/AllPricesToday.json.gz
+```
+
+Search index maintenance:
+
+```bash
+python3 -m mtg_source_stack.mvp_importer check-search-index --db var/db/mtg_mvp.db
+python3 -m mtg_source_stack.mvp_importer rebuild-search-index --db var/db/mtg_mvp.db
+```
+
+Sync run history:
+
+```bash
+python3 -m mtg_source_stack.mvp_importer list-sync-runs --db var/db/mtg_mvp.db
+python3 -m mtg_source_stack.mvp_importer show-sync-run --db var/db/mtg_mvp.db --run-id 1
+```
+
+Suggested local/shared-service cadence:
+
+- `sync-prices`: daily
+- `sync-scryfall`: weekly
+- `sync-identifiers`: weekly or less often
+- `check-search-index`: after unusual repairs/import interruptions, or on a periodic ops check
+- `rebuild-search-index`: repair-only command when `check-search-index` reports drift
 
 ## Contract Surfaces
 

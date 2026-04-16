@@ -1,0 +1,52 @@
+{
+  "data": {
+    "uuid-brainstorm-1": {
+      "name": "Brainstorm",
+      "setCode": "ice",
+      "identifiers": {
+        "scryfallId": "fixture-brainstorm-en",
+        "tcgplayerProductId": "2001"
+      }
+    },
+    "uuid-bolt-mainstream-1": {
+      "name": "Lightning Bolt",
+      "setCode": "m11",
+      "identifiers": {
+        "scryfallId": "fixture-bolt-mainstream-en",
+        "tcgplayerProductId": "2002"
+      }
+    },
+    "uuid-counterspell-1": {
+      "name": "Counterspell",
+      "setCode": "7ed",
+      "identifiers": {
+        "scryfallId": "fixture-counterspell-modern-en",
+        "tcgplayerProductId": "2003"
+      }
+    },
+    "uuid-forest-1": {
+      "name": "Forest",
+      "setCode": "m10",
+      "identifiers": {
+        "scryfallId": "fixture-forest-modern-en",
+        "tcgplayerProductId": "2004"
+      }
+    },
+    "uuid-swords-ja-1": {
+      "name": "Swords to Plowshares",
+      "setCode": "sta",
+      "identifiers": {
+        "scryfallId": "fixture-swords-ja-modern",
+        "tcgplayerProductId": "2005"
+      }
+    },
+    "uuid-sol-ring-mainstream-1": {
+      "name": "Sol Ring",
+      "setCode": "cmr",
+      "identifiers": {
+        "scryfallId": "fixture-sol-ring-mainstream-en",
+        "tcgplayerProductId": "2006"
+      }
+    }
+  }
+}
