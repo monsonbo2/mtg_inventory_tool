@@ -24,7 +24,13 @@ from .normalize import (
     validate_supported_finish,
     validate_limit_value,
 )
-from .query_catalog import add_catalog_filters, add_catalog_scope_filter, build_catalog_search_fts_query, catalog_scope_filter_sql
+from .query_catalog import (
+    add_catalog_filters,
+    add_catalog_scope_filter,
+    build_catalog_search_fts_query,
+    catalog_scope_filter_sql,
+    catalog_search_tokens,
+)
 from .response_models import CatalogNameSearchResult, CatalogNameSearchRow, CatalogPrintingLookupRow, CatalogSearchRow
 
 
@@ -37,6 +43,8 @@ _PREFERRED_ORACLE_DEFAULT_SET_TYPES = {
     "masters",
     "starter",
 }
+_GROUPED_NAME_SUBSTRING_FALLBACK_MIN_QUERY_LENGTH = 5
+_GROUPED_NAME_SUBSTRING_FALLBACK_LIMIT = 10
 
 
 def _catalog_search_row_kwargs_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -321,6 +329,16 @@ def search_card_names(
     limit: int = DEFAULT_SEARCH_LIMIT,
     scope: str | None = None,
 ) -> CatalogNameSearchResult:
+    trimmed_query = query.strip()
+    query_tokens = catalog_search_tokens(query)
+
+    def _can_use_substring_fallback() -> bool:
+        if exact:
+            return False
+        if len(query_tokens) != 1:
+            return False
+        return len(query_tokens[0]) >= _GROUPED_NAME_SUBSTRING_FALLBACK_MIN_QUERY_LENGTH
+
     def _load_grouped_rows(*, include_substring_fallback: bool) -> list[sqlite3.Row]:
         search_cte = """
         WITH search_match AS (
@@ -337,10 +355,10 @@ def search_card_names(
 
         if exact:
             where_parts.append("LOWER(mtg_cards.name) = LOWER(?)")
-            match_params.append(query)
+            match_params.append(trimmed_query)
         elif include_substring_fallback:
             where_parts.append("LOWER(mtg_cards.name) LIKE LOWER(?)")
-            match_params.append(f"%{query}%")
+            match_params.append(f"%{trimmed_query}%")
         else:
             if fts_query is None:
                 return []
@@ -361,9 +379,10 @@ def search_card_names(
         params: list[Any] = []
         if not exact and not include_substring_fallback and fts_query is not None:
             params.append(fts_query)
-        params.extend([query, f"{query}%"])
+        params.extend([trimmed_query, f"{trimmed_query}%"])
         params.extend(match_params)
-        params.append(limit)
+        query_limit = min(limit, _GROUPED_NAME_SUBSTRING_FALLBACK_LIMIT) if include_substring_fallback else limit
+        params.append(query_limit)
 
         return connection.execute(
             f"""
@@ -452,7 +471,7 @@ def search_card_names(
             params,
         ).fetchall()
 
-    if not query.strip():
+    if not trimmed_query:
         raise ValidationError("query is required.")
     normalized_scope = normalize_catalog_search_scope(scope)
     scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
@@ -460,7 +479,7 @@ def search_card_names(
     require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = _load_grouped_rows(include_substring_fallback=False)
-        if not exact and not rows:
+        if not rows and _can_use_substring_fallback():
             # Keep infix rescue available without paying for it on ordinary
             # token/prefix searches that already produced grouped matches.
             rows = _load_grouped_rows(include_substring_fallback=True)

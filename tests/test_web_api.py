@@ -2797,7 +2797,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, excluded_all_scope.status_code)
                 self.assertEqual(["api-excluded-only"], [row["scryfall_id"] for row in excluded_all_scope.json()])
 
-    def test_demo_api_grouped_name_search_supports_exact_and_substring_matches(self) -> None:
+    def test_demo_api_grouped_name_search_supports_exact_and_bounded_substring_matches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
             with self._client(db_path) as client:
@@ -2851,7 +2851,7 @@ class WebApiTest(unittest.TestCase):
 
                 substring = client.get(
                     "/cards/search/names",
-                    params={"query": "ning"},
+                    params={"query": "ightn"},
                 )
                 self.assertEqual(200, substring.status_code)
                 self.assertEqual(1, substring.json()["total_count"])
@@ -2859,6 +2859,15 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(substring.json()["items"]))
                 self.assertEqual("api-lightning-bolt-oracle", substring.json()["items"][0]["oracle_id"])
                 self.assertEqual("Lightning Bolt", substring.json()["items"][0]["name"])
+
+                short_substring = client.get(
+                    "/cards/search/names",
+                    params={"query": "ning"},
+                )
+                self.assertEqual(200, short_substring.status_code)
+                self.assertEqual(0, short_substring.json()["total_count"])
+                self.assertFalse(short_substring.json()["has_more"])
+                self.assertEqual([], short_substring.json()["items"])
 
     def test_demo_api_grouped_name_search_only_uses_infix_fallback_after_fts_miss(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

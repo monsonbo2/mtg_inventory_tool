@@ -66,8 +66,12 @@ def add_catalog_scope_filter(where_parts: list[str], *, scope: str, table_name: 
     where_parts.append(catalog_scope_filter_sql(scope, table_name=table_name))
 
 
+def catalog_search_tokens(query: str) -> tuple[str, ...]:
+    return tuple(token.lower() for token in FTS_TOKEN_RE.findall(query))
+
+
 def build_catalog_search_fts_query(query: str) -> str | None:
-    tokens = [token.lower() for token in FTS_TOKEN_RE.findall(query)]
+    tokens = catalog_search_tokens(query)
     if not tokens:
         return None
     return " AND ".join(f"{token}*" for token in tokens)
