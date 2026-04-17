@@ -49,7 +49,7 @@ function getSuggestionStatusMessage(state: SearchPanelState) {
   return "Card suggestions are hidden.";
 }
 
-type SearchPanelState = {
+export type SearchPanelState = {
   selectedInventoryRow: InventorySummary | null;
   inventories: InventorySummary[];
   activeSearchGroupId: string | null;
@@ -76,7 +76,7 @@ type SearchPanelState = {
   };
 };
 
-type SearchPanelActions = {
+export type SearchPanelActions = {
   onSearchQueryChange: (value: string) => void;
   onSearchFieldFocus: () => void;
   onSearchInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;

@@ -4,6 +4,10 @@
     grid-template-columns: 1fr;
   }
 
+  .sticky-workspace-controls-grid {
+    grid-template-columns: 1fr;
+  }
+
   .search-workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -36,6 +40,10 @@
   .app-shell {
     width: min(100vw - 20px, 1440px);
     padding-top: 18px;
+  }
+
+  .sticky-workspace-controls {
+    display: none;
   }
 
   .hero-metrics,
