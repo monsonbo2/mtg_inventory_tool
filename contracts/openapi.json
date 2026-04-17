@@ -1,6 +1,42 @@
 {
   "components": {
     "schemas": {
+      "AccessSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "can_bootstrap": {
+            "title": "Can Bootstrap",
+            "type": "boolean"
+          },
+          "default_inventory_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Inventory Slug"
+          },
+          "has_readable_inventory": {
+            "title": "Has Readable Inventory",
+            "type": "boolean"
+          },
+          "visible_inventory_count": {
+            "title": "Visible Inventory Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "can_bootstrap",
+          "has_readable_inventory",
+          "visible_inventory_count",
+          "default_inventory_slug"
+        ],
+        "title": "AccessSummaryResponse",
+        "type": "object"
+      },
       "AddInventoryItemRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7343,6 +7379,64 @@
           }
         },
         "summary": "Inventory Items Transfer"
+      }
+    },
+    "/me/access-summary": {
+      "get": {
+        "operationId": "get_access_summary_me_access_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Get Access Summary"
       }
     },
     "/me/bootstrap": {
