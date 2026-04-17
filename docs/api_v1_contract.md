@@ -178,6 +178,9 @@ preserve for the first API-backed version of the project.
   - non-exact queries prefer token/prefix-style matches first and only fall
     back to broader substring rescue when stronger grouped matches were not
     found
+  - the current backend keeps that substring rescue selective: it is retained
+    only for longer single-token grouped misses and still respects the
+    requested `limit`
   - prefers an English representative row and image when available
   - includes `available_languages` for the matched card
 - `GET /cards/oracle/{oracle_id}/printings`

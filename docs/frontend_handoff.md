@@ -77,7 +77,8 @@ Use this as the first-pass UI-to-endpoint map:
 - Card-name search -> `GET /cards/search/names`
   Returns one row per card/oracle and includes `available_languages`.
   The backend prefers token/prefix-style matches first and only falls back to
-  broader substring rescue when those grouped matches are absent.
+  broader substring rescue for selective longer single-token misses when those
+  grouped matches are absent.
   - if the frontend opts into `scope=all`, keep that same scope choice when
     moving from card-name search to printing lookup
 - Printing lookup for a selected card -> `GET /cards/oracle/{oracle_id}/printings`

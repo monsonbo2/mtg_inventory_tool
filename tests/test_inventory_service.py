@@ -1371,6 +1371,27 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertFalse(result.has_more)
             self.assertEqual([], result.items)
 
+    def test_search_card_names_substring_fallback_respects_requested_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            for index in range(12):
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id=f"substring-limit-{index}",
+                    oracle_id=f"substring-limit-oracle-{index}",
+                    name=f"AlphaXYZBeta Card {index}",
+                    collector_number=str(80 + index),
+                    is_default_add_searchable=1,
+                )
+
+            result = search_card_names(db_path, query="haxyzbe", exact=False, limit=11)
+
+            self.assertEqual(12, result.total_count)
+            self.assertTrue(result.has_more)
+            self.assertEqual(11, len(result.items))
+
     def test_search_card_names_does_not_broaden_to_infix_matches_when_fts_already_found_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
