@@ -21,7 +21,7 @@ import re
 
 from ..errors import MtgStackError, NotFoundError, ValidationError
 from ..db.connection import connect
-from ..db.schema import initialize_database
+from ..db.schema import SchemaPreparationPolicy, prepare_database
 from .catalog import (
     determine_printing_selection_mode,
     list_default_card_name_candidate_rows,
@@ -1759,24 +1759,19 @@ def _build_pending_remote_row_from_selection(
 
 
 def _plan_remote_deck_import(
-    db_path: str | Path,
+    prepared_db_path: str | Path,
     *,
     source_url: str,
     source_snapshot_token: str | None,
     snapshot_signing_secret: str | None,
     resolutions: list[Mapping[str, Any]] | None,
     inventory_validator: InventoryValidator | None,
-    default_inventory: str | None,
+    default_inventory: str,
 ) -> PlannedRemoteDeckImport:
-    inventory_slug = text_or_none(default_inventory)
-    if inventory_slug is None:
-        raise ValidationError("default_inventory is required for deck URL imports.")
-
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    with connect(prepared_db_path) as connection:
         if inventory_validator is not None:
-            inventory_validator(connection, inventory_slug)
-        get_inventory_row(connection, inventory_slug)
+            inventory_validator(connection, default_inventory)
+        get_inventory_row(connection, default_inventory)
 
     source, snapshot_token = _load_remote_source_for_import(
         source_url,
@@ -1788,7 +1783,7 @@ def _plan_remote_deck_import(
     pending_rows: list[PendingImportRow] = []
     resolution_issues: list[RemoteDeckResolutionIssue] = []
 
-    with connect(db_path) as connection:
+    with connect(prepared_db_path) as connection:
         for card in source.cards:
             selection = selection_map.pop(card.source_position, None)
             if selection is not None:
@@ -1842,6 +1837,7 @@ def import_deck_url(
     actor_type: str = "cli",
     actor_id: str | None = None,
     request_id: str | None = None,
+    schema_policy: SchemaPreparationPolicy = "initialize_if_needed",
 ) -> dict[str, Any]:
     logger.info(
         "remote_deck_import_start source_url=%s default_inventory=%s dry_run=%s",
@@ -1849,14 +1845,21 @@ def import_deck_url(
         default_inventory,
         dry_run,
     )
-    plan = _plan_remote_deck_import(
+    inventory_slug = text_or_none(default_inventory)
+    if inventory_slug is None:
+        raise ValidationError("default_inventory is required for deck URL imports.")
+    prepared_db_path = prepare_database(
         db_path,
+        schema_policy=schema_policy,
+    )
+    plan = _plan_remote_deck_import(
+        prepared_db_path,
         source_url=source_url,
         source_snapshot_token=source_snapshot_token,
         snapshot_signing_secret=snapshot_signing_secret,
         resolutions=resolutions,
         inventory_validator=inventory_validator,
-        default_inventory=default_inventory,
+        default_inventory=inventory_slug,
     )
     if plan.resolution_issues and not dry_run:
         raise ValidationError(
@@ -1867,7 +1870,7 @@ def import_deck_url(
             },
         )
     imported_rows = _import_pending_rows(
-        db_path,
+        prepared_db_path,
         pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,

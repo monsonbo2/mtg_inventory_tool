@@ -7,11 +7,13 @@ from io import StringIO
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.inventory.csv_import import (
+    PlannedCsvImport,
     build_add_card_kwargs_from_csv_row,
     import_csv,
     import_csv_stream,
@@ -22,6 +24,91 @@ from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
 
 
 class InventoryCsvImportTest(RepoSmokeTestCase):
+    def test_import_csv_stream_defaults_to_initialize_if_needed_schema_policy(self) -> None:
+        plan = PlannedCsvImport(
+            detected_format="generic_csv",
+            rows_seen=0,
+            requested_card_quantity=0,
+            pending_rows=[],
+            resolution_issues=[],
+        )
+        prepared_db_path = Path("/tmp/prepared_csv_import.db")
+
+        with (
+            patch(
+                "mtg_source_stack.inventory.csv_import._load_pending_csv_rows",
+                return_value=("generic_csv", 0, []),
+            ),
+            patch(
+                "mtg_source_stack.inventory.csv_import.prepare_database",
+                return_value=prepared_db_path,
+            ) as prepare_database,
+            patch(
+                "mtg_source_stack.inventory.csv_import._resolve_csv_import_plan",
+                return_value=plan,
+            ) as resolve_csv_import_plan,
+            patch(
+                "mtg_source_stack.inventory.csv_import._import_pending_csv_rows",
+                return_value=[],
+            ) as import_pending_rows,
+        ):
+            result = import_csv_stream(
+                "collection.db",
+                csv_handle=StringIO("Inventory,Scryfall ID,Qty\n"),
+                csv_filename="inventory_import.csv",
+                default_inventory=None,
+            )
+
+        prepare_database.assert_called_once_with(
+            "collection.db",
+            schema_policy="initialize_if_needed",
+        )
+        self.assertEqual(prepared_db_path, resolve_csv_import_plan.call_args.args[0])
+        self.assertEqual(prepared_db_path, import_pending_rows.call_args.args[0])
+        self.assertEqual("inventory_import.csv", result["csv_filename"])
+        self.assertEqual("generic_csv", result["detected_format"])
+
+    def test_import_csv_stream_accepts_require_current_schema_policy(self) -> None:
+        plan = PlannedCsvImport(
+            detected_format="generic_csv",
+            rows_seen=0,
+            requested_card_quantity=0,
+            pending_rows=[],
+            resolution_issues=[],
+        )
+        prepared_db_path = Path("/tmp/prepared_csv_import.db")
+
+        with (
+            patch(
+                "mtg_source_stack.inventory.csv_import._load_pending_csv_rows",
+                return_value=("generic_csv", 0, []),
+            ),
+            patch(
+                "mtg_source_stack.inventory.csv_import.prepare_database",
+                return_value=prepared_db_path,
+            ) as prepare_database,
+            patch(
+                "mtg_source_stack.inventory.csv_import._resolve_csv_import_plan",
+                return_value=plan,
+            ),
+            patch(
+                "mtg_source_stack.inventory.csv_import._import_pending_csv_rows",
+                return_value=[],
+            ),
+        ):
+            import_csv_stream(
+                "collection.db",
+                csv_handle=StringIO("Inventory,Scryfall ID,Qty\n"),
+                csv_filename="inventory_import.csv",
+                default_inventory=None,
+                schema_policy="require_current",
+            )
+
+        prepare_database.assert_called_once_with(
+            "collection.db",
+            schema_policy="require_current",
+        )
+
     def test_flatten_import_csv_rows_accepts_stream_result_shape(self) -> None:
         flattened = flatten_import_csv_rows(
             {

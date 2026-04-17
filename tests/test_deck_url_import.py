@@ -16,6 +16,7 @@ from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import ValidationError
 from mtg_source_stack.inventory.deck_url_import import (
+    PlannedRemoteDeckImport,
     RemoteDeckCard,
     RemoteDeckSource,
     _RemoteDeckSourceError,
@@ -58,6 +59,92 @@ class DeckUrlImportTest(unittest.TestCase):
 
         def geturl(self) -> str:
             return self._final_url
+
+    def test_import_deck_url_defaults_to_initialize_if_needed_schema_policy(self) -> None:
+        plan = PlannedRemoteDeckImport(
+            source=RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/123/test",
+                deck_name="Test Deck",
+                cards=[],
+            ),
+            rows_seen=0,
+            requested_card_quantity=0,
+            source_snapshot_token="snapshot-token",
+            pending_rows=[],
+            resolution_issues=[],
+        )
+        prepared_db_path = Path("/tmp/prepared_deck_url_import.db")
+
+        with (
+            patch(
+                "mtg_source_stack.inventory.deck_url_import.prepare_database",
+                return_value=prepared_db_path,
+            ) as prepare_database,
+            patch(
+                "mtg_source_stack.inventory.deck_url_import._plan_remote_deck_import",
+                return_value=plan,
+            ) as plan_remote_deck_import,
+            patch(
+                "mtg_source_stack.inventory.deck_url_import._import_pending_rows",
+                return_value=[],
+            ) as import_pending_rows,
+        ):
+            result = import_deck_url(
+                "collection.db",
+                source_url="https://archidekt.com/decks/123/test",
+                default_inventory="personal",
+            )
+
+        prepare_database.assert_called_once_with(
+            "collection.db",
+            schema_policy="initialize_if_needed",
+        )
+        self.assertEqual(prepared_db_path, plan_remote_deck_import.call_args.args[0])
+        self.assertEqual(prepared_db_path, import_pending_rows.call_args.args[0])
+        self.assertEqual("archidekt", result["provider"])
+
+    def test_import_deck_url_accepts_require_current_schema_policy(self) -> None:
+        plan = PlannedRemoteDeckImport(
+            source=RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/123/test",
+                deck_name="Test Deck",
+                cards=[],
+            ),
+            rows_seen=0,
+            requested_card_quantity=0,
+            source_snapshot_token="snapshot-token",
+            pending_rows=[],
+            resolution_issues=[],
+        )
+        prepared_db_path = Path("/tmp/prepared_deck_url_import.db")
+
+        with (
+            patch(
+                "mtg_source_stack.inventory.deck_url_import.prepare_database",
+                return_value=prepared_db_path,
+            ) as prepare_database,
+            patch(
+                "mtg_source_stack.inventory.deck_url_import._plan_remote_deck_import",
+                return_value=plan,
+            ),
+            patch(
+                "mtg_source_stack.inventory.deck_url_import._import_pending_rows",
+                return_value=[],
+            ),
+        ):
+            import_deck_url(
+                "collection.db",
+                source_url="https://archidekt.com/decks/123/test",
+                default_inventory="personal",
+                schema_policy="require_current",
+            )
+
+        prepare_database.assert_called_once_with(
+            "collection.db",
+            schema_policy="require_current",
+        )
 
     def _manabox_page_html(self, deck_payload: dict[str, object]) -> str:
         props = json.dumps({"deck": [0, deck_payload]}, separators=(",", ":"))

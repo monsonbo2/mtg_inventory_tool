@@ -624,6 +624,7 @@ def main() -> None:
                 dry_run=args.dry_run,
                 resolutions=resolutions,
                 before_write=before_write,
+                schema_policy="initialize_if_needed",
             )
             if not args.dry_run:
                 snapshot = get_snapshot()

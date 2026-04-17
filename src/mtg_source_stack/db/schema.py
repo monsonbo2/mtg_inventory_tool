@@ -3,10 +3,14 @@ from __future__ import annotations
 import sqlite3
 from importlib.resources import files
 from pathlib import Path
+from typing import Literal
 
 from .connection import connect, require_database_file
 from .migrator import migrate_database, pending_migrations
 from ..errors import SchemaNotReadyError
+
+
+SchemaPreparationPolicy = Literal["initialize_if_needed", "require_current"]
 
 
 def load_schema_sql() -> str:
@@ -39,6 +43,19 @@ def initialize_database(db_path: str | Path) -> None:
     migrate_database(db_path)
 
 
+def prepare_database(
+    db_path: str | Path,
+    *,
+    schema_policy: SchemaPreparationPolicy = "initialize_if_needed",
+) -> Path:
+    if schema_policy == "initialize_if_needed":
+        initialize_database(db_path)
+        return require_database_file(db_path)
+    if schema_policy == "require_current":
+        return require_current_schema(db_path)
+    raise ValueError(f"Unsupported schema_policy: {schema_policy}")
+
+
 def require_current_schema(db_path: str | Path) -> Path:
     path = require_database_file(db_path)
     with connect(path) as connection:
@@ -47,7 +64,7 @@ def require_current_schema(db_path: str | Path) -> Path:
     if pending:
         raise SchemaNotReadyError(
             f"Database file '{path}' is not at the current schema version. "
-            f"Run mtg-mvp-importer migrate-db --db '{path}' before using read-only commands."
+            f"Run mtg-mvp-importer migrate-db --db '{path}' before using this database."
         )
 
     return path
