@@ -261,10 +261,6 @@
 }
 
 @media (min-width: 821px) {
-  .sidebar-column > .inventory-sidebar-panel.inventory-sidebar-panel-switcher-open {
-    flex: 0 0 auto;
-  }
-
   .workspace-search-column > .search-panel.search-panel-results-open {
     flex: 0 0 auto;
   }

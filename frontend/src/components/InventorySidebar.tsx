@@ -10,8 +10,18 @@ import type { AppShellState, InventoryCreateResult } from "../uiTypes";
 import { ModalDialog } from "./ui/ModalDialog";
 import { PanelState } from "./ui/PanelState";
 
-function getInventoryCountLabel(availableCount: number) {
-  return availableCount === 1 ? "1 collection" : `${availableCount} collections`;
+function getOtherInventoryCountLabel(availableCount: number) {
+  if (availableCount === 0) {
+    return "No other collections available";
+  }
+
+  return availableCount === 1
+    ? "1 other collection available"
+    : `${availableCount} other collections available`;
+}
+
+function getInventoryStatsLabel(inventory: InventorySummary) {
+  return `${inventory.item_rows} entr${inventory.item_rows === 1 ? "y" : "ies"} · ${inventory.total_cards} cards`;
 }
 
 function InventoryCardSummary(props: {
@@ -25,9 +35,7 @@ function InventoryCardSummary(props: {
         <p>{props.inventory.description || "No description provided for this collection."}</p>
       ) : null}
       <div className="inventory-selector-footer">
-        <span>
-          {props.inventory.item_rows} entr{props.inventory.item_rows === 1 ? "y" : "ies"} · {props.inventory.total_cards} cards
-        </span>
+        <span>{getInventoryStatsLabel(props.inventory)}</span>
       </div>
     </>
   );
@@ -52,16 +60,18 @@ function InventorySwitcherOption(props: {
 
 export function InventorySidebar(props: {
   appShellState: AppShellState;
+  collectionMenuInteractionEnabled: boolean;
+  collectionMenuOpen: boolean;
   createInventoryBusy: boolean;
   inventories: InventorySummary[];
   selectedInventory: string | null;
   selectedInventoryRow: InventorySummary | null;
   inventoryError: string | null;
+  onCollectionMenuOpenChange: (open: boolean) => void;
   onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
   onSelectInventory: (inventorySlug: string) => void;
 }) {
   const [createFormOpen, setCreateFormOpen] = useState(false);
-  const [changeCollectionOpen, setChangeCollectionOpen] = useState(false);
   const inventorySwitcherId = useId();
   const inventorySwitcherRef = useRef<HTMLDivElement | null>(null);
   const inventorySwitcherListRef = useRef<HTMLDivElement | null>(null);
@@ -82,21 +92,22 @@ export function InventorySidebar(props: {
   const otherInventories = currentInventory
     ? props.inventories.filter((inventory) => inventory.slug !== currentInventory.slug)
     : props.inventories;
+  const changeCollectionOpen = props.collectionMenuOpen;
 
   useEffect(() => {
-    setChangeCollectionOpen(false);
+    props.onCollectionMenuOpenChange(false);
   }, [props.selectedInventory]);
 
   useEffect(() => {
     if (props.appShellState !== "ready") {
       setCreateFormOpen(false);
-      setChangeCollectionOpen(false);
+      props.onCollectionMenuOpenChange(false);
       resetCreateForm();
     }
   }, [props.appShellState]);
 
   useEffect(() => {
-    if (!changeCollectionOpen) {
+    if (!changeCollectionOpen || !props.collectionMenuInteractionEnabled) {
       return;
     }
 
@@ -108,17 +119,17 @@ export function InventorySidebar(props: {
       if (inventorySwitcherRef.current?.contains(target)) {
         return;
       }
-      setChangeCollectionOpen(false);
+      props.onCollectionMenuOpenChange(false);
     }
 
     document.addEventListener("pointerdown", handlePointerDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [changeCollectionOpen]);
+  }, [changeCollectionOpen, props.collectionMenuInteractionEnabled]);
 
   useLayoutEffect(() => {
-    if (!changeCollectionOpen) {
+    if (!changeCollectionOpen || !props.collectionMenuInteractionEnabled) {
       setInventorySwitcherOverlayHeight(0);
       return;
     }
@@ -156,7 +167,7 @@ export function InventorySidebar(props: {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", updateInventorySwitcherOverlayHeight);
     };
-  }, [changeCollectionOpen]);
+  }, [changeCollectionOpen, props.collectionMenuInteractionEnabled]);
 
   function resetCreateForm() {
     setDisplayName("");
@@ -171,7 +182,7 @@ export function InventorySidebar(props: {
 
   function openCreateForm() {
     setCreateFormOpen(true);
-    setChangeCollectionOpen(false);
+    props.onCollectionMenuOpenChange(false);
     setFormError(null);
   }
 
@@ -267,13 +278,13 @@ export function InventorySidebar(props: {
       return;
     }
 
-    setChangeCollectionOpen((current) => !current);
+    props.onCollectionMenuOpenChange(!changeCollectionOpen);
     setCreateFormOpen(false);
     resetCreateForm();
   }
 
   function handleSelectInventory(inventorySlug: string) {
-    setChangeCollectionOpen(false);
+    props.onCollectionMenuOpenChange(false);
     props.onSelectInventory(inventorySlug);
   }
 
@@ -382,7 +393,7 @@ export function InventorySidebar(props: {
   return (
     <section
       className={
-        changeCollectionOpen
+        changeCollectionOpen && props.collectionMenuInteractionEnabled
           ? "panel inventory-sidebar-panel inventory-sidebar-panel-switcher-open"
           : "panel inventory-sidebar-panel"
       }
@@ -439,13 +450,13 @@ export function InventorySidebar(props: {
                   onClick={toggleChangeCollection}
                   type="button"
                 >
-                  <span className="inventory-button-head inventory-focus-trigger-head">
-                    <span className="inventory-focus-trigger-meta">
-                      <span className="inventory-button-meta">
-                        {getInventoryCountLabel(props.inventories.length)} available
-                      </span>
-                      <span className="inventory-focus-trigger-copy">
-                        Click to switch
+                  <span className="inventory-focus-trigger-main">
+                    <span className="inventory-focus-trigger-copygroup">
+                      <strong className="inventory-focus-title">
+                        {currentInventory.display_name}
+                      </strong>
+                      <span className="inventory-focus-trigger-summary">
+                        {getOtherInventoryCountLabel(otherInventories.length)}
                       </span>
                     </span>
                     <span aria-hidden="true" className="inventory-focus-trigger-affordance">
@@ -461,15 +472,21 @@ export function InventorySidebar(props: {
                       </span>
                     </span>
                   </span>
-                  <InventoryCardSummary inventory={currentInventory} showDescription={false} />
                 </button>
               ) : (
                 <div className="inventory-focus-card">
-                  <InventoryCardSummary inventory={currentInventory} showDescription={false} />
+                  <div className="inventory-focus-card-main">
+                    <strong className="inventory-focus-title">
+                      {currentInventory.display_name}
+                    </strong>
+                    <span className="inventory-focus-trigger-summary">
+                      {getOtherInventoryCountLabel(otherInventories.length)}
+                    </span>
+                  </div>
                 </div>
               )}
 
-              {changeCollectionOpen ? (
+              {changeCollectionOpen && props.collectionMenuInteractionEnabled ? (
                 <div
                   className="inventory-switcher-list"
                   id={inventorySwitcherId}

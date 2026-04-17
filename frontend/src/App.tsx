@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AuditFeed } from "./components/AuditFeed";
@@ -6,6 +6,7 @@ import { InventorySidebar } from "./components/InventorySidebar";
 import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
 import { PanelState } from "./components/ui/PanelState";
 import { SearchPanel } from "./components/SearchPanel";
+import { StickyWorkspaceControls } from "./components/StickyWorkspaceControls";
 import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
 import { NoticeToast } from "./components/ui/NoticeToast";
@@ -89,6 +90,9 @@ function getShellStatePanelContent(
 
 export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
+  const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
+  const [stickyControlsVisible, setStickyControlsVisible] = useState(false);
+  const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const {
     auditEvents,
     describeInventory,
@@ -335,8 +339,55 @@ export default function App() {
   const shellStatePanels =
     appShellState === "ready" ? null : getShellStatePanelContent(appShellState);
 
+  useEffect(() => {
+    setCollectionMenuOpen(false);
+  }, [appShellState, selectedInventory]);
+
+  useEffect(() => {
+    if (appShellState !== "ready") {
+      setStickyControlsVisible(false);
+      return;
+    }
+
+    function updateStickyControlsVisibility() {
+      const topSection = workspaceTopRef.current;
+      if (!topSection) {
+        return;
+      }
+
+      const nextVisible =
+        window.scrollY > 0 && topSection.getBoundingClientRect().bottom <= 64;
+      setStickyControlsVisible((current) =>
+        current === nextVisible ? current : nextVisible,
+      );
+    }
+
+    updateStickyControlsVisibility();
+    window.addEventListener("scroll", updateStickyControlsVisibility, {
+      passive: true,
+    });
+    window.addEventListener("resize", updateStickyControlsVisibility);
+    return () => {
+      window.removeEventListener("scroll", updateStickyControlsVisibility);
+      window.removeEventListener("resize", updateStickyControlsVisibility);
+    };
+  }, [appShellState]);
+
   return (
     <div className="app-shell">
+      {appShellState === "ready" && stickyControlsVisible ? (
+        <StickyWorkspaceControls
+          actions={searchPanelActions}
+          collectionMenuOpen={collectionMenuOpen}
+          inventories={inventories}
+          onCollectionMenuOpenChange={setCollectionMenuOpen}
+          onSelectInventory={setSelectedInventory}
+          searchState={searchPanelState}
+          selectedInventory={selectedInventory}
+          selectedInventoryRow={selectedInventoryRow}
+        />
+      ) : null}
+
       <header className="hero">
         <div>
           <p className="eyebrow">Card Collection</p>
@@ -359,13 +410,16 @@ export default function App() {
       {bannerNotice ? <NoticeBanner notice={bannerNotice} /> : null}
 
       <div className="workspace-grid">
-        <div className="workspace-top-grid">
+        <div className="workspace-top-grid" ref={workspaceTopRef}>
           <aside className="sidebar-column">
             <InventorySidebar
               appShellState={appShellState}
+              collectionMenuInteractionEnabled={!stickyControlsVisible}
+              collectionMenuOpen={collectionMenuOpen}
               createInventoryBusy={createInventoryBusy}
               inventories={inventories}
               inventoryError={inventoryError}
+              onCollectionMenuOpenChange={setCollectionMenuOpen}
               onCreateInventory={handleCreateInventory}
               onSelectInventory={setSelectedInventory}
               selectedInventory={selectedInventory}
