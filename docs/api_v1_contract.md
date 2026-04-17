@@ -576,6 +576,15 @@ before the generic 500 envelope is returned.
 - `POST /me/bootstrap` requires a global `editor` or `admin`, creates one
   personal default inventory named `Collection` for that actor, grants
   `owner`, and returns the same inventory on repeated calls.
+- `GET /me/access-summary` returns a small onboarding-state summary for the
+  authenticated actor:
+  - `can_bootstrap`
+  - `has_readable_inventory`
+  - `visible_inventory_count`
+  - `default_inventory_slug`
+  This route is intended to replace frontend inference across
+  `GET /inventories`, `POST /me/bootstrap`, and denied search requests when
+  choosing between bootstrap, access-needed, and normal empty-state flows.
 - Existing inventories with no memberships are effectively admin-only until
   memberships are granted intentionally.
 - In `shared_service`, caller-controlled `X-Actor-Id` values are not part of

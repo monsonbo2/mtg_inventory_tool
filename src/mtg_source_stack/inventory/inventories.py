@@ -12,7 +12,7 @@ from ..errors import AuthorizationError, ConflictError, ValidationError
 from .access import grant_inventory_membership_with_connection, is_global_admin
 from .money import coerce_decimal
 from .normalize import normalize_currency_code, normalize_inventory_slug, normalize_tag_text, slugify_inventory_name, text_or_none
-from .response_models import DefaultInventoryBootstrapResult, InventoryCreateResult, InventoryListRow
+from .response_models import AccessSummaryResult, DefaultInventoryBootstrapResult, InventoryCreateResult, InventoryListRow
 
 
 def _inventory_list_rows(rows: list[sqlite3.Row]) -> list[InventoryListRow]:
@@ -91,6 +91,11 @@ def _require_global_editor_or_admin(actor_roles: Iterable[str]) -> None:
     roles = set(actor_roles)
     if "editor" not in roles and "admin" not in roles:
         raise AuthorizationError("Role 'editor' is required to bootstrap a default inventory.")
+
+
+def _can_bootstrap_default_inventory(actor_roles: Iterable[str]) -> bool:
+    roles = set(actor_roles)
+    return "editor" in roles or "admin" in roles
 
 
 def _default_inventory_slug_root(actor_id: str) -> str:
@@ -410,3 +415,31 @@ def list_visible_inventories(
             (normalized_actor_id,),
         ).fetchall()
     return _inventory_list_rows(rows)
+
+
+def summarize_actor_access(
+    db_path: str | Path,
+    *,
+    actor_id: str,
+    actor_roles: Iterable[str],
+) -> AccessSummaryResult:
+    normalized_actor_id = _normalized_visible_actor_id(actor_id)
+    if normalized_actor_id is None:
+        raise ValidationError("actor_id is required.")
+    visible_inventories = list_visible_inventories(
+        db_path,
+        actor_id=normalized_actor_id,
+        actor_roles=actor_roles,
+    )
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        default_inventory = _default_inventory_row_for_actor(
+            connection,
+            actor_id=normalized_actor_id,
+        )
+    return AccessSummaryResult(
+        can_bootstrap=_can_bootstrap_default_inventory(actor_roles),
+        has_readable_inventory=bool(visible_inventories),
+        visible_inventory_count=len(visible_inventories),
+        default_inventory_slug=(default_inventory.slug if default_inventory is not None else None),
+    )

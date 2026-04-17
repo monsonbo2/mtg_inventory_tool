@@ -89,6 +89,13 @@ class DefaultInventoryBootstrapResponse(ApiBaseModel):
     inventory: InventoryCreateResponse
 
 
+class AccessSummaryResponse(ApiBaseModel):
+    can_bootstrap: bool
+    has_readable_inventory: bool
+    visible_inventory_count: int
+    default_inventory_slug: str | None
+
+
 class BulkInventoryItemMutationResponse(ApiBaseModel):
     inventory: str
     operation: Literal[

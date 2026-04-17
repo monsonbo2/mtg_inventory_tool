@@ -135,6 +135,14 @@ class DefaultInventoryBootstrapResult(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class AccessSummaryResult(ResponseModel):
+    can_bootstrap: bool
+    has_readable_inventory: bool
+    visible_inventory_count: int
+    default_inventory_slug: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class BulkInventoryItemMutationResult(ResponseModel):
     inventory: str
     operation: str

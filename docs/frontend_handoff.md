@@ -298,5 +298,10 @@ export default {
   - proxy-backed global app roles: `editor`, `admin`
   - local inventory roles: `viewer`, `editor`, `owner`
   - no richer org/team/ownership workflow exists yet
+- For shared-service first-run state, prefer `GET /me/access-summary` as the
+  frontend startup probe:
+  - if `has_readable_inventory` is `true`, continue normally
+  - else if `can_bootstrap` is `true`, offer `POST /me/bootstrap`
+  - else show an authenticated access-needed or unavailable state
 - Browser-based local dev is expected to use a frontend proxy unless backend
   CORS behavior is changed deliberately.

@@ -110,6 +110,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/imports/csv", "post"),
                 ("/imports/decklist", "post"),
                 ("/imports/deck-url", "post"),
+                ("/me/access-summary", "get"),
                 ("/me/bootstrap", "post"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
@@ -135,6 +136,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/imports/decklist", "post"),
                 ("/imports/deck-url", "post"),
                 ("/inventories/{inventory_slug}/export.csv", "get"),
+                ("/me/access-summary", "get"),
                 ("/me/bootstrap", "post"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
@@ -380,6 +382,19 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 "InventoryCreateResponse",
                 self._schema_name_from_ref(components[bootstrap_schema_name]["properties"]["inventory"]["$ref"]),
+            )
+            access_summary_schema = spec["paths"]["/me/access-summary"]["get"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]
+            access_summary_schema_name = self._schema_name_from_ref(access_summary_schema["$ref"])
+            self.assertEqual("AccessSummaryResponse", access_summary_schema_name)
+            access_summary_properties = components[access_summary_schema_name]["properties"]
+            self.assertEqual("boolean", access_summary_properties["can_bootstrap"]["type"])
+            self.assertEqual("boolean", access_summary_properties["has_readable_inventory"]["type"])
+            self.assertEqual("integer", access_summary_properties["visible_inventory_count"]["type"])
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                access_summary_properties["default_inventory_slug"]["anyOf"],
             )
             duplicate_schema = spec["paths"]["/inventories/{source_inventory_slug}/duplicate"]["post"]["responses"][
                 "201"
@@ -4603,6 +4618,10 @@ class WebApiTest(unittest.TestCase):
             with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
                 self._seed_card(db_path)
 
+                access_summary_without_auth = client.get("/me/access-summary")
+                self.assertEqual(401, access_summary_without_auth.status_code)
+                self.assertEqual("authentication_required", access_summary_without_auth.json()["error"]["code"])
+
                 bootstrap_without_auth = client.post("/me/bootstrap")
                 self.assertEqual(401, bootstrap_without_auth.status_code)
                 self.assertEqual("authentication_required", bootstrap_without_auth.json()["error"]["code"])
@@ -4706,6 +4725,104 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(401, bulk_without_auth.status_code)
                 self.assertEqual("authentication_required", bulk_without_auth.json()["error"]["code"])
+
+    def test_shared_service_access_summary_distinguishes_bootstrap_and_readable_states(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+
+            create_inventory(
+                db_path,
+                slug="team",
+                display_name="Team Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="team",
+                actor_id="viewer-user@example.com",
+                role="viewer",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                eligible_headers = {"X-Authenticated-User": "new-editor@example.com"}
+                eligible_summary = client.get("/me/access-summary", headers=eligible_headers)
+                self.assertEqual(200, eligible_summary.status_code)
+                self.assertEqual(
+                    {
+                        "can_bootstrap": True,
+                        "has_readable_inventory": False,
+                        "visible_inventory_count": 0,
+                        "default_inventory_slug": None,
+                    },
+                    eligible_summary.json(),
+                )
+
+                viewer_headers = {
+                    "X-Authenticated-User": "viewer-user@example.com",
+                    "X-Authenticated-Roles": "viewer",
+                }
+                viewer_summary = client.get("/me/access-summary", headers=viewer_headers)
+                self.assertEqual(200, viewer_summary.status_code)
+                self.assertEqual(
+                    {
+                        "can_bootstrap": False,
+                        "has_readable_inventory": True,
+                        "visible_inventory_count": 1,
+                        "default_inventory_slug": None,
+                    },
+                    viewer_summary.json(),
+                )
+
+                outsider_headers = {
+                    "X-Authenticated-User": "outsider-user@example.com",
+                    "X-Authenticated-Roles": "viewer",
+                }
+                outsider_summary = client.get("/me/access-summary", headers=outsider_headers)
+                self.assertEqual(200, outsider_summary.status_code)
+                self.assertEqual(
+                    {
+                        "can_bootstrap": False,
+                        "has_readable_inventory": False,
+                        "visible_inventory_count": 0,
+                        "default_inventory_slug": None,
+                    },
+                    outsider_summary.json(),
+                )
+
+    def test_shared_service_access_summary_reports_default_inventory_after_bootstrap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            user_headers = {"X-Authenticated-User": "shared-user@example.com"}
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                pre_bootstrap = client.get("/me/access-summary", headers=user_headers)
+                self.assertEqual(200, pre_bootstrap.status_code)
+                self.assertEqual(
+                    {
+                        "can_bootstrap": True,
+                        "has_readable_inventory": False,
+                        "visible_inventory_count": 0,
+                        "default_inventory_slug": None,
+                    },
+                    pre_bootstrap.json(),
+                )
+
+                created = client.post("/me/bootstrap", headers=user_headers)
+                self.assertEqual(200, created.status_code)
+
+                post_bootstrap = client.get("/me/access-summary", headers=user_headers)
+                self.assertEqual(200, post_bootstrap.status_code)
+                self.assertEqual(
+                    {
+                        "can_bootstrap": True,
+                        "has_readable_inventory": True,
+                        "visible_inventory_count": 1,
+                        "default_inventory_slug": "shared-user-collection",
+                    },
+                    post_bootstrap.json(),
+                )
 
     def test_shared_service_bootstrap_creates_one_default_inventory_and_unlocks_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
