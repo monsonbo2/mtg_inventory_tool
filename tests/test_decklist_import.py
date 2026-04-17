@@ -5,12 +5,16 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.inventory.catalog import resolve_default_card_row_for_name
 from mtg_source_stack.inventory.decklist_import import (
+    ParsedDecklistEntry,
+    ParsedDecklistText,
+    PlannedDecklistImport,
     import_decklist_text,
     parse_decklist_text,
     parse_decklist_text_with_metadata,
@@ -20,6 +24,96 @@ from mtg_source_stack.inventory.service import create_inventory
 
 
 class DecklistImportTest(unittest.TestCase):
+    def test_import_decklist_text_defaults_to_initialize_if_needed_schema_policy(self) -> None:
+        parsed_decklist = ParsedDecklistText(
+            deck_name=None,
+            entries=[ParsedDecklistEntry(line_number=1, quantity=1, name="Test Card")],
+        )
+        plan = PlannedDecklistImport(
+            deck_name=None,
+            rows_seen=1,
+            requested_card_quantity=1,
+            pending_rows=[],
+            resolution_issues=[],
+        )
+        prepared_db_path = Path("/tmp/prepared_decklist_import.db")
+
+        with (
+            patch(
+                "mtg_source_stack.inventory.decklist_import.parse_decklist_text_with_metadata",
+                return_value=parsed_decklist,
+            ),
+            patch(
+                "mtg_source_stack.inventory.decklist_import.prepare_database",
+                return_value=prepared_db_path,
+            ) as prepare_database,
+            patch(
+                "mtg_source_stack.inventory.decklist_import._resolve_decklist_import_plan",
+                return_value=plan,
+            ) as resolve_decklist_import_plan,
+            patch(
+                "mtg_source_stack.inventory.decklist_import._import_pending_rows",
+                return_value=[],
+            ) as import_pending_rows,
+        ):
+            result = import_decklist_text(
+                "collection.db",
+                deck_text="1 Test Card",
+                default_inventory="personal",
+            )
+
+        prepare_database.assert_called_once_with(
+            "collection.db",
+            schema_policy="initialize_if_needed",
+        )
+        self.assertEqual(prepared_db_path, resolve_decklist_import_plan.call_args.args[0])
+        self.assertEqual(prepared_db_path, import_pending_rows.call_args.args[0])
+        self.assertEqual(1, result["rows_seen"])
+
+    def test_import_decklist_text_accepts_require_current_schema_policy(self) -> None:
+        parsed_decklist = ParsedDecklistText(
+            deck_name=None,
+            entries=[ParsedDecklistEntry(line_number=1, quantity=1, name="Test Card")],
+        )
+        plan = PlannedDecklistImport(
+            deck_name=None,
+            rows_seen=1,
+            requested_card_quantity=1,
+            pending_rows=[],
+            resolution_issues=[],
+        )
+        prepared_db_path = Path("/tmp/prepared_decklist_import.db")
+
+        with (
+            patch(
+                "mtg_source_stack.inventory.decklist_import.parse_decklist_text_with_metadata",
+                return_value=parsed_decklist,
+            ),
+            patch(
+                "mtg_source_stack.inventory.decklist_import.prepare_database",
+                return_value=prepared_db_path,
+            ) as prepare_database,
+            patch(
+                "mtg_source_stack.inventory.decklist_import._resolve_decklist_import_plan",
+                return_value=plan,
+            ),
+            patch(
+                "mtg_source_stack.inventory.decklist_import._import_pending_rows",
+                return_value=[],
+            ),
+        ):
+            import_decklist_text(
+                "collection.db",
+                deck_text="1 Test Card",
+                default_inventory="personal",
+                schema_policy="require_current",
+            )
+
+        prepare_database.assert_called_once_with(
+            "collection.db",
+            schema_policy="require_current",
+        )
+
     def _insert_card(
         self,
         db_path: Path,

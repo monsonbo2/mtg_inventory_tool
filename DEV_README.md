@@ -194,6 +194,15 @@ Why this matters:
   actual write-access rule and only keep route-specific wrappers if they are
   buying real policy separation or clearer intent.
 
+Current schema-policy shape:
+
+- API import routes pass `schema_policy="require_current"` into the service
+  layer, so request handling never auto-migrates the database.
+- CLI import entrypoints keep the local-first default
+  `schema_policy="initialize_if_needed"`.
+- The public import entrypoints prepare the schema once, then resolution/write
+  helpers operate on the prepared DB path.
+
 Multipart caveat:
 
 - `POST /imports/csv` uses FastAPI `UploadFile` + `File(...)` + `Form(...)`.
@@ -227,11 +236,20 @@ Multipart caveat:
 
 ## Useful Commands
 
+Python command note:
+
+- prefer the repo-local `.venv/bin/python` for backend commands and tests, or
+  activate `.venv` first
+- using system `python3` can miss optional web/test deps that are installed only
+  in the repo virtualenv
+- if a unittest import fails for modules like `pydantic`, `fastapi`, or
+  `uvicorn`, confirm you are using `.venv/bin/python`
+
 Backend:
 
 ```bash
 ./scripts/test_backend.sh
-python3 -m unittest discover -s tests -q
+PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -q
 ```
 
 Frontend:
@@ -244,13 +262,13 @@ cd frontend && npm run build
 Localhost API test layer:
 
 ```bash
-python3 -m unittest tests.test_web_api tests.test_api_app -q
+PYTHONPATH=src .venv/bin/python -m unittest tests.test_web_api tests.test_api_app -q
 ```
 
 Importer benchmark:
 
 ```bash
-python3 scripts/benchmark_import_pipeline.py \
+PYTHONPATH=src .venv/bin/python scripts/benchmark_import_pipeline.py \
   --db /tmp/mtg_benchmark.db \
   --scryfall-json /path/to/default-cards.json \
   --identifiers-json /path/to/AllIdentifiers.json.gz \
@@ -260,15 +278,15 @@ python3 scripts/benchmark_import_pipeline.py \
 Search index maintenance:
 
 ```bash
-python3 -m mtg_source_stack.mvp_importer check-search-index --db var/db/mtg_mvp.db
-python3 -m mtg_source_stack.mvp_importer rebuild-search-index --db var/db/mtg_mvp.db
+PYTHONPATH=src .venv/bin/python -m mtg_source_stack.mvp_importer check-search-index --db var/db/mtg_mvp.db
+PYTHONPATH=src .venv/bin/python -m mtg_source_stack.mvp_importer rebuild-search-index --db var/db/mtg_mvp.db
 ```
 
 Sync run history:
 
 ```bash
-python3 -m mtg_source_stack.mvp_importer list-sync-runs --db var/db/mtg_mvp.db
-python3 -m mtg_source_stack.mvp_importer show-sync-run --db var/db/mtg_mvp.db --run-id 1
+PYTHONPATH=src .venv/bin/python -m mtg_source_stack.mvp_importer list-sync-runs --db var/db/mtg_mvp.db
+PYTHONPATH=src .venv/bin/python -m mtg_source_stack.mvp_importer show-sync-run --db var/db/mtg_mvp.db --run-id 1
 ```
 
 Suggested local/shared-service cadence:
@@ -302,8 +320,8 @@ Backend default:
 Useful targeted commands:
 
 ```bash
-python3 -m unittest discover -s tests -q
-python3 -m unittest tests.test_web_api tests.test_api_app -q
+PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -q
+PYTHONPATH=src .venv/bin/python -m unittest tests.test_web_api tests.test_api_app -q
 cd frontend && npm test
 cd frontend && npm run build
 ```
@@ -317,7 +335,7 @@ After intentional API contract changes, refresh `contracts/openapi.json` from
 the repo root with:
 
 ```bash
-python3 - <<'PY'
+PYTHONPATH=src .venv/bin/python - <<'PY'
 import json
 from pathlib import Path
 from mtg_source_stack.api.app import create_app
@@ -360,7 +378,7 @@ PY
   fail for sandbox reasons, rerun them with elevated permissions instead of
   assuming the repo is broken.
 - This most often applies to:
-  - `python3 -m unittest tests.test_web_api tests.test_api_app -q`
+  - `PYTHONPATH=src .venv/bin/python -m unittest tests.test_web_api tests.test_api_app -q`
   - `gh auth status`
   - `gh issue ...`
   - `gh pr ...`

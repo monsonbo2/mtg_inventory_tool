@@ -157,6 +157,12 @@ mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
 If you need to override startup migration behavior explicitly, use
 `--auto-migrate` or `--no-auto-migrate`, or set `MTG_API_AUTO_MIGRATE`.
 
+API import routes follow that startup schema posture. `POST /imports/csv`,
+`POST /imports/decklist`, and `POST /imports/deck-url` require a current
+database and do not auto-migrate during request handling. If the schema is
+stale, migrate it intentionally first with `mtg-mvp-importer migrate-db` or
+start the API with auto-migrate enabled.
+
 `shared_service` also supports:
 
 - `--proxy-headers` / `--no-proxy-headers`

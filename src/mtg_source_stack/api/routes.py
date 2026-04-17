@@ -446,6 +446,7 @@ async def imports_csv(
                 actor_type=context.actor_type,
                 actor_id=context.actor_id,
                 request_id=context.request_id,
+                schema_policy="require_current",
             )
         except MtgStackError:
             raise
@@ -486,6 +487,7 @@ async def imports_decklist(
         actor_type=context.actor_type,
         actor_id=context.actor_id,
         request_id=context.request_id,
+        schema_policy="require_current",
     )
     return _serialize(result)
 
@@ -518,6 +520,7 @@ async def imports_deck_url(
         actor_type=context.actor_type,
         actor_id=context.actor_id,
         request_id=context.request_id,
+        schema_policy="require_current",
     )
     return _serialize(result)
 

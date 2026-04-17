@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, TextIO
 
 from ..db.connection import connect
-from ..db.schema import initialize_database
+from ..db.schema import SchemaPreparationPolicy, prepare_database
 from ..errors import MtgStackError, ValidationError
 from .catalog import (
     determine_printing_selection_mode,
@@ -579,28 +579,22 @@ def _build_pending_csv_row_from_selection(
     )
 
 
-def _plan_csv_import(
-    db_path: str | Path,
+def _resolve_csv_import_plan(
+    prepared_db_path: str | Path,
     *,
-    csv_handle: TextIO,
-    csv_filename: str,
-    default_inventory: str | None,
-    resolutions: list[Mapping[str, Any]] | None = None,
+    detected_format: str,
+    rows_seen: int,
+    loaded_rows: list[PendingImportRow],
+    resolutions: list[Mapping[str, Any]] | None,
     allow_inventory_auto_create: bool = True,
     inventory_validator: InventoryValidator | None = None,
 ) -> PlannedCsvImport:
-    detected_format, rows_seen, loaded_rows = _load_pending_csv_rows(
-        csv_handle,
-        source_name=csv_filename,
-        default_inventory=default_inventory,
-    )
     requested_card_quantity = sum(int(pending_row.add_kwargs.get("quantity") or 0) for pending_row in loaded_rows)
     selection_map = _normalize_csv_resolution_selections(resolutions)
     pending_rows: list[PendingImportRow] = []
     resolution_issues: list[CsvResolutionIssue] = []
 
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    with connect(prepared_db_path) as connection:
         validated_inventories: set[str] = set()
         for loaded_row in loaded_rows:
             inventory_slug = str(loaded_row.add_kwargs["inventory_slug"])
@@ -649,7 +643,7 @@ def _plan_csv_import(
 
 
 def _import_pending_rows(
-    db_path: str | Path,
+    prepared_db_path: str | Path,
     *,
     pending_rows: list[PendingImportRow],
     dry_run: bool = False,
@@ -663,8 +657,7 @@ def _import_pending_rows(
     imported_rows: list[dict[str, Any]] = []
     inventory_cache: dict[str, sqlite3.Row] = {}
 
-    initialize_database(db_path)
-    with connect(db_path) as connection:
+    with connect(prepared_db_path) as connection:
         validated_inventories: set[str] = set()
         for pending_row in pending_rows:
             inventory_slug = str(pending_row.add_kwargs["inventory_slug"])
@@ -730,12 +723,22 @@ def import_csv_stream(
     actor_type: str = "cli",
     actor_id: str | None = None,
     request_id: str | None = None,
+    schema_policy: SchemaPreparationPolicy = "initialize_if_needed",
 ) -> dict[str, Any]:
-    plan = _plan_csv_import(
-        db_path,
-        csv_handle=csv_handle,
-        csv_filename=csv_filename,
+    detected_format, rows_seen, loaded_rows = _load_pending_csv_rows(
+        csv_handle,
+        source_name=csv_filename,
         default_inventory=default_inventory,
+    )
+    prepared_db_path = prepare_database(
+        db_path,
+        schema_policy=schema_policy,
+    )
+    plan = _resolve_csv_import_plan(
+        prepared_db_path,
+        detected_format=detected_format,
+        rows_seen=rows_seen,
+        loaded_rows=loaded_rows,
         resolutions=resolutions,
         allow_inventory_auto_create=allow_inventory_auto_create,
         inventory_validator=inventory_validator,
@@ -746,7 +749,7 @@ def import_csv_stream(
             details={"resolution_issues": serialize_response(plan.resolution_issues)},
         )
     imported_rows = _import_pending_csv_rows(
-        db_path,
+        prepared_db_path,
         pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,
@@ -774,7 +777,7 @@ def import_csv_stream(
 
 
 def _import_pending_csv_rows(
-    db_path: str | Path,
+    prepared_db_path: str | Path,
     *,
     pending_rows: list[PendingImportRow],
     dry_run: bool = False,
@@ -786,7 +789,7 @@ def _import_pending_csv_rows(
     request_id: str | None = None,
 ) -> list[dict[str, Any]]:
     return _import_pending_rows(
-        db_path,
+        prepared_db_path,
         pending_rows=pending_rows,
         dry_run=dry_run,
         before_write=before_write,
@@ -806,25 +809,35 @@ def import_csv(
     dry_run: bool = False,
     resolutions: list[Mapping[str, Any]] | None = None,
     before_write: Callable[[], Any] | None = None,
+    schema_policy: SchemaPreparationPolicy = "initialize_if_needed",
 ) -> dict[str, Any]:
     try:
         with Path(csv_path).open(mode="r", encoding="utf-8-sig", newline="") as handle:
-            plan = _plan_csv_import(
-                db_path,
-                csv_handle=handle,
-                csv_filename=str(csv_path),
+            detected_format, rows_seen, loaded_rows = _load_pending_csv_rows(
+                handle,
+                source_name=str(csv_path),
                 default_inventory=default_inventory,
-                resolutions=resolutions,
             )
     except OSError as exc:
         raise ValueError(f"Could not read CSV file '{csv_path}'.") from exc
+    prepared_db_path = prepare_database(
+        db_path,
+        schema_policy=schema_policy,
+    )
+    plan = _resolve_csv_import_plan(
+        prepared_db_path,
+        detected_format=detected_format,
+        rows_seen=rows_seen,
+        loaded_rows=loaded_rows,
+        resolutions=resolutions,
+    )
     if plan.resolution_issues and not dry_run:
         raise ValidationError(
             "Unresolved CSV import ambiguities remain.",
             details={"resolution_issues": serialize_response(plan.resolution_issues)},
         )
     imported_rows = _import_pending_csv_rows(
-        db_path,
+        prepared_db_path,
         pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,

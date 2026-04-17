@@ -17,7 +17,7 @@ from .catalog import (
     resolve_default_card_row_for_name,
 )
 from ..db.connection import connect
-from ..db.schema import initialize_database
+from ..db.schema import SchemaPreparationPolicy, prepare_database
 from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
 from .import_summary import build_resolvable_deck_import_summary
 from .import_resolution import (
@@ -494,25 +494,20 @@ def _build_pending_decklist_row_from_selection(
     )
 
 
-def _plan_decklist_import(
-    db_path: str | Path,
+def _resolve_decklist_import_plan(
+    prepared_db_path: str | Path,
     *,
-    deck_text: str,
-    default_inventory: str | None,
-    resolutions: list[Mapping[str, Any]] | None = None,
+    parsed_decklist: ParsedDecklistText,
+    inventory_slug: str,
+    resolutions: list[Mapping[str, Any]] | None,
     inventory_validator: InventoryValidator | None = None,
 ) -> PlannedDecklistImport:
-    parsed_decklist = parse_decklist_text_with_metadata(deck_text)
     entries = parsed_decklist.entries
     requested_card_quantity = sum(entry.quantity for entry in entries)
     selection_map = _normalize_decklist_resolution_selections(resolutions)
-    initialize_database(db_path)
     pending_rows: list[PendingImportRow] = []
     resolution_issues: list[DecklistResolutionIssue] = []
-    with connect(db_path) as connection:
-        inventory_slug = text_or_none(default_inventory)
-        if inventory_slug is None:
-            raise ValidationError("default_inventory is required for decklist imports.")
+    with connect(prepared_db_path) as connection:
         if inventory_validator is not None:
             inventory_validator(connection, inventory_slug)
         get_inventory_row(connection, inventory_slug)
@@ -523,7 +518,7 @@ def _plan_decklist_import(
                     _build_pending_decklist_row_from_selection(
                         connection,
                         entry=entry,
-                        default_inventory=default_inventory,
+                        default_inventory=inventory_slug,
                         selection=selection,
                     )
                 )
@@ -532,7 +527,7 @@ def _plan_decklist_import(
             pending_row, resolution_issue = _probe_decklist_resolution(
                 connection,
                 entry=entry,
-                default_inventory=default_inventory,
+                default_inventory=inventory_slug,
             )
             if resolution_issue is not None:
                 resolution_issues.append(resolution_issue)
@@ -566,11 +561,20 @@ def import_decklist_text(
     actor_type: str = "cli",
     actor_id: str | None = None,
     request_id: str | None = None,
+    schema_policy: SchemaPreparationPolicy = "initialize_if_needed",
 ) -> dict[str, Any]:
-    plan = _plan_decklist_import(
+    parsed_decklist = parse_decklist_text_with_metadata(deck_text)
+    inventory_slug = text_or_none(default_inventory)
+    if inventory_slug is None:
+        raise ValidationError("default_inventory is required for decklist imports.")
+    prepared_db_path = prepare_database(
         db_path,
-        deck_text=deck_text,
-        default_inventory=default_inventory,
+        schema_policy=schema_policy,
+    )
+    plan = _resolve_decklist_import_plan(
+        prepared_db_path,
+        parsed_decklist=parsed_decklist,
+        inventory_slug=inventory_slug,
         resolutions=resolutions,
         inventory_validator=inventory_validator,
     )
@@ -580,7 +584,7 @@ def import_decklist_text(
             details={"resolution_issues": serialize_response(plan.resolution_issues)},
         )
     imported_rows = _import_pending_rows(
-        db_path,
+        prepared_db_path,
         pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,

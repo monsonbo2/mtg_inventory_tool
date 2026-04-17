@@ -117,6 +117,8 @@ Notes:
 
 - `shared_service` enables proxy-header handling by default.
 - `shared_service` disables auto-migrate by default.
+- API import routes obey that startup schema posture and return
+  `schema_not_ready` instead of migrating during request handling.
 - `shared_service` rejects `MTG_API_TRUST_ACTOR_HEADERS=true`.
 - `shared_service` now also requires `MTG_API_SNAPSHOT_SIGNING_SECRET` so
   deck URL preview tokens stay tamper-evident across the preview/commit flow.

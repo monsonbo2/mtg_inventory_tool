@@ -1252,6 +1252,46 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("Trade Binder", item_row["location"])
                 self.assertEqual(["trade", "staples"], json.loads(item_row["tags_json"]))
 
+    def test_demo_api_csv_import_uses_strict_schema_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                with patch(
+                    "mtg_source_stack.api.routes.import_csv_stream",
+                    return_value={
+                        "csv_filename": "inventory_import.csv",
+                        "detected_format": "generic_csv",
+                        "default_inventory": None,
+                        "rows_seen": 0,
+                        "rows_written": 0,
+                        "ready_to_commit": True,
+                        "summary": {
+                            "total_card_quantity": 0,
+                            "distinct_card_names": 0,
+                            "distinct_printings": 0,
+                            "requested_card_quantity": 0,
+                            "unresolved_card_quantity": 0,
+                        },
+                        "resolution_issues": [],
+                        "dry_run": True,
+                        "imported_rows": [],
+                    },
+                ) as import_csv_stream:
+                    response = client.post(
+                        "/imports/csv",
+                        files={
+                            "file": (
+                                "inventory_import.csv",
+                                b"Inventory,Scryfall ID,Qty\npersonal,api-card-1,1\n",
+                                "text/csv",
+                            )
+                        },
+                        data={"dry_run": "true"},
+                    )
+
+                self.assertEqual(200, response.status_code)
+                self.assertEqual("require_current", import_csv_stream.call_args.kwargs["schema_policy"])
+
     def test_demo_api_csv_import_supports_preview_and_commit_but_not_implicit_inventory_creation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -1977,6 +2017,43 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, item_row["quantity"])
                 self.assertEqual(("api", "local-demo", "req-decklist-commit"), tuple(audit_row))
 
+    def test_demo_api_decklist_import_uses_strict_schema_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                with patch(
+                    "mtg_source_stack.api.routes.import_decklist_text",
+                    return_value={
+                        "deck_name": None,
+                        "default_inventory": "personal",
+                        "rows_seen": 0,
+                        "rows_written": 0,
+                        "ready_to_commit": True,
+                        "summary": {
+                            "total_card_quantity": 0,
+                            "distinct_card_names": 0,
+                            "distinct_printings": 0,
+                            "section_card_quantities": {},
+                            "requested_card_quantity": 0,
+                            "unresolved_card_quantity": 0,
+                        },
+                        "resolution_issues": [],
+                        "dry_run": True,
+                        "imported_rows": [],
+                    },
+                ) as import_decklist_text:
+                    response = client.post(
+                        "/imports/decklist",
+                        json={
+                            "deck_text": "1 API Test Card",
+                            "default_inventory": "personal",
+                            "dry_run": True,
+                        },
+                    )
+
+                self.assertEqual(200, response.status_code)
+                self.assertEqual("require_current", import_decklist_text.call_args.kwargs["schema_policy"])
+
     def test_demo_api_decklist_import_returns_resolution_issues_and_accepts_resolutions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
@@ -2156,6 +2233,46 @@ class WebApiTest(unittest.TestCase):
 
                 self.assertEqual(4, item_row["quantity"])
                 self.assertEqual(("api", "local-demo", "req-deck-url-commit"), tuple(audit_row))
+
+    def test_demo_api_deck_url_import_uses_strict_schema_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                with patch(
+                    "mtg_source_stack.api.routes.import_deck_url",
+                    return_value={
+                        "source_url": "https://archidekt.com/decks/123/test",
+                        "provider": "archidekt",
+                        "deck_name": None,
+                        "default_inventory": "personal",
+                        "rows_seen": 0,
+                        "rows_written": 0,
+                        "ready_to_commit": True,
+                        "source_snapshot_token": "snapshot-token",
+                        "summary": {
+                            "total_card_quantity": 0,
+                            "distinct_card_names": 0,
+                            "distinct_printings": 0,
+                            "section_card_quantities": {},
+                            "requested_card_quantity": 0,
+                            "unresolved_card_quantity": 0,
+                        },
+                        "resolution_issues": [],
+                        "dry_run": True,
+                        "imported_rows": [],
+                    },
+                ) as import_deck_url:
+                    response = client.post(
+                        "/imports/deck-url",
+                        json={
+                            "source_url": "https://archidekt.com/decks/123/test",
+                            "default_inventory": "personal",
+                            "dry_run": True,
+                        },
+                    )
+
+                self.assertEqual(200, response.status_code)
+                self.assertEqual("require_current", import_deck_url.call_args.kwargs["schema_policy"])
 
     def test_demo_api_deck_url_import_returns_resolution_issues_and_uses_snapshot_token(self) -> None:
         from mtg_source_stack.inventory.deck_url_import import RemoteDeckCard, RemoteDeckSource
