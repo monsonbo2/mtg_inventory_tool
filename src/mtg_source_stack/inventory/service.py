@@ -34,6 +34,7 @@ from .csv_import import import_csv, import_csv_stream
 from .decklist_import import import_decklist_text
 from .deck_url_import import import_deck_url
 from .inventories import create_inventory, ensure_default_inventory, list_inventories, list_visible_inventories
+from .inventories import summarize_actor_access
 from .mutations import (
     add_card,
     add_card_with_connection,

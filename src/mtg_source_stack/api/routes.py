@@ -48,6 +48,7 @@ from ..inventory.service import (
     set_printing,
     set_quantity,
     set_tags,
+    summarize_actor_access,
     transfer_inventory_items,
 )
 from .dependencies import (
@@ -78,6 +79,7 @@ from .request_models import (
     SetInventoryItemPrintingRequest,
 )
 from .response_models import (
+    AccessSummaryResponse,
     AddInventoryItemResponse,
     ApiErrorResponse,
     BulkInventoryItemMutationResponse,
@@ -367,6 +369,24 @@ def bootstrap_default_inventory(
 ) -> Any:
     return _serialize(
         ensure_default_inventory(
+            settings.db_path,
+            actor_id=context.actor_id,
+            actor_roles=context.roles,
+        )
+    )
+
+
+@router.get(
+    "/me/access-summary",
+    response_model=AccessSummaryResponse,
+    responses=_error_responses(401, 403, 503, 500),
+)
+def get_access_summary(
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    return _serialize(
+        summarize_actor_access(
             settings.db_path,
             actor_id=context.actor_id,
             actor_roles=context.roles,
