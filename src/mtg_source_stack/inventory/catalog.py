@@ -24,7 +24,13 @@ from .normalize import (
     validate_supported_finish,
     validate_limit_value,
 )
-from .query_catalog import add_catalog_filters, add_catalog_scope_filter, build_catalog_search_fts_query, catalog_scope_filter_sql
+from .query_catalog import (
+    add_catalog_filters,
+    add_catalog_scope_filter,
+    build_catalog_search_fts_query,
+    catalog_scope_filter_sql,
+    catalog_search_tokens,
+)
 from .response_models import CatalogNameSearchResult, CatalogNameSearchRow, CatalogPrintingLookupRow, CatalogSearchRow
 
 
@@ -37,6 +43,7 @@ _PREFERRED_ORACLE_DEFAULT_SET_TYPES = {
     "masters",
     "starter",
 }
+_GROUPED_NAME_SUBSTRING_FALLBACK_MIN_QUERY_LENGTH = 5
 
 
 def _catalog_search_row_kwargs_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -321,6 +328,16 @@ def search_card_names(
     limit: int = DEFAULT_SEARCH_LIMIT,
     scope: str | None = None,
 ) -> CatalogNameSearchResult:
+    trimmed_query = query.strip()
+    query_tokens = catalog_search_tokens(query)
+
+    def _can_use_substring_fallback() -> bool:
+        if exact:
+            return False
+        if len(query_tokens) != 1:
+            return False
+        return len(query_tokens[0]) >= _GROUPED_NAME_SUBSTRING_FALLBACK_MIN_QUERY_LENGTH
+
     def _load_grouped_rows(*, include_substring_fallback: bool) -> list[sqlite3.Row]:
         search_cte = """
         WITH search_match AS (
@@ -337,10 +354,10 @@ def search_card_names(
 
         if exact:
             where_parts.append("LOWER(mtg_cards.name) = LOWER(?)")
-            match_params.append(query)
+            match_params.append(trimmed_query)
         elif include_substring_fallback:
             where_parts.append("LOWER(mtg_cards.name) LIKE LOWER(?)")
-            match_params.append(f"%{query}%")
+            match_params.append(f"%{trimmed_query}%")
         else:
             if fts_query is None:
                 return []
@@ -361,7 +378,7 @@ def search_card_names(
         params: list[Any] = []
         if not exact and not include_substring_fallback and fts_query is not None:
             params.append(fts_query)
-        params.extend([query, f"{query}%"])
+        params.extend([trimmed_query, f"{trimmed_query}%"])
         params.extend(match_params)
         params.append(limit)
 
@@ -371,6 +388,8 @@ def search_card_names(
             matched_printings AS (
                 SELECT
                     mtg_cards.oracle_id,
+                    LOWER(mtg_cards.name) AS name_sort,
+                    COALESCE(mtg_cards.released_at, '') AS release_sort,
                     CASE
                         WHEN LOWER(mtg_cards.name) = LOWER(?) THEN 0
                         WHEN LOWER(mtg_cards.name) LIKE LOWER(?) THEN 1
@@ -389,16 +408,61 @@ def search_card_names(
                     MIN(match_order) AS match_order,
                     MIN(CASE WHEN edhrec_rank IS NULL THEN 1 ELSE 0 END) AS edhrec_rank_missing,
                     MIN(edhrec_rank) AS best_edhrec_rank,
-                    MIN(search_rank) AS best_search_rank
+                    MIN(search_rank) AS best_search_rank,
+                    MIN(name_sort) AS best_name_sort,
+                    MAX(release_sort) AS newest_release_sort
                 FROM matched_printings
                 GROUP BY oracle_id
+            ),
+            ordered_groups AS (
+                SELECT
+                    oracle_id,
+                    match_order,
+                    edhrec_rank_missing,
+                    best_edhrec_rank,
+                    best_search_rank,
+                    total_count,
+                    ROW_NUMBER() OVER (
+                        ORDER BY
+                            match_order,
+                            edhrec_rank_missing,
+                            COALESCE(best_edhrec_rank, 2147483647),
+                            best_search_rank,
+                            best_name_sort,
+                            newest_release_sort DESC,
+                            oracle_id
+                    ) AS group_order
+                FROM (
+                    SELECT
+                        oracle_id,
+                        match_order,
+                        edhrec_rank_missing,
+                        best_edhrec_rank,
+                        best_search_rank,
+                        best_name_sort,
+                        newest_release_sort,
+                        COUNT(*) OVER () AS total_count
+                    FROM matched_groups
+                )
+            ),
+            limited_groups AS (
+                SELECT
+                    oracle_id,
+                    match_order,
+                    edhrec_rank_missing,
+                    best_edhrec_rank,
+                    best_search_rank,
+                    total_count,
+                    group_order
+                FROM ordered_groups
+                WHERE group_order <= ?
             ),
             group_counts AS (
                 SELECT
                     oracle_id,
                     COUNT(*) AS printings_count
                 FROM mtg_cards
-                WHERE oracle_id IN (SELECT oracle_id FROM matched_groups)
+                WHERE oracle_id IN (SELECT oracle_id FROM limited_groups)
                   AND {scope_filter_sql}
                 GROUP BY oracle_id
             ),
@@ -425,7 +489,7 @@ def search_card_names(
                             mtg_cards.scryfall_id
                     ) AS row_number
                 FROM mtg_cards
-                INNER JOIN matched_groups ON matched_groups.oracle_id = mtg_cards.oracle_id
+                INNER JOIN limited_groups ON limited_groups.oracle_id = mtg_cards.oracle_id
                 WHERE {scope_filter_sql}
             )
             SELECT
@@ -434,25 +498,17 @@ def search_card_names(
                 representative_rows.image_uris_json,
                 representative_rows.released_at,
                 group_counts.printings_count,
-                COUNT(*) OVER () AS total_count
-            FROM matched_groups
-            INNER JOIN representative_rows ON representative_rows.oracle_id = matched_groups.oracle_id
-            INNER JOIN group_counts ON group_counts.oracle_id = matched_groups.oracle_id
+                limited_groups.total_count
+            FROM limited_groups
+            INNER JOIN representative_rows ON representative_rows.oracle_id = limited_groups.oracle_id
+            INNER JOIN group_counts ON group_counts.oracle_id = limited_groups.oracle_id
             WHERE representative_rows.row_number = 1
-            ORDER BY
-                matched_groups.match_order,
-                matched_groups.edhrec_rank_missing,
-                COALESCE(matched_groups.best_edhrec_rank, 2147483647),
-                matched_groups.best_search_rank,
-                LOWER(representative_rows.name),
-                COALESCE(representative_rows.released_at, '') DESC,
-                representative_rows.oracle_id
-            LIMIT ?
+            ORDER BY limited_groups.group_order
             """,
             params,
         ).fetchall()
 
-    if not query.strip():
+    if not trimmed_query:
         raise ValidationError("query is required.")
     normalized_scope = normalize_catalog_search_scope(scope)
     scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
@@ -460,7 +516,7 @@ def search_card_names(
     require_current_schema(db_path)
     with connect(db_path) as connection:
         rows = _load_grouped_rows(include_substring_fallback=False)
-        if not exact and not rows:
+        if not rows and _can_use_substring_fallback():
             # Keep infix rescue available without paying for it on ordinary
             # token/prefix searches that already produced grouped matches.
             rows = _load_grouped_rows(include_substring_fallback=True)

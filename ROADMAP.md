@@ -10,16 +10,15 @@ status and ownership.
 
 ## Current Checkpoint
 
-Last refreshed: `2026-04-14`
+Last refreshed: `2026-04-17`
 
 Current review branch:
 
-- `database-sync-optimization`
+- `issue-38-grouped-name-search-latency`
 
 Open review PR:
 
-- `#42` `Optimize database sync and smooth demo setup`
-- <https://github.com/monsonbo2/mtg_inventory_tool/pull/42>
+- none currently
 
 Mainline assumption:
 
@@ -27,77 +26,60 @@ Mainline assumption:
 
 ## What Recently Landed On The Review Branch
 
-Sync and importer work:
+Grouped-name search work:
 
-- sync run, step, artifact, and issue bookkeeping
-- split sync commands:
-  - `sync-scryfall`
-  - `sync-identifiers`
-  - `sync-prices`
-- unchanged-artifact skip behavior for sync/import runs
-- streamed MTGJSON identifier and price payload reads
-- importer timing and sync-history visibility
-- Scryfall metadata caching and safer validator reuse
-- search-index maintenance commands:
-  - `check-search-index`
-  - `rebuild-search-index`
-  - `list-sync-runs`
-  - `show-sync-run --run-id ...`
+- grouped card-name search now ranks matching `oracle_id` groups before loading
+  representative-row and printing-count metadata
+- broad FTS-match queries now hydrate only the limited top groups instead of
+  every matched group
+- grouped substring rescue remains available only for selective long
+  single-token misses after the normal grouped FTS path returns no rows
+- grouped substring fallback now respects the caller-provided `limit`
+- targeted service and API regression coverage now covers:
+  - selective substring fallback behavior
+  - exact grouped `total_count` / `has_more` limit semantics
+  - fallback limit handling
 
-Important performance result:
+Important validation status:
 
-- narrowing the `mtg_cards` FTS update trigger removed the main bulk identifier
-  import bottleneck
-- on the benchmark harness, `import-identifiers` dropped from effectively
-  `13m+` to about `12.8s`
-
-Frontend/demo work:
-
-- frontend demo launchers now prefer the repo-local `.venv/bin/python`
-- `frontend/` now has first-class:
-  - `npm run demo:bootstrap`
-  - `npm run backend:demo`
-- the demo bootstrap output and docs now point people to repo-local launchers
-  instead of a global `mtg-web-api` wrapper
-- full-catalog demo bootstrap now optionally supports real MTGJSON pricing when
-  both `--identifiers-json` and `--prices-json` are supplied alongside
-  `--scryfall-json`
+- targeted backend/API tests pass on the branch
+- synthetic broad-match timing on a temporary large catalog moved in the right
+  direction, but the exact `#38` benchmark against
+  `var/db/frontend_onboarding_full_catalog.db` still needs to be rerun before
+  treating the ticket as fully closed
 
 Recent commits worth knowing:
 
-- `213b7d6` `Smooth frontend demo setup flow`
-- `3cccf81` `Add priced full-catalog demo bootstrap`
+- current branch head: grouped-name search rewrite for `#38`
 
 ## Current Validation Snapshot
 
 Last known green checks on the review branch:
 
-- `PYTHONPATH=src ./.venv/bin/python -m unittest discover -s tests -q`
-  - `391` passed, `75` skipped
-- `cd frontend && npm run test`
-  - `67` passed
-- `cd frontend && npm run build`
-  - passed
-- full-catalog priced demo bootstrap via npm
-  - passed with local fixture files
+- `PYTHONPATH=src python3 -m unittest tests.test_inventory_service tests.test_web_api -q`
+  - `172` passed, `74` skipped
+- synthetic grouped-name broad-match sanity check on a temporary 20k-group DB
+  - `Cloud` about `0.079s`
+  - `Clou` about `0.075s`
+- still pending:
+  - rerun the exact `#38` benchmark queries against
+    `var/db/frontend_onboarding_full_catalog.db`
 
 ## Recommended Next Issue Sequence
 
-If work resumes after PR `#42`, the best next sequence is:
+If work resumes after `#38` review, the best next sequence is:
 
 1. `#43` Shared-service onboarding-state contract clarity
 2. `#45` Shared-service validation fixtures for permission-aware frontend states
 3. `#44` Proxy-backed shared-service validation harness for `/api` rollout
-4. `#38` Optimize grouped name search latency on full-catalog demo DB
-5. Re-scope `#39` Local-first bootstrap and lightweight printing lookup support
-6. `#41` Support bulk inventory mutations across all filtered rows
+4. Re-scope `#39` Local-first bootstrap and lightweight printing lookup support
+5. `#41` Support bulk inventory mutations across all filtered rows
 
 Why this order:
 
 - `#43` is likely the cheapest high-value shared-service issue
 - `#45` turns shared-service permission states into something repeatable
 - `#44` becomes much easier and more useful once those fixtures exist
-- `#38` is the sharpest remaining product-feel / demo-latency issue
 - `#39` is partly stale relative to the current code and should be narrowed
   before more backend work is added
 - `#41` is the largest remaining feature contract and should follow the smaller
@@ -170,17 +152,30 @@ Why the real proxy shape is preferred:
 
 ### `#38` Grouped name search latency
 
-Best first approach:
+Current branch status:
 
-- remove or sharply constrain the broad grouped-search substring fallback
-- rely on FTS plus exact/prefix ordering for the normal path
-- add benchmark coverage so future regressions are obvious
+- grouped card-name search now ranks matching `oracle_id` groups before loading
+  representative rows and printing counts
+- broad-match queries now limit expensive hydration work to the top grouped
+  results instead of every matched group
+- substring rescue is now selective and only retained for long single-token
+  misses after the grouped FTS path returns no rows
+- targeted regression coverage exists for grouped ranking/fallback behavior and
+  grouped `limit` / `total_count` semantics
 
-Reasonable alternative:
+Remaining work before closure:
+
+- rerun the issue's exact benchmark queries (`Cloud`, `Clou`, `Lightning`,
+  `Sol`) against `var/db/frontend_onboarding_full_catalog.db`
+- confirm the measured latency improvement on that real full-catalog DB
+- if the real DB is still not fast enough, consider a second pass such as a
+  precomputed grouped-name summary/index keyed by `oracle_id`
+
+Reasonable next escalation if needed:
 
 - build a dedicated grouped-name index keyed by `oracle_id`
 
-Why the tactical query fix is preferred first:
+Why the tactical query rewrite is preferred first:
 
 - it is the likely first speed win with the lowest schema complexity
 

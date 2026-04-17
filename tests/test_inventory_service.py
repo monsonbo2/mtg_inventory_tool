@@ -1325,7 +1325,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 result.items[0].image_uri_small,
             )
 
-    def test_search_card_names_substring_query_falls_back_to_like_matching(self) -> None:
+    def test_search_card_names_substring_query_falls_back_to_like_matching_for_long_single_token_queries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
             initialize_database(db_path)
@@ -1341,13 +1341,56 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 is_default_add_searchable=1,
             )
 
-            result = search_card_names(db_path, query="ning", exact=False, limit=10)
+            result = search_card_names(db_path, query="ightn", exact=False, limit=10)
 
             self.assertEqual(1, result.total_count)
             self.assertFalse(result.has_more)
             self.assertEqual(1, len(result.items))
             self.assertEqual("substring-group-oracle", result.items[0].oracle_id)
             self.assertEqual("Lightning Bolt", result.items[0].name)
+
+    def test_search_card_names_short_substring_query_does_not_fall_back_to_like_matching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="substring-short-en",
+                oracle_id="substring-short-oracle",
+                name="Lightning Bolt",
+                collector_number="41",
+                lang="en",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+
+            result = search_card_names(db_path, query="ning", exact=False, limit=10)
+
+            self.assertEqual(0, result.total_count)
+            self.assertFalse(result.has_more)
+            self.assertEqual([], result.items)
+
+    def test_search_card_names_substring_fallback_respects_requested_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            for index in range(12):
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id=f"substring-limit-{index}",
+                    oracle_id=f"substring-limit-oracle-{index}",
+                    name=f"AlphaXYZBeta Card {index}",
+                    collector_number=str(80 + index),
+                    is_default_add_searchable=1,
+                )
+
+            result = search_card_names(db_path, query="haxyzbe", exact=False, limit=11)
+
+            self.assertEqual(12, result.total_count)
+            self.assertTrue(result.has_more)
+            self.assertEqual(11, len(result.items))
 
     def test_search_card_names_does_not_broaden_to_infix_matches_when_fts_already_found_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

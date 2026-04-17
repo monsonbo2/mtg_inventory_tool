@@ -114,6 +114,9 @@ Current behavior:
 - app-facing search defaults to the mainline add-flow catalog scope
 - `scope=all` broadens search and printing lookup back to the full local catalog
 - grouped card-name search groups by `oracle_id`
+- grouped non-exact name search keeps the FTS/token-prefix path hot and only
+  uses broader substring rescue for selective long single-token misses after an
+  FTS grouped miss
 - quick-add by `oracle_id` stays in the default add-flow scope and does not
   broaden automatically
 - when `lang` is omitted for quick-add, the resolver prefers English, then
