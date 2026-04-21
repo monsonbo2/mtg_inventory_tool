@@ -196,6 +196,17 @@ preserve for the first API-backed version of the project.
     printing the backend would choose for omitted-finish quick-add
   - marks exactly one row when omitted-finish quick-add resolves successfully;
     foil-only or otherwise incompatible quick-add cases leave every row unmarked
+- `GET /cards/oracle/{oracle_id}/printings/summary`
+  - returns the quick-add printing summary for one `oracle_id`
+  - uses the same default mainline add-flow scope as the app-facing search
+    routes
+  - query `scope` accepts `default` or `all`
+  - returns `default_printing` when omitted-finish quick-add can resolve one
+  - returns `available_languages` across all scoped printings
+  - returns `printings_count`, `has_more_printings`, and the primary/preferred
+    `printings` subset suitable for the initial quick-add picker
+  - full all-language browsing remains on
+    `GET /cards/oracle/{oracle_id}/printings?lang=all`
 - `PATCH /inventories/{inventory_slug}/items/{item_id}/printing`
   - requires a target `scryfall_id` for another printing of the same `oracle_id`
   - clients may resubmit the current `scryfall_id` only to confirm a

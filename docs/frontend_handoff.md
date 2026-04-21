@@ -81,7 +81,11 @@ Use this as the first-pass UI-to-endpoint map:
   grouped matches are absent.
   - if the frontend opts into `scope=all`, keep that same scope choice when
     moving from card-name search to printing lookup
-- Printing lookup for a selected card -> `GET /cards/oracle/{oracle_id}/printings`
+- Quick-add printing summary for a selected card ->
+  `GET /cards/oracle/{oracle_id}/printings/summary`
+  Returns the backend default add choice, available languages, scoped printing
+  count, and the primary/preferred printings for the initial picker.
+- Full printing lookup for a selected card -> `GET /cards/oracle/{oracle_id}/printings`
   Defaults to English printings when available; use `lang=all` or a specific
   language code to expand the list.
   - also accepts `scope=all` when the frontend intentionally wants the broader

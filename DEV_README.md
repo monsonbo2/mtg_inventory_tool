@@ -103,11 +103,12 @@ Important limitation:
 
 ## Search Model Notes
 
-There are now three closely related app-facing search surfaces:
+There are now four closely related app-facing search surfaces:
 
 - `GET /cards/search`
 - `GET /cards/search/names`
 - `GET /cards/oracle/{oracle_id}/printings`
+- `GET /cards/oracle/{oracle_id}/printings/summary`
 
 Current behavior:
 
@@ -121,6 +122,9 @@ Current behavior:
   broaden automatically
 - when `lang` is omitted for quick-add, the resolver prefers English, then
   mainstream paper printings, then newer printings with stable ties
+- the quick-add printing summary route exposes the backend default add choice,
+  available languages, scoped printing count, and primary/preferred printings;
+  full all-language browsing remains an explicit `lang=all` printings lookup
 
 Migration `0008` note:
 
