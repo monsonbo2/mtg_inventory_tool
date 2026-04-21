@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   ApiClientError,
+  getAccessSummary,
   listInventories,
   listInventoryAudit,
   listInventoryItems,
 } from "../api";
 import type {
+  AccessSummaryResponse,
   InventoryAuditEvent,
   InventorySummary,
   OwnedInventoryRow,
@@ -24,6 +26,7 @@ export function useInventoryOverview() {
   const [selectedInventory, setSelectedInventory] = useState<string | null>(null);
   const [items, setItems] = useState<OwnedInventoryRow[]>([]);
   const [auditEvents, setAuditEvents] = useState<InventoryAuditEvent[]>([]);
+  const [accessSummary, setAccessSummary] = useState<AccessSummaryResponse | null>(null);
   const [inventoryStatus, setInventoryStatus] = useState<AsyncStatus>("loading");
   const [viewStatus, setViewStatus] = useState<AsyncStatus>("idle");
   const [inventoryError, setInventoryError] = useState<string | null>(null);
@@ -44,6 +47,21 @@ export function useInventoryOverview() {
       setInventoryError(null);
 
       try {
+        const nextAccessSummary = await getAccessSummary();
+        if (cancelled) {
+          return;
+        }
+        setAccessSummary(nextAccessSummary);
+        if (!nextAccessSummary.has_readable_inventory) {
+          setInventories([]);
+          selectedInventoryRef.current = null;
+          setSelectedInventory(null);
+          setInventoryError(null);
+          setInventoryErrorStatus(null);
+          setInventoryStatus("ready");
+          return;
+        }
+
         const nextInventories = await listInventories();
         if (cancelled) {
           return;
@@ -89,6 +107,18 @@ export function useInventoryOverview() {
 
   async function reloadInventorySummaries(preferredSlug: string | null = null) {
     try {
+      const nextAccessSummary = await getAccessSummary();
+      setAccessSummary(nextAccessSummary);
+      if (!nextAccessSummary.has_readable_inventory) {
+        setInventories([]);
+        selectedInventoryRef.current = null;
+        setSelectedInventory(null);
+        setInventoryError(null);
+        setInventoryErrorStatus(null);
+        setInventoryStatus("ready");
+        return true;
+      }
+
       const nextInventories = await listInventories();
       setInventories(nextInventories);
       setInventoryError(null);
@@ -175,6 +205,7 @@ export function useInventoryOverview() {
     inventories.find((inventory) => inventory.slug === selectedInventory) ?? null;
 
   return {
+    accessSummary,
     auditEvents,
     describeInventory,
     inventories,

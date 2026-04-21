@@ -9,7 +9,8 @@ export type AsyncStatus = "idle" | "loading" | "ready" | "error";
 export type AppShellState =
   | "loading"
   | "ready"
-  | "no_collections"
+  | "bootstrap_available"
+  | "access_needed"
   | "error";
 export type ViewRefreshOutcome = "applied" | "skipped";
 export type NoticeTone = "info" | "success" | "error";

@@ -1,10 +1,11 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { ApiClientError } from "./api";
 import type {
+  AccessSummaryResponse,
   CatalogNameSearchResult,
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
@@ -19,12 +20,14 @@ vi.mock("./api", async () => {
   return {
     ...actual,
     listInventories: vi.fn(),
+    getAccessSummary: vi.fn(),
     listInventoryItems: vi.fn(),
     listInventoryAudit: vi.fn(),
     searchCardNames: vi.fn(),
     listCardPrintings: vi.fn(),
     addInventoryItem: vi.fn(),
     bulkMutateInventoryItems: vi.fn(),
+    bootstrapDefaultInventory: vi.fn(),
     createInventory: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
@@ -37,8 +40,10 @@ vi.mock("./api", async () => {
 
 import {
   addInventoryItem,
+  bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
+  getAccessSummary,
   importCsv,
   importDeckUrl,
   importDecklist,
@@ -50,6 +55,15 @@ import {
   searchCardNames,
   transferInventoryItems,
 } from "./api";
+
+beforeEach(() => {
+  vi.mocked(getAccessSummary).mockResolvedValue({
+    can_bootstrap: true,
+    has_readable_inventory: true,
+    visible_inventory_count: 1,
+    default_inventory_slug: null,
+  });
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -146,6 +160,18 @@ describe("App", () => {
       acquisition_currency: null,
       item_rows: 0,
       total_cards: 0,
+      ...overrides,
+    };
+  }
+
+  function buildAccessSummary(
+    overrides: Partial<AccessSummaryResponse> = {},
+  ): AccessSummaryResponse {
+    return {
+      can_bootstrap: true,
+      has_readable_inventory: true,
+      visible_inventory_count: 1,
+      default_inventory_slug: null,
       ...overrides,
     };
   }
@@ -339,6 +365,19 @@ describe("App", () => {
     expect(screen.queryByText("Run a search")).not.toBeInTheDocument();
   });
 
+  it("loads readable inventories after the access summary startup probe", async () => {
+    mockBaseSearchApp();
+
+    render(<App />);
+
+    expect(await screen.findByText("Current collection: Personal Collection")).toBeInTheDocument();
+    expect(getAccessSummary).toHaveBeenCalledTimes(1);
+    expect(listInventories).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getAccessSummary).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(listInventories).mock.invocationCallOrder[0],
+    );
+  });
+
   it("opens an import menu above search with URL, text, and CSV options", async () => {
     const user = userEvent.setup();
 
@@ -488,7 +527,7 @@ describe("App", () => {
   });
 
   it("shows a generic collections-unavailable shell state when collection loading fails with 401", async () => {
-    vi.mocked(listInventories).mockRejectedValue(
+    vi.mocked(getAccessSummary).mockRejectedValue(
       new ApiClientError("Authentication required.", {
         code: "authentication_required",
         status: 401,
@@ -505,10 +544,11 @@ describe("App", () => {
     expect(screen.queryByText("Authentication required.")).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Quick Add and Card Search" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+    expect(listInventories).not.toHaveBeenCalled();
   });
 
   it("shows a generic collections-unavailable shell state when collection loading fails with 403", async () => {
-    vi.mocked(listInventories).mockRejectedValue(
+    vi.mocked(getAccessSummary).mockRejectedValue(
       new ApiClientError("Forbidden.", {
         code: "forbidden",
         status: 403,
@@ -525,10 +565,16 @@ describe("App", () => {
     expect(screen.queryByText("Forbidden.")).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Quick Add and Card Search" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+    expect(listInventories).not.toHaveBeenCalled();
   });
 
-  it("shows a no-collections shell state with a create action when no collections exist yet", async () => {
-    vi.mocked(listInventories).mockResolvedValue([]);
+  it("shows a bootstrap shell state with a create action when no readable collections exist yet", async () => {
+    vi.mocked(getAccessSummary).mockResolvedValue(
+      buildAccessSummary({
+        has_readable_inventory: false,
+        visible_inventory_count: 0,
+      }),
+    );
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
 
@@ -539,18 +585,51 @@ describe("App", () => {
     expect(screen.getByText("Your cards will appear here")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Quick Add and Card Search" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create Collection" })).toBeInTheDocument();
+    expect(listInventories).not.toHaveBeenCalled();
   });
 
-  it("creates the first collection from the empty onboarding state", async () => {
+  it("shows an access-needed shell state without a create action when bootstrap is unavailable", async () => {
+    vi.mocked(getAccessSummary).mockResolvedValue(
+      buildAccessSummary({
+        can_bootstrap: false,
+        has_readable_inventory: false,
+        visible_inventory_count: 0,
+      }),
+    );
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Collection access needed").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("Search waiting for access")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Quick Add and Card Search" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
+    expect(listInventories).not.toHaveBeenCalled();
+  });
+
+  it("creates a custom first collection from the empty onboarding state", async () => {
     const user = userEvent.setup();
 
-    vi.mocked(listInventories)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
+    vi.mocked(getAccessSummary)
+      .mockResolvedValueOnce(
+        buildAccessSummary({
+          has_readable_inventory: false,
+          visible_inventory_count: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildAccessSummary({
+          default_inventory_slug: null,
+        }),
+      );
+    vi.mocked(listInventories).mockResolvedValueOnce([
         buildInventorySummary({
-          slug: "collection",
-          display_name: "Collection",
-          description: "Main personal collection",
+          slug: "commander-decks",
+          display_name: "Commander Decks",
+          description: "Built and brewing commander lists",
         }),
       ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
@@ -560,9 +639,9 @@ describe("App", () => {
     vi.mocked(createInventory).mockResolvedValue(
       buildInventoryCreateResponse({
         inventory_id: 9,
-        slug: "collection",
-        display_name: "Collection",
-        description: "Main personal collection",
+        slug: "commander-decks",
+        display_name: "Commander Decks",
+        description: "Built and brewing commander lists",
       }),
     );
 
@@ -571,27 +650,28 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "Create Collection" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
-    await user.type(within(dialog).getByRole("textbox", { name: "Collection name" }), "Collection");
+    await user.type(within(dialog).getByRole("textbox", { name: "Collection name" }), "Commander Decks");
     await user.type(
       within(dialog).getByRole("textbox", { name: "Description (optional)" }),
-      "Main personal collection",
+      "Built and brewing commander lists",
     );
     await user.click(within(dialog).getByRole("button", { name: "Create Collection" }));
 
     await waitFor(() => {
       expect(createInventory).toHaveBeenCalledWith({
-        slug: "collection",
-        display_name: "Collection",
-        description: "Main personal collection",
+        slug: "commander-decks",
+        display_name: "Commander Decks",
+        description: "Built and brewing commander lists",
       });
     });
+    expect(bootstrapDefaultInventory).not.toHaveBeenCalled();
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Created Collection.");
-    expect(await screen.findByText("Current collection: Collection")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Created Commander Decks.");
+    expect(await screen.findByText("Current collection: Commander Decks")).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(listInventoryItems).toHaveBeenCalledWith("collection");
-      expect(listInventoryAudit).toHaveBeenCalledWith("collection");
+      expect(listInventoryItems).toHaveBeenCalledWith("commander-decks");
+      expect(listInventoryAudit).toHaveBeenCalledWith("commander-decks");
     });
   });
 

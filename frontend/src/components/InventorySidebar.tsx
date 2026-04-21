@@ -506,10 +506,10 @@ export function InventorySidebar(props: {
           </div>
 
         </>
-      ) : (
+      ) : props.appShellState === "bootstrap_available" ? (
         <>
           <PanelState
-            body="Create a collection to start adding cards, tracking value, and keeping everything organized."
+            body="Create your personal collection to start adding cards, tracking value, and keeping everything organized."
             compact
             eyebrow="Collections"
             title="Start your first collection"
@@ -517,6 +517,7 @@ export function InventorySidebar(props: {
           <div className="inventory-sidebar-actions inventory-sidebar-actions-empty">
             <button
               className="primary-button inventory-sidebar-action inventory-sidebar-action-create"
+              disabled={props.createInventoryBusy}
               onClick={openCreateForm}
               type="button"
             >
@@ -525,12 +526,24 @@ export function InventorySidebar(props: {
                 className="inventory-action-icon inventory-action-icon-create"
               />
               <span className="inventory-sidebar-action-create-label">
-                Create Collection
+                {props.createInventoryBusy ? "Creating..." : "Create Collection"}
               </span>
             </button>
           </div>
           <p className="panel-hint inventory-sidebar-note">
-            You can keep everything in one collection or split it up later.
+            You can split cards into more collections later.
+          </p>
+        </>
+      ) : (
+        <>
+          <PanelState
+            body="You are signed in, but no collections are shared with this account yet. Ask an owner to grant access."
+            compact
+            eyebrow="Collections"
+            title="Collection access needed"
+          />
+          <p className="panel-hint inventory-sidebar-note">
+            Search and inventory tools unlock once you can read at least one collection.
           </p>
         </>
       )}

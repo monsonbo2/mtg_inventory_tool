@@ -633,6 +633,13 @@ export interface DefaultInventoryBootstrapResponse {
   inventory: InventoryCreateResponse;
 }
 
+export interface AccessSummaryResponse {
+  can_bootstrap: boolean;
+  has_readable_inventory: boolean;
+  visible_inventory_count: number;
+  default_inventory_slug: string | null;
+}
+
 export interface InventoryTransferItemResultResponse {
   source_item_id: number;
   target_item_id: number | null;

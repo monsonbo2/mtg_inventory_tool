@@ -174,6 +174,26 @@ Use this as the first-pass UI-to-endpoint map:
    npm run demo:bootstrap -- --force
    ```
 
+   To validate shared-service onboarding and permission-aware empty states with
+   stable actors and memberships:
+
+   ```bash
+   npm run demo:bootstrap -- --force --shared-service-fixtures
+   ```
+
+   Fixture users:
+
+   - `new-user@example.com`: omit `X-Authenticated-Roles`; no readable
+     inventory yet; can create a custom first collection
+   - `bootstrapped@example.com`: omit `X-Authenticated-Roles`; owns
+     `bootstrapped-collection`
+   - `viewer@example.com`: omit `X-Authenticated-Roles`; `viewer` on
+     `personal`
+   - `writer@example.com`: omit `X-Authenticated-Roles`; `editor` on
+     `trade-binder`
+   - `no-access@example.com`: omit `X-Authenticated-Roles`; no memberships
+   - `admin@example.com`: send `X-Authenticated-Roles: admin` for global bypass
+
    Or, if you want the frontend to search a real imported catalog instead of
    the tiny built-in demo catalog:
 
@@ -305,8 +325,8 @@ export default {
     authenticated user; it currently requires a user who can read at least one
     inventory, or a global `admin`
   - authenticated users can create inventories they own
-  - first-run shared-service users can call `POST /me/bootstrap` to create a
-    personal `Collection` inventory and unlock search/add flows
+  - first-run frontend users should use the normal create-inventory flow when
+    they need a custom first collection name
 
 ## Known Limits
 
@@ -332,7 +352,7 @@ export default {
 - For shared-service first-run state, prefer `GET /me/access-summary` as the
   frontend startup probe:
   - if `has_readable_inventory` is `true`, continue normally
-  - else if `can_bootstrap` is `true`, offer `POST /me/bootstrap`
+  - else if `can_bootstrap` is `true`, offer the custom create-inventory flow
   - else show an authenticated access-needed or unavailable state
 - Browser-based local dev is expected to use a frontend proxy unless backend
   CORS behavior is changed deliberately.

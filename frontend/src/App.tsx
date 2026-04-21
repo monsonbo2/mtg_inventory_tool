@@ -16,8 +16,10 @@ import { useInventoryOverview } from "./hooks/useInventoryOverview";
 import { useInventoryMutations } from "./hooks/useInventoryMutations";
 import { decimalToNumber, formatUsd } from "./uiHelpers";
 import type { AppShellState } from "./uiTypes";
+import type { AccessSummaryResponse } from "./types";
 
 function getAppShellState(options: {
+  accessSummary: AccessSummaryResponse | null;
   inventoryCount: number;
   inventoryStatus: "idle" | "loading" | "ready" | "error";
 }): AppShellState {
@@ -33,7 +35,11 @@ function getAppShellState(options: {
     return "error";
   }
 
-  return "no_collections";
+  if (options.accessSummary && !options.accessSummary.has_readable_inventory) {
+    return options.accessSummary.can_bootstrap ? "bootstrap_available" : "access_needed";
+  }
+
+  return "access_needed";
 }
 
 function getShellStatePanelContent(
@@ -55,18 +61,33 @@ function getShellStatePanelContent(
           variant: "loading" as const,
         },
       };
-    case "no_collections":
+    case "bootstrap_available":
       return {
         collection: {
-          body: "Once you create a collection, its entries, tags, and values will show up here.",
+          body: "Once your collection exists, its entries, tags, and values will show up here.",
           eyebrow: "Collection",
           title: "Your cards will appear here",
           variant: "idle" as const,
         },
         search: {
-          body: "Create a collection to start finding cards and comparing printings.",
+          body: "Create your collection to start finding cards and comparing printings.",
           eyebrow: "Search",
           title: "Search is ready when you are",
+          variant: "idle" as const,
+        },
+      };
+    case "access_needed":
+      return {
+        collection: {
+          body: "No readable collections are available for this account yet.",
+          eyebrow: "Collection",
+          title: "Collection access needed",
+          variant: "idle" as const,
+        },
+        search: {
+          body: "Search unlocks once you can read at least one collection.",
+          eyebrow: "Search",
+          title: "Search waiting for access",
           variant: "idle" as const,
         },
       };
@@ -94,6 +115,7 @@ export default function App() {
   const [stickyControlsVisible, setStickyControlsVisible] = useState(false);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const {
+    accessSummary,
     auditEvents,
     describeInventory,
     inventories,
@@ -333,6 +355,7 @@ export default function App() {
   const bannerNotice = notice && notice.tone !== "success" ? notice : null;
   const toastNotice = notice?.tone === "success" ? notice : null;
   const appShellState = getAppShellState({
+    accessSummary,
     inventoryCount: inventories.length,
     inventoryStatus,
   });

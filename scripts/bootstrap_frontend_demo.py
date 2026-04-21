@@ -24,6 +24,8 @@ from mtg_source_stack.inventory.service import (
     add_card,
     add_card_with_connection,
     create_inventory,
+    ensure_default_inventory,
+    grant_inventory_membership,
     remove_card,
     resolve_card_row,
     set_acquisition,
@@ -39,6 +41,12 @@ from mtg_source_stack.inventory.service import (
 DEFAULT_DB_PATH = Path("var/db/frontend_demo.db")
 ACTOR_TYPE = "seed"
 ACTOR_ID = "frontend-bootstrap"
+SHARED_SERVICE_NEW_USER_ACTOR = "new-user@example.com"
+SHARED_SERVICE_BOOTSTRAPPED_ACTOR = "bootstrapped@example.com"
+SHARED_SERVICE_VIEWER_ACTOR = "viewer@example.com"
+SHARED_SERVICE_WRITER_ACTOR = "writer@example.com"
+SHARED_SERVICE_NO_ACCESS_ACTOR = "no-access@example.com"
+SHARED_SERVICE_ADMIN_ACTOR = "admin@example.com"
 
 
 def seed_price_snapshots(db_path: Path, rows: list[tuple[str, str, str, str, str, str, float, str]]) -> None:
@@ -86,6 +94,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Overwrite the target database file if it already exists.",
+    )
+    parser.add_argument(
+        "--shared-service-fixtures",
+        action="store_true",
+        help="Seed stable shared-service actors, default inventory, and memberships for frontend validation.",
     )
     return parser
 
@@ -219,6 +232,26 @@ def seed_demo_inventories(db_path: Path) -> None:
         slug="trade-binder",
         display_name="Trade Binder",
         description="Intentionally empty inventory for frontend empty states",
+    )
+
+
+def seed_shared_service_validation_fixtures(db_path: Path) -> None:
+    ensure_default_inventory(
+        db_path,
+        actor_id=SHARED_SERVICE_BOOTSTRAPPED_ACTOR,
+        actor_roles=frozenset(),
+    )
+    grant_inventory_membership(
+        db_path,
+        inventory_slug="personal",
+        actor_id=SHARED_SERVICE_VIEWER_ACTOR,
+        role="viewer",
+    )
+    grant_inventory_membership(
+        db_path,
+        inventory_slug="trade-binder",
+        actor_id=SHARED_SERVICE_WRITER_ACTOR,
+        role="editor",
     )
 
 
@@ -785,6 +818,7 @@ def bootstrap_demo_data(
     scryfall_json: Path | None = None,
     identifiers_json: Path | None = None,
     prices_json: Path | None = None,
+    shared_service_fixtures: bool = False,
 ) -> dict[str, int | str]:
     initialize_database(db_path)
 
@@ -804,20 +838,26 @@ def bootstrap_demo_data(
             db_path,
             seed_demo_prices=(price_mode != "imported"),
         )
+        if shared_service_fixtures:
+            seed_shared_service_validation_fixtures(db_path)
         return {
             "catalog_mode": "full",
             "catalog_rows": catalog_rows,
             "identifiers_rows": identifiers_rows,
             "price_rows": imported_price_rows if price_mode == "imported" else 7,
             "price_mode": price_mode,
+            "shared_service_fixtures": int(shared_service_fixtures),
         }
 
     seed_small_demo_catalog_and_prices(db_path)
     seed_demo_inventories(db_path)
     seed_small_demo_inventory_items(db_path)
+    if shared_service_fixtures:
+        seed_shared_service_validation_fixtures(db_path)
     return {
         "catalog_mode": "small",
         "catalog_rows": 6,
+        "shared_service_fixtures": int(shared_service_fixtures),
     }
 
 
@@ -854,6 +894,7 @@ def main(argv: list[str] | None = None) -> None:
             scryfall_json=scryfall_json,
             identifiers_json=identifiers_json,
             prices_json=prices_json,
+            shared_service_fixtures=args.shared_service_fixtures,
         )
     except (NotFoundError, ValidationError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
@@ -871,6 +912,17 @@ def main(argv: list[str] | None = None) -> None:
         print("Curated owned-item demo rows resolved from imported catalog printings.")
     else:
         print("Cards seeded for search: Lightning Bolt, Counterspell, Swords to Plowshares, Sol Ring, Forest")
+    if summary["shared_service_fixtures"]:
+        print("Shared-service validation fixtures: enabled")
+        print("Fixture actors:")
+        print(f"  {SHARED_SERVICE_NEW_USER_ACTOR}: no roles header, no readable inventory yet")
+        print(
+            f"  {SHARED_SERVICE_BOOTSTRAPPED_ACTOR}: no roles header, owns default bootstrapped-collection"
+        )
+        print(f"  {SHARED_SERVICE_VIEWER_ACTOR}: no roles header, viewer on personal")
+        print(f"  {SHARED_SERVICE_WRITER_ACTOR}: no roles header, editor on trade-binder")
+        print(f"  {SHARED_SERVICE_NO_ACCESS_ACTOR}: no roles header, no memberships")
+        print(f"  {SHARED_SERVICE_ADMIN_ACTOR}: use X-Authenticated-Roles=admin for global bypass")
     print("Suggested API start command:")
     print(f"  (cd frontend && npm run backend:demo -- --db {db_path})")
 
