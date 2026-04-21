@@ -153,6 +153,27 @@ class AccessSummaryResult(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class InventoryShareLinkStatusResult(ResponseModel):
+    inventory: str
+    active: bool
+    public_path: str | None
+    created_at: str | None
+    updated_at: str | None
+    revoked_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryShareLinkTokenResult(ResponseModel):
+    inventory: str
+    token: str
+    public_path: str
+    active: bool
+    created_at: str
+    updated_at: str
+    revoked_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class BulkInventoryItemMutationResult(ResponseModel):
     inventory: str
     operation: str
@@ -237,6 +258,38 @@ class OwnedInventoryRow(ResponseModel):
     price_date: str | None
     notes: str | None
     printing_selection_mode: str
+
+
+@dataclass(frozen=True, slots=True)
+class PublicInventorySummary(ResponseModel):
+    display_name: str
+    description: str | None
+    item_rows: int
+    total_cards: int
+
+
+@dataclass(frozen=True, slots=True)
+class PublicInventoryItem(ResponseModel):
+    scryfall_id: str
+    oracle_id: str
+    name: str
+    set_code: str
+    set_name: str
+    rarity: str | None
+    collector_number: str
+    image_uri_small: str | None
+    image_uri_normal: str | None
+    quantity: int
+    condition_code: str
+    finish: str
+    allowed_finishes: list[str]
+    language_code: str
+
+
+@dataclass(frozen=True, slots=True)
+class PublicInventoryShareResult(ResponseModel):
+    inventory: PublicInventorySummary
+    items: list[PublicInventoryItem]
 
 
 @dataclass(frozen=True, slots=True)

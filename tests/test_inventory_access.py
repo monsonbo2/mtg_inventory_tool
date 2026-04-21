@@ -10,10 +10,12 @@ from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.inventory.service import (
+    actor_can_manage_inventory_share,
     actor_can_read_any_inventory,
     actor_can_read_inventory,
     actor_can_write_inventory,
     actor_inventory_role,
+    can_manage_inventory_share,
     can_read_inventory,
     can_write_inventory,
     create_inventory,
@@ -38,14 +40,19 @@ class InventoryAccessTest(unittest.TestCase):
     def test_can_read_and_write_inventory_roles(self) -> None:
         self.assertTrue(can_read_inventory(inventory_role="viewer", actor_roles={"editor"}))
         self.assertFalse(can_write_inventory(inventory_role="viewer", actor_roles={"editor"}))
+        self.assertFalse(can_manage_inventory_share(inventory_role="viewer", actor_roles={"editor"}))
         self.assertTrue(can_read_inventory(inventory_role="editor", actor_roles={"editor"}))
         self.assertTrue(can_write_inventory(inventory_role="editor", actor_roles={"editor"}))
+        self.assertFalse(can_manage_inventory_share(inventory_role="editor", actor_roles={"editor"}))
         self.assertTrue(can_read_inventory(inventory_role="owner", actor_roles={"editor"}))
         self.assertTrue(can_write_inventory(inventory_role="owner", actor_roles={"editor"}))
+        self.assertTrue(can_manage_inventory_share(inventory_role="owner", actor_roles={"editor"}))
         self.assertFalse(can_read_inventory(inventory_role=None, actor_roles={"editor"}))
         self.assertFalse(can_write_inventory(inventory_role=None, actor_roles={"editor"}))
+        self.assertFalse(can_manage_inventory_share(inventory_role=None, actor_roles={"editor"}))
         self.assertTrue(can_read_inventory(inventory_role=None, actor_roles={"admin"}))
         self.assertTrue(can_write_inventory(inventory_role=None, actor_roles={"admin"}))
+        self.assertTrue(can_manage_inventory_share(inventory_role=None, actor_roles={"admin"}))
 
     def test_grant_list_and_revoke_inventory_memberships(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -473,6 +480,69 @@ class InventoryAccessTest(unittest.TestCase):
                 actor_can_write_inventory(
                     db_path,
                     inventory_slug="admin-only",
+                    actor_id="admin@example.com",
+                    actor_roles={"admin"},
+                )
+            )
+
+    def test_actor_share_link_management_requires_owner_or_admin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer@example.com",
+                role="viewer",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="editor@example.com",
+                role="editor",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="owner@example.com",
+                role="owner",
+            )
+
+            self.assertFalse(
+                actor_can_manage_inventory_share(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="viewer@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertFalse(
+                actor_can_manage_inventory_share(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="editor@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertTrue(
+                actor_can_manage_inventory_share(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="owner@example.com",
+                    actor_roles=frozenset(),
+                )
+            )
+            self.assertTrue(
+                actor_can_manage_inventory_share(
+                    db_path,
+                    inventory_slug="personal",
                     actor_id="admin@example.com",
                     actor_roles={"admin"},
                 )

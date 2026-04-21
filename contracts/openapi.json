@@ -2910,6 +2910,127 @@
         "title": "InventoryListRowResponse",
         "type": "object"
       },
+      "InventoryShareLinkStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "public_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Browser-facing public share page path, for example `/shared/inventories/{share_token}`. In shared-service deployments, that page should fetch backend JSON through the proxied API route `/api/shared/inventories/{share_token}`; this field is not a proxy-aware API fetch URL.",
+            "title": "Public Path"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "inventory",
+          "active",
+          "public_path",
+          "created_at",
+          "updated_at",
+          "revoked_at"
+        ],
+        "title": "InventoryShareLinkStatusResponse",
+        "type": "object"
+      },
+      "InventoryShareLinkTokenResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "public_path": {
+            "description": "Browser-facing public share page path, for example `/shared/inventories/{share_token}`. In shared-service deployments, that page should fetch backend JSON through the proxied API route `/api/shared/inventories/{share_token}`; this field is not a proxy-aware API fetch URL.",
+            "title": "Public Path",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "token": {
+            "description": "Reusable signed share token. Store/copy this only as part of the public share URL; it grants anonymous read-only access to this inventory's public share projection until rotated or revoked.",
+            "title": "Token",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "inventory",
+          "token",
+          "public_path",
+          "active",
+          "created_at",
+          "updated_at",
+          "revoked_at"
+        ],
+        "title": "InventoryShareLinkTokenResponse",
+        "type": "object"
+      },
       "InventoryTransferItemResultResponse": {
         "additionalProperties": false,
         "properties": {
@@ -3529,6 +3650,180 @@
           }
         },
         "title": "PatchInventoryItemRequest",
+        "type": "object"
+      },
+      "PublicInventoryItemResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_finishes": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "items": {
+              "enum": [
+                "normal",
+                "foil",
+                "etched"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Finishes",
+            "type": "array"
+          },
+          "collector_number": {
+            "title": "Collector Number",
+            "type": "string"
+          },
+          "condition_code": {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Stored rows are normally normalized to these values.",
+            "title": "Condition Code",
+            "type": "string"
+          },
+          "finish": {
+            "description": "Canonical finish values: normal, foil, etched.",
+            "enum": [
+              "normal",
+              "foil",
+              "etched"
+            ],
+            "title": "Finish",
+            "type": "string"
+          },
+          "image_uri_normal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Normal"
+          },
+          "image_uri_small": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Small"
+          },
+          "language_code": {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Stored rows are normally normalized to these values.",
+            "title": "Language Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "rarity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rarity"
+          },
+          "scryfall_id": {
+            "title": "Scryfall Id",
+            "type": "string"
+          },
+          "set_code": {
+            "title": "Set Code",
+            "type": "string"
+          },
+          "set_name": {
+            "title": "Set Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scryfall_id",
+          "oracle_id",
+          "name",
+          "set_code",
+          "set_name",
+          "rarity",
+          "collector_number",
+          "image_uri_small",
+          "image_uri_normal",
+          "quantity",
+          "condition_code",
+          "finish",
+          "allowed_finishes",
+          "language_code"
+        ],
+        "title": "PublicInventoryItemResponse",
+        "type": "object"
+      },
+      "PublicInventoryShareResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "inventory": {
+            "$ref": "#/components/schemas/PublicInventorySummaryResponse"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicInventoryItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inventory",
+          "items"
+        ],
+        "title": "PublicInventoryShareResponse",
+        "type": "object"
+      },
+      "PublicInventorySummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "item_rows": {
+            "title": "Item Rows",
+            "type": "integer"
+          },
+          "total_cards": {
+            "title": "Total Cards",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display_name",
+          "description",
+          "item_rows",
+          "total_cards"
+        ],
+        "title": "PublicInventorySummaryResponse",
         "type": "object"
       },
       "RemoveInventoryItemResponse": {
@@ -7326,6 +7621,328 @@
         "summary": "Inventory Items Set Printing"
       }
     },
+    "/inventories/{inventory_slug}/share-link": {
+      "delete": {
+        "operationId": "inventory_share_link_revoke_inventories__inventory_slug__share_link_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryShareLinkStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Share Link Revoke"
+      },
+      "get": {
+        "operationId": "inventory_share_link_status_inventories__inventory_slug__share_link_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryShareLinkStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Share Link Status"
+      },
+      "post": {
+        "operationId": "inventory_share_link_create_inventories__inventory_slug__share_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryShareLinkTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Share Link Create"
+      }
+    },
+    "/inventories/{inventory_slug}/share-link/rotate": {
+      "post": {
+        "operationId": "inventory_share_link_rotate_inventories__inventory_slug__share_link_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryShareLinkTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Share Link Rotate"
+      }
+    },
     "/inventories/{source_inventory_slug}/duplicate": {
       "post": {
         "operationId": "inventories_duplicate_inventories__source_inventory_slug__duplicate_post",
@@ -7668,6 +8285,65 @@
           }
         },
         "summary": "Bootstrap Default Inventory"
+      }
+    },
+    "/shared/inventories/{share_token}": {
+      "get": {
+        "operationId": "public_inventory_share_shared_inventories__share_token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share_token",
+            "required": true,
+            "schema": {
+              "title": "Share Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicInventoryShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Public Inventory Share"
       }
     }
   }

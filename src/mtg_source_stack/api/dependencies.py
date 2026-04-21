@@ -316,6 +316,27 @@ def require_inventory_write_access(
     raise AuthorizationError(f"Write access to inventory '{inventory_slug}' is required for this shared_service request.")
 
 
+def require_inventory_share_management_access(
+    settings: ApiSettings,
+    context: RequestContext,
+    *,
+    inventory_slug: str,
+) -> None:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
+    if settings.runtime_mode != "shared_service":
+        return
+    from ..inventory.service import actor_can_manage_inventory_share
+
+    if actor_can_manage_inventory_share(
+        settings.db_path,
+        inventory_slug=inventory_slug,
+        actor_id=context.actor_id,
+        actor_roles=context.roles,
+    ):
+        return
+    raise AuthorizationError(f"Owner access to inventory '{inventory_slug}' is required to manage share links.")
+
+
 def get_inventory_write_request_context(
     inventory_slug: str,
     request: "Request",

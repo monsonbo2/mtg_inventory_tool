@@ -16,6 +16,7 @@ from .normalize import normalize_inventory_slug
 INVENTORY_MEMBERSHIP_ROLES = frozenset({"viewer", "editor", "owner"})
 INVENTORY_READ_ROLES = frozenset({"viewer", "editor", "owner"})
 INVENTORY_WRITE_ROLES = frozenset({"editor", "owner"})
+INVENTORY_SHARE_MANAGE_ROLES = frozenset({"owner"})
 
 
 def normalize_inventory_membership_role(role: str) -> str:
@@ -274,6 +275,23 @@ def actor_can_write_inventory(
     return can_write_inventory(inventory_role=inventory_role, actor_roles=actor_roles)
 
 
+def actor_can_manage_inventory_share(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    actor_id: str | None,
+    actor_roles: Iterable[str],
+) -> bool:
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        inventory_role = actor_inventory_role_with_connection(
+            connection,
+            inventory_slug=inventory_slug,
+            actor_id=actor_id,
+        )
+    return can_manage_inventory_share(inventory_role=inventory_role, actor_roles=actor_roles)
+
+
 def actor_can_read_any_inventory(
     db_path: str | Path,
     *,
@@ -309,3 +327,9 @@ def can_write_inventory(*, inventory_role: str | None, actor_roles: Iterable[str
     if is_global_admin(actor_roles):
         return True
     return inventory_role in INVENTORY_WRITE_ROLES
+
+
+def can_manage_inventory_share(*, inventory_role: str | None, actor_roles: Iterable[str]) -> bool:
+    if is_global_admin(actor_roles):
+        return True
+    return inventory_role in INVENTORY_SHARE_MANAGE_ROLES

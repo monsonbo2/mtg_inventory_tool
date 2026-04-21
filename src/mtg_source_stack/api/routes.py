@@ -27,8 +27,11 @@ from ..inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
     create_inventory,
+    create_inventory_share_link,
     duplicate_inventory,
     ensure_default_inventory,
+    get_inventory_share_link_status,
+    get_public_inventory_share,
     import_csv_stream,
     import_decklist_text,
     import_deck_url,
@@ -38,6 +41,8 @@ from ..inventory.service import (
     list_owned_filtered,
     remove_card,
     render_inventory_csv_export,
+    revoke_inventory_share_link,
+    rotate_inventory_share_link,
     search_card_names,
     search_cards,
     set_acquisition,
@@ -60,6 +65,7 @@ from .dependencies import (
     get_inventory_scoped_read_request_context,
     get_authenticated_request_context,
     get_settings,
+    require_inventory_share_management_access,
     require_inventory_write_access,
 )
 from .request_models import (
@@ -96,10 +102,13 @@ from .response_models import (
     InventoryAuditEventResponse,
     InventoryCreateResponse,
     InventoryDuplicateResponse,
+    InventoryShareLinkStatusResponse,
+    InventoryShareLinkTokenResponse,
     InventoryItemPatchResponse,
     InventoryTransferResponse,
     InventoryListRowResponse,
     OwnedInventoryRowResponse,
+    PublicInventoryShareResponse,
     RemoveInventoryItemResponse,
     SetPrintingResponse,
 )
@@ -391,6 +400,113 @@ def get_access_summary(
             settings.db_path,
             actor_id=context.actor_id,
             actor_roles=context.roles,
+        )
+    )
+
+
+@router.get(
+    "/inventories/{inventory_slug}/share-link",
+    response_model=InventoryShareLinkStatusResponse,
+    responses=_error_responses(401, 403, 404, 503, 500),
+)
+def inventory_share_link_status(
+    inventory_slug: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
+    return _serialize(
+        get_inventory_share_link_status(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            token_secret=settings.snapshot_signing_secret,
+        )
+    )
+
+
+@router.post(
+    "/inventories/{inventory_slug}/share-link",
+    status_code=status.HTTP_201_CREATED,
+    response_model=InventoryShareLinkTokenResponse,
+    responses=_error_responses(401, 403, 404, 409, 503, 500),
+)
+def inventory_share_link_create(
+    inventory_slug: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
+    return _serialize(
+        create_inventory_share_link(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            actor_id=context.actor_id,
+            token_secret=settings.snapshot_signing_secret,
+            actor_type=context.actor_type,
+            request_id=context.request_id,
+        )
+    )
+
+
+@router.post(
+    "/inventories/{inventory_slug}/share-link/rotate",
+    response_model=InventoryShareLinkTokenResponse,
+    responses=_error_responses(401, 403, 404, 503, 500),
+)
+def inventory_share_link_rotate(
+    inventory_slug: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
+    return _serialize(
+        rotate_inventory_share_link(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            actor_id=context.actor_id,
+            token_secret=settings.snapshot_signing_secret,
+            actor_type=context.actor_type,
+            request_id=context.request_id,
+        )
+    )
+
+
+@router.delete(
+    "/inventories/{inventory_slug}/share-link",
+    response_model=InventoryShareLinkStatusResponse,
+    responses=_error_responses(401, 403, 404, 503, 500),
+)
+def inventory_share_link_revoke(
+    inventory_slug: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
+) -> Any:
+    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
+    return _serialize(
+        revoke_inventory_share_link(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            actor_id=context.actor_id,
+            actor_type=context.actor_type,
+            request_id=context.request_id,
+        )
+    )
+
+
+@router.get(
+    "/shared/inventories/{share_token}",
+    response_model=PublicInventoryShareResponse,
+    responses=_error_responses(404, 503, 500),
+)
+def public_inventory_share(
+    share_token: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+) -> Any:
+    return _serialize(
+        get_public_inventory_share(
+            settings.db_path,
+            token=share_token,
+            token_secret=settings.snapshot_signing_secret,
         )
     )
 

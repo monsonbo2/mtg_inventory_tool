@@ -37,6 +37,15 @@ DEFAULT_ADD_CHOICE_RESPONSE_DESCRIPTION = (
     "True when this printing matches the backend's current default quick-add choice for the same oracle_id. "
     "When omitted-finish quick-add would fail, every row is false."
 )
+SHARE_LINK_TOKEN_RESPONSE_DESCRIPTION = (
+    "Reusable signed share token. Store/copy this only as part of the public share URL; it grants anonymous "
+    "read-only access to this inventory's public share projection until rotated or revoked."
+)
+SHARE_LINK_PUBLIC_PATH_RESPONSE_DESCRIPTION = (
+    "Browser-facing public share page path, for example `/shared/inventories/{share_token}`. "
+    "In shared-service deployments, that page should fetch backend JSON through the proxied API route "
+    "`/api/shared/inventories/{share_token}`; this field is not a proxy-aware API fetch URL."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -94,6 +103,27 @@ class AccessSummaryResponse(ApiBaseModel):
     has_readable_inventory: bool
     visible_inventory_count: int
     default_inventory_slug: str | None
+
+
+class InventoryShareLinkStatusResponse(ApiBaseModel):
+    inventory: str
+    active: bool
+    public_path: str | None = Field(
+        description=SHARE_LINK_PUBLIC_PATH_RESPONSE_DESCRIPTION,
+    )
+    created_at: str | None
+    updated_at: str | None
+    revoked_at: str | None
+
+
+class InventoryShareLinkTokenResponse(ApiBaseModel):
+    inventory: str
+    token: str = Field(description=SHARE_LINK_TOKEN_RESPONSE_DESCRIPTION)
+    public_path: str = Field(description=SHARE_LINK_PUBLIC_PATH_RESPONSE_DESCRIPTION)
+    active: bool
+    created_at: str
+    updated_at: str
+    revoked_at: str | None
 
 
 class BulkInventoryItemMutationResponse(ApiBaseModel):
@@ -218,6 +248,37 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     printing_selection_mode: Literal["explicit", "defaulted"] = Field(
         description=PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION
     )
+
+
+class PublicInventorySummaryResponse(ApiBaseModel):
+    display_name: str
+    description: str | None
+    item_rows: int
+    total_cards: int
+
+
+class PublicInventoryItemResponse(ApiBaseModel):
+    scryfall_id: str
+    oracle_id: str
+    name: str
+    set_code: str
+    set_name: str
+    rarity: str | None
+    collector_number: str
+    image_uri_small: str | None
+    image_uri_normal: str | None
+    quantity: int
+    condition_code: str = Field(description=CONDITION_CODE_RESPONSE_DESCRIPTION)
+    finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
+    allowed_finishes: list[Literal["normal", "foil", "etched"]] = Field(
+        description=FINISH_RESPONSE_DESCRIPTION
+    )
+    language_code: str = Field(description=LANGUAGE_CODE_RESPONSE_DESCRIPTION)
+
+
+class PublicInventoryShareResponse(ApiBaseModel):
+    inventory: PublicInventorySummaryResponse
+    items: list[PublicInventoryItemResponse]
 
 
 class InventoryAuditEventResponse(ApiBaseModel):

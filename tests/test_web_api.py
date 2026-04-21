@@ -116,6 +116,11 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/imports/deck-url", "post"),
                 ("/me/access-summary", "get"),
                 ("/me/bootstrap", "post"),
+                ("/inventories/{inventory_slug}/share-link", "get"),
+                ("/inventories/{inventory_slug}/share-link", "post"),
+                ("/inventories/{inventory_slug}/share-link/rotate", "post"),
+                ("/inventories/{inventory_slug}/share-link", "delete"),
+                ("/shared/inventories/{share_token}", "get"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
@@ -143,6 +148,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories/{inventory_slug}/export.csv", "get"),
                 ("/me/access-summary", "get"),
                 ("/me/bootstrap", "post"),
+                ("/inventories/{inventory_slug}/share-link", "get"),
+                ("/inventories/{inventory_slug}/share-link", "post"),
+                ("/inventories/{inventory_slug}/share-link/rotate", "post"),
+                ("/inventories/{inventory_slug}/share-link", "delete"),
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
@@ -421,6 +430,36 @@ class WebApiSchemaTest(unittest.TestCase):
                 [{"type": "string"}, {"type": "null"}],
                 access_summary_properties["default_inventory_slug"]["anyOf"],
             )
+            share_link_schema = spec["paths"]["/inventories/{inventory_slug}/share-link"]["post"]["responses"][
+                "201"
+            ]["content"]["application/json"]["schema"]
+            share_link_schema_name = self._schema_name_from_ref(share_link_schema["$ref"])
+            self.assertEqual("InventoryShareLinkTokenResponse", share_link_schema_name)
+            share_link_properties = components[share_link_schema_name]["properties"]
+            self.assertEqual("string", share_link_properties["token"]["type"])
+            self.assertEqual("string", share_link_properties["public_path"]["type"])
+            self.assertIn(
+                "Browser-facing public share page path",
+                share_link_properties["public_path"]["description"],
+            )
+            self.assertIn(
+                "/api/shared/inventories/{share_token}",
+                share_link_properties["public_path"]["description"],
+            )
+            self.assertEqual("boolean", share_link_properties["active"]["type"])
+
+            public_share_schema = spec["paths"]["/shared/inventories/{share_token}"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            public_share_schema_name = self._schema_name_from_ref(public_share_schema["$ref"])
+            self.assertEqual("PublicInventoryShareResponse", public_share_schema_name)
+            public_item_schema_name = self._schema_name_from_ref(
+                components[public_share_schema_name]["properties"]["items"]["items"]["$ref"]
+            )
+            public_item_properties = components[public_item_schema_name]["properties"]
+            self.assertNotIn("notes", public_item_properties)
+            self.assertNotIn("acquisition_price", public_item_properties)
+            self.assertNotIn("location", public_item_properties)
             duplicate_schema = spec["paths"]["/inventories/{source_inventory_slug}/duplicate"]["post"]["responses"][
                 "201"
             ]["content"]["application/json"]["schema"]
@@ -4807,6 +4846,181 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(403, outsider_printings.status_code)
                 self.assertEqual("forbidden", outsider_printings.json()["error"]["code"])
+
+    def test_inventory_share_links_are_owner_managed_and_public_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            owner_headers = {"X-Authenticated-User": "owner-user"}
+            viewer_headers = {"X-Authenticated-User": "viewer-user"}
+            editor_headers = {"X-Authenticated-User": "editor-user"}
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description="Cards I want to share",
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="editor-user",
+                role="editor",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+
+                added = client.post(
+                    "/inventories/personal/items",
+                    headers=owner_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 2,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "Private Binder",
+                        "acquisition_price": "1.25",
+                        "acquisition_currency": "USD",
+                        "notes": "private owner note",
+                        "tags": ["trade", "private"],
+                    },
+                )
+                self.assertEqual(201, added.status_code)
+
+                viewer_create = client.post("/inventories/personal/share-link", headers=viewer_headers)
+                self.assertEqual(403, viewer_create.status_code)
+
+                editor_create = client.post("/inventories/personal/share-link", headers=editor_headers)
+                self.assertEqual(403, editor_create.status_code)
+
+                initial_status = client.get("/inventories/personal/share-link", headers=owner_headers)
+                self.assertEqual(200, initial_status.status_code)
+                self.assertEqual(
+                    {
+                        "inventory": "personal",
+                        "active": False,
+                        "public_path": None,
+                        "created_at": None,
+                        "updated_at": None,
+                        "revoked_at": None,
+                    },
+                    initial_status.json(),
+                )
+
+                created = client.post("/inventories/personal/share-link", headers=owner_headers)
+                self.assertEqual(201, created.status_code)
+                created_payload = created.json()
+                self.assertEqual("personal", created_payload["inventory"])
+                self.assertTrue(created_payload["active"])
+                self.assertTrue(created_payload["token"])
+                created_backend_route = f"/shared/inventories/{created_payload['token']}"
+                self.assertEqual(
+                    created_backend_route,
+                    created_payload["public_path"],
+                )
+                active_status = client.get("/inventories/personal/share-link", headers=owner_headers)
+                self.assertEqual(200, active_status.status_code)
+                self.assertEqual(created_payload["public_path"], active_status.json()["public_path"])
+                with connect(db_path) as connection:
+                    share_row = connection.execute(
+                        """
+                        SELECT token_nonce
+                        FROM inventory_share_links
+                        WHERE inventory_id = (
+                            SELECT id
+                            FROM inventories
+                            WHERE slug = ?
+                        )
+                        """,
+                        ("personal",),
+                    ).fetchone()
+                self.assertIn(share_row["token_nonce"], created_payload["token"])
+                self.assertNotEqual(created_payload["token"], share_row["token_nonce"])
+
+                duplicate_create = client.post("/inventories/personal/share-link", headers=owner_headers)
+                self.assertEqual(409, duplicate_create.status_code)
+
+                public_view = client.get(created_backend_route)
+                self.assertEqual(200, public_view.status_code)
+                public_payload = public_view.json()
+                self.assertEqual(
+                    {
+                        "display_name": "Personal Collection",
+                        "description": "Cards I want to share",
+                        "item_rows": 1,
+                        "total_cards": 2,
+                    },
+                    public_payload["inventory"],
+                )
+                self.assertEqual(1, len(public_payload["items"]))
+                public_item = public_payload["items"][0]
+                self.assertEqual("API Test Card", public_item["name"])
+                self.assertEqual(2, public_item["quantity"])
+                self.assertEqual("normal", public_item["finish"])
+                self.assertNotIn("notes", public_item)
+                self.assertNotIn("acquisition_price", public_item)
+                self.assertNotIn("acquisition_currency", public_item)
+                self.assertNotIn("location", public_item)
+                self.assertNotIn("tags", public_item)
+                self.assertNotIn("item_id", public_item)
+                self.assertNotIn("currency", public_item)
+                self.assertNotIn("unit_price", public_item)
+                self.assertNotIn("est_value", public_item)
+
+                anonymous_private_route = client.get("/inventories/personal/items")
+                self.assertEqual(401, anonymous_private_route.status_code)
+
+                rotated = client.post("/inventories/personal/share-link/rotate", headers=owner_headers)
+                self.assertEqual(200, rotated.status_code)
+                rotated_payload = rotated.json()
+                self.assertNotEqual(created_payload["token"], rotated_payload["token"])
+                rotated_backend_route = f"/shared/inventories/{rotated_payload['token']}"
+                self.assertEqual(rotated_backend_route, rotated_payload["public_path"])
+
+                old_public_view = client.get(created_backend_route)
+                self.assertEqual(404, old_public_view.status_code)
+                new_public_view = client.get(rotated_backend_route)
+                self.assertEqual(200, new_public_view.status_code)
+
+                revoked = client.delete("/inventories/personal/share-link", headers=owner_headers)
+                self.assertEqual(200, revoked.status_code)
+                self.assertFalse(revoked.json()["active"])
+                self.assertIsNotNone(revoked.json()["revoked_at"])
+
+                revoked_public_view = client.get(rotated_backend_route)
+                self.assertEqual(404, revoked_public_view.status_code)
+
+                revoked_again = client.delete("/inventories/personal/share-link", headers=owner_headers)
+                self.assertEqual(200, revoked_again.status_code)
+                self.assertFalse(revoked_again.json()["active"])
+
+    def test_inventory_share_links_allow_global_admin_management(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            admin_headers = {
+                "X-Authenticated-User": "admin-user",
+                "X-Authenticated-Roles": "admin",
+            }
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                created = client.post("/inventories/admin-only/share-link", headers=admin_headers)
+                self.assertEqual(201, created.status_code)
+                self.assertEqual("admin-only", created.json()["inventory"])
 
     def test_shared_service_mutating_requests_require_authenticated_actor_header(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

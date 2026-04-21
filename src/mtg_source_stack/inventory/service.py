@@ -3,9 +3,11 @@
 from .access import (
     actor_can_read_any_inventory,
     actor_can_read_inventory,
+    actor_can_manage_inventory_share,
     actor_can_write_inventory,
     actor_inventory_role,
     actor_inventory_role_with_connection,
+    can_manage_inventory_share,
     can_read_inventory,
     can_write_inventory,
     grant_inventory_membership,
@@ -57,5 +59,12 @@ from .mutations import (
     set_quantity,
     set_tags,
     split_row,
+)
+from .sharing import (
+    create_inventory_share_link,
+    get_inventory_share_link_status,
+    get_public_inventory_share,
+    revoke_inventory_share_link,
+    rotate_inventory_share_link,
 )
 from .transfer import duplicate_inventory, transfer_inventory_items

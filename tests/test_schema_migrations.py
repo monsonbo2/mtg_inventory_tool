@@ -13,6 +13,8 @@ from mtg_source_stack.db.schema import initialize_database
 
 
 class SchemaMigrationTest(unittest.TestCase):
+    CURRENT_MIGRATION_VERSIONS = list(range(1, 16))
+
     def _build_legacy_card_scope_db(self, *, type_line: str | None) -> Path:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
@@ -94,6 +96,9 @@ class SchemaMigrationTest(unittest.TestCase):
                 sync_run_issues_exists = connection.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_issues'"
                 ).fetchone()[0]
+                inventory_share_links_exists = connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'inventory_share_links'"
+                ).fetchone()[0]
                 update_trigger_sql = connection.execute(
                     """
                     SELECT sql
@@ -109,9 +114,13 @@ class SchemaMigrationTest(unittest.TestCase):
                     row["name"]
                     for row in connection.execute("PRAGMA table_info(inventories)").fetchall()
                 }
+                share_link_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(inventory_share_links)").fetchall()
+                }
 
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)
-            self.assertEqual(14, latest_version)
+            self.assertEqual(self.CURRENT_MIGRATION_VERSIONS, versions)
+            self.assertEqual(15, latest_version)
             self.assertEqual(1, audit_log_exists)
             self.assertEqual(1, card_search_fts_exists)
             self.assertEqual(1, inventory_memberships_exists)
@@ -121,6 +130,14 @@ class SchemaMigrationTest(unittest.TestCase):
             self.assertEqual(1, sync_run_steps_exists)
             self.assertEqual(1, sync_run_artifacts_exists)
             self.assertEqual(1, sync_run_issues_exists)
+            self.assertEqual(1, inventory_share_links_exists)
+            self.assertTrue(
+                {
+                    "token_nonce",
+                    "issued_by_actor_id",
+                    "revoked_by_actor_id",
+                }.issubset(share_link_columns)
+            )
             self.assertIn(
                 "AFTER UPDATE OF scryfall_id, name, set_code, set_name, collector_number, lang ON mtg_cards",
                 update_trigger_sql,
@@ -161,7 +178,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     "SELECT version, name FROM schema_migrations ORDER BY version"
                 ).fetchall()
 
-            self.assertEqual(14, len(rows))
+            self.assertEqual(15, len(rows))
             self.assertEqual(
                 [
                     (1, "mvp base"),
@@ -178,6 +195,7 @@ class SchemaMigrationTest(unittest.TestCase):
                     (12, "add mtgjson card links"),
                     (13, "add sync run tracking"),
                     (14, "narrow card search fts updates"),
+                    (15, "add inventory share links"),
                 ],
                 [(row["version"], row["name"]) for row in rows],
             )
@@ -256,13 +274,16 @@ class SchemaMigrationTest(unittest.TestCase):
                 sync_run_issues_exists = migrated.execute(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_run_issues'"
                 ).fetchone()[0]
+                inventory_share_links_exists = migrated.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'inventory_share_links'"
+                ).fetchone()[0]
                 inventory_columns = {row["name"] for row in migrated.execute("PRAGMA table_info(inventories)")}
 
             self.assertIn("tags_json", columns)
             self.assertIn("printing_selection_mode", columns)
             self.assertEqual("[]", tags_value)
             self.assertEqual("explicit", printing_selection_mode)
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)
+            self.assertEqual(self.CURRENT_MIGRATION_VERSIONS, versions)
             self.assertIn("before_json", audit_columns)
             self.assertIn("after_json", audit_columns)
             self.assertIn("metadata_json", audit_columns)
@@ -274,6 +295,7 @@ class SchemaMigrationTest(unittest.TestCase):
             self.assertEqual(1, sync_run_steps_exists)
             self.assertEqual(1, sync_run_artifacts_exists)
             self.assertEqual(1, sync_run_issues_exists)
+            self.assertEqual(1, inventory_share_links_exists)
             self.assertTrue(
                 {
                     "default_location",
@@ -358,7 +380,7 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("normal", 1.5)], [(row["finish"], row["price_value"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)
+            self.assertEqual(self.CURRENT_MIGRATION_VERSIONS, versions)
 
     def test_initialize_database_backfills_default_add_search_scope_for_legacy_rows(self) -> None:
         for type_line, expected in (
@@ -460,4 +482,4 @@ class SchemaMigrationTest(unittest.TestCase):
                 ]
 
             self.assertEqual([("uuid-1", "card-with-uuid")], [(row["mtgjson_uuid"], row["scryfall_id"]) for row in rows])
-            self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], versions)
+            self.assertEqual(self.CURRENT_MIGRATION_VERSIONS, versions)
