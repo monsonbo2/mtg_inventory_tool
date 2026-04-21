@@ -160,6 +160,18 @@ def build_forward_headers(
     return forwarded
 
 
+def parse_content_length(raw_content_length: str | None) -> int:
+    if raw_content_length in {None, ""}:
+        return 0
+    try:
+        content_length = int(raw_content_length)
+    except ValueError as exc:
+        raise HarnessError("Invalid Content-Length header.") from exc
+    if content_length < 0:
+        raise HarnessError("Invalid Content-Length header.")
+    return content_length
+
+
 def _json_error(message: str) -> bytes:
     return json.dumps(
         {"error": {"code": "proxy_harness_error", "message": message}},
@@ -237,22 +249,19 @@ def make_proxy_handler(config: ProxyHarnessConfig) -> type[BaseHTTPRequestHandle
                 return
             self._serve_static(head_only=head_only)
 
-        def _read_request_body(self) -> bytes | None:
-            content_length = self.headers.get("Content-Length")
-            if not content_length:
-                return None
+        def _read_request_body(self) -> tuple[bytes | None, bool]:
             try:
-                length = int(content_length)
-            except ValueError:
-                self._send_error_json(400, "Invalid Content-Length header.")
-                return None
-            if length <= 0:
-                return None
-            return self.rfile.read(length)
+                length = parse_content_length(self.headers.get("Content-Length"))
+            except HarnessError as exc:
+                self._send_error_json(400, str(exc))
+                return None, False
+            if length == 0:
+                return None, True
+            return self.rfile.read(length), True
 
         def _proxy_api_request(self, *, head_only: bool = False) -> None:
-            body = self._read_request_body()
-            if body is None and self.headers.get("Content-Length") not in {None, "0"}:
+            body, body_ok = self._read_request_body()
+            if not body_ok:
                 return
             upstream_url = rewrite_api_url(normalized_config.backend_url, self.path)
             headers = build_forward_headers(

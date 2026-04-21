@@ -120,6 +120,18 @@ class SharedServiceProxyHarnessTest(unittest.TestCase):
         self.assertEqual("127.0.0.1", headers["X-Forwarded-For"])
         self.assertEqual("app.example.test", headers["X-Forwarded-Host"])
 
+    def test_parse_content_length_rejects_negative_values(self) -> None:
+        with self.assertRaisesRegex(
+            shared_service_proxy_harness.HarnessError,
+            "Invalid Content-Length header",
+        ):
+            shared_service_proxy_harness.parse_content_length("-1")
+
+    def test_parse_content_length_accepts_zero_and_missing_values(self) -> None:
+        self.assertEqual(0, shared_service_proxy_harness.parse_content_length(None))
+        self.assertEqual(0, shared_service_proxy_harness.parse_content_length(""))
+        self.assertEqual(0, shared_service_proxy_harness.parse_content_length("0"))
+
     @unittest.skipUnless(
         LOCALHOST_SERVER_TESTING_AVAILABLE,
         "localhost socket access is unavailable; live proxy harness test is skipped.",
@@ -155,6 +167,38 @@ class SharedServiceProxyHarnessTest(unittest.TestCase):
         self.assertIsNone(payload["roles"])
         self.assertIsNone(payload["actor_id"])
         self.assertEqual("/inventories?limit=1", backend_server.records[0]["path"])  # type: ignore[index, attr-defined]
+
+    @unittest.skipUnless(
+        LOCALHOST_SERVER_TESTING_AVAILABLE,
+        "localhost socket access is unavailable; live proxy harness test is skipped.",
+    )
+    def test_proxy_returns_400_for_negative_content_length(self) -> None:
+        backend_server = ThreadingHTTPServer(("127.0.0.1", 0), RecordingBackendHandler)
+        backend_server.records = []  # type: ignore[attr-defined]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            frontend_dist = Path(tmp_dir)
+            (frontend_dist / "index.html").write_text("<html>demo</html>", encoding="utf-8")
+            with _running_server(backend_server) as (backend_url, _backend):
+                config = shared_service_proxy_harness.ProxyHarnessConfig(
+                    backend_url=backend_url,
+                    frontend_dist=frontend_dist,
+                    actor="viewer@example.com",
+                    roles=None,
+                )
+                proxy_server = shared_service_proxy_harness.build_server(config, port=0)
+                with _running_server(proxy_server) as (_proxy_url, proxy):
+                    host, port = proxy.server_address
+                    with socket.create_connection((host, port), timeout=5) as sock:
+                        sock.sendall(
+                            b"POST /api/inventories HTTP/1.1\r\n"
+                            + f"Host: {host}:{port}\r\n".encode("ascii")
+                            + b"Content-Length: -1\r\n"
+                            + b"\r\n"
+                        )
+                        response = sock.recv(1024)
+
+        self.assertIn(b"400 Proxy Harness Error", response)
+        self.assertEqual([], backend_server.records)  # type: ignore[attr-defined]
 
     @unittest.skipUnless(
         LOCALHOST_SERVER_TESTING_AVAILABLE,
