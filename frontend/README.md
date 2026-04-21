@@ -182,6 +182,42 @@ Check `GET /me/access-summary` first for each user. Then verify
 `GET /inventories`, catalog search availability, inventory reads, and denied
 writes match the table above.
 
+## Proxy-Backed Shared-Service Validation
+
+Use the local proxy harness when you need to validate the same-origin `/api`
+rollout shape instead of the Vite dev proxy shortcut. The harness strips
+client-supplied auth headers, injects one fixture identity, serves the built
+frontend, and proxies `/api/*` to the root-mounted backend.
+
+One-command smoke check:
+
+```bash
+npm run demo:bootstrap -- --force --shared-service-fixtures
+npm run build
+npm run smoke:shared-service-proxy -- --start-backend
+```
+
+The smoke workflow starts `mtg-web-api` in `shared_service`, starts local proxy
+instances for fixture users, and verifies `/api` rewriting, spoofed-header
+stripping, fixture visibility, search denial, and same-origin frontend serving.
+
+For manual browser validation, start the shared-service backend and then run
+the proxy with the fixture user you want to exercise:
+
+```bash
+MTG_API_SNAPSHOT_SIGNING_SECRET="local-shared-service-dev-secret" \
+npm run backend:demo -- --runtime-mode shared_service --no-auto-migrate
+
+npm run build
+npm run proxy:shared-service -- --fixture-preset viewer
+```
+
+Open `http://127.0.0.1:5174`. Supported fixture presets are `new-user`,
+`bootstrapped`, `viewer`, `writer`, `no-access`, `admin`, and `none`.
+
+This harness is a local preflight tool only. Use a production reverse proxy or
+gateway for real users; the transition is tracked in issue #57.
+
 ## Working Agreement
 
 - Keep all UI code under `frontend/`.

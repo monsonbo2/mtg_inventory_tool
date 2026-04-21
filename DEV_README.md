@@ -154,6 +154,27 @@ This optional fixture mode adds stable actors for frontend rollout checks:
 `X-Authenticated-Roles` for all except `admin@example.com`, where the normalized
 roles header should be `admin`.
 
+Proxy-backed shared-service preflight:
+
+```bash
+npm run demo:bootstrap -- --force --shared-service-fixtures
+npm run build
+npm run smoke:shared-service-proxy -- --start-backend
+```
+
+Manual browser validation through the local harness:
+
+```bash
+MTG_API_SNAPSHOT_SIGNING_SECRET="local-shared-service-dev-secret" \
+npm run backend:demo -- --runtime-mode shared_service --no-auto-migrate
+
+npm run proxy:shared-service -- --fixture-preset viewer
+```
+
+The harness validates the `/api` prefix strip and fixture header injection. It
+is intentionally local-only; production reverse-proxy work is tracked
+separately in issue #57.
+
 Full-catalog demo bootstrap:
 
 ```bash

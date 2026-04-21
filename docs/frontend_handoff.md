@@ -285,6 +285,20 @@ Use this as the first-pass UI-to-endpoint map:
   assume a same-origin reverse proxy that publishes `/api` publicly and strips
   that prefix before forwarding to the backend root-route API
 
+Proxy-backed shared-service preflight:
+
+```bash
+cd frontend
+npm run demo:bootstrap -- --force --shared-service-fixtures
+npm run build
+npm run smoke:shared-service-proxy -- --start-backend
+```
+
+For a manual browser pass against one fixture identity, start the backend in
+`shared_service` and run `npm run proxy:shared-service -- --fixture-preset
+viewer`. The local harness is a validation tool only; use a real reverse proxy
+or gateway for users.
+
 Example Vite proxy:
 
 ```ts

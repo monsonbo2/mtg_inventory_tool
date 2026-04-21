@@ -130,6 +130,64 @@ class FrontendDemoScriptsTest(unittest.TestCase):
             self.assertIn(str(REPO_ROOT / "var/db/frontend_demo.db"), argv)
             self.assertIn("--force", argv)
 
+    def test_run_shared_service_proxy_uses_override_python(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            fake_python = tmp / "fake-python.sh"
+            args_file = tmp / "args.txt"
+            _write_fake_python(fake_python)
+
+            env = os.environ.copy()
+            env["MTG_FRONTEND_PYTHON"] = str(fake_python)
+            env["FAKE_PYTHON_ARGS_FILE"] = str(args_file)
+
+            subprocess.run(
+                [
+                    "bash",
+                    "frontend/scripts/run_shared_service_proxy.sh",
+                    "--fixture-preset",
+                    "admin",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            argv = args_file.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(str(REPO_ROOT / "scripts/shared_service_proxy_harness.py"), argv[0])
+            self.assertIn("--fixture-preset", argv)
+            self.assertIn("admin", argv)
+
+    def test_smoke_shared_service_proxy_uses_override_python(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            fake_python = tmp / "fake-python.sh"
+            args_file = tmp / "args.txt"
+            _write_fake_python(fake_python)
+
+            env = os.environ.copy()
+            env["MTG_FRONTEND_PYTHON"] = str(fake_python)
+            env["FAKE_PYTHON_ARGS_FILE"] = str(args_file)
+
+            subprocess.run(
+                [
+                    "bash",
+                    "frontend/scripts/smoke_shared_service_proxy.sh",
+                    "--skip-static",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            argv = args_file.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(str(REPO_ROOT / "scripts/smoke_shared_service_proxy.py"), argv[0])
+            self.assertIn("--skip-static", argv)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
