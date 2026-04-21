@@ -5,6 +5,7 @@ import {
   createInventory,
   duplicateInventory,
   exportInventoryCsv,
+  getCardPrintingSummary,
   importCsv,
   importDeckUrl,
   importDecklist,
@@ -441,5 +442,38 @@ describe("api transport", () => {
     expect(requestUrl.searchParams.get("exact")).toBe("false");
     expect(requestUrl.searchParams.get("limit")).toBe("25");
     expect(requestUrl.searchParams.has("set_code")).toBe(false);
+  });
+
+  it("loads card printing summaries with optional scope filtering", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          oracle_id: "bolt-oracle",
+          default_printing: null,
+          available_languages: ["en"],
+          printings_count: 0,
+          has_more_printings: false,
+          printings: [],
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        },
+      ),
+    );
+
+    const response = await getCardPrintingSummary("bolt-oracle", { scope: "all" });
+
+    expect(response.printings_count).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    const requestUrl = new URL(String(url));
+
+    expect(requestUrl.pathname).toBe(
+      "/api/cards/oracle/bolt-oracle/printings/summary",
+    );
+    expect(requestUrl.searchParams.get("scope")).toBe("all");
   });
 });
