@@ -43,7 +43,7 @@ Shared-service auth expects verified upstream headers:
 Current authz model:
 
 - `/health` is open
-- authenticated users with no roles header default to `editor`
+- authenticated users with no roles header have no global roles
 - `admin` implies `editor`
 - global proxy-backed app roles are `editor` and `admin`
 - local inventory membership roles are `viewer`, `editor`, and `owner`
@@ -53,8 +53,8 @@ Current authz model:
 - inventory reads require inventory membership or global `admin`
 - inventory writes require inventory `editor` / `owner` membership or global
   `admin`
-- `POST /inventories` still requires global `editor` / `admin`, and the creator
-  becomes `owner`
+- `POST /inventories` lets any authenticated user create an inventory and
+  become `owner`
 - `POST /inventories/{inventory_slug}/items/bulk` now supports grouped:
   - `add_tags`
   - `remove_tags`
@@ -70,10 +70,11 @@ Current authz model:
   selected-row and whole-inventory `copy` / `move` operations, `dry_run`
   previews, `on_conflict=fail|merge`, and `keep_acquisition`
 - `POST /inventories/{source_inventory_slug}/duplicate` creates a new inventory
-  atomically, copies all source rows into it, and grants the caller `owner`
+  atomically, copies all source rows into it, requires write access to the
+  source inventory, and grants the caller `owner`
 - `POST /me/bootstrap` creates one personal `Collection` inventory per
-  authenticated global `editor` / `admin`, grants `owner`, and returns that
-  same inventory on repeated calls
+  authenticated user, grants `owner`, and returns that same inventory on
+  repeated calls
 
 Important limitation:
 

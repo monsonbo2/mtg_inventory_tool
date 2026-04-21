@@ -204,7 +204,7 @@ def _resolve_shared_service_roles(request: "Request", settings: ApiSettings, act
         return frozenset()
     raw_roles = request.headers.get(settings.authenticated_roles_header, "").strip()
     if not raw_roles:
-        return frozenset({"editor"})
+        return frozenset()
     return _normalize_roles(raw_roles)
 
 

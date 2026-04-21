@@ -17,7 +17,12 @@ from unittest.mock import patch
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.inventory.service import create_inventory, grant_inventory_membership, import_deck_url
+from mtg_source_stack.inventory.service import (
+    actor_inventory_role,
+    create_inventory,
+    grant_inventory_membership,
+    import_deck_url,
+)
 
 
 FASTAPI_TESTING_AVAILABLE = (
@@ -4792,15 +4797,15 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(401, create_with_wrong_header.status_code)
                 self.assertEqual("authentication_required", create_with_wrong_header.json()["error"]["code"])
 
-                bootstrap_with_viewer_role = client.post(
+                bootstrap_with_non_global_role = client.post(
                     "/me/bootstrap",
                     headers={
                         "X-Authenticated-User": "shared-viewer",
                         "X-Authenticated-Roles": "viewer",
                     },
                 )
-                self.assertEqual(403, bootstrap_with_viewer_role.status_code)
-                self.assertEqual("forbidden", bootstrap_with_viewer_role.json()["error"]["code"])
+                self.assertEqual(200, bootstrap_with_non_global_role.status_code)
+                self.assertEqual("shared-viewer-collection", bootstrap_with_non_global_role.json()["inventory"]["slug"])
 
                 created_inventory = client.post(
                     "/inventories",
@@ -4808,6 +4813,14 @@ class WebApiTest(unittest.TestCase):
                     json={"slug": "personal", "display_name": "Personal Collection"},
                 )
                 self.assertEqual(201, created_inventory.status_code)
+                self.assertEqual(
+                    "owner",
+                    actor_inventory_role(
+                        db_path,
+                        inventory_slug="personal",
+                        actor_id="shared-user",
+                    ),
+                )
 
                 import_without_auth = client.post(
                     "/imports/csv",
@@ -4916,7 +4929,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, viewer_summary.status_code)
                 self.assertEqual(
                     {
-                        "can_bootstrap": False,
+                        "can_bootstrap": True,
                         "has_readable_inventory": True,
                         "visible_inventory_count": 1,
                         "default_inventory_slug": None,
@@ -4932,7 +4945,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, outsider_summary.status_code)
                 self.assertEqual(
                     {
-                        "can_bootstrap": False,
+                        "can_bootstrap": True,
                         "has_readable_inventory": False,
                         "visible_inventory_count": 0,
                         "default_inventory_slug": None,
@@ -5062,10 +5075,7 @@ class WebApiTest(unittest.TestCase):
                 "X-Authenticated-User": "editor-user",
                 "X-Authenticated-Roles": "viewer",
             }
-            outsider_headers = {
-                "X-Authenticated-User": "outsider-user",
-                "X-Authenticated-Roles": "viewer",
-            }
+            outsider_headers = {"X-Authenticated-User": "outsider-user"}
             admin_headers = {
                 "X-Authenticated-User": "admin-user",
                 "X-Authenticated-Roles": "admin",
@@ -5416,15 +5426,15 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("moved", allowed.json()["results"][0]["status"])
                 self.assertEqual("target", allowed.json()["target_inventory"])
 
-    def test_shared_service_duplicate_requires_editor_role_and_source_write_access(self) -> None:
+    def test_shared_service_duplicate_requires_source_write_access_and_grants_owner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
             initialize_database(db_path)
-            viewer_headers = {
-                "X-Authenticated-User": "viewer-user",
+            read_only_headers = {
+                "X-Authenticated-User": "read-only-user",
                 "X-Authenticated-Roles": "viewer",
             }
-            editor_headers = {"X-Authenticated-User": "editor-user"}
+            writer_headers = {"X-Authenticated-User": "writer-user"}
 
             create_inventory(
                 db_path,
@@ -5436,13 +5446,13 @@ class WebApiTest(unittest.TestCase):
             grant_inventory_membership(
                 db_path,
                 inventory_slug="source",
-                actor_id="viewer-user",
-                role="editor",
+                actor_id="read-only-user",
+                role="viewer",
             )
             grant_inventory_membership(
                 db_path,
                 inventory_slug="source",
-                actor_id="editor-user",
+                actor_id="writer-user",
                 role="editor",
             )
 
@@ -5457,7 +5467,7 @@ class WebApiTest(unittest.TestCase):
 
                 denied = client.post(
                     "/inventories/source/duplicate",
-                    headers=viewer_headers,
+                    headers=read_only_headers,
                     json={
                         "target_slug": "source-copy",
                         "target_display_name": "Source Copy",
@@ -5465,11 +5475,11 @@ class WebApiTest(unittest.TestCase):
                 )
                 self.assertEqual(403, denied.status_code)
                 self.assertEqual("forbidden", denied.json()["error"]["code"])
-                self.assertIn("Role 'editor' is required", denied.json()["error"]["message"])
+                self.assertIn("Write access to inventory 'source' is required", denied.json()["error"]["message"])
 
                 allowed = client.post(
                     "/inventories/source/duplicate",
-                    headers=editor_headers,
+                    headers=writer_headers,
                     json={
                         "target_slug": " source-copy ",
                         "target_display_name": "Source Copy",
@@ -5479,6 +5489,14 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("source-copy", allowed.json()["inventory"]["slug"])
                 self.assertEqual("source-copy", allowed.json()["transfer"]["target_inventory"])
                 self.assertEqual(1, allowed.json()["transfer"]["copied_count"])
+                self.assertEqual(
+                    "owner",
+                    actor_inventory_role(
+                        db_path,
+                        inventory_slug="source-copy",
+                        actor_id="writer-user",
+                    ),
+                )
 
     def test_shared_service_uses_authenticated_actor_header_for_audit_attribution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

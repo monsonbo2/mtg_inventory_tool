@@ -35,7 +35,8 @@ Recommended normalized roles:
 
 The app currently treats:
 
-- authenticated users with no roles header as `editor`
+- authenticated users with no roles header as authenticated users with no
+  global roles
 - `admin` as implying `editor`
 
 These are global app roles from the proxy, not per-inventory roles.
@@ -64,11 +65,10 @@ Effective behavior:
   inventory, or a global `admin`
 - inventory writes require `editor` or `owner` membership on that inventory,
   or a global `admin`
-- `POST /inventories` still requires a global `editor` or `admin`, and the
-  creator automatically becomes `owner`
-- `POST /me/bootstrap` lets a first-time global `editor` or `admin` create one
-  owned personal `Collection` inventory and returns that same inventory on
-  repeated calls
+- `POST /inventories` lets any authenticated user create an inventory and
+  automatically become `owner`
+- `POST /me/bootstrap` lets any authenticated user create one owned personal
+  `Collection` inventory and returns that same inventory on repeated calls
 
 Important rollout note:
 

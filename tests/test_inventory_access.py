@@ -8,7 +8,7 @@ from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.errors import AuthorizationError, NotFoundError, ValidationError
+from mtg_source_stack.errors import NotFoundError, ValidationError
 from mtg_source_stack.inventory.service import (
     actor_can_read_any_inventory,
     actor_can_read_inventory,
@@ -128,7 +128,7 @@ class InventoryAccessTest(unittest.TestCase):
             created = ensure_default_inventory(
                 db_path,
                 actor_id="alice@example.com",
-                actor_roles={"editor"},
+                actor_roles=frozenset(),
             )
             self.assertTrue(created.created)
             self.assertEqual("Collection", created.inventory.display_name)
@@ -142,7 +142,7 @@ class InventoryAccessTest(unittest.TestCase):
             repeated = ensure_default_inventory(
                 db_path,
                 actor_id="alice@example.com",
-                actor_roles={"editor"},
+                actor_roles=frozenset(),
             )
             self.assertFalse(repeated.created)
             self.assertEqual(created.inventory.inventory_id, repeated.inventory.inventory_id)
@@ -184,7 +184,7 @@ class InventoryAccessTest(unittest.TestCase):
             created = ensure_default_inventory(
                 db_path,
                 actor_id="alice@example.com",
-                actor_roles={"editor"},
+                actor_roles=frozenset(),
             )
 
             self.assertTrue(created.created)
@@ -232,7 +232,7 @@ class InventoryAccessTest(unittest.TestCase):
             created = ensure_default_inventory(
                 db_path,
                 actor_id="alice@example.com",
-                actor_roles={"editor"},
+                actor_roles=frozenset(),
             )
 
             self.assertTrue(created.created)
@@ -244,22 +244,32 @@ class InventoryAccessTest(unittest.TestCase):
                     for row in list_visible_inventories(
                         db_path,
                         actor_id="alice@example.com",
-                        actor_roles={"editor"},
+                        actor_roles=frozenset(),
                     )
                 ],
             )
 
-    def test_ensure_default_inventory_requires_global_editor_or_admin(self) -> None:
+    def test_ensure_default_inventory_allows_authenticated_actor_without_global_roles(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
             initialize_database(db_path)
 
-            with self.assertRaisesRegex(AuthorizationError, "Role 'editor' is required"):
-                ensure_default_inventory(
+            created = ensure_default_inventory(
+                db_path,
+                actor_id="viewer@example.com",
+                actor_roles=frozenset(),
+            )
+
+            self.assertTrue(created.created)
+            self.assertEqual("viewer-collection", created.inventory.slug)
+            self.assertEqual(
+                "owner",
+                actor_inventory_role(
                     db_path,
+                    inventory_slug="viewer-collection",
                     actor_id="viewer@example.com",
-                    actor_roles={"viewer"},
-                )
+                ),
+            )
 
     def test_list_visible_inventories_filters_memberships_with_admin_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

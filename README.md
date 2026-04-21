@@ -111,8 +111,8 @@ Deck URL preview/commit flows also use a short-lived signed snapshot token.
 `shared_service` also supports a normalized roles header,
 `X-Authenticated-Roles` by default, with `editor` and `admin` as the current
 recognized global app roles. If the verified user header is present and no
-roles header is supplied, the app defaults that user to `editor`. `admin`
-implies `editor`.
+roles header is supplied, the caller is authenticated with no global roles.
+`admin` implies `editor`.
 
 Inventory access is now controlled by local inventory memberships:
 
@@ -127,11 +127,10 @@ The current shared-service behavior is:
 - card search routes require a user who can read at least one inventory
 - inventory item/audit reads require membership on that inventory
 - inventory writes require `editor` or `owner` membership on that inventory
-- `POST /inventories` still requires a global `editor` or `admin` user, and the
-  creator is automatically granted `owner`
+- `POST /inventories` lets any authenticated user create an owned inventory
 - `POST /me/bootstrap` creates one personal default inventory named
-  `Collection` for a first-time global `editor` or `admin`, grants `owner`,
-  and returns the same inventory on repeated calls
+  `Collection` for an authenticated user, grants `owner`, and returns the same
+  inventory on repeated calls
 
 For the first live cohort, the recommended deployment shape is:
 
@@ -435,6 +434,8 @@ Operational expectations:
   as `X-Authenticated-User`
 - if you forward app roles, normalize them to global app roles `editor` and
   `admin` in a header such as `X-Authenticated-Roles`
+- if no roles header is forwarded, the user is authenticated with no global
+  roles but can still create and own their own inventories
 - publish the API to browsers through a same-origin reverse proxy, not by
   exposing the backend directly
 - validate snapshot backup and restore before live use
@@ -544,10 +545,11 @@ checkout in multi-repo environments.
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
 - In `shared_service`, non-health routes require an authenticated app user.
-  Inventory reads and writes are scoped by local memberships, while inventory
-  creation still requires a global `editor` or `admin` role. The default
-  verified identity header is `X-Authenticated-User`, and the default roles
-  header is `X-Authenticated-Roles`.
+  Inventory reads and writes are scoped by local memberships. Authenticated
+  users can create inventories they own; global roles are only for elevated app
+  permissions such as admin bypass. The default verified identity header is
+  `X-Authenticated-User`, and the default roles header is
+  `X-Authenticated-Roles`.
 - The recommended first-live deployment is same-origin and proxy-based. The
   backend is not yet intended to be exposed directly to browsers on a separate
   origin.
