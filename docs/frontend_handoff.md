@@ -293,7 +293,9 @@ export default {
   deliberately enabled.
 - `shared_service` uses verified upstream identity headers such as
   `X-Authenticated-User` and optionally `X-Authenticated-Roles`; frontend code
-  should not treat `X-Actor-Id` as the shared-service auth model.
+  should not treat `X-Actor-Id` as the shared-service auth model. A missing
+  roles header means the user has no global roles, not that they are a global
+  `editor`.
 - Shared-service inventory access is now membership-scoped. Frontend code
   should assume:
   - inventory lists are filtered to the current user
@@ -302,6 +304,7 @@ export default {
   - catalog search should not be treated as globally available to every
     authenticated user; it currently requires a user who can read at least one
     inventory, or a global `admin`
+  - authenticated users can create inventories they own
   - first-run shared-service users can call `POST /me/bootstrap` to create a
     personal `Collection` inventory and unlock search/add flows
 

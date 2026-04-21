@@ -165,7 +165,7 @@ class ApiDependenciesTest(unittest.TestCase):
         self.assertEqual("dev-user", context.actor_id)
         self.assertEqual(frozenset({"editor", "admin"}), context.roles)
 
-    def test_shared_service_authenticated_context_uses_authenticated_actor_header(self) -> None:
+    def test_shared_service_authenticated_context_uses_authenticated_actor_header_without_default_roles(self) -> None:
         settings = ApiSettings(
             db_path="test.db",
             runtime_mode="shared_service",
@@ -182,6 +182,50 @@ class ApiDependenciesTest(unittest.TestCase):
         context = get_authenticated_request_context(request)
 
         self.assertEqual("shared-user", context.actor_id)
+        self.assertEqual(frozenset(), context.roles)
+
+    def test_shared_service_authenticated_context_treats_blank_roles_header_as_no_global_roles(self) -> None:
+        settings = ApiSettings(
+            db_path="test.db",
+            runtime_mode="shared_service",
+            auto_migrate=False,
+            host="127.0.0.1",
+            port=8000,
+        )
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
+            state=SimpleNamespace(),
+            headers={
+                "X-Authenticated-User": "shared-user",
+                "X-Authenticated-Roles": "  ",
+            },
+        )
+
+        context = get_authenticated_request_context(request)
+
+        self.assertEqual("shared-user", context.actor_id)
+        self.assertEqual(frozenset(), context.roles)
+
+    def test_shared_service_authenticated_context_can_parse_editor_role_header(self) -> None:
+        settings = ApiSettings(
+            db_path="test.db",
+            runtime_mode="shared_service",
+            auto_migrate=False,
+            host="127.0.0.1",
+            port=8000,
+        )
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
+            state=SimpleNamespace(),
+            headers={
+                "X-Authenticated-User": "shared-editor",
+                "X-Authenticated-Roles": "editor",
+            },
+        )
+
+        context = get_authenticated_request_context(request)
+
+        self.assertEqual("shared-editor", context.actor_id)
         self.assertEqual(frozenset({"editor"}), context.roles)
 
     def test_shared_service_authenticated_context_can_parse_admin_role_header(self) -> None:
@@ -244,7 +288,7 @@ class ApiDependenciesTest(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             get_mutating_request_context(request)
 
-    def test_shared_service_editor_context_allows_default_editor_role(self) -> None:
+    def test_shared_service_editor_context_rejects_missing_roles_header(self) -> None:
         settings = ApiSettings(
             db_path="test.db",
             runtime_mode="shared_service",
@@ -258,9 +302,29 @@ class ApiDependenciesTest(unittest.TestCase):
             headers={"X-Authenticated-User": "shared-user"},
         )
 
+        with self.assertRaises(AuthorizationError):
+            get_editor_request_context(request)
+
+    def test_shared_service_editor_context_allows_explicit_editor_role(self) -> None:
+        settings = ApiSettings(
+            db_path="test.db",
+            runtime_mode="shared_service",
+            auto_migrate=False,
+            host="127.0.0.1",
+            port=8000,
+        )
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
+            state=SimpleNamespace(),
+            headers={
+                "X-Authenticated-User": "shared-editor",
+                "X-Authenticated-Roles": "editor",
+            },
+        )
+
         context = get_editor_request_context(request)
 
-        self.assertEqual("shared-user", context.actor_id)
+        self.assertEqual("shared-editor", context.actor_id)
         self.assertEqual(frozenset({"editor"}), context.roles)
 
     def test_shared_service_editor_context_allows_admin_role(self) -> None:
@@ -295,7 +359,10 @@ class ApiDependenciesTest(unittest.TestCase):
         request = SimpleNamespace(
             app=SimpleNamespace(state=SimpleNamespace(settings=settings)),
             state=SimpleNamespace(),
-            headers={"X-Authenticated-User": "shared-user"},
+            headers={
+                "X-Authenticated-User": "shared-user",
+                "X-Authenticated-Roles": "editor",
+            },
         )
 
         with self.assertRaises(AuthorizationError):

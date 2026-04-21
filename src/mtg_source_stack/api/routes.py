@@ -54,7 +54,6 @@ from ..inventory.service import (
 from .dependencies import (
     ApiSettings,
     RequestContext,
-    get_editor_request_context,
     get_inventory_read_request_context,
     get_inventory_write_request_context,
     get_inventory_scoped_read_request_context,
@@ -340,7 +339,7 @@ def inventories_list(
 def inventories_create(
     payload: InventoryCreateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
     return _serialize(
         create_inventory(
@@ -365,7 +364,7 @@ def inventories_create(
 )
 def bootstrap_default_inventory(
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
     return _serialize(
         ensure_default_inventory(
@@ -404,7 +403,7 @@ def inventories_duplicate(
     source_inventory_slug: str,
     payload: InventoryDuplicateRequest,
     settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_editor_request_context)],
+    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
     require_inventory_write_access(settings, context, inventory_slug=source_inventory_slug)
     return _serialize(

@@ -8,7 +8,7 @@ from typing import Iterable
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
-from ..errors import AuthorizationError, ConflictError, ValidationError
+from ..errors import ConflictError, ValidationError
 from .access import grant_inventory_membership_with_connection, is_global_admin
 from .money import coerce_decimal
 from .normalize import normalize_currency_code, normalize_inventory_slug, normalize_tag_text, slugify_inventory_name, text_or_none
@@ -87,15 +87,8 @@ def _normalize_inventory_metadata(
     )
 
 
-def _require_global_editor_or_admin(actor_roles: Iterable[str]) -> None:
-    roles = set(actor_roles)
-    if "editor" not in roles and "admin" not in roles:
-        raise AuthorizationError("Role 'editor' is required to bootstrap a default inventory.")
-
-
-def _can_bootstrap_default_inventory(actor_roles: Iterable[str]) -> bool:
-    roles = set(actor_roles)
-    return "editor" in roles or "admin" in roles
+def _can_bootstrap_default_inventory(actor_id: str | None) -> bool:
+    return _normalized_visible_actor_id(actor_id) is not None
 
 
 def _default_inventory_slug_root(actor_id: str) -> str:
@@ -258,7 +251,6 @@ def ensure_default_inventory(
     normalized_actor_id = _normalized_visible_actor_id(actor_id)
     if normalized_actor_id is None:
         raise ValidationError("actor_id is required.")
-    _require_global_editor_or_admin(actor_roles)
 
     db_file = require_current_schema(db_path)
     with connect(db_file) as connection:
@@ -438,7 +430,7 @@ def summarize_actor_access(
             actor_id=normalized_actor_id,
         )
     return AccessSummaryResult(
-        can_bootstrap=_can_bootstrap_default_inventory(actor_roles),
+        can_bootstrap=_can_bootstrap_default_inventory(normalized_actor_id),
         has_readable_inventory=bool(visible_inventories),
         visible_inventory_count=len(visible_inventories),
         default_inventory_slug=(default_inventory.slug if default_inventory is not None else None),

@@ -284,8 +284,8 @@ preserve for the first API-backed version of the project.
       previews can stay bounded without losing summary accuracy
 - `POST /inventories/{source_inventory_slug}/duplicate`
   - creates a brand-new target inventory and copies every source row into it
-  - requires the same inventory-creation permission as `POST /inventories`
-  - also requires write access to the source inventory in shared-service mode
+  - requires write access to the source inventory in shared-service mode
+  - grants the caller `owner` membership on the new inventory
   - `target_description` is optional; when omitted, the source inventory
     description is copied to the new inventory
   - source inventory memberships are not copied to the new inventory
@@ -538,8 +538,8 @@ before the generic 500 envelope is returned.
   default header name is `X-Authenticated-Roles`, and it can be overridden with
   `MTG_API_AUTHENTICATED_ROLES_HEADER`.
 - The current recognized global app roles are `editor` and `admin`.
-- If the verified user header is present and the roles header is missing, the
-  API defaults that caller to `editor`.
+- If the verified user header is present and the roles header is missing or
+  blank, the API authenticates that caller with no global roles.
 - `admin` implies `editor`.
 - Shared-service inventory access is also scoped by local inventory
   memberships:
@@ -563,22 +563,21 @@ before the generic 500 envelope is returned.
 - `POST /inventories/{source_inventory_slug}/transfer` requires write access to
   both the source inventory in the path and the target inventory in the
   request body; global `admin` bypasses both checks.
-- `POST /inventories/{source_inventory_slug}/duplicate` requires the same
-  global `editor` or `admin` permission as `POST /inventories`, plus write
-  access to the source inventory; global `admin` bypasses the inventory
-  membership check.
+- `POST /inventories/{source_inventory_slug}/duplicate` requires write access
+  to the source inventory; global `admin` bypasses the inventory membership
+  check. The caller becomes `owner` of the duplicated inventory.
 - In `shared_service`, `POST /imports/csv`, `POST /imports/decklist`, and
   `POST /imports/deck-url` validate write access against every referenced
   inventory before committing any rows. For `POST /imports/deck-url`, the
   target inventory is validated before the backend fetches the remote deck.
-- `POST /inventories` still requires a global `editor` or `admin`, and the
-  creator is automatically granted `owner` membership on the new inventory.
+- `POST /inventories` lets any authenticated caller create an inventory, and
+  the creator is automatically granted `owner` membership on the new inventory.
   Inventory slugs are trimmed before create-time uniqueness checks and
   storage, and inventory path/body slugs are resolved using that same trimmed
   canonical value.
-- `POST /me/bootstrap` requires a global `editor` or `admin`, creates one
-  personal default inventory named `Collection` for that actor, grants
-  `owner`, and returns the same inventory on repeated calls.
+- `POST /me/bootstrap` creates one personal default inventory named
+  `Collection` for an authenticated actor, grants `owner`, and returns the same
+  inventory on repeated calls.
 - `GET /me/access-summary` returns a small onboarding-state summary for the
   authenticated actor:
   - `can_bootstrap`
