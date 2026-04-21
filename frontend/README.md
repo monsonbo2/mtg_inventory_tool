@@ -175,7 +175,7 @@ below through your proxy or API client.
 | `bootstrapped@example.com` | omit | Owns `bootstrapped-collection`; readable inventory count is `1`. |
 | `viewer@example.com` | omit | Viewer on `personal`; reads are allowed, writes are denied. |
 | `writer@example.com` | omit | Editor on `trade-binder`; reads and writes are allowed there. |
-| `no-access@example.com` | omit | No readable inventories; useful for access-needed states. |
+| `no-access@example.com` | omit | No memberships or readable inventories yet; can create a custom first collection. |
 | `admin@example.com` | `admin` | Global admin bypass; all demo inventories are visible. |
 
 Check `GET /me/access-summary` first for each user. Then verify

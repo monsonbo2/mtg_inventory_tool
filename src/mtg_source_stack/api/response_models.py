@@ -164,6 +164,15 @@ class CatalogPrintingLookupRowResponse(CatalogSearchRowResponse):
     is_default_add_choice: bool = Field(description=DEFAULT_ADD_CHOICE_RESPONSE_DESCRIPTION)
 
 
+class CatalogPrintingSummaryResponse(ApiBaseModel):
+    oracle_id: str
+    default_printing: CatalogPrintingLookupRowResponse | None
+    available_languages: list[str] = Field(description=AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION)
+    printings_count: int
+    has_more_printings: bool
+    printings: list[CatalogPrintingLookupRowResponse]
+
+
 class CatalogNameSearchRowResponse(ApiBaseModel):
     oracle_id: str
     name: str

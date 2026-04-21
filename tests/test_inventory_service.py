@@ -61,6 +61,7 @@ from mtg_source_stack.inventory.service import (
     set_quantity,
     set_tags,
     split_row,
+    summarize_card_printings_for_oracle,
     transfer_inventory_items,
     valuation_filtered,
 )
@@ -1666,6 +1667,166 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'missing-oracle'"):
                 list_card_printings_for_oracle(db_path, "missing-oracle")
+
+    def test_summarize_card_printings_for_oracle_returns_quick_add_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number,
+                        lang,
+                        released_at,
+                        finishes_json,
+                        image_uris_json
+                    )
+                    VALUES (?, 'summary-oracle', ?, ?, ?, ?, ?, ?, '["nonfoil","foil"]', ?)
+                    """,
+                    [
+                        (
+                            "summary-en-new",
+                            "Summary Card",
+                            "mkm",
+                            "Murders at Karlov Manor",
+                            "41",
+                            "en",
+                            "2024-02-09",
+                            '{"small":"https://example.test/cards/summary-en-new-small.jpg","normal":"https://example.test/cards/summary-en-new-normal.jpg"}',
+                        ),
+                        (
+                            "summary-ja",
+                            "Summary Card",
+                            "mkm",
+                            "Murders at Karlov Manor",
+                            "42",
+                            "ja",
+                            "2024-03-01",
+                            '{"small":"https://example.test/cards/summary-ja-small.jpg","normal":"https://example.test/cards/summary-ja-normal.jpg"}',
+                        ),
+                        (
+                            "summary-en-old",
+                            "Summary Card",
+                            "woe",
+                            "Wilds of Eldraine",
+                            "12",
+                            "en",
+                            "2023-09-01",
+                            '{"small":"https://example.test/cards/summary-en-old-small.jpg","normal":"https://example.test/cards/summary-en-old-normal.jpg"}',
+                        ),
+                    ],
+                )
+                connection.commit()
+
+            summary = summarize_card_printings_for_oracle(db_path, "summary-oracle")
+
+            self.assertEqual("summary-oracle", summary.oracle_id)
+            self.assertIsNotNone(summary.default_printing)
+            self.assertEqual("summary-en-new", summary.default_printing.scryfall_id)
+            self.assertEqual(["en", "ja"], summary.available_languages)
+            self.assertEqual(3, summary.printings_count)
+            self.assertTrue(summary.has_more_printings)
+            self.assertEqual(["summary-en-new", "summary-en-old"], [row.scryfall_id for row in summary.printings])
+            self.assertEqual([True, False], [row.is_default_add_choice for row in summary.printings])
+
+            with self.assertRaisesRegex(NotFoundError, "No printings found for oracle_id 'missing-oracle'"):
+                summarize_card_printings_for_oracle(db_path, "missing-oracle")
+
+    def test_summarize_card_printings_for_oracle_handles_foreign_only_and_missing_default_choice(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="summary-foreign-ja",
+                oracle_id="summary-foreign-oracle",
+                name="Foreign Summary Card",
+                collector_number="77",
+                lang="ja",
+                released_at="2024-01-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="summary-foreign-de",
+                oracle_id="summary-foreign-oracle",
+                name="Foreign Summary Card",
+                collector_number="78",
+                lang="de",
+                released_at="2023-12-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="summary-foil-only-en",
+                oracle_id="summary-foil-only-oracle",
+                name="Foil Only Summary Card",
+                collector_number="79",
+                lang="en",
+                finishes_json='["foil"]',
+                is_default_add_searchable=1,
+            )
+
+            foreign_summary = summarize_card_printings_for_oracle(db_path, "summary-foreign-oracle")
+            self.assertEqual(["ja", "de"], [row.lang for row in foreign_summary.printings])
+            self.assertEqual(["ja", "de"], foreign_summary.available_languages)
+            self.assertFalse(foreign_summary.has_more_printings)
+            self.assertIsNotNone(foreign_summary.default_printing)
+            self.assertEqual("summary-foreign-ja", foreign_summary.default_printing.scryfall_id)
+
+            foil_only_summary = summarize_card_printings_for_oracle(db_path, "summary-foil-only-oracle")
+            self.assertIsNone(foil_only_summary.default_printing)
+            self.assertEqual(["summary-foil-only-en"], [row.scryfall_id for row in foil_only_summary.printings])
+            self.assertEqual([False], [row.is_default_add_choice for row in foil_only_summary.printings])
+
+    def test_summarize_card_printings_for_oracle_respects_catalog_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="summary-scope-ja",
+                oracle_id="summary-scope-oracle",
+                name="Scoped Summary Card",
+                collector_number="31",
+                lang="ja",
+                released_at="2026-04-01",
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="summary-scope-en-excluded",
+                oracle_id="summary-scope-oracle",
+                name="Scoped Summary Card",
+                collector_number="32",
+                lang="en",
+                released_at="2026-05-01",
+                is_default_add_searchable=0,
+            )
+
+            default_summary = summarize_card_printings_for_oracle(db_path, "summary-scope-oracle")
+            self.assertEqual(["summary-scope-ja"], [row.scryfall_id for row in default_summary.printings])
+            self.assertEqual(["ja"], default_summary.available_languages)
+            self.assertEqual(1, default_summary.printings_count)
+
+            all_summary = summarize_card_printings_for_oracle(
+                db_path,
+                "summary-scope-oracle",
+                scope="all",
+            )
+            self.assertEqual(["summary-scope-en-excluded"], [row.scryfall_id for row in all_summary.printings])
+            self.assertEqual(["en", "ja"], all_summary.available_languages)
+            self.assertEqual(2, all_summary.printings_count)
+            self.assertTrue(all_summary.has_more_printings)
 
     def test_list_card_printings_for_oracle_matches_default_add_policy_and_marks_one_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -31,6 +31,7 @@ from mtg_source_stack.api.response_models import (
     CatalogNameSearchResponse,
     CatalogNameSearchRowResponse,
     CatalogPrintingLookupRowResponse,
+    CatalogPrintingSummaryResponse,
     CatalogSearchRowResponse,
     CsvImportResponse,
     DecklistImportResponse,
@@ -62,6 +63,7 @@ from mtg_source_stack.inventory.service import (
     reconcile_prices,
     search_card_names,
     search_cards,
+    summarize_card_printings_for_oracle,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -232,6 +234,14 @@ class ApiContractTest(RepoSmokeTestCase):
         printing_lookup_payload = {
             **catalog_payload,
             "is_default_add_choice": True,
+        }
+        printing_summary_payload = {
+            "oracle_id": "oracle-lightning-bolt",
+            "default_printing": printing_lookup_payload,
+            "available_languages": ["en", "ja"],
+            "printings_count": 2,
+            "has_more_printings": True,
+            "printings": [printing_lookup_payload],
         }
         catalog_name_payload = {
             "oracle_id": "oracle-lightning-bolt",
@@ -410,6 +420,7 @@ class ApiContractTest(RepoSmokeTestCase):
         owned = OwnedInventoryRowResponse.model_validate(owned_payload)
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
         printing_lookup = CatalogPrintingLookupRowResponse.model_validate(printing_lookup_payload)
+        printing_summary = CatalogPrintingSummaryResponse.model_validate(printing_summary_payload)
         catalog_name = CatalogNameSearchRowResponse.model_validate(catalog_name_payload)
         catalog_name_result = CatalogNameSearchResponse.model_validate(
             {
@@ -436,6 +447,11 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertTrue(printing_lookup.is_default_add_choice)
+        self.assertEqual("oracle-lightning-bolt", printing_summary.oracle_id)
+        self.assertIsNotNone(printing_summary.default_printing)
+        self.assertEqual("card-1", printing_summary.default_printing.scryfall_id)
+        self.assertEqual(2, printing_summary.printings_count)
+        self.assertTrue(printing_summary.has_more_printings)
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
         self.assertEqual(1, catalog_name_result.total_count)
         self.assertFalse(catalog_name_result.has_more)
@@ -633,6 +649,12 @@ class ApiContractTest(RepoSmokeTestCase):
             "default quick-add choice",
             printing_lookup_schema["properties"]["is_default_add_choice"]["description"],
         )
+        printing_summary_schema = CatalogPrintingSummaryResponse.model_json_schema()
+        printing_summary_properties = printing_summary_schema["properties"]
+        self.assertEqual("integer", printing_summary_properties["printings_count"]["type"])
+        self.assertEqual("boolean", printing_summary_properties["has_more_printings"]["type"])
+        self.assertEqual("array", printing_summary_properties["printings"]["type"])
+        self.assertEqual("array", printing_summary_properties["available_languages"]["type"])
 
         catalog_name_schema = CatalogNameSearchRowResponse.model_json_schema()
         catalog_name_properties = catalog_name_schema["properties"]
@@ -948,6 +970,7 @@ class ApiContractTest(RepoSmokeTestCase):
             lambda: search_card_names(Path("var/db/not-used.db"), query="", limit=10),
             lambda: search_card_names(Path("var/db/not-used.db"), query="bolt", scope="weird", limit=10),
             lambda: list_card_printings_for_oracle(Path("var/db/not-used.db"), "oracle-1", scope="weird"),
+            lambda: summarize_card_printings_for_oracle(Path("var/db/not-used.db"), "oracle-1", scope="weird"),
             lambda: list_owned_filtered(
                 Path("var/db/not-used.db"),
                 inventory_slug="personal",

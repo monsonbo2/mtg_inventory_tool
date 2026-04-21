@@ -122,6 +122,15 @@ export interface CatalogPrintingLookupRow extends CatalogSearchRow {
   is_default_add_choice: boolean;
 }
 
+export interface CatalogPrintingSummaryResponse {
+  oracle_id: string;
+  default_printing: CatalogPrintingLookupRow | null;
+  available_languages: LanguageCode[];
+  printings_count: number;
+  has_more_printings: boolean;
+  printings: CatalogPrintingLookupRow[];
+}
+
 export interface CatalogNameSearchRow {
   oracle_id: string;
   name: string;
@@ -441,6 +450,10 @@ export interface SearchCardNamesParams {
 
 export interface ListCardPrintingsParams {
   lang?: LanguageCode | "all";
+  scope?: CatalogScope;
+}
+
+export interface CardPrintingSummaryParams {
   scope?: CatalogScope;
 }
 

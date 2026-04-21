@@ -120,6 +120,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/cards/search", "get"),
                 ("/cards/search/names", "get"),
                 ("/cards/oracle/{oracle_id}/printings", "get"),
+                ("/cards/oracle/{oracle_id}/printings/summary", "get"),
                 ("/inventories", "post"),
                 ("/inventories/{source_inventory_slug}/duplicate", "post"),
                 ("/inventories/{inventory_slug}/export.csv", "get"),
@@ -257,6 +258,26 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 ["default", "all"],
                 printings_parameters["scope"]["schema"]["enum"],
+            )
+            summary_schema = spec["paths"]["/cards/oracle/{oracle_id}/printings/summary"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            summary_schema_name = self._schema_name_from_ref(summary_schema["$ref"])
+            self.assertEqual("CatalogPrintingSummaryResponse", summary_schema_name)
+            summary_properties = components[summary_schema_name]["properties"]
+            self.assertEqual(
+                "CatalogPrintingLookupRowResponse",
+                self._schema_name_from_ref(summary_properties["default_printing"]["anyOf"][0]["$ref"]),
+            )
+            self.assertEqual("boolean", summary_properties["has_more_printings"]["type"])
+            self.assertEqual("integer", summary_properties["printings_count"]["type"])
+            self.assertEqual("array", summary_properties["available_languages"]["type"])
+            self.assertEqual(
+                ["default", "all"],
+                {
+                    parameter["name"]: parameter
+                    for parameter in spec["paths"]["/cards/oracle/{oracle_id}/printings/summary"]["get"]["parameters"]
+                }["scope"]["schema"]["enum"],
             )
 
             owned_schema = spec["paths"]["/inventories/{inventory_slug}/items"]["get"]["responses"]["200"][
@@ -2594,6 +2615,29 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual([True], [row["is_default_add_choice"] for row in japanese_printings.json()])
 
                 missing = client.get("/cards/oracle/missing-oracle/printings")
+                self.assertEqual(404, missing.status_code)
+                self.assertEqual("not_found", missing.json()["error"]["code"])
+
+    def test_demo_api_exposes_oracle_printings_summary_for_quick_add(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_oracle_printings(db_path)
+
+                summary = client.get("/cards/oracle/api-oracle-lookup/printings/summary")
+                self.assertEqual(200, summary.status_code)
+                self.assertEqual("api-oracle-lookup", summary.json()["oracle_id"])
+                self.assertEqual("api-printing-en-new", summary.json()["default_printing"]["scryfall_id"])
+                self.assertEqual(["en", "ja"], summary.json()["available_languages"])
+                self.assertEqual(3, summary.json()["printings_count"])
+                self.assertTrue(summary.json()["has_more_printings"])
+                self.assertEqual(
+                    ["api-printing-en-new", "api-printing-en-old"],
+                    [row["scryfall_id"] for row in summary.json()["printings"]],
+                )
+                self.assertEqual([True, False], [row["is_default_add_choice"] for row in summary.json()["printings"]])
+
+                missing = client.get("/cards/oracle/missing-oracle/printings/summary")
                 self.assertEqual(404, missing.status_code)
                 self.assertEqual("not_found", missing.json()["error"]["code"])
 

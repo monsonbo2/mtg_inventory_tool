@@ -4,7 +4,11 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
-import { listCardPrintings, searchCardNames } from "../api";
+import {
+  getCardPrintingSummary,
+  listCardPrintings,
+  searchCardNames,
+} from "../api";
 import {
   createSearchCardGroups,
   type SearchCardGroup,
@@ -513,14 +517,18 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       return inFlightRequest;
     }
 
-    const params = {
-      lang: mode === "all" ? ("all" as const) : undefined,
-      scope: getScopeQueryValue(scope),
-    };
+    const scopeQuery = getScopeQueryValue(scope);
     const request =
-      mode === "all" || scope === "all"
-        ? listCardPrintings(group.oracleId, params)
-        : listCardPrintings(group.oracleId);
+      mode === "all"
+        ? listCardPrintings(
+            group.oracleId,
+            scopeQuery ? { lang: "all", scope: scopeQuery } : { lang: "all" },
+          )
+        : (
+            scopeQuery
+              ? getCardPrintingSummary(group.oracleId, { scope: scopeQuery })
+              : getCardPrintingSummary(group.oracleId)
+          ).then((summary) => summary.printings);
 
     const trackedRequest = request
       .then((nextPrintings) => {
