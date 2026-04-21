@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-import importlib.util
 import io
 import json
 import socket
@@ -23,15 +22,15 @@ from mtg_source_stack.inventory.service import (
     grant_inventory_membership,
     import_deck_url,
 )
-
-
-FASTAPI_TESTING_AVAILABLE = (
-    importlib.util.find_spec("fastapi") is not None
-    and importlib.util.find_spec("httpx") is not None
-    and importlib.util.find_spec("uvicorn") is not None
+from tests.optional_dependencies import (
+    WEB_TEST_SKIP_REASON,
+    web_test_dependencies_available,
 )
 
-if FASTAPI_TESTING_AVAILABLE:
+
+WEB_TESTING_AVAILABLE = web_test_dependencies_available()
+
+if WEB_TESTING_AVAILABLE:
     import httpx
     import uvicorn
 
@@ -89,8 +88,8 @@ def _live_test_server(app):
 
 
 @unittest.skipUnless(
-    FASTAPI_TESTING_AVAILABLE,
-    "fastapi/httpx/uvicorn are not installed in this environment; API shell tests are skipped.",
+    WEB_TESTING_AVAILABLE,
+    WEB_TEST_SKIP_REASON,
 )
 class WebApiSchemaTest(unittest.TestCase):
     def _schema_name_from_ref(self, ref: str) -> str:
@@ -752,8 +751,8 @@ class WebApiSchemaTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    FASTAPI_TESTING_AVAILABLE,
-    "fastapi/httpx/uvicorn are not installed in this environment; API shell tests are skipped.",
+    WEB_TESTING_AVAILABLE,
+    WEB_TEST_SKIP_REASON,
 )
 class WebApiImportHelperTest(unittest.TestCase):
     def test_parse_resolutions_json_form_accepts_array_of_objects(self) -> None:
@@ -834,8 +833,8 @@ class WebApiImportHelperTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    FASTAPI_TESTING_AVAILABLE and LOCALHOST_SERVER_TESTING_AVAILABLE,
-    "fastapi/httpx/uvicorn or localhost socket access are unavailable; live API shell tests are skipped.",
+    WEB_TESTING_AVAILABLE and LOCALHOST_SERVER_TESTING_AVAILABLE,
+    f"{WEB_TEST_SKIP_REASON} Localhost socket access is also required for live API shell tests.",
 )
 class WebApiTest(unittest.TestCase):
     @contextmanager

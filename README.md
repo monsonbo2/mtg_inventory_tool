@@ -466,15 +466,26 @@ mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
 
 ## Testing
 
-With the virtualenv active, run the full local test suite:
+Run the base backend suite after a normal `pip install -e .` install:
 
 ```bash
 ./scripts/test_backend.sh
 ```
 
-That wrapper forces this checkout's `src/` tree onto `PYTHONPATH` before
-running `unittest`, which avoids accidentally importing a different editable
-checkout in multi-repo environments.
+That wrapper forces this checkout's `src/` tree onto `PYTHONPATH`, then runs the
+core service, importer, CLI, and database tests. Optional API/web tests skip
+cleanly from a base environment.
+
+Run the API/web test surface only after installing the web extra:
+
+```bash
+pip install -e '.[web]'
+./scripts/test_backend_web.sh
+```
+
+The web test wrapper covers OpenAPI parity, FastAPI app behavior, and route
+integration tests. It fails fast with an install hint if the optional web
+dependencies are missing.
 
 ## Repo Map
 

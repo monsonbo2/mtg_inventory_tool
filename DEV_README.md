@@ -259,31 +259,36 @@ Multipart caveat:
 
 Python command note:
 
-- prefer the repo-local `.venv/bin/python` for backend commands and tests, or
-  activate `.venv` first
-- using system `python3` can miss optional web/test deps that are installed only
-  in the repo virtualenv
-- if a unittest import fails for modules like `pydantic`, `fastapi`, or
-  `uvicorn`, confirm you are using `.venv/bin/python`
+- `./scripts/test_backend.sh` is intentionally safe for a base `pip install -e .`
+  environment and does not require the optional web stack.
+- API/web tests require the `web` extra. Activate a web-capable environment or
+  install it with `pip install -e '.[web]'` before running
+  `./scripts/test_backend_web.sh`.
+- Both backend wrappers force this checkout's `src/` tree onto `PYTHONPATH` so
+  multi-checkout editable installs do not leak into test runs.
 
-Backend:
+Backend base:
 
 ```bash
 ./scripts/test_backend.sh
-PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -q
 ```
+
+Backend API/web:
+
+```bash
+./scripts/test_backend_web.sh
+```
+
+Broad unittest discovery is still safe in a base environment because web/API
+modules skip cleanly when optional dependencies are absent. Prefer the explicit
+wrappers for routine validation because they make the intended dependency layer
+obvious.
 
 Frontend:
 
 ```bash
 cd frontend && npm test
 cd frontend && npm run build
-```
-
-Localhost API test layer:
-
-```bash
-PYTHONPATH=src .venv/bin/python -m unittest tests.test_web_api tests.test_api_app -q
 ```
 
 Importer benchmark:
@@ -338,17 +343,24 @@ Backend default:
 ./scripts/test_backend.sh
 ```
 
+Backend API/web:
+
+```bash
+./scripts/test_backend_web.sh
+```
+
 Useful targeted commands:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -q
-PYTHONPATH=src .venv/bin/python -m unittest tests.test_web_api tests.test_api_app -q
+PYTHONPATH=src .venv/bin/python -m unittest tests.test_api_contract tests.test_api_app tests.test_web_api -q
 cd frontend && npm test
 cd frontend && npm run build
 ```
 
-OpenAPI parity lives in `tests/test_api_contract.py`. If API behavior changes,
-expect that suite to fail until `contracts/openapi.json` is refreshed.
+OpenAPI parity lives in `tests/test_api_contract.py` and is part of the API/web
+test surface. If API behavior changes, expect `./scripts/test_backend_web.sh` to
+fail until `contracts/openapi.json` is refreshed.
 
 ## Refreshing OpenAPI
 

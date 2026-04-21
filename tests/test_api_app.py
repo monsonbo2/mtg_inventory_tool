@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-import importlib.util
 import socket
 import tempfile
 import threading
@@ -13,15 +12,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mtg_source_stack.api.app import build_arg_parser, main, settings_from_cli_args
-
-
-FASTAPI_TESTING_AVAILABLE = (
-    importlib.util.find_spec("fastapi") is not None
-    and importlib.util.find_spec("httpx") is not None
-    and importlib.util.find_spec("uvicorn") is not None
+from tests.optional_dependencies import (
+    WEB_TEST_SKIP_REASON,
+    web_test_dependencies_available,
 )
 
-if FASTAPI_TESTING_AVAILABLE:
+
+WEB_TESTING_AVAILABLE = web_test_dependencies_available()
+
+if WEB_TESTING_AVAILABLE:
     import httpx
     from fastapi import status
     import uvicorn
@@ -74,8 +73,8 @@ def _live_test_server(app):
 
 
 @unittest.skipUnless(
-    FASTAPI_TESTING_AVAILABLE and LOCALHOST_SERVER_TESTING_AVAILABLE,
-    "fastapi/httpx/uvicorn or localhost socket access are unavailable; live API app tests are skipped.",
+    WEB_TESTING_AVAILABLE and LOCALHOST_SERVER_TESTING_AVAILABLE,
+    f"{WEB_TEST_SKIP_REASON} Localhost socket access is also required.",
 )
 class ApiAppTest(unittest.TestCase):
     @contextmanager
@@ -333,6 +332,9 @@ class ApiCliSettingsTest(unittest.TestCase):
         self.assertEqual("10.0.0.1", settings.forwarded_allow_ips)
 
     def test_main_passes_explicit_proxy_settings_to_uvicorn(self) -> None:
+        if not WEB_TESTING_AVAILABLE:
+            self.skipTest(WEB_TEST_SKIP_REASON)
+
         with patch("mtg_source_stack.api.app.create_app", return_value=object()) as mock_create_app:
             with patch("uvicorn.run") as mock_run:
                 main(

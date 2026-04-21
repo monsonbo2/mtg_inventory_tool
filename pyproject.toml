@@ -4,14 +4,14 @@ version = "0.1.0"
 description = "Local-first Magic: The Gathering source stack and personal inventory CLI"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "python-multipart>=0.0.20,<1",
-]
+dependencies = []
 
 [project.optional-dependencies]
 web = [
     "fastapi>=0.115,<1",
     "httpx>=0.27,<1",
+    "pydantic>=2,<3",
+    "python-multipart>=0.0.20,<1",
     "uvicorn>=0.30,<1",
 ]
 
