@@ -48,6 +48,7 @@ from ..inventory.service import (
     set_printing,
     set_quantity,
     set_tags,
+    summarize_card_printings_for_oracle,
     summarize_actor_access,
     transfer_inventory_items,
 )
@@ -85,6 +86,7 @@ from .response_models import (
     CatalogNameSearchResponse,
     CatalogNameSearchRowResponse,
     CatalogPrintingLookupRowResponse,
+    CatalogPrintingSummaryResponse,
     CatalogSearchRowResponse,
     CsvImportResponse,
     DecklistImportResponse,
@@ -628,6 +630,29 @@ def card_printings_lookup(
         scope=scope,
     )
     return _serialize(rows)
+
+
+@router.get(
+    "/cards/oracle/{oracle_id}/printings/summary",
+    response_model=CatalogPrintingSummaryResponse,
+    responses=_error_responses(401, 403, 400, 404, 503, 500),
+)
+def card_printings_summary(
+    oracle_id: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
+    scope: Annotated[
+        str | None,
+        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
+    ] = None,
+) -> Any:
+    return _serialize(
+        summarize_card_printings_for_oracle(
+            settings.db_path,
+            oracle_id=oracle_id,
+            scope=scope,
+        )
+    )
 
 
 @router.get(

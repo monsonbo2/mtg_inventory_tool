@@ -31,7 +31,13 @@ from .query_catalog import (
     catalog_scope_filter_sql,
     catalog_search_tokens,
 )
-from .response_models import CatalogNameSearchResult, CatalogNameSearchRow, CatalogPrintingLookupRow, CatalogSearchRow
+from .response_models import (
+    CatalogNameSearchResult,
+    CatalogNameSearchRow,
+    CatalogPrintingLookupRow,
+    CatalogPrintingSummaryResult,
+    CatalogSearchRow,
+)
 
 
 _LANGUAGE_ORDER = {code: index for index, code in enumerate(CANONICAL_LANGUAGE_CODES)}
@@ -73,6 +79,22 @@ def _catalog_printing_lookup_row_from_payload(payload: Mapping[str, Any]) -> Cat
         **_catalog_search_row_kwargs_from_payload(payload),
         is_default_add_choice=bool(dict(payload).get("is_default_add_choice", False)),
     )
+
+
+def _catalog_printing_lookup_rows_from_ranked_payloads(
+    rows: list[sqlite3.Row],
+    *,
+    default_choice_id: str | None,
+) -> list[CatalogPrintingLookupRow]:
+    return [
+        _catalog_printing_lookup_row_from_payload(
+            {
+                **dict(row),
+                "is_default_add_choice": str(row["scryfall_id"]) == default_choice_id,
+            }
+        )
+        for row in rows
+    ]
 
 
 def _language_sort_key(code: str) -> tuple[int, int, str]:
@@ -221,6 +243,43 @@ def _default_add_choice_row_for_printings(
     if not normal_rows:
         return None
     return _rank_oracle_default_printing_rows(normal_rows, prefer_english=prefer_english)[0]
+
+
+def _load_oracle_printing_rows(
+    connection: sqlite3.Connection,
+    *,
+    oracle_id_text: str,
+    scope_filter_sql: str,
+) -> list[sqlite3.Row]:
+    return connection.execute(
+        f"""
+        SELECT
+            scryfall_id,
+            name,
+            set_code,
+            set_name,
+            collector_number,
+            lang,
+            rarity,
+            finishes_json,
+            tcgplayer_product_id,
+            image_uris_json,
+            released_at,
+            set_type,
+            booster,
+            promo_types_json
+        FROM mtg_cards
+        WHERE oracle_id = ?
+          AND {scope_filter_sql}
+        ORDER BY
+            COALESCE(released_at, '') DESC,
+            CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
+            set_code,
+            collector_number,
+            scryfall_id
+        """,
+        (oracle_id_text,),
+    ).fetchall()
 
 
 def search_cards(
@@ -580,35 +639,11 @@ def list_card_printings_for_oracle(
     scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
     require_current_schema(db_path)
     with connect(db_path) as connection:
-        rows = connection.execute(
-            f"""
-            SELECT
-                scryfall_id,
-                name,
-                set_code,
-                set_name,
-                collector_number,
-                lang,
-                rarity,
-                finishes_json,
-                tcgplayer_product_id,
-                image_uris_json,
-                released_at,
-                set_type,
-                booster,
-                promo_types_json
-            FROM mtg_cards
-            WHERE oracle_id = ?
-              AND {scope_filter_sql}
-            ORDER BY
-                COALESCE(released_at, '') DESC,
-                CASE WHEN LOWER(lang) = 'en' THEN 0 ELSE 1 END,
-                set_code,
-                collector_number,
-                scryfall_id
-            """,
-            (oracle_id_text,),
-        ).fetchall()
+        rows = _load_oracle_printing_rows(
+            connection,
+            oracle_id_text=oracle_id_text,
+            scope_filter_sql=scope_filter_sql,
+        )
     if not rows:
         raise NotFoundError(f"No printings found for oracle_id '{oracle_id_text}'.")
 
@@ -631,15 +666,58 @@ def list_card_printings_for_oracle(
     )
     default_choice_id = str(default_choice["scryfall_id"]) if default_choice is not None else None
 
-    return [
-        _catalog_printing_lookup_row_from_payload(
-            {
-                **dict(row),
-                "is_default_add_choice": str(row["scryfall_id"]) == default_choice_id,
-            }
+    return _catalog_printing_lookup_rows_from_ranked_payloads(
+        ranked_rows,
+        default_choice_id=default_choice_id,
+    )
+
+
+def summarize_card_printings_for_oracle(
+    db_path: str | Path,
+    oracle_id: str,
+    *,
+    scope: str | None = None,
+) -> CatalogPrintingSummaryResult:
+    oracle_id_text = text_or_none(oracle_id)
+    if oracle_id_text is None:
+        raise ValidationError("oracle_id is required.")
+    normalized_scope = normalize_catalog_search_scope(scope)
+    scope_filter_sql = catalog_scope_filter_sql(normalized_scope)
+    require_current_schema(db_path)
+    with connect(db_path) as connection:
+        rows = _load_oracle_printing_rows(
+            connection,
+            oracle_id_text=oracle_id_text,
+            scope_filter_sql=scope_filter_sql,
         )
-        for row in ranked_rows
-    ]
+    if not rows:
+        raise NotFoundError(f"No printings found for oracle_id '{oracle_id_text}'.")
+
+    english_rows = [row for row in rows if normalize_language_code(row["lang"]) == "en"]
+    primary_rows = english_rows or rows
+    ranked_primary_rows = _rank_oracle_default_printing_rows(
+        primary_rows,
+        prefer_english=True,
+    )
+    default_choice = _default_add_choice_row_for_printings(
+        primary_rows,
+        prefer_english=True,
+    )
+    default_choice_id = str(default_choice["scryfall_id"]) if default_choice is not None else None
+    printings = _catalog_printing_lookup_rows_from_ranked_payloads(
+        ranked_primary_rows,
+        default_choice_id=default_choice_id,
+    )
+    default_printing = next((row for row in printings if row.is_default_add_choice), None)
+
+    return CatalogPrintingSummaryResult(
+        oracle_id=oracle_id_text,
+        default_printing=default_printing,
+        available_languages=_sorted_available_languages([row["lang"] for row in rows]),
+        printings_count=len(rows),
+        has_more_printings=len(rows) > len(primary_rows),
+        printings=printings,
+    )
 
 
 def list_default_card_name_candidate_rows(

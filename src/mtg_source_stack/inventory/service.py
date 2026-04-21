@@ -29,7 +29,13 @@ from .analysis import (
     valuation,
     valuation_filtered,
 )
-from .catalog import list_card_printings_for_oracle, resolve_card_row, search_card_names, search_cards
+from .catalog import (
+    list_card_printings_for_oracle,
+    resolve_card_row,
+    search_card_names,
+    search_cards,
+    summarize_card_printings_for_oracle,
+)
 from .csv_import import import_csv, import_csv_stream
 from .decklist_import import import_decklist_text
 from .deck_url_import import import_deck_url

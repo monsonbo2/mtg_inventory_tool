@@ -85,6 +85,16 @@ class CatalogPrintingLookupRow(CatalogSearchRow):
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogPrintingSummaryResult(ResponseModel):
+    oracle_id: str
+    default_printing: CatalogPrintingLookupRow | None
+    available_languages: list[str]
+    printings_count: int
+    has_more_printings: bool
+    printings: list[CatalogPrintingLookupRow]
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogNameSearchRow(ResponseModel):
     oracle_id: str
     name: str

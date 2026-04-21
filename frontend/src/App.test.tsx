@@ -8,6 +8,7 @@ import type {
   CatalogNameSearchResult,
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
+  CatalogPrintingSummaryResponse,
   InventoryAuditEvent,
   InventoryCreateResponse,
   InventorySummary,
@@ -23,6 +24,7 @@ vi.mock("./api", async () => {
     listInventoryAudit: vi.fn(),
     searchCardNames: vi.fn(),
     listCardPrintings: vi.fn(),
+    getCardPrintingSummary: vi.fn(),
     addInventoryItem: vi.fn(),
     bulkMutateInventoryItems: vi.fn(),
     createInventory: vi.fn(),
@@ -42,6 +44,7 @@ import {
   importCsv,
   importDeckUrl,
   importDecklist,
+  getCardPrintingSummary,
   listCardPrintings,
   listInventories,
   listInventoryItems,
@@ -103,6 +106,27 @@ describe("App", () => {
       image_uri_small: null,
       image_uri_normal: null,
       is_default_add_choice: false,
+      ...overrides,
+    };
+  }
+
+  function buildPrintingSummary(
+    printings: CatalogPrintingLookupRow[] = [],
+    overrides: Partial<CatalogPrintingSummaryResponse> = {},
+  ): CatalogPrintingSummaryResponse {
+    const defaultPrinting =
+      printings.find((printing) => printing.is_default_add_choice) || null;
+    const availableLanguages = Array.from(
+      new Set(printings.map((printing) => printing.lang)),
+    );
+
+    return {
+      oracle_id: "bolt-oracle",
+      default_printing: defaultPrinting,
+      available_languages: availableLanguages.length ? availableLanguages : ["en"],
+      printings_count: printings.length,
+      has_more_printings: false,
+      printings,
       ...overrides,
     };
   }
@@ -257,6 +281,7 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
@@ -293,6 +318,7 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
@@ -1046,25 +1072,27 @@ describe("App", () => {
       }
       return buildNameSearchResult();
     });
-    vi.mocked(listCardPrintings).mockResolvedValue([
-      buildSearchRow({
-        scryfall_id: "bolt-alpha",
-        name: "Lightning Bolt",
-        set_code: "lea",
-        set_name: "Limited Edition Alpha",
-        collector_number: "161",
-        finishes: ["normal"],
-      }),
-      buildSearchRow({
-        scryfall_id: "bolt-m11",
-        name: "Lightning Bolt",
-        set_code: "m11",
-        set_name: "Magic 2011",
-        collector_number: "146",
-        finishes: ["normal", "foil"],
-        is_default_add_choice: true,
-      }),
-    ]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(
+      buildPrintingSummary([
+        buildSearchRow({
+          scryfall_id: "bolt-alpha",
+          name: "Lightning Bolt",
+          set_code: "lea",
+          set_name: "Limited Edition Alpha",
+          collector_number: "161",
+          finishes: ["normal"],
+        }),
+        buildSearchRow({
+          scryfall_id: "bolt-m11",
+          name: "Lightning Bolt",
+          set_code: "m11",
+          set_name: "Magic 2011",
+          collector_number: "146",
+          finishes: ["normal", "foil"],
+          is_default_add_choice: true,
+        }),
+      ]),
+    );
     vi.mocked(addInventoryItem).mockResolvedValue({ card_name: "Lightning Bolt" } as any);
 
     render(<App />);
@@ -1082,7 +1110,7 @@ describe("App", () => {
     const finishSelect = within(boltCard!).getByRole("combobox", { name: "Finish" });
 
     await waitFor(() => {
-      expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle");
+      expect(getCardPrintingSummary).toHaveBeenCalledWith("bolt-oracle");
     });
     await waitFor(() => {
       expect(printingSelect).toHaveValue("");
@@ -1138,25 +1166,27 @@ describe("App", () => {
       }
       return buildNameSearchResult();
     });
-    vi.mocked(listCardPrintings).mockResolvedValue([
-      buildSearchRow({
-        scryfall_id: "bolt-alpha",
-        name: "Lightning Bolt",
-        set_code: "lea",
-        set_name: "Limited Edition Alpha",
-        collector_number: "161",
-        finishes: ["normal"],
-      }),
-      buildSearchRow({
-        scryfall_id: "bolt-m11",
-        name: "Lightning Bolt",
-        set_code: "m11",
-        set_name: "Magic 2011",
-        collector_number: "146",
-        finishes: ["normal", "foil"],
-        is_default_add_choice: true,
-      }),
-    ]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(
+      buildPrintingSummary([
+        buildSearchRow({
+          scryfall_id: "bolt-alpha",
+          name: "Lightning Bolt",
+          set_code: "lea",
+          set_name: "Limited Edition Alpha",
+          collector_number: "161",
+          finishes: ["normal"],
+        }),
+        buildSearchRow({
+          scryfall_id: "bolt-m11",
+          name: "Lightning Bolt",
+          set_code: "m11",
+          set_name: "Magic 2011",
+          collector_number: "146",
+          finishes: ["normal", "foil"],
+          is_default_add_choice: true,
+        }),
+      ]),
+    );
     vi.mocked(addInventoryItem).mockResolvedValue({ card_name: "Lightning Bolt" } as any);
 
     render(<App />);
@@ -1208,37 +1238,31 @@ describe("App", () => {
       }
       return buildNameSearchResult();
     });
-    vi.mocked(listCardPrintings).mockImplementation(async (oracleId, params) => {
+    vi.mocked(getCardPrintingSummary).mockImplementation(async (oracleId) => {
       if (oracleId === "bolt-oracle") {
-        if (params?.lang === "all") {
-          return [
-            buildSearchRow({
-              scryfall_id: "bolt-alpha",
-              name: "Lightning Bolt",
-              set_code: "lea",
-              set_name: "Limited Edition Alpha",
-              collector_number: "161",
-              finishes: ["normal"],
-            }),
-            buildSearchRow({
-              scryfall_id: "bolt-m11",
-              name: "Lightning Bolt",
-              set_code: "m11",
-              set_name: "Magic 2011",
-              collector_number: "146",
-              finishes: ["normal", "foil"],
-            }),
-            buildSearchRow({
-              scryfall_id: "bolt-sta-ja",
-              name: "Lightning Bolt",
-              set_code: "sta",
-              set_name: "Strixhaven Mystical Archive",
-              collector_number: "39",
-              lang: "ja",
-              finishes: ["normal"],
-            }),
-          ];
-        }
+        return buildPrintingSummary([
+          buildSearchRow({
+            scryfall_id: "bolt-alpha",
+            name: "Lightning Bolt",
+            set_code: "lea",
+            set_name: "Limited Edition Alpha",
+            collector_number: "161",
+            finishes: ["normal"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-m11",
+            name: "Lightning Bolt",
+            set_code: "m11",
+            set_name: "Magic 2011",
+            collector_number: "146",
+            finishes: ["normal", "foil"],
+          }),
+        ]);
+      }
+      return buildPrintingSummary([], { oracle_id: oracleId });
+    });
+    vi.mocked(listCardPrintings).mockImplementation(async (oracleId, params) => {
+      if (oracleId === "bolt-oracle" && params?.lang === "all") {
         return [
           buildSearchRow({
             scryfall_id: "bolt-alpha",
@@ -1255,6 +1279,15 @@ describe("App", () => {
             set_name: "Magic 2011",
             collector_number: "146",
             finishes: ["normal", "foil"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-sta-ja",
+            name: "Lightning Bolt",
+            set_code: "sta",
+            set_name: "Strixhaven Mystical Archive",
+            collector_number: "39",
+            lang: "ja",
+            finishes: ["normal"],
           }),
         ];
       }
@@ -1279,7 +1312,7 @@ describe("App", () => {
     expect(finishSelect).toBeDisabled();
 
     await waitFor(() => {
-      expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle");
+      expect(getCardPrintingSummary).toHaveBeenCalledWith("bolt-oracle");
     });
     expect(listCardPrintings).not.toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
 

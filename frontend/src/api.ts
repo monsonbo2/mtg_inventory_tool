@@ -3,8 +3,10 @@ import type {
   ApiErrorEnvelope,
   BulkInventoryItemMutationRequest,
   BulkInventoryItemMutationResponse,
+  CardPrintingSummaryParams,
   CatalogNameSearchResult,
   CatalogPrintingLookupRow,
+  CatalogPrintingSummaryResponse,
   CatalogSearchRow,
   CsvImportRequest,
   CsvImportResponse,
@@ -367,6 +369,18 @@ export async function listCardPrintings(
     `/cards/oracle/${encodeURIComponent(oracleId)}/printings`,
     {
       query: { lang: params.lang, scope: params.scope },
+    },
+  );
+}
+
+export async function getCardPrintingSummary(
+  oracleId: string,
+  params: CardPrintingSummaryParams = {},
+) {
+  return requestJson<CatalogPrintingSummaryResponse>(
+    `/cards/oracle/${encodeURIComponent(oracleId)}/printings/summary`,
+    {
+      query: { scope: params.scope },
     },
   );
 }

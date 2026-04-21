@@ -874,6 +874,58 @@
         "title": "CatalogPrintingLookupRowResponse",
         "type": "object"
       },
+      "CatalogPrintingSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "available_languages": {
+            "description": "Catalog language codes available for the matched card. Common values include: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Languages",
+            "type": "array"
+          },
+          "default_printing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogPrintingLookupRowResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "has_more_printings": {
+            "title": "Has More Printings",
+            "type": "boolean"
+          },
+          "oracle_id": {
+            "title": "Oracle Id",
+            "type": "string"
+          },
+          "printings": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogPrintingLookupRowResponse"
+            },
+            "title": "Printings",
+            "type": "array"
+          },
+          "printings_count": {
+            "title": "Printings Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "oracle_id",
+          "default_printing",
+          "available_languages",
+          "printings_count",
+          "has_more_printings",
+          "printings"
+        ],
+        "title": "CatalogPrintingSummaryResponse",
+        "type": "object"
+      },
       "CatalogSearchRowResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5143,6 +5195,117 @@
           }
         },
         "summary": "Card Printings Lookup"
+      }
+    },
+    "/cards/oracle/{oracle_id}/printings/summary": {
+      "get": {
+        "operationId": "card_printings_summary_cards_oracle__oracle_id__printings_summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "oracle_id",
+            "required": true,
+            "schema": {
+              "title": "Oracle Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows.",
+              "enum": [
+                "default",
+                "all"
+              ],
+              "title": "Scope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPrintingSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Card Printings Summary"
       }
     },
     "/cards/search": {

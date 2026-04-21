@@ -7,66 +7,51 @@ Feature / screen:
 - local-app first-run onboarding
 - card search quick-add printing resolution
 
-Current blocker:
+Current status after rescope:
 
-- The repo is drifting toward a local-app setup, but the backend-supported
-  first-run path is still framed mainly as a shared-service bootstrap flow.
-  The frontend can create inventories manually today, but there is no clearly
-  supported, idempotent local-first way to say "ensure this local install has a
-  primary collection and open it".
-- In quick-add search, the frontend wants to keep the printing picker
-  unselected while still using the backend's default add choice if the user
-  clicks Add immediately. To preserve that behavior and still know whether to
-  expose other-language choices, the current UI ends up loading the full
-  all-language printing list eagerly for the active card. That will get
-  noticeably heavier as the app moves from demo data to real local catalogs.
+- The local/shared first-run path is now covered by `GET /me/access-summary`
+  plus idempotent `POST /me/bootstrap`. That part of the original request is
+  treated as satisfied and should not gain another competing bootstrap route.
+- The remaining backend contract need is a lightweight quick-add printing
+  summary so the frontend can get the default add choice, language availability,
+  and primary/preferred printings without using the full all-language printing
+  lookup.
 
 Endpoint involved:
 
-- `POST /me/bootstrap`
+- `GET /me/access-summary`
 - `GET /cards/oracle/{oracle_id}/printings`
+- `GET /cards/oracle/{oracle_id}/printings/summary`
 
 Current behavior:
 
-- `POST /me/bootstrap` is documented as the intended first-run escape hatch for
-  authenticated shared-service users. In local-demo mode, the app still
-  supports ordinary `POST /inventories`, but the local-first semantics of
-  `/me/bootstrap` are not the main documented story.
+- `GET /me/access-summary` is the startup probe for onboarding-state decisions,
+  and `POST /me/bootstrap` creates or returns one default `Collection` for an
+  eligible caller.
 - `GET /cards/oracle/{oracle_id}/printings` returns printing rows and supports
-  `lang` and `scope`. The frontend can request `lang=all`, but that is a
-  detail-heavy response shape when the UI only needs:
-  - the default add choice
-  - whether English is available
-  - whether other languages exist
-  - the smaller initial printing set for the default quick-add path
+  `lang` and `scope`. Omitting `lang` already returns the default primary
+  language subset, and `lang=all` remains the explicit full-browse expansion.
 
 Requested change:
 
-- Clarify and support a deterministic local-first bootstrap contract. Any of
-  these additive options would work:
-  - make `POST /me/bootstrap` explicitly supported and documented for local app
-    startup as an idempotent "ensure my default collection exists" flow
-  - add a dedicated local-safe bootstrap / ensure-default-inventory route
-  - publish stronger contract guidance that local installs should use a
-    different supported bootstrap path instead of inheriting shared-service
-    wording
-- Add a lighter-weight printing lookup mode for quick-add, while preserving the
-  existing full lookup route for explicit printing browsing. Any of these
-  additive shapes would work:
-  - a dedicated default-printing route for an `oracle_id`
-  - additive query params on `/cards/oracle/{oracle_id}/printings` that return
-    only the default / preferred subset first
-  - a summary response that exposes the default add choice plus language
-    availability before the frontend asks for every printing
+- Add a backend/API quick-add printing summary endpoint while preserving the
+  existing full lookup route for explicit printing browsing:
+  - `GET /cards/oracle/{oracle_id}/printings/summary`
+  - return the backend default add choice when one exists
+  - return `available_languages` across all scoped printings
+  - return `printings_count` and `has_more_printings`
+  - return the primary/preferred `printings` subset that is suitable for the
+    quick-add picker
+  - keep full all-language browsing on `GET /cards/oracle/{oracle_id}/printings?lang=all`
 
 Example request JSON:
 
 ```json
-POST /me/bootstrap
+GET /me/access-summary
 ```
 
 ```json
-GET /cards/oracle/{oracle_id}/printings?lang=en
+GET /cards/oracle/{oracle_id}/printings/summary
 ```
 
 Example response JSON:
@@ -92,6 +77,7 @@ Example response JSON:
     "is_default_add_choice": true
   },
   "available_languages": ["en", "ja"],
+  "printings_count": 27,
   "has_more_printings": true,
   "printings": [
     {
@@ -114,13 +100,10 @@ Example response JSON:
 
 Expected error cases:
 
-- `400` validation if a new printing-lookup mode or query-parameter
-  combination is invalid
+- `400` validation if `scope` is invalid
 - `401` / `403` should keep the current shared-service auth behavior where
   applicable
 - `404` when the requested `oracle_id` does not exist
-- local-first bootstrap should be idempotent rather than returning a conflict
-  for an already-initialized install
 
 Compatibility note:
 
