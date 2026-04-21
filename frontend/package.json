@@ -6,6 +6,8 @@
   "scripts": {
     "demo:bootstrap": "bash ./scripts/bootstrap_demo_db.sh",
     "backend:demo": "bash ./scripts/run_demo_backend.sh",
+    "proxy:shared-service": "bash ./scripts/run_shared_service_proxy.sh",
+    "smoke:shared-service-proxy": "bash ./scripts/smoke_shared_service_proxy.sh",
     "dev": "vite",
     "build": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && vite build",
     "preview": "vite preview",

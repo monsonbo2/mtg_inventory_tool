@@ -186,6 +186,45 @@ Fixture checks:
 | `no-access@example.com` | omit | No readable inventories; search should return `403`. |
 | `admin@example.com` | `admin` | Can see all demo inventories through global bypass. |
 
+## Local Proxy Preflight Harness
+
+For local rollout rehearsal, use the committed proxy harness to validate the
+same-origin `/api` topology before involving a real production proxy:
+
+```bash
+cd frontend
+npm run demo:bootstrap -- --force --shared-service-fixtures
+npm run build
+npm run smoke:shared-service-proxy -- --start-backend
+```
+
+The smoke command starts `mtg-web-api` in `shared_service`, runs local proxy
+instances with fixture identities, and checks:
+
+- `/api` path-prefix stripping
+- same-origin frontend asset serving from the built `frontend/dist`
+- removal of client-supplied `X-Authenticated-User`, `X-Authenticated-Roles`,
+  and `X-Actor-Id`
+- proxy-injected fixture identity headers
+- expected visible inventories and search denial for fixture users
+
+For browser validation of one fixture identity:
+
+```bash
+cd frontend
+MTG_API_SNAPSHOT_SIGNING_SECRET="local-shared-service-dev-secret" \
+npm run backend:demo -- --runtime-mode shared_service --no-auto-migrate
+
+npm run build
+npm run proxy:shared-service -- --fixture-preset viewer
+```
+
+Then open `http://127.0.0.1:5174`.
+
+This harness is not production infrastructure. It is a preflight tool for issue
+#44. The future transition to a real reverse proxy or gateway is tracked in
+issue #57.
+
 ## Operational Expectations
 
 - keep the SQLite database on local storage, not a network filesystem
