@@ -44,13 +44,13 @@ Requested change:
     quick-add picker
   - keep full all-language browsing on `GET /cards/oracle/{oracle_id}/printings?lang=all`
 
-Example request JSON:
+Example requests:
 
-```json
+```http
 GET /me/access-summary
 ```
 
-```json
+```http
 GET /cards/oracle/{oracle_id}/printings/summary
 ```
 
@@ -58,13 +58,10 @@ Example response JSON:
 
 ```json
 {
-  "created": false,
-  "inventory": {
-    "inventory_id": 12,
-    "slug": "collection",
-    "display_name": "Collection",
-    "description": null
-  }
+  "can_bootstrap": true,
+  "has_readable_inventory": false,
+  "visible_inventory_count": 0,
+  "default_inventory_slug": null
 }
 ```
 
