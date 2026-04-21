@@ -6,10 +6,19 @@ import json
 from decimal import Decimal
 import sqlite3
 import tempfile
+import unittest
 from pathlib import Path
 from textwrap import dedent
 
 from tests.common import RepoSmokeTestCase
+from tests.optional_dependencies import (
+    WEB_TEST_SKIP_REASON,
+    web_test_dependencies_available,
+)
+
+if not web_test_dependencies_available():
+    raise unittest.SkipTest(WEB_TEST_SKIP_REASON)
+
 from mtg_source_stack.api.app import create_app
 from mtg_source_stack.api.dependencies import ApiSettings
 from mtg_source_stack.api_contract import api_error_payload, api_error_status
