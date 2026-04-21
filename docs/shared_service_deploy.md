@@ -19,6 +19,11 @@ This is the recommended first-live deployment shape for the current backend:
   route `/shared/inventories/{share_token}`. If the frontend calls them through
   the API prefix, the public proxy route is `/api/shared/inventories/{share_token}`
   and must be forwarded without requiring a verified identity header.
+- Share-link management responses expose `public_path` as the browser-facing
+  page path, currently `/shared/inventories/{share_token}`. That path is not a
+  proxy-aware API fetch URL; the frontend page should call the backend JSON
+  route through `/api/shared/inventories/{share_token}` in this deployment
+  shape.
 - CORS is not part of this deployment shape.
 
 ## Reverse Proxy Responsibilities
@@ -134,8 +139,8 @@ Notes:
 - `shared_service` now also requires `MTG_API_SNAPSHOT_SIGNING_SECRET` so
   deck URL preview tokens and public inventory share URLs stay tamper-evident.
 - public inventory share links store only a nonce in the database; the reusable
-  bearer URL is rebuilt from the nonce plus `MTG_API_SNAPSHOT_SIGNING_SECRET`
-  for owner copy-link UX.
+  signed browser share URL is rebuilt from the nonce plus
+  `MTG_API_SNAPSHOT_SIGNING_SECRET` for owner copy-link UX.
 - rotating `MTG_API_SNAPSHOT_SIGNING_SECRET` invalidates in-flight deck URL
   preview tokens and active public inventory share URLs that were signed with
   the previous secret. Owners can copy the current URL again after the service

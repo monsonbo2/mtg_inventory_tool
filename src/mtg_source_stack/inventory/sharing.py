@@ -27,7 +27,10 @@ from .response_models import (
 
 SHARE_TOKEN_NONCE_BYTES = 24
 SHARE_TOKEN_VERSION = "v1"
-PUBLIC_SHARE_PATH_PREFIX = "/shared/inventories"
+# Browser-facing route the frontend should own. In shared-service deployments,
+# that page fetches JSON through the proxied API route
+# `/api/shared/inventories/{share_token}`.
+PUBLIC_SHARE_PAGE_PATH_PREFIX = "/shared/inventories"
 
 
 def _normalize_actor_id(actor_id: str | None) -> str:
@@ -103,7 +106,7 @@ def _parse_share_token(token: str, *, token_secret: str | None) -> tuple[int, st
 
 
 def _public_path(token: str) -> str:
-    return f"{PUBLIC_SHARE_PATH_PREFIX}/{token}"
+    return f"{PUBLIC_SHARE_PAGE_PATH_PREFIX}/{token}"
 
 
 def _status_from_row(

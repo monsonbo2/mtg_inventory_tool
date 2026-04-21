@@ -37,6 +37,15 @@ DEFAULT_ADD_CHOICE_RESPONSE_DESCRIPTION = (
     "True when this printing matches the backend's current default quick-add choice for the same oracle_id. "
     "When omitted-finish quick-add would fail, every row is false."
 )
+SHARE_LINK_TOKEN_RESPONSE_DESCRIPTION = (
+    "Reusable signed share token. Store/copy this only as part of the public share URL; it grants anonymous "
+    "read-only access to this inventory's public share projection until rotated or revoked."
+)
+SHARE_LINK_PUBLIC_PATH_RESPONSE_DESCRIPTION = (
+    "Browser-facing public share page path, for example `/shared/inventories/{share_token}`. "
+    "In shared-service deployments, that page should fetch backend JSON through the proxied API route "
+    "`/api/shared/inventories/{share_token}`; this field is not a proxy-aware API fetch URL."
+)
 
 
 class ApiBaseModel(BaseModel):
@@ -99,7 +108,9 @@ class AccessSummaryResponse(ApiBaseModel):
 class InventoryShareLinkStatusResponse(ApiBaseModel):
     inventory: str
     active: bool
-    public_path: str | None
+    public_path: str | None = Field(
+        description=SHARE_LINK_PUBLIC_PATH_RESPONSE_DESCRIPTION,
+    )
     created_at: str | None
     updated_at: str | None
     revoked_at: str | None
@@ -107,8 +118,8 @@ class InventoryShareLinkStatusResponse(ApiBaseModel):
 
 class InventoryShareLinkTokenResponse(ApiBaseModel):
     inventory: str
-    token: str
-    public_path: str
+    token: str = Field(description=SHARE_LINK_TOKEN_RESPONSE_DESCRIPTION)
+    public_path: str = Field(description=SHARE_LINK_PUBLIC_PATH_RESPONSE_DESCRIPTION)
     active: bool
     created_at: str
     updated_at: str

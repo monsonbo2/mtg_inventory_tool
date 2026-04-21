@@ -2941,6 +2941,7 @@
                 "type": "null"
               }
             ],
+            "description": "Browser-facing public share page path, for example `/shared/inventories/{share_token}`. In shared-service deployments, that page should fetch backend JSON through the proxied API route `/api/shared/inventories/{share_token}`; this field is not a proxy-aware API fetch URL.",
             "title": "Public Path"
           },
           "revoked_at": {
@@ -2993,6 +2994,7 @@
             "type": "string"
           },
           "public_path": {
+            "description": "Browser-facing public share page path, for example `/shared/inventories/{share_token}`. In shared-service deployments, that page should fetch backend JSON through the proxied API route `/api/shared/inventories/{share_token}`; this field is not a proxy-aware API fetch URL.",
             "title": "Public Path",
             "type": "string"
           },
@@ -3008,6 +3010,7 @@
             "title": "Revoked At"
           },
           "token": {
+            "description": "Reusable signed share token. Store/copy this only as part of the public share URL; it grants anonymous read-only access to this inventory's public share projection until rotated or revoked.",
             "title": "Token",
             "type": "string"
           },

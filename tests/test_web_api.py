@@ -439,6 +439,14 @@ class WebApiSchemaTest(unittest.TestCase):
             share_link_properties = components[share_link_schema_name]["properties"]
             self.assertEqual("string", share_link_properties["token"]["type"])
             self.assertEqual("string", share_link_properties["public_path"]["type"])
+            self.assertIn(
+                "Browser-facing public share page path",
+                share_link_properties["public_path"]["description"],
+            )
+            self.assertIn(
+                "/api/shared/inventories/{share_token}",
+                share_link_properties["public_path"]["description"],
+            )
             self.assertEqual("boolean", share_link_properties["active"]["type"])
 
             public_share_schema = spec["paths"]["/shared/inventories/{share_token}"]["get"]["responses"]["200"][
@@ -4914,8 +4922,9 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("personal", created_payload["inventory"])
                 self.assertTrue(created_payload["active"])
                 self.assertTrue(created_payload["token"])
+                created_backend_route = f"/shared/inventories/{created_payload['token']}"
                 self.assertEqual(
-                    f"/shared/inventories/{created_payload['token']}",
+                    created_backend_route,
                     created_payload["public_path"],
                 )
                 active_status = client.get("/inventories/personal/share-link", headers=owner_headers)
@@ -4940,7 +4949,7 @@ class WebApiTest(unittest.TestCase):
                 duplicate_create = client.post("/inventories/personal/share-link", headers=owner_headers)
                 self.assertEqual(409, duplicate_create.status_code)
 
-                public_view = client.get(created_payload["public_path"])
+                public_view = client.get(created_backend_route)
                 self.assertEqual(200, public_view.status_code)
                 public_payload = public_view.json()
                 self.assertEqual(
@@ -4974,10 +4983,12 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, rotated.status_code)
                 rotated_payload = rotated.json()
                 self.assertNotEqual(created_payload["token"], rotated_payload["token"])
+                rotated_backend_route = f"/shared/inventories/{rotated_payload['token']}"
+                self.assertEqual(rotated_backend_route, rotated_payload["public_path"])
 
-                old_public_view = client.get(created_payload["public_path"])
+                old_public_view = client.get(created_backend_route)
                 self.assertEqual(404, old_public_view.status_code)
-                new_public_view = client.get(rotated_payload["public_path"])
+                new_public_view = client.get(rotated_backend_route)
                 self.assertEqual(200, new_public_view.status_code)
 
                 revoked = client.delete("/inventories/personal/share-link", headers=owner_headers)
@@ -4985,7 +4996,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertFalse(revoked.json()["active"])
                 self.assertIsNotNone(revoked.json()["revoked_at"])
 
-                revoked_public_view = client.get(rotated_payload["public_path"])
+                revoked_public_view = client.get(rotated_backend_route)
                 self.assertEqual(404, revoked_public_view.status_code)
 
                 revoked_again = client.delete("/inventories/personal/share-link", headers=owner_headers)

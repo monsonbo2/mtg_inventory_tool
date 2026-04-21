@@ -100,8 +100,12 @@ header-supplied actor IDs instead. `X-Request-Id` remains accepted for request
 tracing.
 
 In `shared_service`, every current app/API route except `/health` and public
-share-link reads under `/shared/inventories/{share_token}` requires an
-authenticated app user. The default verified identity header is
+share-link backend reads under `/shared/inventories/{share_token}` requires an
+authenticated app user. Behind the recommended `/api` proxy, that public JSON
+route is published as `/api/shared/inventories/{share_token}`. Share-link
+management responses expose `public_path` as the browser-facing page path,
+currently `/shared/inventories/{share_token}`; the frontend page should call
+the proxied API route internally. The default verified identity header is
 `X-Authenticated-User`, and you can override it with
 `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
 
@@ -550,7 +554,10 @@ checkout in multi-repo environments.
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
 - In `shared_service`, non-health routes require an authenticated app user
-  except public share-link reads under `/shared/inventories/{share_token}`.
+  except public share-link backend reads under
+  `/shared/inventories/{share_token}`. Behind the recommended `/api` proxy,
+  those JSON reads are published as `/api/shared/inventories/{share_token}`,
+  while share-link `public_path` remains the browser-facing page path.
   Inventory reads and writes are scoped by local memberships. Authenticated
   users can create inventories they own; global roles are only for elevated app
   permissions such as admin bypass. The default verified identity header is

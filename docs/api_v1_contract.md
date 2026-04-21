@@ -529,6 +529,12 @@ before the generic 500 envelope is returned.
 - The recommended first-live browser deployment is same-origin through a reverse
   proxy that publishes `/api` publicly and strips that prefix before forwarding
   to the backend root-route surface.
+- Inventory share-link management responses expose `public_path` as a
+  browser-facing share page path, currently
+  `/shared/inventories/{share_token}`. In the shared-service proxy shape, that
+  page should fetch the public inventory JSON through
+  `/api/shared/inventories/{share_token}`; `public_path` is not a
+  proxy-aware API fetch URL.
 - In `local_demo`, the API ignores caller-supplied `X-Actor-Id` values and
   records mutating audit entries with `actor_type="api"` and
   `actor_id="local-demo"`.
@@ -542,8 +548,10 @@ before the generic 500 envelope is returned.
 - `shared_service` requires an explicit non-empty signing secret via
   `MTG_API_SNAPSHOT_SIGNING_SECRET`.
 - In `shared_service`, every current app route except `/health` and public
-  share-link reads under `/shared/inventories/{share_token}` requires a
-  verified upstream user header. The default header name is
+  share-link backend reads under `/shared/inventories/{share_token}` requires a
+  verified upstream user header. When those reads are published through the
+  recommended `/api` proxy, the public route is
+  `/api/shared/inventories/{share_token}`. The default header name is
   `X-Authenticated-User`, and it can be overridden with
   `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
 - In `shared_service`, the API also accepts a normalized roles header. The
