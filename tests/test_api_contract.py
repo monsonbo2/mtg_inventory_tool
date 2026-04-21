@@ -40,8 +40,11 @@ from mtg_source_stack.api.response_models import (
     InventoryCreateResponse,
     InventoryDuplicateResponse,
     InventoryListRowResponse,
+    InventoryShareLinkStatusResponse,
+    InventoryShareLinkTokenResponse,
     InventoryTransferResponse,
     OwnedInventoryRowResponse,
+    PublicInventoryShareResponse,
     RemoveInventoryItemResponse,
     SetAcquisitionResponse,
     SetConditionResponse,
@@ -290,6 +293,49 @@ class ApiContractTest(RepoSmokeTestCase):
                 "total_cards": 45,
             }
         ]
+        share_link_status_payload = {
+            "inventory": "alice-collection",
+            "active": False,
+            "public_path": None,
+            "created_at": None,
+            "updated_at": None,
+            "revoked_at": None,
+        }
+        share_link_token_payload = {
+            "inventory": "alice-collection",
+            "token": "public-token",
+            "public_path": "/shared/inventories/public-token",
+            "active": True,
+            "created_at": "2026-04-21 12:00:00",
+            "updated_at": "2026-04-21 12:00:00",
+            "revoked_at": None,
+        }
+        public_share_payload = {
+            "inventory": {
+                "display_name": "Collection",
+                "description": "Shared view",
+                "item_rows": 1,
+                "total_cards": 4,
+            },
+            "items": [
+                {
+                    "scryfall_id": "card-1",
+                    "oracle_id": "oracle-lightning-bolt",
+                    "name": "Lightning Bolt",
+                    "set_code": "lea",
+                    "set_name": "Limited Edition Alpha",
+                    "rarity": "common",
+                    "collector_number": "161",
+                    "image_uri_small": "https://example.test/cards/card-1-small.jpg",
+                    "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
+                    "quantity": 4,
+                    "condition_code": "NM",
+                    "finish": "normal",
+                    "allowed_finishes": ["normal", "foil"],
+                    "language_code": "en",
+                }
+            ],
+        }
         csv_import_payload = {
             "csv_filename": "inventory_import.csv",
             "detected_format": "generic_csv",
@@ -431,6 +477,9 @@ class ApiContractTest(RepoSmokeTestCase):
         )
         inventory_create = InventoryCreateResponse.model_validate(inventory_create_payload)
         inventory_list = [InventoryListRowResponse.model_validate(row) for row in inventory_list_payload]
+        share_link_status = InventoryShareLinkStatusResponse.model_validate(share_link_status_payload)
+        share_link_token = InventoryShareLinkTokenResponse.model_validate(share_link_token_payload)
+        public_share = PublicInventoryShareResponse.model_validate(public_share_payload)
         bootstrap = DefaultInventoryBootstrapResponse.model_validate(bootstrap_payload)
         csv_import = CsvImportResponse.model_validate(csv_import_payload)
         decklist_import = DecklistImportResponse.model_validate(decklist_import_payload)
@@ -461,6 +510,10 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("USD", inventory_create.acquisition_currency)
         self.assertEqual("Main trade stock", inventory_list[0].notes)
         self.assertEqual(45, inventory_list[0].total_cards)
+        self.assertFalse(share_link_status.active)
+        self.assertEqual("/shared/inventories/public-token", share_link_token.public_path)
+        self.assertEqual("Collection", public_share.inventory.display_name)
+        self.assertEqual("Lightning Bolt", public_share.items[0].name)
         self.assertTrue(bootstrap.created)
         self.assertEqual("Collection", bootstrap.inventory.display_name)
         self.assertEqual("generic_csv", csv_import.detected_format)

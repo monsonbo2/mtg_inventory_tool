@@ -35,8 +35,11 @@ from mtg_source_stack.inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
     create_inventory,
+    create_inventory_share_link,
     duplicate_inventory,
     export_inventory_csv,
+    get_inventory_share_link_status,
+    get_public_inventory_share,
     inventory_health,
     inventory_report,
     list_card_printings_for_oracle,
@@ -50,6 +53,8 @@ from mtg_source_stack.inventory.service import (
     remove_card,
     render_inventory_csv_export,
     resolve_card_row,
+    revoke_inventory_share_link,
+    rotate_inventory_share_link,
     search_card_names,
     search_cards,
     set_acquisition,
@@ -66,6 +71,9 @@ from mtg_source_stack.inventory.service import (
     valuation_filtered,
 )
 from tests.common import RepoSmokeTestCase, materialize_fixture_bundle
+
+
+TEST_SHARE_TOKEN_SECRET = "test-share-token-secret"
 
 
 class InventoryServiceTest(RepoSmokeTestCase):
@@ -2077,6 +2085,175 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("Main collection notes", listed[0].notes)
             self.assertEqual(Decimal("12.50"), listed[0].acquisition_price)
             self.assertEqual("USD", listed[0].acquisition_currency)
+
+    def test_inventory_share_links_expose_public_read_only_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="share-card-1",
+                oracle_id="share-oracle-1",
+                name="Shared Test Card",
+                finishes_json='["normal","foil"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description="Public description",
+                actor_id="owner-user",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="share-card-1",
+                quantity=3,
+                location="Private Binder",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+                notes="private note",
+                tags_json='["private", "trade"]',
+            )
+
+            initial_status = get_inventory_share_link_status(
+                db_path,
+                inventory_slug="personal",
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+            )
+            self.assertFalse(initial_status.active)
+            self.assertIsNone(initial_status.public_path)
+            self.assertIsNone(initial_status.created_at)
+
+            created = create_inventory_share_link(
+                db_path,
+                inventory_slug="personal",
+                actor_id="owner-user",
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+                actor_type="api",
+                request_id="req-create-share",
+            )
+            self.assertTrue(created.active)
+            self.assertEqual("personal", created.inventory)
+            self.assertEqual(f"/shared/inventories/{created.token}", created.public_path)
+            with connect(db_path) as connection:
+                share_row = connection.execute(
+                    """
+                    SELECT token_nonce, issued_by_actor_id
+                    FROM inventory_share_links
+                    WHERE inventory_id = (
+                        SELECT id
+                        FROM inventories
+                        WHERE slug = ?
+                    )
+                    """,
+                    ("personal",),
+                ).fetchone()
+            self.assertIn(share_row["token_nonce"], created.token)
+            self.assertNotEqual(created.token, share_row["token_nonce"])
+            self.assertEqual("owner-user", share_row["issued_by_actor_id"])
+            active_status = get_inventory_share_link_status(
+                db_path,
+                inventory_slug="personal",
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+            )
+            self.assertEqual(created.public_path, active_status.public_path)
+
+            with self.assertRaises(ConflictError):
+                create_inventory_share_link(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="owner-user",
+                    token_secret=TEST_SHARE_TOKEN_SECRET,
+                )
+
+            public_share = get_public_inventory_share(
+                db_path,
+                token=created.token,
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+            )
+            with self.assertRaises(NotFoundError):
+                get_public_inventory_share(
+                    db_path,
+                    token=created.token,
+                    token_secret="different-share-token-secret",
+                )
+            self.assertEqual("Personal Collection", public_share.inventory.display_name)
+            self.assertEqual("Public description", public_share.inventory.description)
+            self.assertEqual(1, public_share.inventory.item_rows)
+            self.assertEqual(3, public_share.inventory.total_cards)
+            self.assertEqual(1, len(public_share.items))
+            public_item = serialize_response(public_share.items[0])
+            self.assertEqual("Shared Test Card", public_item["name"])
+            self.assertEqual(3, public_item["quantity"])
+            self.assertEqual(["normal", "foil"], public_item["allowed_finishes"])
+            for private_key in (
+                "item_id",
+                "location",
+                "tags",
+                "acquisition_price",
+                "acquisition_currency",
+                "unit_price",
+                "est_value",
+                "notes",
+            ):
+                self.assertNotIn(private_key, public_item)
+
+            rotated = rotate_inventory_share_link(
+                db_path,
+                inventory_slug="personal",
+                actor_id="owner-user",
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+                actor_type="api",
+                request_id="req-rotate-share",
+            )
+            self.assertNotEqual(created.token, rotated.token)
+            with self.assertRaises(NotFoundError):
+                get_public_inventory_share(
+                    db_path,
+                    token=created.token,
+                    token_secret=TEST_SHARE_TOKEN_SECRET,
+                )
+            rotated_public_share = get_public_inventory_share(
+                db_path,
+                token=rotated.token,
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+            )
+            self.assertEqual("Personal Collection", rotated_public_share.inventory.display_name)
+
+            revoked = revoke_inventory_share_link(
+                db_path,
+                inventory_slug="personal",
+                actor_id="owner-user",
+                actor_type="api",
+                request_id="req-revoke-share",
+            )
+            self.assertFalse(revoked.active)
+            self.assertIsNone(revoked.public_path)
+            self.assertIsNotNone(revoked.revoked_at)
+            with self.assertRaises(NotFoundError):
+                get_public_inventory_share(
+                    db_path,
+                    token=rotated.token,
+                    token_secret=TEST_SHARE_TOKEN_SECRET,
+                )
+
+            revoked_again = revoke_inventory_share_link(
+                db_path,
+                inventory_slug="personal",
+                actor_id="owner-user",
+            )
+            self.assertFalse(revoked_again.active)
+            self.assertEqual(revoked.revoked_at, revoked_again.revoked_at)
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual(
+                ["revoke_share_link", "rotate_share_link", "create_share_link"],
+                [row.action for row in audit_rows[:3]],
+            )
+            self.assertEqual("req-revoke-share", audit_rows[0].request_id)
+            self.assertEqual("req-rotate-share", audit_rows[1].request_id)
+            self.assertEqual("req-create-share", audit_rows[2].request_id)
+            self.assertTrue(all("token" not in row.metadata for row in audit_rows[:3]))
 
     def test_add_card_uses_inventory_default_location_and_tags_when_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

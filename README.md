@@ -99,14 +99,19 @@ local/dev testing, set `MTG_API_TRUST_ACTOR_HEADERS=true` to trust
 header-supplied actor IDs instead. `X-Request-Id` remains accepted for request
 tracing.
 
-In `shared_service`, every current app route except `/health` requires an
+In `shared_service`, every current app/API route except `/health` and public
+share-link reads under `/shared/inventories/{share_token}` requires an
 authenticated app user. The default verified identity header is
 `X-Authenticated-User`, and you can override it with
 `MTG_API_AUTHENTICATED_ACTOR_HEADER`.
 
 Deck URL preview/commit flows also use a short-lived signed snapshot token.
-`local_demo` ships with a built-in default signing secret for that flow.
-`shared_service` requires an explicit `MTG_API_SNAPSHOT_SIGNING_SECRET`.
+Public inventory share links use the same signing-secret setting to make
+reusable links recoverable without storing the full bearer token in the
+database. `local_demo` ships with a built-in default signing secret for these
+flows. `shared_service` requires an explicit
+`MTG_API_SNAPSHOT_SIGNING_SECRET`; rotating it invalidates existing deck preview
+tokens and public inventory share URLs.
 
 `shared_service` also supports a normalized roles header,
 `X-Authenticated-Roles` by default, with `editor` and `admin` as the current
@@ -544,7 +549,8 @@ checkout in multi-repo environments.
 - The demo API ignores caller-supplied `X-Actor-Id` values by default and
   stamps writes as `local-demo` unless trusted-header mode is explicitly
   enabled.
-- In `shared_service`, non-health routes require an authenticated app user.
+- In `shared_service`, non-health routes require an authenticated app user
+  except public share-link reads under `/shared/inventories/{share_token}`.
   Inventory reads and writes are scoped by local memberships. Authenticated
   users can create inventories they own; global roles are only for elevated app
   permissions such as admin bypass. The default verified identity header is

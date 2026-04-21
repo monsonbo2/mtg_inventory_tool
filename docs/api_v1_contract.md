@@ -537,11 +537,12 @@ before the generic 500 envelope is returned.
   values to flow into audit attribution.
 - `shared_service` disables auto-migrate by default. It should be started
   against a pre-migrated database and a single app process for now.
-- `local_demo` uses a stable built-in deck URL snapshot signing secret so
-  preview/commit flows work without extra setup.
-- `shared_service` requires an explicit non-empty deck URL snapshot signing
-  secret via `MTG_API_SNAPSHOT_SIGNING_SECRET`.
-- In `shared_service`, every current app route except `/health` requires a
+- `local_demo` uses a stable built-in signing secret so deck URL preview/commit
+  flows and public share-link copy UX work without extra setup.
+- `shared_service` requires an explicit non-empty signing secret via
+  `MTG_API_SNAPSHOT_SIGNING_SECRET`.
+- In `shared_service`, every current app route except `/health` and public
+  share-link reads under `/shared/inventories/{share_token}` requires a
   verified upstream user header. The default header name is
   `X-Authenticated-User`, and it can be overridden with
   `MTG_API_AUTHENTICATED_ACTOR_HEADER`.

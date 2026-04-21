@@ -96,6 +96,25 @@ class AccessSummaryResponse(ApiBaseModel):
     default_inventory_slug: str | None
 
 
+class InventoryShareLinkStatusResponse(ApiBaseModel):
+    inventory: str
+    active: bool
+    public_path: str | None
+    created_at: str | None
+    updated_at: str | None
+    revoked_at: str | None
+
+
+class InventoryShareLinkTokenResponse(ApiBaseModel):
+    inventory: str
+    token: str
+    public_path: str
+    active: bool
+    created_at: str
+    updated_at: str
+    revoked_at: str | None
+
+
 class BulkInventoryItemMutationResponse(ApiBaseModel):
     inventory: str
     operation: Literal[
@@ -218,6 +237,37 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     printing_selection_mode: Literal["explicit", "defaulted"] = Field(
         description=PRINTING_SELECTION_MODE_RESPONSE_DESCRIPTION
     )
+
+
+class PublicInventorySummaryResponse(ApiBaseModel):
+    display_name: str
+    description: str | None
+    item_rows: int
+    total_cards: int
+
+
+class PublicInventoryItemResponse(ApiBaseModel):
+    scryfall_id: str
+    oracle_id: str
+    name: str
+    set_code: str
+    set_name: str
+    rarity: str | None
+    collector_number: str
+    image_uri_small: str | None
+    image_uri_normal: str | None
+    quantity: int
+    condition_code: str = Field(description=CONDITION_CODE_RESPONSE_DESCRIPTION)
+    finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
+    allowed_finishes: list[Literal["normal", "foil", "etched"]] = Field(
+        description=FINISH_RESPONSE_DESCRIPTION
+    )
+    language_code: str = Field(description=LANGUAGE_CODE_RESPONSE_DESCRIPTION)
+
+
+class PublicInventoryShareResponse(ApiBaseModel):
+    inventory: PublicInventorySummaryResponse
+    items: list[PublicInventoryItemResponse]
 
 
 class InventoryAuditEventResponse(ApiBaseModel):

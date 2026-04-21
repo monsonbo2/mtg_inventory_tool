@@ -33,3 +33,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 mtg_source_stack = ["*.sql"]
+"mtg_source_stack.db.migrations" = ["*.sql"]
