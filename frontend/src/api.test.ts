@@ -5,6 +5,7 @@ import {
   createInventory,
   duplicateInventory,
   exportInventoryCsv,
+  getAccessSummary,
   getCardPrintingSummary,
   importCsv,
   importDeckUrl,
@@ -241,6 +242,39 @@ describe("api transport", () => {
       message: "The API request failed.",
       status: 503,
     });
+  });
+
+  it("gets the shared-service access summary from the expected endpoint", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          can_bootstrap: true,
+          has_readable_inventory: false,
+          visible_inventory_count: 0,
+          default_inventory_slug: null,
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        },
+      ),
+    );
+
+    const response = await getAccessSummary();
+
+    expect(response).toEqual({
+      can_bootstrap: true,
+      has_readable_inventory: false,
+      visible_inventory_count: 0,
+      default_inventory_slug: null,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain("/api/me/access-summary");
+    expect(init?.method).toBeUndefined();
+    expect(init?.body).toBeUndefined();
   });
 
   it("posts the new JSON wrapper routes to the expected endpoints", async () => {

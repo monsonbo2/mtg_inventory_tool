@@ -11,7 +11,13 @@ import unittest
 from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
-from mtg_source_stack.inventory.service import list_inventories, list_inventory_audit_events, list_owned_filtered
+from mtg_source_stack.inventory.service import (
+    actor_inventory_role,
+    list_inventories,
+    list_inventory_audit_events,
+    list_owned_filtered,
+    summarize_actor_access,
+)
 from tests.common import REPO_ROOT, fixture_path
 
 
@@ -94,6 +100,121 @@ class FrontendDemoBootstrapTest(unittest.TestCase):
             self.assertIn("Catalog mode: small", result.stdout)
             self.assertIn("npm run backend:demo -- --db", result.stdout)
             self.assert_richer_demo_dataset(db_path)
+
+    def test_bootstrap_can_seed_shared_service_validation_fixtures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "frontend_demo_shared.db"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/bootstrap_frontend_demo.py",
+                    "--db",
+                    str(db_path),
+                    "--force",
+                    "--shared-service-fixtures",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertIn("Shared-service validation fixtures: enabled", result.stdout)
+            self.assertIn("new-user@example.com", result.stdout)
+            self.assertIn("bootstrapped@example.com", result.stdout)
+            self.assertIn("viewer@example.com", result.stdout)
+            self.assertIn("writer@example.com", result.stdout)
+            self.assertIn("admin@example.com", result.stdout)
+            inventories = list_inventories(db_path)
+            self.assertEqual(
+                ["bootstrapped-collection", "personal", "trade-binder"],
+                [row.slug for row in inventories],
+            )
+            personal = next(row for row in inventories if row.slug == "personal")
+            trade_binder = next(row for row in inventories if row.slug == "trade-binder")
+            bootstrapped = next(row for row in inventories if row.slug == "bootstrapped-collection")
+            self.assertEqual(4, personal.item_rows)
+            self.assertEqual(7, personal.total_cards)
+            self.assertEqual(0, trade_binder.item_rows)
+            self.assertEqual(0, trade_binder.total_cards)
+            self.assertEqual(0, bootstrapped.item_rows)
+            self.assertEqual(0, bootstrapped.total_cards)
+            self.assertEqual(
+                "viewer",
+                actor_inventory_role(
+                    db_path,
+                    inventory_slug="personal",
+                    actor_id="viewer@example.com",
+                ),
+            )
+            self.assertEqual(
+                "editor",
+                actor_inventory_role(
+                    db_path,
+                    inventory_slug="trade-binder",
+                    actor_id="writer@example.com",
+                ),
+            )
+
+            new_user_summary = summarize_actor_access(
+                db_path,
+                actor_id="new-user@example.com",
+                actor_roles=frozenset(),
+            )
+            self.assertTrue(new_user_summary.can_bootstrap)
+            self.assertFalse(new_user_summary.has_readable_inventory)
+            self.assertEqual(0, new_user_summary.visible_inventory_count)
+            self.assertIsNone(new_user_summary.default_inventory_slug)
+
+            no_access_summary = summarize_actor_access(
+                db_path,
+                actor_id="no-access@example.com",
+                actor_roles=frozenset(),
+            )
+            self.assertTrue(no_access_summary.can_bootstrap)
+            self.assertFalse(no_access_summary.has_readable_inventory)
+            self.assertEqual(0, no_access_summary.visible_inventory_count)
+            self.assertIsNone(no_access_summary.default_inventory_slug)
+
+            bootstrapped_summary = summarize_actor_access(
+                db_path,
+                actor_id="bootstrapped@example.com",
+                actor_roles=frozenset(),
+            )
+            self.assertTrue(bootstrapped_summary.can_bootstrap)
+            self.assertTrue(bootstrapped_summary.has_readable_inventory)
+            self.assertEqual(1, bootstrapped_summary.visible_inventory_count)
+            self.assertEqual("bootstrapped-collection", bootstrapped_summary.default_inventory_slug)
+
+            viewer_summary = summarize_actor_access(
+                db_path,
+                actor_id="viewer@example.com",
+                actor_roles=frozenset(),
+            )
+            self.assertTrue(viewer_summary.can_bootstrap)
+            self.assertTrue(viewer_summary.has_readable_inventory)
+            self.assertEqual(1, viewer_summary.visible_inventory_count)
+            self.assertIsNone(viewer_summary.default_inventory_slug)
+
+            writer_summary = summarize_actor_access(
+                db_path,
+                actor_id="writer@example.com",
+                actor_roles=frozenset(),
+            )
+            self.assertTrue(writer_summary.can_bootstrap)
+            self.assertTrue(writer_summary.has_readable_inventory)
+            self.assertEqual(1, writer_summary.visible_inventory_count)
+            self.assertIsNone(writer_summary.default_inventory_slug)
+
+            admin_summary = summarize_actor_access(
+                db_path,
+                actor_id="admin@example.com",
+                actor_roles={"admin"},
+            )
+            self.assertTrue(admin_summary.can_bootstrap)
+            self.assertTrue(admin_summary.has_readable_inventory)
+            self.assertEqual(3, admin_summary.visible_inventory_count)
+            self.assertIsNone(admin_summary.default_inventory_slug)
 
     def test_bootstrap_full_catalog_mode_imports_real_cards_without_demo_catalog_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

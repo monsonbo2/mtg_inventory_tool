@@ -61,6 +61,13 @@ root-mounted routes such as `/inventories` and `/cards/search`.
    npm run demo:bootstrap -- --force
    ```
 
+   To seed the shared-service validation actors and memberships used for
+   permission-aware frontend states:
+
+   ```bash
+   npm run demo:bootstrap -- --force --shared-service-fixtures
+   ```
+
    Pass extra bootstrap args through npm when needed:
 
    ```bash
@@ -154,6 +161,26 @@ Current Vite proxy:
   rewrite: (path) => path.replace(/^\/api/, ""),
 }
 ```
+
+## Shared-Service Fixtures
+
+Use `npm run demo:bootstrap -- --force --shared-service-fixtures` when you need
+stable shared-service actors for onboarding and permission-state validation.
+Start the backend in `shared_service` against that DB and inject the headers
+below through your proxy or API client.
+
+| User | Roles header | Expected state |
+| --- | --- | --- |
+| `new-user@example.com` | omit | No readable inventories yet; can create a custom first collection. |
+| `bootstrapped@example.com` | omit | Owns `bootstrapped-collection`; readable inventory count is `1`. |
+| `viewer@example.com` | omit | Viewer on `personal`; reads are allowed, writes are denied. |
+| `writer@example.com` | omit | Editor on `trade-binder`; reads and writes are allowed there. |
+| `no-access@example.com` | omit | No memberships or readable inventories yet; can create a custom first collection. |
+| `admin@example.com` | `admin` | Global admin bypass; all demo inventories are visible. |
+
+Check `GET /me/access-summary` first for each user. Then verify
+`GET /inventories`, catalog search availability, inventory reads, and denied
+writes match the table above.
 
 ## Working Agreement
 

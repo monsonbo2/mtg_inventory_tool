@@ -1,6 +1,7 @@
 import type {
   AddInventoryItemRequest,
   ApiErrorEnvelope,
+  AccessSummaryResponse,
   BulkInventoryItemMutationRequest,
   BulkInventoryItemMutationResponse,
   CardPrintingSummaryParams,
@@ -320,6 +321,10 @@ function buildCsvImportFormData(payload: CsvImportRequest) {
 
 export async function listInventories() {
   return requestJson<InventorySummary[]>("/inventories");
+}
+
+export async function getAccessSummary() {
+  return requestJson<AccessSummaryResponse>("/me/access-summary");
 }
 
 export async function createInventory(payload: InventoryCreateRequest) {

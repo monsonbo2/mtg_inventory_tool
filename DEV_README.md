@@ -48,7 +48,8 @@ Current authz model:
 - global proxy-backed app roles are `editor` and `admin`
 - local inventory membership roles are `viewer`, `editor`, and `owner`
 - card-search routes require an authenticated user who can read at least one
-  inventory; `POST /me/bootstrap` is the intended first-run escape hatch
+  inventory; custom inventory creation or `POST /me/bootstrap` are the
+  intended first-run escape hatches
 - `GET /inventories` is filtered to visible inventories
 - inventory reads require inventory membership or global `admin`
 - inventory writes require inventory `editor` / `owner` membership or global
@@ -140,6 +141,18 @@ Default demo bootstrap:
 cd frontend
 npm run demo:bootstrap -- --force
 ```
+
+Shared-service validation fixtures:
+
+```bash
+npm run demo:bootstrap -- --force --shared-service-fixtures
+```
+
+This optional fixture mode adds stable actors for frontend rollout checks:
+`new-user@example.com`, `bootstrapped@example.com`, `viewer@example.com`,
+`writer@example.com`, `no-access@example.com`, and `admin@example.com`. Omit
+`X-Authenticated-Roles` for all except `admin@example.com`, where the normalized
+roles header should be `admin`.
 
 Full-catalog demo bootstrap:
 
@@ -412,7 +425,8 @@ Prefer small extractions and targeted tests over broad rewrites.
 - Do not assume `shared_service` means a full org/team permission system.
 - Do not assume `scope=all` is the default search behavior.
 - Do not assume every authenticated user can search before they own or can read
-  an inventory; `POST /me/bootstrap` exists for that reason.
+  an inventory; custom inventory creation and `POST /me/bootstrap` exist for
+  that reason.
 - Do not assume CLI-created inventories automatically have memberships.
 - Do not assume docs/examples are allowed to drift from code.
 - Do not assume the full-catalog demo should pin exact printings.

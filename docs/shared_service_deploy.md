@@ -159,13 +159,32 @@ mtg-personal-inventory revoke-inventory-membership \
 
 Recommended first-live rollout:
 
-1. If the system is blank, let each first user call `POST /me/bootstrap` once
-   so they receive an owned `Collection`. Otherwise, create new inventories
-   through the app so the creator becomes `owner`, or grant `owner`
-   memberships to existing inventories with the CLI.
+1. If the system is blank, let first users create inventories through the app
+   so custom names are preserved and the creator becomes `owner`. Use
+   `POST /me/bootstrap` only when the default `Collection` name is acceptable,
+   or grant `owner` memberships to existing inventories with the CLI.
 2. Grant `viewer` / `editor` memberships for the first cohort.
 3. Verify visible inventories, allowed writes, and denied writes with at least
    two real user identities before launch.
+
+For local rehearsal before involving real users, seed the frontend demo DB with
+shared-service fixtures:
+
+```bash
+cd frontend
+npm run demo:bootstrap -- --force --shared-service-fixtures
+```
+
+Fixture checks:
+
+| User | Roles header | Expected route behavior |
+| --- | --- | --- |
+| `new-user@example.com` | omit | `GET /me/access-summary` has no readable inventory and `can_bootstrap=true`; custom inventory creation should succeed. |
+| `bootstrapped@example.com` | omit | Can read `bootstrapped-collection`. |
+| `viewer@example.com` | omit | Can read `personal`; writes to `personal` should return `403`. |
+| `writer@example.com` | omit | Can read and write `trade-binder`. |
+| `no-access@example.com` | omit | No readable inventories; search should return `403`. |
+| `admin@example.com` | `admin` | Can see all demo inventories through global bypass. |
 
 ## Operational Expectations
 

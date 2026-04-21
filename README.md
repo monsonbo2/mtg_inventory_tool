@@ -449,10 +449,10 @@ Recommended rollout sequence:
 
 1. Migrate the DB intentionally.
 2. Start the API in `shared_service`.
-3. If you are starting from a blank system, let each first user call
-   `POST /me/bootstrap` once so they get an owned `Collection`. Otherwise,
-   create inventories through the API so creators become `owner`, or use the
-   CLI membership commands to assign owners on existing inventories.
+3. If you are starting from a blank system, let first users create inventories
+   through the app or `POST /inventories` so creators become `owner`. Use
+   `POST /me/bootstrap` only when the default `Collection` name is acceptable,
+   or use the CLI membership commands to assign owners on existing inventories.
 4. Grant `viewer` / `editor` memberships to the first cohort.
 5. Verify real user sessions against those memberships before launch.
 
