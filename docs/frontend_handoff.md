@@ -48,6 +48,7 @@ discussion.
 The current intended demo surface is:
 
 - inventory selector
+- inventory member management
 - card search
 - card-name search plus printing lookup
 - add card flow
@@ -69,6 +70,15 @@ Use this as the first-pass UI-to-endpoint map:
   Returns only the inventories visible to the current shared-service user.
   Inventory rows also include inventory metadata such as `default_location`,
   `default_tags`, `notes`, `acquisition_price`, and `acquisition_currency`.
+- Inventory member management:
+  - list members -> `GET /inventories/{inventory_slug}/members`
+  - grant member -> `POST /inventories/{inventory_slug}/members`
+  - update role -> `PATCH /inventories/{inventory_slug}/members/{actor_id}`
+  - revoke member -> `DELETE /inventories/{inventory_slug}/members/{actor_id}`
+  These routes are for inventory owners or global admins. Role values are
+  `viewer`, `editor`, and `owner`. The backend prevents removing or demoting
+  the last owner and audits grant, update, and revoke actions. Frontend code
+  should URL-encode `actor_id` when putting it in the path.
 - Card search -> `GET /cards/search`
 - Card search scope guidance:
   - omit `scope` for the ordinary mainline add flow
@@ -339,6 +349,9 @@ export default {
   - inventory lists are filtered to the current user
   - some inventory reads may return `403`
   - inventory writes may return `403` if the user is a viewer or non-member
+  - membership-management routes may return `403` unless the user is an owner
+    or global admin
+  - last-owner demotion/removal returns `409`
   - catalog search should not be treated as globally available to every
     authenticated user; it currently requires a user who can read at least one
     inventory, or a global `admin`

@@ -15,7 +15,10 @@ from .access import (
     is_global_admin,
     list_inventory_memberships,
     normalize_inventory_membership_role,
+    remove_inventory_membership,
     revoke_inventory_membership,
+    set_inventory_membership_role,
+    update_inventory_membership_role,
 )
 from .audit import list_inventory_audit_events
 from .analysis import (

@@ -55,6 +55,8 @@ The live backend contract consists of five primary tables:
   ledger.
 - Shared-service access is inventory-scoped through local memberships:
   `viewer`, `editor`, and `owner`.
+- Managed membership changes preserve at least one owner and write audit events
+  for grant, role-change, and revoke actions.
 - Quantity edits mutate `inventory_items` in place.
 - Per-edit inventory mutations are recorded in `inventory_audit_log`.
 - Operator safety comes from explicit commands, per-edit audit history, and

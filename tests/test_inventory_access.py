@@ -8,7 +8,7 @@ from pathlib import Path
 
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
-from mtg_source_stack.errors import NotFoundError, ValidationError
+from mtg_source_stack.errors import ConflictError, NotFoundError, ValidationError
 from mtg_source_stack.inventory.service import (
     actor_can_manage_inventory_share,
     actor_can_read_any_inventory,
@@ -21,10 +21,14 @@ from mtg_source_stack.inventory.service import (
     create_inventory,
     ensure_default_inventory,
     grant_inventory_membership,
+    list_inventory_audit_events,
     list_inventory_memberships,
     list_visible_inventories,
     normalize_inventory_membership_role,
+    remove_inventory_membership,
     revoke_inventory_membership,
+    set_inventory_membership_role,
+    update_inventory_membership_role,
 )
 
 
@@ -126,6 +130,166 @@ class InventoryAccessTest(unittest.TestCase):
 
             memberships_after = list_inventory_memberships(db_path, inventory_slug="personal")
             self.assertEqual([("bob@example.com", "owner")], [(row.actor_id, row.role) for row in memberships_after])
+
+    def test_managed_membership_changes_are_audited_without_duplicate_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner@example.com",
+            )
+
+            granted = set_inventory_membership_role(
+                db_path,
+                inventory_slug="personal",
+                member_actor_id="alice@example.com",
+                role="viewer",
+                actor_id="owner@example.com",
+                actor_type="api",
+                request_id="req-grant-member",
+            )
+            self.assertEqual("viewer", granted.role)
+
+            repeated = set_inventory_membership_role(
+                db_path,
+                inventory_slug="personal",
+                member_actor_id="alice@example.com",
+                role="viewer",
+                actor_id="owner@example.com",
+                actor_type="api",
+                request_id="req-noop-member",
+            )
+            self.assertEqual(granted, repeated)
+
+            updated = update_inventory_membership_role(
+                db_path,
+                inventory_slug="personal",
+                member_actor_id="alice@example.com",
+                role="editor",
+                actor_id="owner@example.com",
+                actor_type="api",
+                request_id="req-update-member",
+            )
+            self.assertEqual("editor", updated.role)
+
+            removed = remove_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                member_actor_id="alice@example.com",
+                actor_id="owner@example.com",
+                actor_type="api",
+                request_id="req-remove-member",
+            )
+            self.assertEqual("alice@example.com", removed.actor_id)
+            self.assertEqual("editor", removed.role)
+
+            memberships = list_inventory_memberships(db_path, inventory_slug="personal")
+            self.assertEqual([("owner@example.com", "owner")], [(row.actor_id, row.role) for row in memberships])
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual(
+                [
+                    "revoke_inventory_membership",
+                    "update_inventory_membership",
+                    "grant_inventory_membership",
+                ],
+                [row.action for row in audit_rows],
+            )
+            self.assertEqual(["req-remove-member", "req-update-member", "req-grant-member"], [row.request_id for row in audit_rows])
+            self.assertTrue(all(row.actor_id == "owner@example.com" for row in audit_rows))
+            self.assertEqual("alice@example.com", audit_rows[0].metadata["member_actor_id"])
+            self.assertEqual("editor", audit_rows[0].metadata["previous_role"])
+            self.assertIsNone(audit_rows[0].metadata["role"])
+            self.assertEqual("viewer", audit_rows[1].metadata["previous_role"])
+            self.assertEqual("editor", audit_rows[1].metadata["role"])
+
+    def test_managed_membership_update_requires_existing_member(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner@example.com",
+            )
+
+            with self.assertRaisesRegex(NotFoundError, "No inventory membership found for actor 'missing@example.com'"):
+                update_inventory_membership_role(
+                    db_path,
+                    inventory_slug="personal",
+                    member_actor_id="missing@example.com",
+                    role="viewer",
+                    actor_id="owner@example.com",
+                )
+
+    def test_managed_membership_changes_preserve_at_least_one_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner@example.com",
+            )
+
+            with self.assertRaisesRegex(ConflictError, "must retain at least one owner"):
+                update_inventory_membership_role(
+                    db_path,
+                    inventory_slug="personal",
+                    member_actor_id="owner@example.com",
+                    role="editor",
+                    actor_id="admin@example.com",
+                    actor_type="api",
+                    request_id="req-demote-last-owner",
+                )
+            with self.assertRaisesRegex(ConflictError, "must retain at least one owner"):
+                remove_inventory_membership(
+                    db_path,
+                    inventory_slug="personal",
+                    member_actor_id="owner@example.com",
+                    actor_id="admin@example.com",
+                    actor_type="api",
+                    request_id="req-remove-last-owner",
+                )
+
+            set_inventory_membership_role(
+                db_path,
+                inventory_slug="personal",
+                member_actor_id="second-owner@example.com",
+                role="owner",
+                actor_id="admin@example.com",
+                actor_type="api",
+                request_id="req-add-second-owner",
+            )
+            demoted = update_inventory_membership_role(
+                db_path,
+                inventory_slug="personal",
+                member_actor_id="owner@example.com",
+                role="editor",
+                actor_id="admin@example.com",
+                actor_type="api",
+                request_id="req-demote-owner",
+            )
+            self.assertEqual("editor", demoted.role)
+            removed = remove_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                member_actor_id="owner@example.com",
+                actor_id="admin@example.com",
+                actor_type="api",
+                request_id="req-remove-former-owner",
+            )
+            self.assertEqual("editor", removed.role)
+
+            memberships = list_inventory_memberships(db_path, inventory_slug="personal")
+            self.assertEqual([("second-owner@example.com", "owner")], [(row.actor_id, row.role) for row in memberships])
 
     def test_ensure_default_inventory_creates_owned_collection_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

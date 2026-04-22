@@ -29,6 +29,8 @@ from mtg_source_stack.api.request_models import (
     DeckUrlImportRequest,
     InventoryCreateRequest,
     InventoryDuplicateRequest,
+    InventoryMembershipGrantRequest,
+    InventoryMembershipUpdateRequest,
     InventoryTransferRequest,
     PatchInventoryItemRequest,
     SetInventoryItemPrintingRequest,
@@ -49,6 +51,8 @@ from mtg_source_stack.api.response_models import (
     InventoryCreateResponse,
     InventoryDuplicateResponse,
     InventoryListRowResponse,
+    InventoryMembershipRemovalResponse,
+    InventoryMembershipResponse,
     InventoryShareLinkStatusResponse,
     InventoryShareLinkTokenResponse,
     InventoryTransferResponse,
@@ -302,6 +306,18 @@ class ApiContractTest(RepoSmokeTestCase):
                 "total_cards": 45,
             }
         ]
+        membership_payload = {
+            "inventory": "alice-collection",
+            "actor_id": "viewer@example.com",
+            "role": "viewer",
+            "created_at": "2026-04-21 12:00:00",
+            "updated_at": "2026-04-21 12:00:00",
+        }
+        membership_removal_payload = {
+            "inventory": "alice-collection",
+            "actor_id": "viewer@example.com",
+            "role": "viewer",
+        }
         share_link_status_payload = {
             "inventory": "alice-collection",
             "active": False,
@@ -486,6 +502,8 @@ class ApiContractTest(RepoSmokeTestCase):
         )
         inventory_create = InventoryCreateResponse.model_validate(inventory_create_payload)
         inventory_list = [InventoryListRowResponse.model_validate(row) for row in inventory_list_payload]
+        membership = InventoryMembershipResponse.model_validate(membership_payload)
+        membership_removal = InventoryMembershipRemovalResponse.model_validate(membership_removal_payload)
         share_link_status = InventoryShareLinkStatusResponse.model_validate(share_link_status_payload)
         share_link_token = InventoryShareLinkTokenResponse.model_validate(share_link_token_payload)
         public_share = PublicInventoryShareResponse.model_validate(public_share_payload)
@@ -519,6 +537,9 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("USD", inventory_create.acquisition_currency)
         self.assertEqual("Main trade stock", inventory_list[0].notes)
         self.assertEqual(45, inventory_list[0].total_cards)
+        self.assertEqual("viewer@example.com", membership.actor_id)
+        self.assertEqual("viewer", membership.role)
+        self.assertEqual("viewer@example.com", membership_removal.actor_id)
         self.assertFalse(share_link_status.active)
         self.assertEqual("/shared/inventories/public-token", share_link_token.public_path)
         self.assertEqual("Collection", public_share.inventory.display_name)
@@ -558,6 +579,10 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("Canonical condition codes: M, NM, LP, MP, HP, DMG", add_properties["condition_code"]["description"])
         self.assertIsNone(add_properties["language_code"]["default"])
         self.assertIsNone(add_properties["location"]["default"])
+        membership_grant_schema = InventoryMembershipGrantRequest.model_json_schema()
+        membership_update_schema = InventoryMembershipUpdateRequest.model_json_schema()
+        self.assertEqual(["viewer", "editor", "owner"], membership_grant_schema["properties"]["role"]["enum"])
+        self.assertEqual(["viewer", "editor", "owner"], membership_update_schema["properties"]["role"]["enum"])
         self.assertIn("inherits the resolved printing language", add_properties["language_code"]["description"])
         self.assertEqual({"type": "string"}, add_properties["oracle_id"]["anyOf"][0])
         self.assertIn("prefers English mainstream-paper printings", add_properties["oracle_id"]["description"])

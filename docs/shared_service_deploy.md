@@ -77,6 +77,8 @@ Effective behavior:
   inventory, or a global `admin`
 - inventory writes require `editor` or `owner` membership on that inventory,
   or a global `admin`
+- inventory membership management requires `owner` membership on that
+  inventory, or a global `admin`
 - inventory share-link management requires `owner` membership on that
   inventory, or a global `admin`
 - public share-link reads require possession of the signed share URL and do not
@@ -157,9 +159,41 @@ Useful environment settings:
 - `MTG_API_FORWARDED_ALLOW_IPS`
 - `MTG_API_AUTO_MIGRATE`
 
-## Membership Rollout Commands
+## Membership Management
 
-Use the inventory CLI to seed or repair memberships:
+Owner/admin membership management is available over the API:
+
+```text
+GET    /inventories/{inventory_slug}/members
+POST   /inventories/{inventory_slug}/members
+PATCH  /inventories/{inventory_slug}/members/{actor_id}
+DELETE /inventories/{inventory_slug}/members/{actor_id}
+```
+
+Grant or update requests use these role values:
+
+```json
+{
+  "actor_id": "alice@example.com",
+  "role": "viewer"
+}
+```
+
+`PATCH` requests send only the replacement role:
+
+```json
+{
+  "role": "editor"
+}
+```
+
+The API preserves at least one `owner` per inventory. To transfer ownership,
+grant another owner first, then demote or remove the old owner. Managed
+membership changes write inventory audit events with actor and request-id
+context.
+
+Use the inventory CLI when you need to seed or repair memberships outside an
+authenticated HTTP session:
 
 ```bash
 mtg-personal-inventory grant-inventory-membership \
@@ -183,8 +217,9 @@ Recommended first-live rollout:
 1. If the system is blank, let first users create inventories through the app
    so custom names are preserved and the creator becomes `owner`. Use
    `POST /me/bootstrap` only when the default `Collection` name is acceptable,
-   or grant `owner` memberships to existing inventories with the CLI.
-2. Grant `viewer` / `editor` memberships for the first cohort.
+   or grant `owner` memberships to existing inventories with the API or CLI.
+2. Grant `viewer` / `editor` memberships for the first cohort through the app,
+   API, or CLI.
 3. Verify visible inventories, allowed writes, and denied writes with at least
    two real user identities before launch.
 
