@@ -182,6 +182,11 @@ Check `GET /me/access-summary` first for each user. Then verify
 `GET /inventories`, catalog search availability, inventory reads, and denied
 writes match the table above.
 
+`GET /inventories` now includes capability fields for permission-aware UI:
+`role`, `can_read`, `can_write`, `can_manage_share`, and `can_transfer_to`.
+Use those fields to gate write, import, transfer, duplicate, and share-link
+controls instead of rendering the control first and relying on a later `403`.
+
 ## Proxy-Backed Shared-Service Validation
 
 Use the local proxy harness when you need to validate the same-origin `/api`

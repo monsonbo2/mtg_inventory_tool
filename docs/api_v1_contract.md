@@ -568,7 +568,10 @@ before the generic 500 envelope is returned.
   - `owner` can read and write a specific inventory
   - global `admin` bypasses inventory membership checks
 - `GET /inventories` returns only the inventories visible to the caller, while
-  global `admin` can see all inventories.
+  global `admin` can see all inventories. Each inventory list row includes
+  permission-aware frontend fields: `role`, `can_read`, `can_write`,
+  `can_manage_share`, and `can_transfer_to`. `role="admin"` means an effective
+  global admin bypass, not a local inventory membership row.
 - `GET /cards/search`, `GET /cards/search/names`, and
   `GET /cards/oracle/{oracle_id}/printings` require a caller who can read at
   least one inventory, or a global `admin`.

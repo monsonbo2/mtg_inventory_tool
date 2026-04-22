@@ -2834,6 +2834,22 @@
             ],
             "title": "Acquisition Price"
           },
+          "can_manage_share": {
+            "title": "Can Manage Share",
+            "type": "boolean"
+          },
+          "can_read": {
+            "title": "Can Read",
+            "type": "boolean"
+          },
+          "can_transfer_to": {
+            "title": "Can Transfer To",
+            "type": "boolean"
+          },
+          "can_write": {
+            "title": "Can Write",
+            "type": "boolean"
+          },
           "default_location": {
             "anyOf": [
               {
@@ -2886,6 +2902,23 @@
             ],
             "title": "Notes"
           },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "viewer",
+                  "editor",
+                  "owner",
+                  "admin"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -2905,7 +2938,12 @@
           "acquisition_price",
           "acquisition_currency",
           "item_rows",
-          "total_cards"
+          "total_cards",
+          "role",
+          "can_read",
+          "can_write",
+          "can_manage_share",
+          "can_transfer_to"
         ],
         "title": "InventoryListRowResponse",
         "type": "object"

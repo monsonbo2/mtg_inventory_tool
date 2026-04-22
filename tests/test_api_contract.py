@@ -300,6 +300,11 @@ class ApiContractTest(RepoSmokeTestCase):
                 "acquisition_currency": "USD",
                 "item_rows": 12,
                 "total_cards": 45,
+                "role": "owner",
+                "can_read": True,
+                "can_write": True,
+                "can_manage_share": True,
+                "can_transfer_to": True,
             }
         ]
         share_link_status_payload = {
@@ -640,6 +645,17 @@ class ApiContractTest(RepoSmokeTestCase):
             [{"type": "string"}, {"type": "null"}],
             inventory_list_properties["acquisition_currency"]["anyOf"],
         )
+        self.assertEqual(
+            [
+                {"enum": ["viewer", "editor", "owner", "admin"], "type": "string"},
+                {"type": "null"},
+            ],
+            inventory_list_properties["role"]["anyOf"],
+        )
+        self.assertEqual("boolean", inventory_list_properties["can_read"]["type"])
+        self.assertEqual("boolean", inventory_list_properties["can_write"]["type"])
+        self.assertEqual("boolean", inventory_list_properties["can_manage_share"]["type"])
+        self.assertEqual("boolean", inventory_list_properties["can_transfer_to"]["type"])
 
         inventory_create_response_schema = InventoryCreateResponse.model_json_schema()
         inventory_create_response_properties = inventory_create_response_schema["properties"]

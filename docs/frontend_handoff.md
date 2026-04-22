@@ -337,6 +337,9 @@ export default {
 - Shared-service inventory access is now membership-scoped. Frontend code
   should assume:
   - inventory lists are filtered to the current user
+  - each inventory list row includes `role`, `can_read`, `can_write`,
+    `can_manage_share`, and `can_transfer_to` so write/share/transfer controls
+    can be hidden or disabled before a `403`
   - some inventory reads may return `403`
   - inventory writes may return `403` if the user is a viewer or non-member
   - catalog search should not be treated as globally available to every

@@ -123,6 +123,11 @@ class InventoryListRow(ResponseModel):
     acquisition_currency: str | None
     item_rows: int
     total_cards: int
+    role: str | None
+    can_read: bool
+    can_write: bool
+    can_manage_share: bool
+    can_transfer_to: bool
 
 
 @dataclass(frozen=True, slots=True)
