@@ -34,6 +34,9 @@ preserve for the first API-backed version of the project.
 - Inventory create/list/bootstrap responses include inventory-level metadata
   fields such as `default_location`, `default_tags`, `notes`,
   `acquisition_price`, and `acquisition_currency`.
+- Inventory membership responses include `inventory`, `actor_id`, `role`,
+  `created_at`, and `updated_at`. Membership removal responses include the
+  removed `inventory`, `actor_id`, and previous `role`.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
   explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
@@ -300,6 +303,37 @@ preserve for the first API-backed version of the project.
   - `target_description` is optional; when omitted, the source inventory
     description is copied to the new inventory
   - source inventory memberships are not copied to the new inventory
+- `GET /inventories/{inventory_slug}/members`
+  - returns current memberships ordered by `actor_id`
+  - requires inventory `owner` access in shared-service mode, or global
+    `admin`
+- `POST /inventories/{inventory_slug}/members`
+  - request body is JSON
+  - `actor_id` is required
+  - `role` must be `viewer`, `editor`, or `owner`
+  - grants a new membership or updates an existing membership without creating
+    duplicate rows
+  - returns the resulting membership with `201`
+  - requires inventory `owner` access in shared-service mode, or global
+    `admin`
+  - writes an audit event when the membership is created or role is changed
+- `PATCH /inventories/{inventory_slug}/members/{actor_id}`
+  - request body is JSON with replacement `role`
+  - updates an existing membership and returns `404 not_found` when the member
+    does not exist
+  - role must be `viewer`, `editor`, or `owner`
+  - demoting the last owner returns `409 conflict`
+  - requires inventory `owner` access in shared-service mode, or global
+    `admin`
+  - writes an audit event when the role changes
+- `DELETE /inventories/{inventory_slug}/members/{actor_id}`
+  - revokes an existing membership and returns the removed membership identity
+    plus previous role
+  - removing the last owner returns `409 conflict`
+  - requires inventory `owner` access in shared-service mode, or global
+    `admin`
+  - writes an audit event when a membership is revoked
+  - clients should URL-encode `actor_id` path values
 - `POST /imports/csv`
   - request body is `multipart/form-data`, not JSON
   - multipart field `file` is required
@@ -567,6 +601,10 @@ before the generic 500 envelope is returned.
   - `editor` can read and write a specific inventory
   - `owner` can read and write a specific inventory
   - global `admin` bypasses inventory membership checks
+- `owner` or global `admin` can list, grant, update, and revoke memberships
+  through the `/inventories/{inventory_slug}/members` API. The API preserves at
+  least one owner per inventory and audits grant, role-change, and revoke
+  actions.
 - `GET /inventories` returns only the inventories visible to the caller, while
   global `admin` can see all inventories. Each inventory list row includes
   permission-aware frontend fields: `role`, `can_read`, `can_write`,

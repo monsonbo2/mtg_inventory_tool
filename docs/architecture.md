@@ -133,6 +133,9 @@ shared service.
   - local inventory membership roles: `viewer`, `editor`, `owner`
 - Inventory listing, inventory reads, and inventory writes are now scoped by
   local memberships, with global `admin` as the bypass.
+- Inventory owners and global admins can manage local memberships over the API;
+  the backend preserves at least one owner and audits grant, role-change, and
+  revoke actions.
 - Inventory creation is available to authenticated users, and the creator
   becomes `owner` on the new inventory.
 - First-run shared-service onboarding can now use `POST /me/bootstrap` to

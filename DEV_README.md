@@ -57,6 +57,9 @@ Current authz model:
 - inventory reads require inventory membership or global `admin`
 - inventory writes require inventory `editor` / `owner` membership or global
   `admin`
+- inventory membership management requires inventory `owner` membership or
+  global `admin`; managed changes are audited and cannot remove or demote the
+  last owner
 - `POST /inventories` lets any authenticated user create an inventory and
   become `owner`
 - `POST /inventories/{inventory_slug}/items/bulk` now supports grouped:
@@ -86,7 +89,8 @@ Important limitation:
   organization/team system
 - existing inventories with no memberships are effectively admin-only until
   memberships are granted
-- membership management is currently CLI-first, not a full app UI workflow
+- membership management now has a backend API and CLI repair path, but not a
+  richer org/team workflow
 - CLI `create-inventory` does not carry an authenticated actor context by
   default, so inventories created that way may need membership grants afterward
 

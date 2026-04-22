@@ -180,7 +180,9 @@ below through your proxy or API client.
 
 Check `GET /me/access-summary` first for each user. Then verify
 `GET /inventories`, catalog search availability, inventory reads, and denied
-writes match the table above.
+writes match the table above. Owner/admin membership-management checks can use
+`GET /inventories/{inventory_slug}/members` plus the matching POST/PATCH/DELETE
+member routes.
 
 `GET /inventories` now includes capability fields for permission-aware UI:
 `role`, `can_read`, `can_write`, `can_manage_share`, and `can_transfer_to`.

@@ -138,6 +138,8 @@ The current shared-service behavior is:
 - card search routes require a user who can read at least one inventory
 - inventory item/audit reads require membership on that inventory
 - inventory writes require `editor` or `owner` membership on that inventory
+- inventory membership management requires `owner` membership on that
+  inventory or global `admin`
 - `POST /inventories` lets any authenticated user create an owned inventory
 - `POST /me/bootstrap` creates one personal default inventory named
   `Collection` for an authenticated user, grants `owner`, and returns the same
@@ -268,8 +270,19 @@ mtg-personal-inventory add-card \
 `--scryfall-id`. Inventory rows still store the resolved printing, and if you
 omit `--language-code` the owned row inherits the resolved printing language.
 
-For shared-service rollout and ongoing membership management, the inventory CLI
-now also provides:
+For shared-service rollout and ongoing membership management, the API exposes:
+
+```text
+GET    /inventories/{inventory_slug}/members
+POST   /inventories/{inventory_slug}/members
+PATCH  /inventories/{inventory_slug}/members/{actor_id}
+DELETE /inventories/{inventory_slug}/members/{actor_id}
+```
+
+These routes require inventory `owner` access or global `admin`, preserve at
+least one owner per inventory, and write audit events for grant, role-change,
+and revoke actions. For operator seeding or repair, the inventory CLI still
+provides:
 
 ```bash
 mtg-personal-inventory grant-inventory-membership \
@@ -463,8 +476,9 @@ Recommended rollout sequence:
 3. If you are starting from a blank system, let first users create inventories
    through the app or `POST /inventories` so creators become `owner`. Use
    `POST /me/bootstrap` only when the default `Collection` name is acceptable,
-   or use the CLI membership commands to assign owners on existing inventories.
-4. Grant `viewer` / `editor` memberships to the first cohort.
+   or use the membership API/CLI to assign owners on existing inventories.
+4. Grant `viewer` / `editor` memberships to the first cohort through the app,
+   API, or CLI.
 5. Verify real user sessions against those memberships before launch.
 
 A typical startup flow is:
@@ -572,7 +586,8 @@ dependencies are missing.
   those JSON reads are published as `/api/shared/inventories/{share_token}`,
   while share-link `public_path` remains the browser-facing page path.
   Inventory reads and writes are scoped by local memberships. Authenticated
-  users can create inventories they own; global roles are only for elevated app
+  users can create inventories they own, and owners/admins can manage
+  inventory memberships through the API. Global roles are only for elevated app
   permissions such as admin bypass. The default verified identity header is
   `X-Authenticated-User`, and the default roles header is
   `X-Authenticated-Roles`.

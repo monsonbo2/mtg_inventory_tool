@@ -21,6 +21,7 @@ from mtg_source_stack.inventory.service import (
     create_inventory,
     grant_inventory_membership,
     import_deck_url,
+    list_inventory_audit_events,
 )
 from tests.optional_dependencies import (
     WEB_TEST_SKIP_REASON,
@@ -116,6 +117,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/imports/deck-url", "post"),
                 ("/me/access-summary", "get"),
                 ("/me/bootstrap", "post"),
+                ("/inventories/{inventory_slug}/members", "get"),
+                ("/inventories/{inventory_slug}/members", "post"),
+                ("/inventories/{inventory_slug}/members/{actor_id}", "patch"),
+                ("/inventories/{inventory_slug}/members/{actor_id}", "delete"),
                 ("/inventories/{inventory_slug}/share-link", "get"),
                 ("/inventories/{inventory_slug}/share-link", "post"),
                 ("/inventories/{inventory_slug}/share-link/rotate", "post"),
@@ -148,6 +153,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories/{inventory_slug}/export.csv", "get"),
                 ("/me/access-summary", "get"),
                 ("/me/bootstrap", "post"),
+                ("/inventories/{inventory_slug}/members", "get"),
+                ("/inventories/{inventory_slug}/members", "post"),
+                ("/inventories/{inventory_slug}/members/{actor_id}", "patch"),
+                ("/inventories/{inventory_slug}/members/{actor_id}", "delete"),
                 ("/inventories/{inventory_slug}/share-link", "get"),
                 ("/inventories/{inventory_slug}/share-link", "post"),
                 ("/inventories/{inventory_slug}/share-link/rotate", "post"),
@@ -440,6 +449,37 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 [{"type": "string"}, {"type": "null"}],
                 access_summary_properties["default_inventory_slug"]["anyOf"],
+            )
+
+            members_schema = spec["paths"]["/inventories/{inventory_slug}/members"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            self.assertEqual("array", members_schema["type"])
+            member_schema_name = self._schema_name_from_ref(members_schema["items"]["$ref"])
+            self.assertEqual("InventoryMembershipResponse", member_schema_name)
+            member_properties = components[member_schema_name]["properties"]
+            self.assertEqual(["viewer", "editor", "owner"], member_properties["role"]["enum"])
+            self.assertEqual("string", member_properties["actor_id"]["type"])
+            member_grant_request_schema = spec["paths"]["/inventories/{inventory_slug}/members"]["post"][
+                "requestBody"
+            ]["content"]["application/json"]["schema"]
+            self.assertEqual(
+                "InventoryMembershipGrantRequest",
+                self._schema_name_from_ref(member_grant_request_schema["$ref"]),
+            )
+            member_update_request_schema = spec["paths"]["/inventories/{inventory_slug}/members/{actor_id}"][
+                "patch"
+            ]["requestBody"]["content"]["application/json"]["schema"]
+            self.assertEqual(
+                "InventoryMembershipUpdateRequest",
+                self._schema_name_from_ref(member_update_request_schema["$ref"]),
+            )
+            member_remove_schema = spec["paths"]["/inventories/{inventory_slug}/members/{actor_id}"]["delete"][
+                "responses"
+            ]["200"]["content"]["application/json"]["schema"]
+            self.assertEqual(
+                "InventoryMembershipRemovalResponse",
+                self._schema_name_from_ref(member_remove_schema["$ref"]),
             )
             share_link_schema = spec["paths"]["/inventories/{inventory_slug}/share-link"]["post"]["responses"][
                 "201"
@@ -5059,6 +5099,187 @@ class WebApiTest(unittest.TestCase):
                 created = client.post("/inventories/admin-only/share-link", headers=admin_headers)
                 self.assertEqual(201, created.status_code)
                 self.assertEqual("admin-only", created.json()["inventory"])
+
+    def test_inventory_memberships_are_owner_managed_and_audited(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            owner_headers = {"X-Authenticated-User": "owner-user"}
+            viewer_headers = {"X-Authenticated-User": "viewer-user"}
+            editor_headers = {"X-Authenticated-User": "editor-user"}
+            outsider_headers = {"X-Authenticated-User": "outsider-user"}
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="personal",
+                actor_id="editor-user",
+                role="editor",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                anonymous_list = client.get("/inventories/personal/members")
+                self.assertEqual(401, anonymous_list.status_code)
+
+                viewer_list = client.get("/inventories/personal/members", headers=viewer_headers)
+                self.assertEqual(403, viewer_list.status_code)
+
+                editor_grant = client.post(
+                    "/inventories/personal/members",
+                    headers=editor_headers,
+                    json={"actor_id": "new-user", "role": "viewer"},
+                )
+                self.assertEqual(403, editor_grant.status_code)
+
+                outsider_list = client.get("/inventories/personal/members", headers=outsider_headers)
+                self.assertEqual(403, outsider_list.status_code)
+
+                listed = client.get("/inventories/personal/members", headers=owner_headers)
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual(
+                    [
+                        ("editor-user", "editor"),
+                        ("owner-user", "owner"),
+                        ("viewer-user", "viewer"),
+                    ],
+                    [(row["actor_id"], row["role"]) for row in listed.json()],
+                )
+
+                invalid_role = client.post(
+                    "/inventories/personal/members",
+                    headers=owner_headers,
+                    json={"actor_id": "bad-user", "role": "manager"},
+                )
+                self.assertEqual(400, invalid_role.status_code)
+                self.assertEqual("validation_error", invalid_role.json()["error"]["code"])
+
+                granted = client.post(
+                    "/inventories/personal/members",
+                    headers={**owner_headers, "X-Request-Id": "req-grant-member"},
+                    json={"actor_id": "new-user", "role": "viewer"},
+                )
+                self.assertEqual(201, granted.status_code)
+                self.assertEqual("personal", granted.json()["inventory"])
+                self.assertEqual("new-user", granted.json()["actor_id"])
+                self.assertEqual("viewer", granted.json()["role"])
+                self.assertTrue(granted.json()["created_at"])
+                self.assertTrue(granted.json()["updated_at"])
+
+                duplicate_grant = client.post(
+                    "/inventories/personal/members",
+                    headers=owner_headers,
+                    json={"actor_id": "new-user", "role": "viewer"},
+                )
+                self.assertEqual(201, duplicate_grant.status_code)
+
+                updated = client.patch(
+                    "/inventories/personal/members/new-user",
+                    headers={**owner_headers, "X-Request-Id": "req-update-member"},
+                    json={"role": "editor"},
+                )
+                self.assertEqual(200, updated.status_code)
+                self.assertEqual("editor", updated.json()["role"])
+
+                missing_update = client.patch(
+                    "/inventories/personal/members/missing-user",
+                    headers=owner_headers,
+                    json={"role": "viewer"},
+                )
+                self.assertEqual(404, missing_update.status_code)
+
+                last_owner_demote = client.patch(
+                    "/inventories/personal/members/owner-user",
+                    headers=owner_headers,
+                    json={"role": "editor"},
+                )
+                self.assertEqual(409, last_owner_demote.status_code)
+                self.assertEqual("conflict", last_owner_demote.json()["error"]["code"])
+
+                last_owner_delete = client.delete(
+                    "/inventories/personal/members/owner-user",
+                    headers=owner_headers,
+                )
+                self.assertEqual(409, last_owner_delete.status_code)
+
+                removed = client.delete(
+                    "/inventories/personal/members/new-user",
+                    headers={**owner_headers, "X-Request-Id": "req-remove-member"},
+                )
+                self.assertEqual(200, removed.status_code)
+                self.assertEqual(
+                    {
+                        "inventory": "personal",
+                        "actor_id": "new-user",
+                        "role": "editor",
+                    },
+                    removed.json(),
+                )
+
+                final_list = client.get("/inventories/personal/members", headers=owner_headers)
+                self.assertEqual(200, final_list.status_code)
+                self.assertEqual(
+                    [
+                        ("editor-user", "editor"),
+                        ("owner-user", "owner"),
+                        ("viewer-user", "viewer"),
+                    ],
+                    [(row["actor_id"], row["role"]) for row in final_list.json()],
+                )
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=10)
+            self.assertEqual(
+                [
+                    "revoke_inventory_membership",
+                    "update_inventory_membership",
+                    "grant_inventory_membership",
+                ],
+                [row.action for row in audit_rows],
+            )
+            self.assertEqual(["req-remove-member", "req-update-member", "req-grant-member"], [row.request_id for row in audit_rows])
+            self.assertTrue(all(row.actor_type == "api" for row in audit_rows))
+            self.assertTrue(all(row.actor_id == "owner-user" for row in audit_rows))
+
+    def test_inventory_memberships_allow_global_admin_management(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            admin_headers = {
+                "X-Authenticated-User": "admin-user",
+                "X-Authenticated-Roles": "admin",
+            }
+            create_inventory(
+                db_path,
+                slug="admin-only",
+                display_name="Admin Only",
+                description=None,
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                listed = client.get("/inventories/admin-only/members", headers=admin_headers)
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual([], listed.json())
+
+                granted = client.post(
+                    "/inventories/admin-only/members",
+                    headers=admin_headers,
+                    json={"actor_id": "owner-user", "role": "owner"},
+                )
+                self.assertEqual(201, granted.status_code)
+                self.assertEqual("admin-only", granted.json()["inventory"])
+                self.assertEqual("owner-user", granted.json()["actor_id"])
+                self.assertEqual("owner", granted.json()["role"])
 
     def test_shared_service_mutating_requests_require_authenticated_actor_header(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

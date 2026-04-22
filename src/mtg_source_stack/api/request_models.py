@@ -18,6 +18,7 @@ from ..inventory.normalize import (
 
 
 FinishInput = Literal["normal", "nonfoil", "foil", "etched"]
+InventoryMembershipRoleInput = Literal["viewer", "editor", "owner"]
 
 _CANONICAL_FINISHES_TEXT = ", ".join(CANONICAL_FINISHES)
 _ACCEPTED_FINISH_INPUTS_TEXT = ", ".join(ACCEPTED_FINISH_INPUTS)
@@ -215,6 +216,15 @@ class InventoryCreateRequest(ApiBaseModel):
     notes: str | None = None
     acquisition_price: str | None = None
     acquisition_currency: str | None = None
+
+
+class InventoryMembershipGrantRequest(ApiBaseModel):
+    actor_id: str
+    role: InventoryMembershipRoleInput
+
+
+class InventoryMembershipUpdateRequest(ApiBaseModel):
+    role: InventoryMembershipRoleInput
 
 
 class DecklistImportResolutionRequest(ApiBaseModel):

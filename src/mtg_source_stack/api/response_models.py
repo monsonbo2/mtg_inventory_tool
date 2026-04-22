@@ -98,6 +98,20 @@ class InventoryCreateResponse(ApiBaseModel):
     acquisition_currency: str | None
 
 
+class InventoryMembershipResponse(ApiBaseModel):
+    inventory: str
+    actor_id: str
+    role: Literal["viewer", "editor", "owner"]
+    created_at: str
+    updated_at: str
+
+
+class InventoryMembershipRemovalResponse(ApiBaseModel):
+    inventory: str
+    actor_id: str
+    role: Literal["viewer", "editor", "owner"]
+
+
 class DefaultInventoryBootstrapResponse(ApiBaseModel):
     created: bool
     inventory: InventoryCreateResponse

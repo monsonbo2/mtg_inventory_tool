@@ -8,7 +8,8 @@ from typing import Iterable
 
 from ..db.connection import connect
 from ..db.schema import require_current_schema
-from ..errors import NotFoundError, ValidationError
+from ..errors import ConflictError, NotFoundError, ValidationError
+from .audit import write_inventory_audit_event
 from .access_models import InventoryMembershipRemovalResult, InventoryMembershipRow
 from .normalize import normalize_inventory_slug
 
@@ -80,6 +81,48 @@ def _membership_row_from_identity(
     )
 
 
+def _membership_row_from_identity_or_none(
+    connection: sqlite3.Connection,
+    *,
+    inventory_id: int,
+    actor_id: str,
+) -> InventoryMembershipRow | None:
+    try:
+        return _membership_row_from_identity(
+            connection,
+            inventory_id=inventory_id,
+            actor_id=actor_id,
+        )
+    except NotFoundError:
+        return None
+
+
+def _owner_membership_count(connection: sqlite3.Connection, *, inventory_id: int) -> int:
+    row = connection.execute(
+        """
+        SELECT COUNT(*) AS owner_count
+        FROM inventory_memberships
+        WHERE inventory_id = ? AND role = 'owner'
+        """,
+        (inventory_id,),
+    ).fetchone()
+    return int(row["owner_count"])
+
+
+def _ensure_owner_membership_can_change(
+    connection: sqlite3.Connection,
+    *,
+    inventory_id: int,
+    inventory_slug: str,
+    current_role: str,
+    new_role: str | None,
+) -> None:
+    if current_role != "owner" or new_role == "owner":
+        return
+    if _owner_membership_count(connection, inventory_id=inventory_id) <= 1:
+        raise ConflictError(f"Inventory '{inventory_slug}' must retain at least one owner.")
+
+
 def grant_inventory_membership_with_connection(
     connection: sqlite3.Connection,
     *,
@@ -125,6 +168,201 @@ def grant_inventory_membership(
         )
         connection.commit()
         return membership
+
+
+def _write_membership_audit_event(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    action: str,
+    member_actor_id: str,
+    actor_type: str,
+    actor_id: str | None,
+    request_id: str | None,
+    previous_role: str | None,
+    role: str | None,
+) -> None:
+    metadata = {
+        "member_actor_id": member_actor_id,
+        "previous_role": previous_role,
+        "role": role,
+    }
+    write_inventory_audit_event(
+        connection,
+        inventory_slug=inventory_slug,
+        action=action,
+        metadata=metadata,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+
+
+def set_inventory_membership_role(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    member_actor_id: str,
+    role: str,
+    actor_id: str | None,
+    actor_type: str = "cli",
+    request_id: str | None = None,
+) -> InventoryMembershipRow:
+    normalized_actor_id = _normalize_actor_id(member_actor_id)
+    normalized_role = normalize_inventory_membership_role(role)
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        inventory = _inventory_row_from_slug(connection, inventory_slug)
+        inventory_id = int(inventory["id"])
+        existing = _membership_row_from_identity_or_none(
+            connection,
+            inventory_id=inventory_id,
+            actor_id=normalized_actor_id,
+        )
+        if existing is not None and existing.role == normalized_role:
+            return existing
+
+        if existing is not None:
+            _ensure_owner_membership_can_change(
+                connection,
+                inventory_id=inventory_id,
+                inventory_slug=inventory["slug"],
+                current_role=existing.role,
+                new_role=normalized_role,
+            )
+
+        membership = grant_inventory_membership_with_connection(
+            connection,
+            inventory_id=inventory_id,
+            actor_id=normalized_actor_id,
+            role=normalized_role,
+        )
+        _write_membership_audit_event(
+            connection,
+            inventory_slug=inventory["slug"],
+            action="grant_inventory_membership" if existing is None else "update_inventory_membership",
+            member_actor_id=normalized_actor_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+            previous_role=existing.role if existing is not None else None,
+            role=membership.role,
+        )
+        connection.commit()
+        return membership
+
+
+def update_inventory_membership_role(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    member_actor_id: str,
+    role: str,
+    actor_id: str | None,
+    actor_type: str = "cli",
+    request_id: str | None = None,
+) -> InventoryMembershipRow:
+    normalized_actor_id = _normalize_actor_id(member_actor_id)
+    normalized_role = normalize_inventory_membership_role(role)
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        inventory = _inventory_row_from_slug(connection, inventory_slug)
+        inventory_id = int(inventory["id"])
+        existing = _membership_row_from_identity_or_none(
+            connection,
+            inventory_id=inventory_id,
+            actor_id=normalized_actor_id,
+        )
+        if existing is None:
+            raise NotFoundError(
+                f"No inventory membership found for actor '{normalized_actor_id}' in inventory '{inventory['slug']}'."
+            )
+        if existing.role == normalized_role:
+            return existing
+
+        _ensure_owner_membership_can_change(
+            connection,
+            inventory_id=inventory_id,
+            inventory_slug=inventory["slug"],
+            current_role=existing.role,
+            new_role=normalized_role,
+        )
+        membership = grant_inventory_membership_with_connection(
+            connection,
+            inventory_id=inventory_id,
+            actor_id=normalized_actor_id,
+            role=normalized_role,
+        )
+        _write_membership_audit_event(
+            connection,
+            inventory_slug=inventory["slug"],
+            action="update_inventory_membership",
+            member_actor_id=normalized_actor_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+            previous_role=existing.role,
+            role=membership.role,
+        )
+        connection.commit()
+        return membership
+
+
+def remove_inventory_membership(
+    db_path: str | Path,
+    *,
+    inventory_slug: str,
+    member_actor_id: str,
+    actor_id: str | None,
+    actor_type: str = "cli",
+    request_id: str | None = None,
+) -> InventoryMembershipRemovalResult:
+    normalized_actor_id = _normalize_actor_id(member_actor_id)
+    db_file = require_current_schema(db_path)
+    with connect(db_file) as connection:
+        inventory = _inventory_row_from_slug(connection, inventory_slug)
+        inventory_id = int(inventory["id"])
+        existing = _membership_row_from_identity_or_none(
+            connection,
+            inventory_id=inventory_id,
+            actor_id=normalized_actor_id,
+        )
+        if existing is None:
+            raise NotFoundError(
+                f"No inventory membership found for actor '{normalized_actor_id}' in inventory '{inventory['slug']}'."
+            )
+
+        _ensure_owner_membership_can_change(
+            connection,
+            inventory_id=inventory_id,
+            inventory_slug=inventory["slug"],
+            current_role=existing.role,
+            new_role=None,
+        )
+        connection.execute(
+            """
+            DELETE FROM inventory_memberships
+            WHERE inventory_id = ? AND actor_id = ?
+            """,
+            (inventory_id, normalized_actor_id),
+        )
+        _write_membership_audit_event(
+            connection,
+            inventory_slug=inventory["slug"],
+            action="revoke_inventory_membership",
+            member_actor_id=normalized_actor_id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            request_id=request_id,
+            previous_role=existing.role,
+            role=None,
+        )
+        connection.commit()
+        return InventoryMembershipRemovalResult(
+            inventory=inventory["slug"],
+            actor_id=normalized_actor_id,
+            role=existing.role,
+        )
 
 
 def list_inventory_memberships(
