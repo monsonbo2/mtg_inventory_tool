@@ -994,8 +994,13 @@ export function SearchPanel(props: {
                 }
               >
                 <div className="search-workspace-results-header">
-                  <strong>Matching cards</strong>
-                  <span>Select a card to review printings.</span>
+                  <div>
+                    <strong>Matching cards</strong>
+                    <span>Select a card to review printings.</span>
+                  </div>
+                  <span className="search-workspace-results-count">
+                    Showing {props.state.search.groups.length} of {searchResultCount}
+                  </span>
                 </div>
 
                 <div className="search-workspace-result-list">

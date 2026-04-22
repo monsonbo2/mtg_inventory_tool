@@ -6,14 +6,29 @@ export function CardThumbnail(props: {
   name: string;
   variant: "search" | "owned";
 }) {
-  const [didFail, setDidFail] = useState(false);
+  const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
 
   useEffect(() => {
-    setDidFail(false);
-  }, [props.imageUrl]);
+    setFailedImageUrls([]);
+  }, [props.imageUrl, props.imageUrlLarge]);
 
-  const hasImage = Boolean(props.imageUrl) && !didFail;
+  const imageCandidates = [props.imageUrl, props.imageUrlLarge].filter(
+    (imageUrl): imageUrl is string => Boolean(imageUrl),
+  );
+  const activeImageUrl =
+    imageCandidates.find((imageUrl) => !failedImageUrls.includes(imageUrl)) || null;
+  const hasImage = Boolean(activeImageUrl);
   const className = `card-thumb card-thumb-${props.variant}`;
+  const fallbackInitials =
+    props.name
+      .split(/\s+/)
+      .map((word) => word.match(/[A-Za-z0-9]/)?.[0] || "")
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?";
+  const fallbackLabel = imageCandidates.length
+    ? "Preview unavailable"
+    : "No image data";
 
   return (
     <div className={className}>
@@ -23,13 +38,22 @@ export function CardThumbnail(props: {
           className="card-thumb-image"
           decoding="async"
           loading="lazy"
-          onError={() => setDidFail(true)}
-          src={props.imageUrl || undefined}
+          onError={() => {
+            if (!activeImageUrl) {
+              return;
+            }
+            setFailedImageUrls((current) =>
+              current.includes(activeImageUrl) ? current : [...current, activeImageUrl],
+            );
+          }}
+          src={activeImageUrl || undefined}
         />
       ) : (
-        <div className="card-thumb-fallback">
-          <span>Card Art</span>
-          <strong>{props.imageUrlLarge ? "Preview unavailable" : "No image data"}</strong>
+        <div className="card-thumb-fallback" title={props.name}>
+          <span aria-hidden="true" className="card-thumb-fallback-mark">
+            {fallbackInitials}
+          </span>
+          <strong>{fallbackLabel}</strong>
         </div>
       )}
     </div>
