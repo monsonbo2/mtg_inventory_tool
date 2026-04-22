@@ -1416,7 +1416,10 @@ describe("App", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      within(boltCard!).getByText(/Ready to add with the default printing/i),
+      within(boltCard!).getByText(/Using default printing: M11 #146 .* Magic 2011/i),
+    ).toBeInTheDocument();
+    expect(
+      within(boltCard!).getByText("Ready to add the backend default printing."),
     ).toBeInTheDocument();
     expect(finishSelect).toBeEnabled();
     const addButton = within(boltCard!).getByRole("button", { name: "Add to collection" });
@@ -1619,6 +1622,10 @@ describe("App", () => {
     expect(
       within(boltCard!).getByRole("button", { name: "Load all languages" }),
     ).toBeInTheDocument();
+    expect(within(boltCard!).getByText("Other languages")).toBeInTheDocument();
+    expect(
+      within(boltCard!).getByText("Showing add-ready printings first."),
+    ).toBeInTheDocument();
     expect(
       within(printingSelect).queryByRole("option", { name: /STRIXHAVEN MYSTICAL ARCHIVE/i }),
     ).not.toBeInTheDocument();
@@ -1633,6 +1640,7 @@ describe("App", () => {
 
     const languageSelect = within(boltCard!).getByRole("combobox", { name: "Language" });
     await user.selectOptions(languageSelect, "ja");
+    expect(within(boltCard!).getByText("All available languages are loaded.")).toBeInTheDocument();
 
     expect(
       within(printingSelect).getByRole("option", { name: /STRIXHAVEN MYSTICAL ARCHIVE/i }),
@@ -1641,6 +1649,12 @@ describe("App", () => {
     await user.selectOptions(languageSelect, "en");
     await user.selectOptions(printingSelect, "bolt-m11");
 
+    expect(
+      within(boltCard!).getByText(/Selected printing: M11 #146 .* Magic 2011/i),
+    ).toBeInTheDocument();
+    expect(
+      within(boltCard!).getByText("Ready to add the selected printing."),
+    ).toBeInTheDocument();
     expect(finishSelect).toBeEnabled();
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
 

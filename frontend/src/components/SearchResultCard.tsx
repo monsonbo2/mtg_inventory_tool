@@ -49,6 +49,10 @@ function sortLanguageCodes(languageCodes: string[]) {
   });
 }
 
+function formatPrintingDetail(printing: CatalogPrintingLookupRow) {
+  return `${printing.set_code.toUpperCase()} #${printing.collector_number} · ${printing.set_name} · ${printing.lang.toUpperCase()}`;
+}
+
 export function SearchResultCard(props: {
   group: SearchCardGroup;
   busyPrintingId: string | null;
@@ -239,8 +243,16 @@ export function SearchResultCard(props: {
     effectivePrinting && !effectivePrinting.finishes.includes(finish)
       ? effectivePrinting.finishes[0] || "normal"
       : finish;
+  const effectivePrintingDetail = effectivePrinting
+    ? formatPrintingDetail(effectivePrinting)
+    : null;
+  const effectivePrintingModeLabel = activePrinting
+    ? "Selected printing"
+    : defaultPrinting
+      ? "Using default printing"
+      : null;
   const selectedPrintingSummary = activePrinting
-    ? `${activePrinting.set_name} · #${activePrinting.collector_number} · ${activePrinting.lang.toUpperCase()}${
+    ? `Selected printing: ${formatPrintingDetail(activePrinting)}${
         activePrinting.is_default_add_choice ? " · Default add choice" : ""
       }`
     : isLoadingAllLanguages
@@ -248,10 +260,37 @@ export function SearchResultCard(props: {
       : isLoadingInitialPrintings
         ? "Loading quick-add printings for this card."
         : defaultPrinting
-          ? "Ready to add with the default printing, or choose another printing below."
+          ? `Using default printing: ${formatPrintingDetail(defaultPrinting)}`
           : hasLoadedPrimaryPrintings
             ? "Choose a printing below to add this card."
             : "Loading quick-add printings for this card.";
+  const addStatusTone =
+    !props.canAdd || !quantityIsValid || printingStatus === "error"
+      ? "error"
+      : recentlyAdded
+        ? "success"
+        : busy || isLoadingInitialPrintings || isLoadingAllLanguages
+          ? "info"
+          : "ready";
+  const addStatusMessage = !props.canAdd
+    ? "Choose a collection before adding cards."
+    : !quantityIsValid
+      ? "Enter a whole-number quantity greater than 0."
+      : busy
+        ? "Adding this printing to the selected collection."
+        : recentlyAdded
+          ? "Added. You can add another printing from this card."
+          : isLoadingInitialPrintings && !effectivePrinting
+            ? "Loading the quickest add-ready printings."
+            : printingStatus === "error"
+              ? "Printing choices could not load."
+              : needsPrintingSelection
+                ? "Choose a printing before adding this card."
+                : activePrinting
+                  ? "Ready to add the selected printing."
+                  : defaultPrinting
+                    ? "Ready to add the backend default printing."
+                    : "Ready.";
 
   async function loadPrintings(mode: PrintingLoadMode) {
     if (
@@ -400,12 +439,21 @@ export function SearchResultCard(props: {
             >
               {addButtonLabel}
             </button>
+            <p
+              aria-live="polite"
+              className={`search-result-add-status search-result-add-status-${addStatusTone}`}
+            >
+              {addStatusMessage}
+            </p>
           </div>
         </div>
 
         <div className="form-section">
           <div className="form-section-header">
             <strong>Quick add</strong>
+            <span>
+              {effectivePrintingModeLabel || "Printing required"}
+            </span>
           </div>
 
           <div className="search-result-quick-add-grid">
@@ -471,9 +519,13 @@ export function SearchResultCard(props: {
             </label>
 
             {hasAdditionalLanguages && !hasLoadedAllPrintings ? (
-              <div className="search-printing-helper">
+              <div className="search-printing-expander">
+                <div className="search-printing-expander-copy">
+                  <strong>Other languages</strong>
+                  <span>Showing add-ready printings first.</span>
+                </div>
                 <button
-                  className="field-link-button"
+                  className="secondary-button search-printing-expander-button"
                   disabled={isLoadingAllLanguages}
                   onClick={() => {
                     void handleLoadAllLanguages();
@@ -511,9 +563,24 @@ export function SearchResultCard(props: {
             ) : null}
           </div>
 
+          {effectivePrintingDetail ? (
+            <div className="search-printing-current" aria-live="polite">
+              <span
+                className={
+                  activePrinting
+                    ? "search-printing-mode-pill search-printing-mode-selected"
+                    : "search-printing-mode-pill search-printing-mode-default"
+                }
+              >
+                {effectivePrintingModeLabel}
+              </span>
+              <span>{effectivePrintingDetail}</span>
+            </div>
+          ) : null}
+
           {isLoadingInitialPrintings ? (
             <p className="field-hint field-hint-info">
-              Loading quick-add printings for {props.group.name}...
+              Loading the fastest add-ready printings for {props.group.name}...
             </p>
           ) : isLoadingAllLanguages ? (
             <p className="field-hint field-hint-info">
@@ -534,14 +601,24 @@ export function SearchResultCard(props: {
                 Retry loading printings
               </button>
             </div>
+          ) : hasLoadedAllPrintings && showLanguagePicker ? (
+            <>
+              <p className="field-hint field-hint-info">
+                All available languages are loaded.
+              </p>
+              {!activePrinting && !defaultPrinting ? (
+                <p className="field-hint field-hint-info">
+                  Choose a printing to finish adding this card.
+                </p>
+              ) : null}
+            </>
           ) : !activePrinting && !defaultPrinting && hasLoadedPrimaryPrintings ? (
             <p className="field-hint field-hint-info">
               Choose a printing to finish adding this card.
             </p>
           ) : hasAdditionalLanguages && !hasLoadedAllPrintings ? (
             <p className="field-hint field-hint-info">
-              Showing add-ready printings first. Load all languages to browse every
-              available printing for this card.
+              Load all languages to browse every available printing for this card.
             </p>
           ) : null}
         </div>
@@ -599,10 +676,6 @@ export function SearchResultCard(props: {
         {!quantityIsValid ? (
           <p className="field-hint field-hint-error">
             Enter a whole-number quantity greater than 0.
-          </p>
-        ) : recentlyAdded ? (
-          <p className="field-hint field-hint-success">
-            Added. You can keep this card open and add another printing.
           </p>
         ) : null}
       </form>

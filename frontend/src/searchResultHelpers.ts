@@ -24,7 +24,7 @@ export function createSearchCardGroups(rows: CatalogNameSearchRow[]) {
 }
 
 export function formatPrintingOptionLabel(printing: CatalogSearchRow) {
-  return `${printing.set_code.toUpperCase()} · ${printing.set_name} · #${printing.collector_number} · ${printing.lang.toUpperCase()}`;
+  return `${printing.set_code.toUpperCase()} #${printing.collector_number} · ${printing.set_name} · ${printing.lang.toUpperCase()}`;
 }
 
 export function summarizeSearchGroup(group: SearchCardGroup) {

@@ -180,6 +180,20 @@
     min-width: 0;
   }
 
+  .search-result-add-status {
+    width: 100%;
+    text-align: left;
+  }
+
+  .search-printing-expander {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-printing-expander-button {
+    justify-content: center;
+  }
+
   .search-form-actions {
     justify-items: stretch;
   }
