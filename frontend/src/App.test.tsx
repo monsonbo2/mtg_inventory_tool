@@ -170,6 +170,16 @@ describe("App", () => {
     };
   }
 
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((promiseResolve, promiseReject) => {
+      resolve = promiseResolve;
+      reject = promiseReject;
+    });
+    return { promise, reject, resolve };
+  }
+
   function buildInventorySummary(
     overrides: Partial<InventorySummary> = {},
   ): InventorySummary {
@@ -1140,6 +1150,204 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /more matches/i })).not.toBeInTheDocument();
   });
 
+  it("ignores stale submitted search responses", async () => {
+    const user = userEvent.setup();
+    const cloudSearch = deferred<CatalogNameSearchResult>();
+    const lightningSearch = deferred<CatalogNameSearchResult>();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Cloud" && params.limit === 18) {
+        return cloudSearch.promise;
+      }
+      if (params.query === "Lightning" && params.limit === 18) {
+        return lightningSearch.promise;
+      }
+      return buildNameSearchResult();
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.type(input, "Cloud");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    await user.clear(input);
+    await user.type(input, "Lightning");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    lightningSearch.resolve(
+      buildNameSearchResult([
+        buildNameSearchRow({
+          oracle_id: "lightning-bolt-oracle",
+          name: "Lightning Bolt",
+        }),
+      ]),
+    );
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+
+    cloudSearch.resolve(
+      buildNameSearchResult([
+        buildNameSearchRow({
+          oracle_id: "cloud-oracle",
+          name: "Cloud Sprite",
+        }),
+      ]),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("heading", { name: "Cloud Sprite" })).not.toBeInTheDocument();
+  });
+
+  it("keeps submitted results labeled while the search input is edited", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Cloud") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "cloud-oracle",
+            name: "Cloud Sprite",
+          }),
+        ]);
+      }
+      return buildNameSearchResult();
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.type(input, "Cloud");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    expect(await screen.findByRole("heading", { name: "Cloud Sprite" })).toBeInTheDocument();
+
+    await user.type(input, "s");
+
+    expect(screen.getByRole("heading", { name: "Cloud Sprite" })).toBeInTheDocument();
+    expect(
+      screen.getByText('Showing cards results for "Cloud". Search to update.'),
+    ).toBeInTheDocument();
+  });
+
+  it("switches catalog scope and uses it for search and printing lookups", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Clue" && params.scope === "all") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "clue-token-oracle",
+            name: "Clue Token",
+          }),
+        ]);
+      }
+      if (params.query === "Clue") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "clue-card-oracle",
+            name: "Trail of Evidence",
+          }),
+        ]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(
+      buildPrintingSummary([
+        buildSearchRow({
+          scryfall_id: "clue-token",
+          name: "Clue Token",
+          is_default_add_choice: true,
+        }),
+      ]),
+    );
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.type(input, "Clue");
+
+    const scopeGroup = screen.getByRole("group", { name: "Catalog search scope" });
+    await user.click(within(scopeGroup).getByRole("button", { name: "All catalog" }));
+
+    expect(await screen.findByRole("heading", { name: "Clue Token" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(searchCardNames).toHaveBeenLastCalledWith({
+        query: "Clue",
+        limit: 18,
+        scope: "all",
+      });
+    });
+    await waitFor(() => {
+      expect(getCardPrintingSummary).toHaveBeenCalledWith("clue-token-oracle", {
+        scope: "all",
+      });
+    });
+
+    await user.click(within(scopeGroup).getByRole("button", { name: "Cards" }));
+
+    expect(await screen.findByRole("heading", { name: "Trail of Evidence" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(searchCardNames).toHaveBeenLastCalledWith({
+        query: "Clue",
+        limit: 18,
+        scope: undefined,
+      });
+    });
+  });
+
+  it("keeps visible results and shows an inline retry path when loading more fails", async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 21 }, (_, index) =>
+      buildNameSearchRow({
+        oracle_id: `cloud-${index + 1}`,
+        name: `Cloud Result ${String(index + 1).padStart(2, "0")}`,
+        printings_count: index + 1,
+      }),
+    );
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Cloud" && params.limit === 28) {
+        throw new Error("Search index unavailable");
+      }
+      if (params.query === "Cloud") {
+        const limit = params.limit ?? rows.length;
+        return buildNameSearchResult(rows.slice(0, limit), {
+          total_count: rows.length,
+          has_more: limit < rows.length,
+        });
+      }
+      return buildNameSearchResult();
+    });
+
+    const { container } = render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.type(input, "Cloud");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    await screen.findByRole("heading", { name: "Cloud Result 01" });
+    await user.click(
+      screen.getByRole("button", { name: "Show 10 more of 13 additional matches" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Load 3 more matches" }));
+
+    await screen.findByText("Search index unavailable");
+
+    const visibleResultNames = Array.from(
+      container.querySelectorAll(".search-workspace-result-copy strong"),
+    ).map((name) => name.textContent);
+    expect(visibleResultNames).toHaveLength(18);
+    expect(screen.getByRole("button", { name: "Load 3 more matches" })).toBeEnabled();
+    expect(screen.queryByText("Search unavailable")).not.toBeInTheDocument();
+  });
+
   it("keeps printing unselected while still using the backend default printing choice on add", async () => {
     const user = userEvent.setup();
 
@@ -1527,10 +1735,13 @@ describe("App", () => {
 
     await user.click(input);
 
-    expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("listbox", { name: "Card suggestions" })).toBeInTheDocument();
 
     await user.click(document.body);
 
+    await waitFor(() => {
+      expect(screen.queryByRole("listbox", { name: "Card suggestions" })).not.toBeInTheDocument();
+    });
     expect(screen.getByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
     expect(input).toHaveValue("Lightning");
 

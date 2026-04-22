@@ -3,6 +3,7 @@ import type {
   AddInventoryItemRequest,
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
+  CatalogScope,
   InventoryCreateRequest,
   InventorySummary,
 } from "../types";
@@ -63,7 +64,12 @@ export type SearchPanelState = {
     hiddenResultCount: number;
     loadedHiddenResultCount: number;
     isLoadingMore: boolean;
+    isResultStale: boolean;
+    loadMoreError: string | null;
     query: string;
+    resultQuery: string;
+    resultScope: CatalogScope;
+    scope: CatalogScope;
     status: AsyncStatus;
     totalCount: number;
   };
@@ -82,6 +88,7 @@ export type SearchPanelActions = {
   onSearchInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onSearchGroupSelect: (groupId: string) => void;
   onSearchResultsLoadMore: () => void;
+  onSearchScopeChange: (scope: CatalogScope) => void;
   onSearchResultsDismiss: () => void;
   onSearchSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onSearchWorkspaceBrowse: () => void;
@@ -151,7 +158,7 @@ export function SearchPanel(props: {
   const [searchWorkspaceOverlayHeight, setSearchWorkspaceOverlayHeight] = useState(0);
   const hasSearchResults = props.state.search.groups.length > 0;
   const showSearchResults = props.state.searchResultsVisible && hasSearchResults;
-  const showAutocomplete = props.state.suggestions.isOpen && !showSearchResults;
+  const showAutocomplete = props.state.suggestions.isOpen;
   const activeSearchGroup =
     props.state.search.groups.find((group) => group.groupId === props.state.activeSearchGroupId) ||
     props.state.search.groups[0] ||
@@ -160,7 +167,8 @@ export function SearchPanel(props: {
     showSearchResults &&
     props.state.searchWorkspaceMode === "browse" &&
     props.state.search.groups.length > 1;
-  const searchQueryLabel = props.state.search.query.trim() || activeSearchGroup?.name || "Search";
+  const searchQueryLabel =
+    props.state.search.resultQuery || activeSearchGroup?.name || "Search";
   const searchResultCount = props.state.search.totalCount || props.state.search.groups.length;
   const searchResultCountLabel = `${searchResultCount} matching card${
     searchResultCount === 1 ? "" : "s"
@@ -180,6 +188,15 @@ export function SearchPanel(props: {
     showAutocomplete && props.state.suggestions.highlightedIndex >= 0
       ? `${autocompleteListId}-option-${props.state.suggestions.highlightedIndex}`
       : undefined;
+  const searchScopeLabel =
+    props.state.search.resultScope === "all" ? "All catalog" : "Cards";
+  const activeSearchScopeLabel =
+    props.state.search.scope === "all" ? "All catalog" : "Cards";
+  const trimmedDraftQuery = props.state.search.query.trim();
+  const searchDraftNote =
+    props.state.search.status === "loading"
+      ? `Updating results for ${trimmedDraftQuery || "this search"} in ${activeSearchScopeLabel}.`
+      : `Showing ${searchScopeLabel.toLowerCase()} results for "${searchQueryLabel}". Search to update.`;
 
   useEffect(() => {
     if (!props.state.suggestions.isOpen) {
@@ -825,16 +842,8 @@ export function SearchPanel(props: {
               aria-haspopup="listbox"
               className="text-input"
               onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
-              onClick={() => {
-                if (!showSearchResults) {
-                  props.actions.onSearchFieldFocus();
-                }
-              }}
-              onFocus={() => {
-                if (!showSearchResults) {
-                  props.actions.onSearchFieldFocus();
-                }
-              }}
+              onClick={props.actions.onSearchFieldFocus}
+              onFocus={props.actions.onSearchFieldFocus}
               onKeyDown={props.actions.onSearchInputKeyDown}
               placeholder="e.g. Lightning Bolt"
               role="combobox"
@@ -854,9 +863,41 @@ export function SearchPanel(props: {
             />
           </div>
         </label>
-        <button className="primary-button" type="submit">
-          {props.state.search.status === "loading" ? "Searching..." : "Search cards"}
-        </button>
+        <div className="search-form-actions">
+          <div
+            aria-label="Catalog search scope"
+            className="search-scope-toggle"
+            role="group"
+          >
+            <button
+              aria-pressed={props.state.search.scope === "default"}
+              className={
+                props.state.search.scope === "default"
+                  ? "search-scope-option search-scope-option-active"
+                  : "search-scope-option"
+              }
+              onClick={() => props.actions.onSearchScopeChange("default")}
+              type="button"
+            >
+              Cards
+            </button>
+            <button
+              aria-pressed={props.state.search.scope === "all"}
+              className={
+                props.state.search.scope === "all"
+                  ? "search-scope-option search-scope-option-active"
+                  : "search-scope-option"
+              }
+              onClick={() => props.actions.onSearchScopeChange("all")}
+              type="button"
+            >
+              All catalog
+            </button>
+          </div>
+          <button className="primary-button search-submit-button" type="submit">
+            {props.state.search.status === "loading" ? "Searching..." : "Search cards"}
+          </button>
+        </div>
       </form>
       <p aria-live="polite" className="sr-only" id={autocompleteStatusId}>
         {getSuggestionStatusMessage(props.state)}
@@ -903,9 +944,12 @@ export function SearchPanel(props: {
               <p className="search-workspace-title">{searchQueryLabel}</p>
               <p className="search-workspace-summary">
                 {showSearchMatches
-                  ? `${searchResultCountLabel}. Pick a card on the left, then confirm the printing and details on the right.`
+                  ? `${searchResultCountLabel} in ${searchScopeLabel}. Pick a card on the left, then confirm the printing and details on the right.`
                   : "Selected card ready. Confirm the printing and details below."}
               </p>
+              {props.state.search.isResultStale ? (
+                <p className="search-workspace-draft-note">{searchDraftNote}</p>
+              ) : null}
             </div>
             <div className="search-workspace-header-actions">
               {props.state.search.groups.length > 1 ? (
@@ -995,6 +1039,11 @@ export function SearchPanel(props: {
 
                 {props.state.search.canLoadMore ? (
                   <div className="search-workspace-results-footer">
+                    {props.state.search.loadMoreError ? (
+                      <p className="search-workspace-load-more-error" role="status">
+                        {props.state.search.loadMoreError}
+                      </p>
+                    ) : null}
                     <button
                       className="secondary-button search-workspace-load-more"
                       disabled={props.state.search.isLoadingMore}
