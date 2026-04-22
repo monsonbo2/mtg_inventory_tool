@@ -351,6 +351,17 @@ class WebApiSchemaTest(unittest.TestCase):
                 [{"type": "string"}, {"type": "null"}],
                 inventories_list_properties["acquisition_currency"]["anyOf"],
             )
+            self.assertEqual(
+                [
+                    {"enum": ["viewer", "editor", "owner", "admin"], "type": "string"},
+                    {"type": "null"},
+                ],
+                inventories_list_properties["role"]["anyOf"],
+            )
+            self.assertEqual("boolean", inventories_list_properties["can_read"]["type"])
+            self.assertEqual("boolean", inventories_list_properties["can_write"]["type"])
+            self.assertEqual("boolean", inventories_list_properties["can_manage_share"]["type"])
+            self.assertEqual("boolean", inventories_list_properties["can_transfer_to"]["type"])
 
             inventories_create_request_schema = spec["paths"]["/inventories"]["post"]["requestBody"]["content"][
                 "application/json"
@@ -1304,6 +1315,11 @@ class WebApiTest(unittest.TestCase):
                             "acquisition_currency": "USD",
                             "item_rows": 0,
                             "total_cards": 0,
+                            "role": "admin",
+                            "can_read": True,
+                            "can_write": True,
+                            "can_manage_share": True,
+                            "can_transfer_to": True,
                         }
                     ],
                     inventories.json(),
@@ -4687,6 +4703,7 @@ class WebApiTest(unittest.TestCase):
                 "X-Authenticated-User": "outsider-user",
                 "X-Authenticated-Roles": "viewer",
             }
+            owner_headers = {"X-Authenticated-User": "owner-user"}
             admin_headers = {
                 "X-Authenticated-User": "shared-admin",
                 "X-Authenticated-Roles": "admin",
@@ -4720,10 +4737,26 @@ class WebApiTest(unittest.TestCase):
                 viewer_inventories = client.get("/inventories", headers=viewer_headers)
                 self.assertEqual(200, viewer_inventories.status_code)
                 self.assertEqual(["personal"], [row["slug"] for row in viewer_inventories.json()])
+                viewer_inventory = viewer_inventories.json()[0]
+                self.assertEqual("viewer", viewer_inventory["role"])
+                self.assertTrue(viewer_inventory["can_read"])
+                self.assertFalse(viewer_inventory["can_write"])
+                self.assertFalse(viewer_inventory["can_manage_share"])
+                self.assertFalse(viewer_inventory["can_transfer_to"])
 
                 outsider_inventories = client.get("/inventories", headers=outsider_headers)
                 self.assertEqual(200, outsider_inventories.status_code)
                 self.assertEqual([], outsider_inventories.json())
+
+                owner_inventories = client.get("/inventories", headers=owner_headers)
+                self.assertEqual(200, owner_inventories.status_code)
+                self.assertEqual(["personal"], [row["slug"] for row in owner_inventories.json()])
+                owner_inventory = owner_inventories.json()[0]
+                self.assertEqual("owner", owner_inventory["role"])
+                self.assertTrue(owner_inventory["can_read"])
+                self.assertTrue(owner_inventory["can_write"])
+                self.assertTrue(owner_inventory["can_manage_share"])
+                self.assertTrue(owner_inventory["can_transfer_to"])
 
                 admin_inventories = client.get("/inventories", headers=admin_headers)
                 self.assertEqual(200, admin_inventories.status_code)
@@ -4731,6 +4764,11 @@ class WebApiTest(unittest.TestCase):
                     ["admin-only", "personal"],
                     [row["slug"] for row in admin_inventories.json()],
                 )
+                self.assertTrue(all(row["role"] == "admin" for row in admin_inventories.json()))
+                self.assertTrue(all(row["can_read"] for row in admin_inventories.json()))
+                self.assertTrue(all(row["can_write"] for row in admin_inventories.json()))
+                self.assertTrue(all(row["can_manage_share"] for row in admin_inventories.json()))
+                self.assertTrue(all(row["can_transfer_to"] for row in admin_inventories.json()))
 
     def test_shared_service_inventory_read_routes_allow_viewers_and_reject_non_members(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

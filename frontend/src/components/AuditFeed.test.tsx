@@ -15,6 +15,11 @@ const inventory: InventorySummary = {
   acquisition_currency: null,
   item_rows: 1,
   total_cards: 3,
+  role: "owner",
+  can_read: true,
+  can_write: true,
+  can_manage_share: true,
+  can_transfer_to: true,
 };
 
 const event: InventoryAuditEvent = {

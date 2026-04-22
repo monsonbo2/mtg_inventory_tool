@@ -9,7 +9,12 @@
     "acquisition_price": "25.00",
     "acquisition_currency": "USD",
     "item_rows": 4,
-    "total_cards": 7
+    "total_cards": 7,
+    "role": "admin",
+    "can_read": true,
+    "can_write": true,
+    "can_manage_share": true,
+    "can_transfer_to": true
   },
   {
     "slug": "trade-binder",
@@ -21,6 +26,11 @@
     "acquisition_price": null,
     "acquisition_currency": null,
     "item_rows": 0,
-    "total_cards": 0
+    "total_cards": 0,
+    "role": "admin",
+    "can_read": true,
+    "can_write": true,
+    "can_manage_share": true,
+    "can_transfer_to": true
   }
 ]

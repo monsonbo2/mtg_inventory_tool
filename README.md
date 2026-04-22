@@ -133,6 +133,8 @@ Inventory access is now controlled by local inventory memberships:
 The current shared-service behavior is:
 
 - `GET /inventories` returns only the inventories visible to the current user
+  and includes per-inventory capability fields: `role`, `can_read`,
+  `can_write`, `can_manage_share`, and `can_transfer_to`
 - card search routes require a user who can read at least one inventory
 - inventory item/audit reads require membership on that inventory
 - inventory writes require `editor` or `owner` membership on that inventory

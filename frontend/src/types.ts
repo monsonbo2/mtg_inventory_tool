@@ -36,6 +36,7 @@ export type InventoryAcquisitionMergePolicy = "target" | "source";
 export type InventoryTransferMode = "copy" | "move";
 export type InventoryTransferConflictPolicy = "fail" | "merge";
 export type InventoryTransferSelectionKind = "items" | "all_items";
+export type InventoryCapabilityRole = "viewer" | "editor" | "owner" | "admin";
 export type InventoryTransferItemStatus =
   | "would_copy"
   | "would_move"
@@ -79,6 +80,11 @@ export interface InventorySummary {
   acquisition_currency: string | null;
   item_rows: number;
   total_cards: number;
+  role: InventoryCapabilityRole | null;
+  can_read: boolean;
+  can_write: boolean;
+  can_manage_share: boolean;
+  can_transfer_to: boolean;
 }
 
 export interface InventoryCreateRequest {

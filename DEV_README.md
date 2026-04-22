@@ -51,6 +51,9 @@ Current authz model:
   inventory; custom inventory creation or `POST /me/bootstrap` are the
   intended first-run escape hatches
 - `GET /inventories` is filtered to visible inventories
+- each `GET /inventories` row includes the current actor's effective
+  per-inventory capabilities: `role`, `can_read`, `can_write`,
+  `can_manage_share`, and `can_transfer_to`
 - inventory reads require inventory membership or global `admin`
 - inventory writes require inventory `editor` / `owner` membership or global
   `admin`

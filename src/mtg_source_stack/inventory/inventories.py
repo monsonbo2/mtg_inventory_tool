@@ -9,28 +9,63 @@ from typing import Iterable
 from ..db.connection import connect
 from ..db.schema import require_current_schema
 from ..errors import ConflictError, ValidationError
-from .access import grant_inventory_membership_with_connection, is_global_admin
+from .access import (
+    can_manage_inventory_share,
+    can_read_inventory,
+    can_write_inventory,
+    grant_inventory_membership_with_connection,
+    is_global_admin,
+)
 from .money import coerce_decimal
 from .normalize import normalize_currency_code, normalize_inventory_slug, normalize_tag_text, slugify_inventory_name, text_or_none
 from .response_models import AccessSummaryResult, DefaultInventoryBootstrapResult, InventoryCreateResult, InventoryListRow
 
 
-def _inventory_list_rows(rows: list[sqlite3.Row]) -> list[InventoryListRow]:
-    return [
-        InventoryListRow(
-            slug=row["slug"],
-            display_name=row["display_name"],
-            description=text_or_none(row["description"]),
-            default_location=text_or_none(row["default_location"]),
-            default_tags=text_or_none(row["default_tags"]),
-            notes=text_or_none(row["notes"]),
-            acquisition_price=coerce_decimal(row["acquisition_price"]),
-            acquisition_currency=text_or_none(row["acquisition_currency"]),
-            item_rows=int(row["item_rows"]),
-            total_cards=int(row["total_cards"]),
+def _inventory_capabilities(
+    *,
+    inventory_role: str | None,
+    actor_roles: Iterable[str],
+) -> tuple[str | None, bool, bool, bool, bool]:
+    roles = frozenset(actor_roles)
+    effective_role = "admin" if is_global_admin(roles) else inventory_role
+    can_read = can_read_inventory(inventory_role=inventory_role, actor_roles=roles)
+    can_write = can_write_inventory(inventory_role=inventory_role, actor_roles=roles)
+    can_manage_share = can_manage_inventory_share(inventory_role=inventory_role, actor_roles=roles)
+    return effective_role, can_read, can_write, can_manage_share, can_write
+
+
+def _inventory_list_rows(
+    rows: list[sqlite3.Row],
+    *,
+    actor_roles: Iterable[str],
+) -> list[InventoryListRow]:
+    result: list[InventoryListRow] = []
+    for row in rows:
+        inventory_role = row["inventory_role"] if "inventory_role" in row.keys() else None
+        role, can_read, can_write, can_manage_share, can_transfer_to = _inventory_capabilities(
+            inventory_role=inventory_role,
+            actor_roles=actor_roles,
         )
-        for row in rows
-    ]
+        result.append(
+            InventoryListRow(
+                slug=row["slug"],
+                display_name=row["display_name"],
+                description=text_or_none(row["description"]),
+                default_location=text_or_none(row["default_location"]),
+                default_tags=text_or_none(row["default_tags"]),
+                notes=text_or_none(row["notes"]),
+                acquisition_price=coerce_decimal(row["acquisition_price"]),
+                acquisition_currency=text_or_none(row["acquisition_currency"]),
+                item_rows=int(row["item_rows"]),
+                total_cards=int(row["total_cards"]),
+                role=role,
+                can_read=can_read,
+                can_write=can_write,
+                can_manage_share=can_manage_share,
+                can_transfer_to=can_transfer_to,
+            )
+        )
+    return result
 
 
 def _normalized_visible_actor_id(actor_id: str | None) -> str | None:
@@ -358,7 +393,7 @@ def list_inventories(db_path: str | Path) -> list[InventoryListRow]:
             ORDER BY i.slug
             """
         ).fetchall()
-    return _inventory_list_rows(rows)
+    return _inventory_list_rows(rows, actor_roles={"admin"})
 
 
 def list_visible_inventories(
@@ -385,6 +420,7 @@ def list_visible_inventories(
                 COALESCE(i.notes, '') AS notes,
                 i.acquisition_price,
                 COALESCE(i.acquisition_currency, '') AS acquisition_currency,
+                im.role AS inventory_role,
                 COUNT(ii.id) AS item_rows,
                 COALESCE(SUM(ii.quantity), 0) AS total_cards
             FROM inventories i
@@ -401,12 +437,13 @@ def list_visible_inventories(
                 i.default_tags,
                 i.notes,
                 i.acquisition_price,
-                i.acquisition_currency
+                i.acquisition_currency,
+                im.role
             ORDER BY i.slug
             """,
             (normalized_actor_id,),
         ).fetchall()
-    return _inventory_list_rows(rows)
+    return _inventory_list_rows(rows, actor_roles=actor_roles)
 
 
 def summarize_actor_access(

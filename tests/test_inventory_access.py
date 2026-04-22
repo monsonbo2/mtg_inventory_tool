@@ -22,6 +22,7 @@ from mtg_source_stack.inventory.service import (
     ensure_default_inventory,
     grant_inventory_membership,
     list_inventory_memberships,
+    list_inventories,
     list_visible_inventories,
     normalize_inventory_membership_role,
     revoke_inventory_membership,
@@ -321,6 +322,29 @@ class InventoryAccessTest(unittest.TestCase):
                 actor_roles=frozenset(),
             )
             self.assertEqual(["personal", "team"], [row.slug for row in viewer_rows])
+            viewer_by_slug = {row.slug: row for row in viewer_rows}
+            self.assertEqual("viewer", viewer_by_slug["personal"].role)
+            self.assertTrue(viewer_by_slug["personal"].can_read)
+            self.assertFalse(viewer_by_slug["personal"].can_write)
+            self.assertFalse(viewer_by_slug["personal"].can_manage_share)
+            self.assertFalse(viewer_by_slug["personal"].can_transfer_to)
+            self.assertEqual("editor", viewer_by_slug["team"].role)
+            self.assertTrue(viewer_by_slug["team"].can_read)
+            self.assertTrue(viewer_by_slug["team"].can_write)
+            self.assertFalse(viewer_by_slug["team"].can_manage_share)
+            self.assertTrue(viewer_by_slug["team"].can_transfer_to)
+
+            owner_rows = list_visible_inventories(
+                db_path,
+                actor_id="owner@example.com",
+                actor_roles=frozenset(),
+            )
+            self.assertEqual(["personal"], [row.slug for row in owner_rows])
+            self.assertEqual("owner", owner_rows[0].role)
+            self.assertTrue(owner_rows[0].can_read)
+            self.assertTrue(owner_rows[0].can_write)
+            self.assertTrue(owner_rows[0].can_manage_share)
+            self.assertTrue(owner_rows[0].can_transfer_to)
 
             admin_rows = list_visible_inventories(
                 db_path,
@@ -328,6 +352,19 @@ class InventoryAccessTest(unittest.TestCase):
                 actor_roles={"admin"},
             )
             self.assertEqual(["admin-only", "personal", "team"], [row.slug for row in admin_rows])
+            self.assertTrue(all(row.role == "admin" for row in admin_rows))
+            self.assertTrue(all(row.can_read for row in admin_rows))
+            self.assertTrue(all(row.can_write for row in admin_rows))
+            self.assertTrue(all(row.can_manage_share for row in admin_rows))
+            self.assertTrue(all(row.can_transfer_to for row in admin_rows))
+
+            local_rows = list_inventories(db_path)
+            self.assertEqual(["admin-only", "personal", "team"], [row.slug for row in local_rows])
+            self.assertTrue(all(row.role == "admin" for row in local_rows))
+            self.assertTrue(all(row.can_read for row in local_rows))
+            self.assertTrue(all(row.can_write for row in local_rows))
+            self.assertTrue(all(row.can_manage_share for row in local_rows))
+            self.assertTrue(all(row.can_transfer_to for row in local_rows))
 
             self.assertEqual(
                 [],

@@ -79,6 +79,11 @@ class InventoryListRowResponse(ApiBaseModel):
     acquisition_currency: str | None
     item_rows: int
     total_cards: int
+    role: Literal["viewer", "editor", "owner", "admin"] | None
+    can_read: bool
+    can_write: bool
+    can_manage_share: bool
+    can_transfer_to: bool
 
 
 class InventoryCreateResponse(ApiBaseModel):

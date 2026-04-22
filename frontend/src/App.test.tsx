@@ -184,6 +184,11 @@ describe("App", () => {
       acquisition_currency: null,
       item_rows: 0,
       total_cards: 0,
+      role: "owner",
+      can_read: true,
+      can_write: true,
+      can_manage_share: true,
+      can_transfer_to: true,
       ...overrides,
     };
   }
