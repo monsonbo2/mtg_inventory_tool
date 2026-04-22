@@ -475,7 +475,6 @@ export function SearchResultCard(props: {
                 {visiblePrintings.map((printing) => (
                   <option key={printing.scryfall_id} value={printing.scryfall_id}>
                     {formatPrintingOptionLabel(printing)}
-                    {printing.is_default_add_choice ? " · Default choice" : ""}
                   </option>
                 ))}
               </select>

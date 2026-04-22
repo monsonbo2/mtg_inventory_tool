@@ -1412,9 +1412,14 @@ describe("App", () => {
 
     expect(
       within(printingSelect).getByRole("option", {
-        name: /MAGIC 2011 .* Default choice/i,
+        name: /M11 #146 .* Magic 2011 .* EN/i,
       }),
     ).toBeInTheDocument();
+    expect(
+      within(printingSelect).queryByRole("option", {
+        name: /Default choice/i,
+      }),
+    ).not.toBeInTheDocument();
     expect(
       within(boltCard!).getByText(/Using default printing: M11 #146 .* Magic 2011/i),
     ).toBeInTheDocument();
