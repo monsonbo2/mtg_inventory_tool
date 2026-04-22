@@ -739,13 +739,51 @@
 
 .inventory-table {
   width: 100%;
-  min-width: 900px;
+  min-width: 1080px;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.inventory-table-col-select {
+  width: 42px;
+}
+
+.inventory-table-col-card {
+  width: 250px;
+}
+
+.inventory-table-col-set {
+  width: 180px;
+}
+
+.inventory-table-col-quantity {
+  width: 64px;
+}
+
+.inventory-table-col-finish {
+  width: 88px;
+}
+
+.inventory-table-col-condition,
+.inventory-table-col-language {
+  width: 72px;
+}
+
+.inventory-table-col-location {
+  width: 118px;
+}
+
+.inventory-table-col-tags {
+  width: 112px;
+}
+
+.inventory-table-col-value {
+  width: 82px;
 }
 
 .inventory-table th,
 .inventory-table td {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   text-align: left;
   vertical-align: middle;
@@ -775,11 +813,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 7px 9px;
+  padding: 4px 6px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -797,15 +835,18 @@
 
 .inventory-table-header-copy {
   display: grid;
-  gap: 2px;
+  min-width: 0;
 }
 
 .inventory-table-header-label {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inventory-table-header-hint {
-  display: block;
+  display: none;
   color: var(--text-muted);
   font-size: 0.54rem;
   letter-spacing: 0.12em;
@@ -821,8 +862,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.1);
   border: 1px solid rgba(148, 163, 184, 0.14);
@@ -842,9 +883,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  min-height: 24px;
-  padding: 0 8px;
+  min-width: 28px;
+  min-height: 20px;
+  padding: 0 6px;
   border-radius: 999px;
   background: rgba(248, 240, 218, 0.12);
   border: 1px solid rgba(248, 240, 218, 0.16);
@@ -953,7 +994,8 @@
 
 .inventory-table-checkbox-column,
 .inventory-table-checkbox-cell {
-  width: 48px;
+  width: 42px;
+  padding-inline: 8px;
 }
 
 .inventory-table input[type="checkbox"] {
@@ -967,8 +1009,10 @@
 }
 
 .inventory-table-card-button {
-  display: inline-flex;
+  display: block;
   align-items: center;
+  width: 100%;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -976,7 +1020,10 @@
   font: inherit;
   font-weight: 700;
   line-height: 1.25;
+  overflow: hidden;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inventory-table-card-button:hover {
@@ -990,14 +1037,13 @@
 }
 
 .inventory-table-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 3px;
+  display: block;
+  min-width: 0;
+  margin-top: 2px;
 }
 
 .inventory-table-card-meta span,
-.inventory-table-set-cell span,
+.inventory-table-set-name,
 .inventory-table-inline-cell,
 .inventory-table-empty-value,
 .inventory-table-tag-more {
@@ -1006,15 +1052,30 @@
   line-height: 1.35;
 }
 
-.inventory-table-set-cell strong {
-  display: block;
+.inventory-table-set-code {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
   color: var(--text-main);
   line-height: 1.2;
+  white-space: nowrap;
 }
 
-.inventory-table-set-cell span {
+.inventory-table-collector-number {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.inventory-table-set-name {
   display: block;
+  overflow: hidden;
   margin-top: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inventory-table-inline-cell {
@@ -1031,6 +1092,7 @@
 .inventory-table-location-pill {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   min-height: 26px;
   padding: 0 10px;
   border-radius: 999px;
@@ -1039,22 +1101,36 @@
   color: var(--text-soft);
   font-size: 0.76rem;
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inventory-table-tag-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .inventory-table-tag-chip {
+  max-width: 68px;
+  overflow: hidden;
   font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inventory-table-tag-more {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   min-height: 24px;
+}
+
+.inventory-table-empty-value {
+  opacity: 0.55;
 }
 
 .inventory-table-empty-cell {
