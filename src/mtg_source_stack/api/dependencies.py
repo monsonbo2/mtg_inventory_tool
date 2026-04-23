@@ -295,6 +295,27 @@ def get_inventory_read_request_context(
     raise AuthorizationError(f"Read access to inventory '{inventory_slug}' is required for this shared_service request.")
 
 
+def require_inventory_read_access(
+    settings: ApiSettings,
+    context: RequestContext,
+    *,
+    inventory_slug: str,
+) -> None:
+    inventory_slug = normalize_inventory_slug(inventory_slug)
+    if settings.runtime_mode != "shared_service":
+        return
+    from ..inventory.service import actor_can_read_inventory
+
+    if actor_can_read_inventory(
+        settings.db_path,
+        inventory_slug=inventory_slug,
+        actor_id=context.actor_id,
+        actor_roles=context.roles,
+    ):
+        return
+    raise AuthorizationError(f"Read access to inventory '{inventory_slug}' is required for this shared_service request.")
+
+
 def require_inventory_write_access(
     settings: ApiSettings,
     context: RequestContext,

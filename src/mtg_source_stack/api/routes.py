@@ -74,6 +74,7 @@ from .dependencies import (
     get_authenticated_request_context,
     get_settings,
     require_inventory_membership_management_access,
+    require_inventory_read_access,
     require_inventory_share_management_access,
     require_inventory_write_access,
 )
@@ -1111,7 +1112,10 @@ def inventory_items_transfer(
     settings: Annotated[ApiSettings, Depends(get_settings)],
     context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
 ) -> Any:
-    require_inventory_write_access(settings, context, inventory_slug=source_inventory_slug)
+    if payload.mode == "copy":
+        require_inventory_read_access(settings, context, inventory_slug=source_inventory_slug)
+    else:
+        require_inventory_write_access(settings, context, inventory_slug=source_inventory_slug)
     require_inventory_write_access(settings, context, inventory_slug=payload.target_inventory_slug)
     return _serialize(
         transfer_inventory_items(
