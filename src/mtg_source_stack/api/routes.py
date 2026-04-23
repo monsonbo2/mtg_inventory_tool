@@ -1080,7 +1080,7 @@ def inventory_items_bulk_mutate(
             settings.db_path,
             inventory_slug=inventory_slug,
             operation=payload.operation,
-            item_ids=payload.item_ids,
+            selection=payload.selection.model_dump(exclude_none=True),
             tags=payload.tags,
             quantity=payload.quantity,
             notes=payload.notes,

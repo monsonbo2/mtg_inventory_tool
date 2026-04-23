@@ -182,9 +182,12 @@ class InventoryShareLinkTokenResult(ResponseModel):
 class BulkInventoryItemMutationResult(ResponseModel):
     inventory: str
     operation: str
-    requested_item_ids: list[int]
+    selection_kind: str
+    matched_count: int
+    unchanged_count: int
     updated_item_ids: list[int]
     updated_count: int
+    updated_item_ids_truncated: bool
 
 
 @dataclass(frozen=True, slots=True)

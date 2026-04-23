@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type {
   BulkInventoryItemMutationRequest,
+  BulkInventorySelectionRequest,
   BulkTagMutationOperation,
   ConditionCode,
   FinishValue,
@@ -136,7 +137,9 @@ export function InventoryTableView(props: {
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
   const activeFilterCount = getActiveInventoryTableFilterCount(props.filters);
   const parsedBulkTags = parseTags(bulkTagsInput);
-  const exceedsBulkSelectionLimit = totalSelectedCount > 200;
+  const selectingEntireCollection =
+    props.collectionItemCount > 0 && totalSelectedCount === props.collectionItemCount;
+  const exceedsBulkSelectionLimit = !selectingEntireCollection && totalSelectedCount > 1000;
   const hasSelection = totalSelectedCount > 0;
   const bulkEditorOpen = activeTray === "bulk";
   const activeTransferMode = activeTray === "copy" || activeTray === "move" ? activeTray : null;
@@ -254,16 +257,26 @@ export function InventoryTableView(props: {
     });
   }
 
+  function buildBulkSelection(): BulkInventorySelectionRequest {
+    if (selectingEntireCollection) {
+      return { kind: "all_items" };
+    }
+    return {
+      kind: "items",
+      item_ids: props.selectedItemIds,
+    };
+  }
+
   async function handleBulkTagAction(operation: BulkTagMutationOperation) {
     const didApply = await props.onBulkMutationSubmit(
       operation === "clear_tags"
         ? {
-            item_ids: props.selectedItemIds,
             operation,
+            selection: buildBulkSelection(),
           }
         : {
-            item_ids: props.selectedItemIds,
             operation,
+            selection: buildBulkSelection(),
             tags: parsedBulkTags,
           },
     );
@@ -278,13 +291,13 @@ export function InventoryTableView(props: {
     const didApply = await props.onBulkMutationSubmit(
       clearLocation
         ? {
-            item_ids: props.selectedItemIds,
             operation: "set_location",
+            selection: buildBulkSelection(),
             clear_location: true,
           }
         : {
-            item_ids: props.selectedItemIds,
             operation: "set_location",
+            selection: buildBulkSelection(),
             location: normalizedLocation ?? "",
           },
     );
@@ -300,13 +313,13 @@ export function InventoryTableView(props: {
     const didApply = await props.onBulkMutationSubmit(
       clearNotes
         ? {
-            item_ids: props.selectedItemIds,
             operation: "set_notes",
+            selection: buildBulkSelection(),
             clear_notes: true,
           }
         : {
-            item_ids: props.selectedItemIds,
             operation: "set_notes",
+            selection: buildBulkSelection(),
             notes: normalizedNotes ?? "",
           },
     );
@@ -606,8 +619,13 @@ export function InventoryTableView(props: {
           <div>
             <strong>Bulk edit</strong>
             <span>
-              Applies to {totalSelectedCount} selected entr
-              {totalSelectedCount === 1 ? "y" : "ies"}.
+              {selectingEntireCollection
+                ? `Applies to the entire collection (${totalSelectedCount} entr${
+                    totalSelectedCount === 1 ? "y" : "ies"
+                  }).`
+                : `Applies to ${totalSelectedCount} selected entr${
+                    totalSelectedCount === 1 ? "y" : "ies"
+                  }.`}
             </span>
             {hiddenSelectedCount > 0 ? (
               <span className="table-selection-summary-accent">
@@ -801,7 +819,8 @@ export function InventoryTableView(props: {
 
         {exceedsBulkSelectionLimit ? (
           <span className="table-selection-summary-accent">
-            Bulk edit currently supports up to 200 selected entries per request.
+            Bulk edit currently supports up to 1000 explicitly selected entries per request.
+            Use Select entire collection to apply a bulk edit to the whole inventory.
           </span>
         ) : null}
       </section>

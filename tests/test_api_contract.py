@@ -810,8 +810,7 @@ class ApiContractTest(RepoSmokeTestCase):
             ],
             bulk_properties["operation"]["enum"],
         )
-        self.assertEqual(1, bulk_properties["item_ids"]["minItems"])
-        self.assertEqual(200, bulk_properties["item_ids"]["maxItems"])
+        self.assertIn("provided filters", bulk_properties["selection"]["description"])
         self.assertIn("Omit this field for non-tag bulk operations", bulk_properties["tags"]["description"])
         self.assertIn("Required for set_quantity", bulk_properties["quantity"]["description"])
         self.assertIn("Used by set_notes", bulk_properties["notes"]["description"])
@@ -833,13 +832,17 @@ class ApiContractTest(RepoSmokeTestCase):
             {
                 "inventory": "personal",
                 "operation": "add_tags",
-                "requested_item_ids": [12, 27, 44],
+                "selection_kind": "filtered",
+                "matched_count": 3,
+                "unchanged_count": 1,
                 "updated_item_ids": [12, 44],
                 "updated_count": 2,
+                "updated_item_ids_truncated": False,
             }
         )
         self.assertEqual("add_tags", bulk_response.operation)
         self.assertEqual([12, 44], bulk_response.updated_item_ids)
+        self.assertEqual(3, bulk_response.matched_count)
 
         transfer_schema = InventoryTransferRequest.model_json_schema()
         transfer_properties = transfer_schema["properties"]

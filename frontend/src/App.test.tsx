@@ -6,6 +6,7 @@ import App from "./App";
 import { ApiClientError } from "./api";
 import type {
   AccessSummaryResponse,
+  BulkInventoryItemMutationResponse,
   CatalogNameSearchResult,
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
@@ -203,6 +204,22 @@ describe("App", () => {
     };
   }
 
+  function buildBulkMutationResponse(
+    overrides: Partial<BulkInventoryItemMutationResponse> = {},
+  ): BulkInventoryItemMutationResponse {
+    return {
+      inventory: "personal",
+      operation: "add_tags",
+      selection_kind: "items",
+      matched_count: 0,
+      unchanged_count: 0,
+      updated_item_ids: [],
+      updated_count: 0,
+      updated_item_ids_truncated: false,
+      ...overrides,
+    };
+  }
+
   function buildAccessSummary(
     overrides: Partial<AccessSummaryResponse> = {},
   ): AccessSummaryResponse {
@@ -326,13 +343,7 @@ describe("App", () => {
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(buildBulkMutationResponse());
     vi.mocked(transferInventoryItems).mockResolvedValue({
       source_inventory: "personal",
       target_inventory: inventories[1]?.slug ?? "target",
@@ -363,13 +374,7 @@ describe("App", () => {
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(buildBulkMutationResponse());
     vi.mocked(transferInventoryItems).mockResolvedValue({
       source_inventory: "personal",
       target_inventory: "target",
@@ -1922,13 +1927,7 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(buildBulkMutationResponse());
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_quantity",
@@ -2099,13 +2098,7 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(buildBulkMutationResponse());
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_finish",
@@ -2180,13 +2173,7 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(buildBulkMutationResponse());
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_tags",
@@ -2266,13 +2253,7 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(buildBulkMutationResponse());
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_tags",
@@ -2354,13 +2335,7 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(buildBulkMutationResponse());
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_tags",
@@ -3136,13 +3111,15 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "add_tags",
+        selection_kind: "all_items",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -3159,7 +3136,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "add_tags",
-        item_ids: [7, 8],
+        selection: { kind: "all_items" },
         tags: ["burn", "staples"],
       });
     });
@@ -3198,13 +3175,15 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "set_location",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "set_location",
+        selection_kind: "all_items",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -3220,7 +3199,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "set_location",
-        item_ids: [7, 8],
+        selection: { kind: "all_items" },
         location: "Archive Box",
       });
     });
@@ -3252,13 +3231,15 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "set_notes",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "set_notes",
+        selection_kind: "all_items",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -3277,7 +3258,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "set_notes",
-        item_ids: [7, 8],
+        selection: { kind: "all_items" },
         notes: "Updated deck notes",
       });
     });
@@ -3309,13 +3290,15 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "clear_tags",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "clear_tags",
+        selection_kind: "all_items",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -3328,7 +3311,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "clear_tags",
-        item_ids: [7, 8],
+        selection: { kind: "all_items" },
       });
     });
 
