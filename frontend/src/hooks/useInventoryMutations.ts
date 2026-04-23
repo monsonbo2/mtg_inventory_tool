@@ -176,6 +176,55 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     } into ${destinationLabel}.`;
   }
 
+  function getImportIssueLabel(issue: InventoryImportResponse["resolution_issues"][number]) {
+    const requestedName =
+      typeof issue.requested.name === "string" && issue.requested.name.trim()
+        ? issue.requested.name.trim()
+        : null;
+    if (requestedName) {
+      return requestedName;
+    }
+
+    const requestedScryfallId =
+      "scryfall_id" in issue.requested &&
+      typeof issue.requested.scryfall_id === "string" &&
+      issue.requested.scryfall_id.trim()
+        ? issue.requested.scryfall_id.trim()
+        : null;
+    if (requestedScryfallId) {
+      return requestedScryfallId;
+    }
+
+    if ("source_position" in issue) {
+      return `card at deck position ${issue.source_position}`;
+    }
+    if ("decklist_line" in issue) {
+      return `card on decklist line ${issue.decklist_line}`;
+    }
+    return `card on CSV row ${issue.csv_row}`;
+  }
+
+  function getImportIssueMessage(response: InventoryImportResponse) {
+    const labels = Array.from(
+      new Set(
+        response.resolution_issues
+          .map(getImportIssueLabel)
+          .filter((label) => Boolean(label)),
+      ),
+    );
+
+    if (labels.length === 0) {
+      return "Some cards could not be imported.";
+    }
+    if (labels.length === 1) {
+      return `Could not import ${labels[0]}.`;
+    }
+    if (labels.length === 2) {
+      return `Could not import ${labels[0]} and ${labels[1]}.`;
+    }
+    return `Could not import ${labels[0]}, ${labels[1]}, and ${labels.length - 2} other cards.`;
+  }
+
   async function handleImportResponse(
     inventorySlug: string,
     inventoryLabel: string | null | undefined,
@@ -186,7 +235,38 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
     try {
       const response = await loadResponse();
-      if (!response.ready_to_commit || response.resolution_issues.length > 0) {
+      if (response.resolution_issues.length > 0) {
+        const issueMessage = getImportIssueMessage(response);
+
+        if (response.rows_written <= 0) {
+          showNotice(issueMessage, "error");
+          return false;
+        }
+
+        const importingIntoDifferentCollection = inventorySlug !== options.selectedInventory;
+        try {
+          if (importingIntoDifferentCollection) {
+            await options.reloadInventorySummaries(inventorySlug);
+          }
+
+          await options.loadInventoryOverview(inventorySlug, {
+            reloadInventories: !importingIntoDifferentCollection,
+          });
+          showNotice(
+            `${getImportSuccessMessage(response, inventorySlug, inventoryLabel)} ${issueMessage}`,
+            "error",
+          );
+        } catch {
+          showNotice(
+            `${getImportSuccessMessage(response, inventorySlug, inventoryLabel)} ${issueMessage} The latest view could not refresh automatically.`,
+            "error",
+          );
+        }
+        options.resetSearchWorkspace();
+        return true;
+      }
+
+      if (!response.ready_to_commit) {
         showNotice(
           "This import still needs manual resolution. The preview flow is not wired into the frontend yet.",
           "error",

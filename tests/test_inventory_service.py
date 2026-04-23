@@ -2464,6 +2464,99 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("req-create-share", audit_rows[2].request_id)
             self.assertTrue(all("token" not in row.metadata for row in audit_rows[:3]))
 
+    def test_inventory_share_links_group_public_rows_by_visible_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="share-card-1",
+                oracle_id="share-oracle-1",
+                name="Shared Test Card",
+                finishes_json='["normal","foil"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description="Public description",
+                actor_id="owner-user",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="share-card-1",
+                quantity=2,
+                finish="normal",
+                location="Private Binder A",
+                acquisition_price="1.25",
+                acquisition_currency="USD",
+                notes="private note a",
+                tags_json='["private-a"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="share-card-1",
+                quantity=3,
+                finish="normal",
+                location="Private Binder B",
+                acquisition_price="2.50",
+                acquisition_currency="USD",
+                notes="private note b",
+                tags_json='["private-b"]',
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="share-card-1",
+                quantity=1,
+                finish="foil",
+                location="Private Binder C",
+                acquisition_price="4.00",
+                acquisition_currency="USD",
+                notes="private foil note",
+                tags_json='["private-c"]',
+            )
+
+            created = create_inventory_share_link(
+                db_path,
+                inventory_slug="personal",
+                actor_id="owner-user",
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+                actor_type="api",
+                request_id="req-create-share",
+            )
+
+            public_share = get_public_inventory_share(
+                db_path,
+                token=created.token,
+                token_secret=TEST_SHARE_TOKEN_SECRET,
+            )
+
+            self.assertEqual("Personal Collection", public_share.inventory.display_name)
+            self.assertEqual("Public description", public_share.inventory.description)
+            self.assertEqual(2, public_share.inventory.item_rows)
+            self.assertEqual(6, public_share.inventory.total_cards)
+            self.assertEqual(2, len(public_share.items))
+
+            items_by_finish = {item.finish: serialize_response(item) for item in public_share.items}
+            self.assertEqual({"normal", "foil"}, set(items_by_finish))
+            self.assertEqual(5, items_by_finish["normal"]["quantity"])
+            self.assertEqual(1, items_by_finish["foil"]["quantity"])
+            for public_item in items_by_finish.values():
+                for private_key in (
+                    "item_id",
+                    "location",
+                    "tags",
+                    "acquisition_price",
+                    "acquisition_currency",
+                    "unit_price",
+                    "est_value",
+                    "notes",
+                ):
+                    self.assertNotIn(private_key, public_item)
+
     def test_add_card_uses_inventory_default_location_and_tags_when_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"

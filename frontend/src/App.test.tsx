@@ -500,6 +500,66 @@ describe("App", () => {
     expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
   });
 
+  it("shows the unresolved card name after a partial URL import and closes the dialog", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(importDeckUrl).mockResolvedValue(
+      buildDeckUrlImportResponse({
+        rows_seen: 2,
+        rows_written: 1,
+        ready_to_commit: true,
+        summary: {
+          total_card_quantity: 3,
+          distinct_card_names: 1,
+          distinct_printings: 1,
+          section_card_quantities: { mainboard: 3 },
+          requested_card_quantity: 4,
+          unresolved_card_quantity: 1,
+        },
+        resolution_issues: [
+          {
+            kind: "unknown_card",
+            source_position: 227,
+            section: "mainboard",
+            requested: {
+              scryfall_id: "stale-wildgrowth-id",
+              name: "Wildgrowth Archaic",
+              quantity: 1,
+              set_code: "TST",
+              collector_number: "168",
+              finish: "normal",
+            },
+            options: [],
+          },
+        ],
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Import Cards" }));
+    await user.click(screen.getByRole("menuitem", { name: /Import from URL/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import From URL" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Deck URL" }),
+      "https://archidekt.com/decks/15761099/counters_and_counters",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
+
+    await waitFor(() => {
+      expect(importDeckUrl).toHaveBeenCalledWith({
+        source_url: "https://archidekt.com/decks/15761099/counters_and_counters",
+        default_inventory: "personal",
+      });
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Imported 3 cards into Personal Collection. Could not import Wildgrowth Archaic.",
+    );
+    expect(screen.queryByRole("dialog", { name: "Import From URL" })).not.toBeInTheDocument();
+  });
+
   it("creates a new collection from the import dialog and imports into it", async () => {
     const user = userEvent.setup();
     const personal = buildInventorySummary();

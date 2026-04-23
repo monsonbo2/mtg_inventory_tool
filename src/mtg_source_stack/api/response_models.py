@@ -472,6 +472,7 @@ class DeckUrlImportRowResponse(InventoryItemMutationBaseResponse):
 
 
 class DeckUrlImportRequestedCardResponse(ApiBaseModel):
+    scryfall_id: str | None
     name: str | None
     quantity: int
     set_code: str | None
@@ -480,7 +481,7 @@ class DeckUrlImportRequestedCardResponse(ApiBaseModel):
 
 
 class DeckUrlImportResolutionIssueResponse(ApiBaseModel):
-    kind: Literal["ambiguous_card_name", "ambiguous_printing", "finish_required"]
+    kind: Literal["ambiguous_card_name", "ambiguous_printing", "unknown_card", "finish_required"]
     source_position: int
     section: str
     requested: DeckUrlImportRequestedCardResponse
