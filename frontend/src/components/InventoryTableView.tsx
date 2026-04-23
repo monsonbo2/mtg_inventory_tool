@@ -1165,6 +1165,18 @@ export function InventoryTableView(props: {
 
       <div className="inventory-table-shell">
         <table className="inventory-table">
+          <colgroup>
+            <col className="inventory-table-col-select" />
+            <col className="inventory-table-col-card" />
+            <col className="inventory-table-col-set" />
+            <col className="inventory-table-col-quantity" />
+            <col className="inventory-table-col-finish" />
+            <col className="inventory-table-col-condition" />
+            <col className="inventory-table-col-language" />
+            <col className="inventory-table-col-location" />
+            <col className="inventory-table-col-tags" />
+            <col className="inventory-table-col-value" />
+          </colgroup>
           <thead>
             <tr>
               <th className="inventory-table-checkbox-column" scope="col">
@@ -1359,18 +1371,28 @@ export function InventoryTableView(props: {
                           event.stopPropagation();
                           props.onOpenDetails(item.item_id);
                         }}
+                        title={item.name}
                         type="button"
                       >
                         {item.name}
                       </button>
-                      <div className="inventory-table-card-meta">
-                        <span>#{item.collector_number}</span>
-                        {item.notes ? <span>{summarizeInlineText(item.notes, 26)}</span> : null}
-                      </div>
+                      {item.notes ? (
+                        <div className="inventory-table-card-meta">
+                          <span title={item.notes}>{summarizeInlineText(item.notes, 34)}</span>
+                        </div>
+                      ) : null}
                     </td>
-                    <td className="inventory-table-set-cell">
-                      <strong>{item.set_code.toUpperCase()}</strong>
-                      <span>{item.set_name}</span>
+                    <td
+                      className="inventory-table-set-cell"
+                      title={`${item.set_code.toUpperCase()} #${item.collector_number} · ${item.set_name}`}
+                    >
+                      <strong className="inventory-table-set-code">
+                        {item.set_code.toUpperCase()}
+                        <span className="inventory-table-collector-number">
+                          #{item.collector_number}
+                        </span>
+                      </strong>
+                      <span className="inventory-table-set-name">{item.set_name}</span>
                     </td>
                     <td className="inventory-table-number-cell">{item.quantity}</td>
                     <td className="inventory-table-inline-cell">{formatFinishLabel(item.finish)}</td>
@@ -1379,9 +1401,18 @@ export function InventoryTableView(props: {
                       {formatLanguageCode(item.language_code)}
                     </td>
                     <td>
-                      <span className="inventory-table-location-pill">
-                        {formatLocationLabel(item.location)}
-                      </span>
+                      {item.location?.trim() ? (
+                        <span
+                          className="inventory-table-location-pill"
+                          title={formatLocationLabel(item.location)}
+                        >
+                          {formatLocationLabel(item.location)}
+                        </span>
+                      ) : (
+                        <span className="inventory-table-empty-value" aria-label="No location">
+                          —
+                        </span>
+                      )}
                     </td>
                     <td>
                       {item.tags.length ? (
@@ -1402,7 +1433,9 @@ export function InventoryTableView(props: {
                           ) : null}
                         </div>
                       ) : (
-                        <span className="inventory-table-empty-value">No tags</span>
+                        <span className="inventory-table-empty-value" aria-label="No tags">
+                          —
+                        </span>
                       )}
                     </td>
                     <td className="inventory-table-number-cell inventory-table-value-cell">
