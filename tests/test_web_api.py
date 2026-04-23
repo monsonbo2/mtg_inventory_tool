@@ -683,6 +683,14 @@ class WebApiSchemaTest(unittest.TestCase):
                     components[deck_url_response_schema_name]["properties"]["resolution_issues"]["items"]["$ref"]
                 ),
             )
+            self.assertIn(
+                "unknown_card",
+                components["DeckUrlImportResolutionIssueResponse"]["properties"]["kind"]["enum"],
+            )
+            self.assertIn(
+                "scryfall_id",
+                components["DeckUrlImportRequestedCardResponse"]["properties"],
+            )
             export_csv_response = spec["paths"]["/inventories/{inventory_slug}/export.csv"]["get"]["responses"]["200"]
             self.assertIn("text/csv", export_csv_response["content"])
             self.assertEqual(
@@ -2408,6 +2416,82 @@ class WebApiTest(unittest.TestCase):
 
                 self.assertEqual(4, item_row["quantity"])
                 self.assertEqual(("api", "local-demo", "req-deck-url-commit"), tuple(audit_row))
+
+    def test_demo_api_deck_url_import_reports_unknown_cards_without_blocking_known_rows(self) -> None:
+        from mtg_source_stack.inventory.deck_url_import import RemoteDeckCard, RemoteDeckSource
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-known-card",
+                    oracle_id="api-known-oracle",
+                    name="Known Card",
+                    set_code="tst",
+                    set_name="Test Set",
+                    collector_number="10",
+                    finishes_json='["normal"]',
+                )
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                remote_source = RemoteDeckSource(
+                    provider="archidekt",
+                    source_url="https://archidekt.com/decks/15761099/counters_and_counters",
+                    deck_name="Counters and Counters",
+                    cards=[
+                        RemoteDeckCard(1, 2, "mainboard", "api-known-card", "normal"),
+                        RemoteDeckCard(
+                            227,
+                            1,
+                            "mainboard",
+                            "stale-wildgrowth-id",
+                            "normal",
+                            name="Wildgrowth Archaic",
+                            set_code="TST",
+                            collector_number="168",
+                        ),
+                    ],
+                )
+
+                with patch(
+                    "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                    return_value=remote_source,
+                ):
+                    committed = client.post(
+                        "/imports/deck-url",
+                        json={
+                            "source_url": "https://archidekt.com/decks/15761099/counters_and_counters",
+                            "default_inventory": "personal",
+                        },
+                    )
+
+                self.assertEqual(200, committed.status_code)
+                committed_payload = committed.json()
+                self.assertTrue(committed_payload["ready_to_commit"])
+                self.assertEqual(1, committed_payload["rows_written"])
+                self.assertEqual(1, len(committed_payload["resolution_issues"]))
+                self.assertEqual("unknown_card", committed_payload["resolution_issues"][0]["kind"])
+                self.assertEqual(
+                    "Wildgrowth Archaic",
+                    committed_payload["resolution_issues"][0]["requested"]["name"],
+                )
+                self.assertEqual(
+                    "stale-wildgrowth-id",
+                    committed_payload["resolution_issues"][0]["requested"]["scryfall_id"],
+                )
+
+                with connect(db_path) as connection:
+                    rows = connection.execute(
+                        "SELECT scryfall_id, quantity FROM inventory_items ORDER BY scryfall_id"
+                    ).fetchall()
+
+                self.assertEqual([("api-known-card", 2)], [(row["scryfall_id"], row["quantity"]) for row in rows])
 
     def test_demo_api_deck_url_import_uses_strict_schema_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

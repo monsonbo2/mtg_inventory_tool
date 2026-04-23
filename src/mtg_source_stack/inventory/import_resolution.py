@@ -77,6 +77,7 @@ class DecklistResolutionSelection:
 
 @dataclass(frozen=True, slots=True)
 class RemoteDeckRequestedCard:
+    scryfall_id: str | None
     name: str | None
     quantity: int
     set_code: str | None = None
