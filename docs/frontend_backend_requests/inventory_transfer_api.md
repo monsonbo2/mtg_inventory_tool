@@ -35,7 +35,13 @@ Current behavior:
 - transfer audit rows are grouped under one request correlation id
 - duplication now builds on the same transfer engine to create a new inventory
   atomically and copy all source rows into it
-- `shared_service` validates write access to both source and target inventories
+- in `shared_service`, `copy` validates read access to the source inventory and
+  write access to the target inventory
+- in `shared_service`, `move` validates write access to both source and target
+  inventories
+- `can_transfer_to` is a destination capability; a viewer may copy out of a
+  readable source into a writable target even when the source row has
+  `can_transfer_to=false`
 
 Compatibility note:
 

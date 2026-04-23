@@ -139,7 +139,11 @@ The current shared-service behavior is:
 - inventory item/audit reads require membership on that inventory; use
   `GET /inventories/{inventory_slug}/items/page` for server-side table
   pagination and sorting
+- CSV export requires read access to the source inventory
 - inventory writes require `editor` or `owner` membership on that inventory
+- inventory transfer `copy` requires read access to the source inventory and
+  write access to the target inventory; transfer `move` requires write access
+  to both inventories
 - inventory membership management requires `owner` membership on that
   inventory or global `admin`
 - `POST /inventories` lets any authenticated user create an owned inventory

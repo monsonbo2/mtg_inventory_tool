@@ -74,7 +74,8 @@ preserve for the first API-backed version of the project.
   `rows_written`, `ready_to_commit`, `source_snapshot_token`, `summary`,
   `resolution_issues`, `dry_run`, and `imported_rows`.
 - `GET /inventories/{inventory_slug}/export.csv` returns `text/csv` rather
-  than JSON and uses `Content-Disposition` for download semantics.
+  than JSON, uses `Content-Disposition` for download semantics, and requires
+  read access to the inventory in `shared_service`.
 - `POST /inventories/{source_inventory_slug}/transfer` returns a stable
   transfer envelope with source/target inventory slugs, summary counts,
   selection metadata, and ordered per-item results.
@@ -308,6 +309,10 @@ preserve for the first API-backed version of the project.
   - transfers selected source inventory rows, or the entire source inventory,
     into `target_inventory_slug`
   - `mode` accepts `copy` or `move`
+  - in `shared_service`, `copy` requires read access to the source inventory
+    and write access to the target inventory
+  - in `shared_service`, `move` requires write access to both the source and
+    target inventories
   - use exactly one of:
     - `item_ids`, which must be non-empty and unique
     - `all_items=true`, which selects every row in the source inventory
@@ -659,8 +664,9 @@ before the generic 500 envelope is returned.
   `POST /imports/csv`, `POST /imports/decklist`, and
   `POST /imports/deck-url` require inventory write access.
 - `POST /inventories/{source_inventory_slug}/transfer` requires write access to
-  both the source inventory in the path and the target inventory in the
-  request body; global `admin` bypasses both checks.
+  the target inventory in the request body. `copy` requires read access to the
+  source inventory in the path, while `move` requires write access to that
+  source inventory; global `admin` bypasses these inventory membership checks.
 - `POST /inventories/{source_inventory_slug}/duplicate` requires write access
   to the source inventory; global `admin` bypasses the inventory membership
   check. The caller becomes `owner` of the duplicated inventory.
