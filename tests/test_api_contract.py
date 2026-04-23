@@ -56,6 +56,7 @@ from mtg_source_stack.api.response_models import (
     InventoryShareLinkStatusResponse,
     InventoryShareLinkTokenResponse,
     InventoryTransferResponse,
+    OwnedInventoryItemsPageResponse,
     OwnedInventoryRowResponse,
     PublicInventoryShareResponse,
     RemoveInventoryItemResponse,
@@ -76,6 +77,7 @@ from mtg_source_stack.inventory.service import (
     list_card_printings_for_oracle,
     list_inventory_audit_events,
     list_owned_filtered,
+    list_owned_filtered_page,
     reconcile_prices,
     search_card_names,
     search_cards,
@@ -234,6 +236,16 @@ class ApiContractTest(RepoSmokeTestCase):
                 "printing_selection_mode": "explicit",
             }
         )
+        owned_page_payload = {
+            "inventory": "personal",
+            "items": [owned_payload],
+            "total_count": 1,
+            "limit": 50,
+            "offset": 0,
+            "has_more": False,
+            "sort_key": "name",
+            "sort_direction": "asc",
+        }
         catalog_payload = {
             "scryfall_id": "card-1",
             "name": "Lightning Bolt",
@@ -494,6 +506,7 @@ class ApiContractTest(RepoSmokeTestCase):
         error_payload = api_error_payload(ValidationError("Bad request."))
 
         owned = OwnedInventoryRowResponse.model_validate(owned_payload)
+        owned_page = OwnedInventoryItemsPageResponse.model_validate(owned_page_payload)
         catalog = CatalogSearchRowResponse.model_validate(catalog_payload)
         printing_lookup = CatalogPrintingLookupRowResponse.model_validate(printing_lookup_payload)
         printing_summary = CatalogPrintingSummaryResponse.model_validate(printing_summary_payload)
@@ -525,6 +538,10 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(["normal", "foil"], owned.allowed_finishes)
         self.assertEqual("explicit", owned.printing_selection_mode)
         self.assertIsNone(owned.price_date)
+        self.assertEqual(1, owned_page.total_count)
+        self.assertFalse(owned_page.has_more)
+        self.assertEqual("name", owned_page.sort_key)
+        self.assertEqual("Lightning Bolt", owned_page.items[0].name)
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
         self.assertTrue(printing_lookup.is_default_add_choice)
@@ -1014,6 +1031,7 @@ class ApiContractTest(RepoSmokeTestCase):
             "owned_items.json": lambda payload: [
                 OwnedInventoryRowResponse.model_validate(item) for item in payload
             ],
+            "owned_items_page.json": OwnedInventoryItemsPageResponse.model_validate,
             "patch_printing_request.json": SetInventoryItemPrintingRequest.model_validate,
             "add_item_response.json": AddInventoryItemResponse.model_validate,
             "delete_item_response.json": RemoveInventoryItemResponse.model_validate,
@@ -1087,6 +1105,30 @@ class ApiContractTest(RepoSmokeTestCase):
                 language_code=None,
                 location=None,
                 tags=None,
+            ),
+            lambda: list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=0,
+            ),
+            lambda: list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                offset=-1,
+            ),
+            lambda: list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                sort_key="unsafe_sql",
+            ),
+            lambda: list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                sort_direction="sideways",
             ),
             lambda: list_inventory_audit_events(
                 Path("var/db/not-used.db"),

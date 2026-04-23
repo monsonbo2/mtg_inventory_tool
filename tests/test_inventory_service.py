@@ -20,6 +20,7 @@ from mtg_source_stack.inventory.response_models import (
     InventoryTransferResult,
     MergeRowsResult,
     RemoveCardResult,
+    OwnedInventoryPageResult,
     SetAcquisitionResult,
     SetConditionResult,
     SetFinishResult,
@@ -47,6 +48,7 @@ from mtg_source_stack.inventory.service import (
     list_inventory_memberships,
     list_inventories,
     list_owned_filtered,
+    list_owned_filtered_page,
     list_price_gaps,
     merge_rows,
     reconcile_prices,
@@ -278,6 +280,167 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 ),
             )
             connection.commit()
+
+    def test_list_owned_filtered_page_counts_filters_and_paginates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            for scryfall_id, oracle_id, name, collector_number in [
+                ("page-alpha", "page-oracle-alpha", "Alpha Bolt", "1"),
+                ("page-beta", "page-oracle-beta", "Beta Bolt", "2"),
+                ("page-gamma", "page-oracle-gamma", "Gamma Bolt", "3"),
+                ("page-side", "page-oracle-side", "Side Card", "4"),
+            ]:
+                self._insert_test_card(
+                    db_path,
+                    scryfall_id=scryfall_id,
+                    oracle_id=oracle_id,
+                    name=name,
+                    collector_number=collector_number,
+                    finishes_json='["normal","foil"]',
+                )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            for scryfall_id, quantity, finish, condition_code, location, tags_json in [
+                ("page-alpha", 5, "normal", "NM", "Binder A", '["deck","trade"]'),
+                ("page-beta", 2, "foil", "LP", "Binder B", '["deck"]'),
+                ("page-gamma", 1, "normal", "HP", "Binder C", '["deck"]'),
+                ("page-side", 9, "normal", "NM", "Box", '["deck"]'),
+            ]:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id=scryfall_id,
+                    quantity=quantity,
+                    finish=finish,
+                    condition_code=condition_code,
+                    location=location,
+                    tags_json=tags_json,
+                )
+
+            first_page = list_owned_filtered_page(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=2,
+                offset=0,
+                sort_key="name",
+                sort_direction="asc",
+                query="Bolt",
+                location="Binder",
+                tags=["deck"],
+            )
+
+            self.assertIsInstance(first_page, OwnedInventoryPageResult)
+            self.assertEqual("personal", first_page.inventory)
+            self.assertEqual(3, first_page.total_count)
+            self.assertEqual(2, first_page.limit)
+            self.assertEqual(0, first_page.offset)
+            self.assertTrue(first_page.has_more)
+            self.assertEqual("name", first_page.sort_key)
+            self.assertEqual("asc", first_page.sort_direction)
+            self.assertEqual(["Alpha Bolt", "Beta Bolt"], [item.name for item in first_page.items])
+
+            second_page = list_owned_filtered_page(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=2,
+                offset=2,
+                sort_key="name",
+                sort_direction="asc",
+                query="Bolt",
+                location="Binder",
+                tags=["deck"],
+            )
+            self.assertEqual(3, second_page.total_count)
+            self.assertFalse(second_page.has_more)
+            self.assertEqual(["Gamma Bolt"], [item.name for item in second_page.items])
+
+    def test_list_owned_filtered_page_sorts_deterministically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            for scryfall_id, oracle_id, name, collector_number in [
+                ("sort-alpha", "sort-oracle-alpha", "Alpha Sort", "1"),
+                ("sort-beta", "sort-oracle-beta", "Beta Sort", "2"),
+                ("sort-gamma", "sort-oracle-gamma", "Gamma Sort", "3"),
+            ]:
+                self._insert_test_card(
+                    db_path,
+                    scryfall_id=scryfall_id,
+                    oracle_id=oracle_id,
+                    name=name,
+                    collector_number=collector_number,
+                )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            for scryfall_id, quantity in [
+                ("sort-alpha", 5),
+                ("sort-beta", 5),
+                ("sort-gamma", 2),
+            ]:
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id=scryfall_id,
+                    quantity=quantity,
+                )
+
+            page = list_owned_filtered_page(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=10,
+                offset=0,
+                sort_key="quantity",
+                sort_direction="desc",
+            )
+
+            self.assertEqual("quantity", page.sort_key)
+            self.assertEqual("desc", page.sort_direction)
+            self.assertEqual(
+                [("Alpha Sort", 5), ("Beta Sort", 5), ("Gamma Sort", 2)],
+                [(item.name, item.quantity) for item in page.items],
+            )
+
+    def test_list_owned_filtered_page_rejects_invalid_paging_and_sort_values(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "--limit must be a positive integer"):
+            list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=0,
+            )
+        with self.assertRaisesRegex(ValidationError, "--offset must be zero or a positive integer"):
+            list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                offset=-1,
+            )
+        with self.assertRaisesRegex(ValidationError, "sort_key must be one of"):
+            list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                sort_key="unsafe_sql",
+            )
+        with self.assertRaisesRegex(ValidationError, "sort_direction must be one of"):
+            list_owned_filtered_page(
+                Path("var/db/not-used.db"),
+                inventory_slug="personal",
+                provider="tcgplayer",
+                sort_direction="sideways",
+            )
 
     def test_resolve_card_row_prefers_latest_english_printing_for_oracle_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

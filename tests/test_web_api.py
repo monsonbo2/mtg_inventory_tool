@@ -134,6 +134,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/inventories/{source_inventory_slug}/duplicate", "post"),
                 ("/inventories/{inventory_slug}/export.csv", "get"),
                 ("/inventories/{inventory_slug}/items", "get"),
+                ("/inventories/{inventory_slug}/items/page", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{source_inventory_slug}/transfer", "post"),
@@ -166,6 +167,7 @@ class WebApiSchemaTest(unittest.TestCase):
                 ("/cards/oracle/{oracle_id}/printings", "get"),
                 ("/inventories/{source_inventory_slug}/duplicate", "post"),
                 ("/inventories/{inventory_slug}/items", "get"),
+                ("/inventories/{inventory_slug}/items/page", "get"),
                 ("/inventories/{inventory_slug}/items", "post"),
                 ("/inventories/{inventory_slug}/items/bulk", "post"),
                 ("/inventories/{source_inventory_slug}/transfer", "post"),
@@ -331,6 +333,33 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 ["explicit", "defaulted"],
                 owned_properties["printing_selection_mode"]["enum"],
+            )
+
+            owned_page_schema = spec["paths"]["/inventories/{inventory_slug}/items/page"]["get"]["responses"]["200"][
+                "content"
+            ]["application/json"]["schema"]
+            owned_page_schema_name = self._schema_name_from_ref(owned_page_schema["$ref"])
+            self.assertEqual("OwnedInventoryItemsPageResponse", owned_page_schema_name)
+            owned_page_properties = components[owned_page_schema_name]["properties"]
+            self.assertEqual(
+                "OwnedInventoryRowResponse",
+                self._schema_name_from_ref(owned_page_properties["items"]["items"]["$ref"]),
+            )
+            self.assertEqual("integer", owned_page_properties["total_count"]["type"])
+            self.assertEqual("boolean", owned_page_properties["has_more"]["type"])
+            self.assertEqual(
+                ["name", "set", "quantity", "finish", "condition_code", "language_code", "location", "tags", "est_value", "item_id"],
+                owned_page_properties["sort_key"]["enum"],
+            )
+            owned_page_parameters = {
+                parameter["name"]: parameter
+                for parameter in spec["paths"]["/inventories/{inventory_slug}/items/page"]["get"]["parameters"]
+            }
+            self.assertEqual(50, owned_page_parameters["limit"]["schema"]["default"])
+            self.assertEqual(0, owned_page_parameters["offset"]["schema"]["default"])
+            self.assertEqual(
+                ["asc", "desc"],
+                owned_page_parameters["sort_direction"]["schema"]["enum"],
             )
 
             inventories_list_schema = spec["paths"]["/inventories"]["get"]["responses"]["200"]["content"][
@@ -1284,6 +1313,17 @@ class WebApiTest(unittest.TestCase):
                     "https://example.test/cards/api-card-1-normal.jpg",
                     listed.json()[0]["image_uri_normal"],
                 )
+
+                paged = client.get(
+                    "/inventories/personal/items/page",
+                    params={"limit": 50, "offset": 0, "sort_key": "name", "sort_direction": "asc"},
+                )
+                self.assertEqual(200, paged.status_code)
+                self.assertEqual("personal", paged.json()["inventory"])
+                self.assertEqual(1, paged.json()["total_count"])
+                self.assertFalse(paged.json()["has_more"])
+                self.assertEqual("name", paged.json()["sort_key"])
+                self.assertEqual("api-oracle-1", paged.json()["items"][0]["oracle_id"])
 
                 patched = client.patch(
                     f"/inventories/personal/items/{added_payload['item_id']}",

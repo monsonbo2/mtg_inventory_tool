@@ -55,6 +55,9 @@ Current authz model:
   per-inventory capabilities: `role`, `can_read`, `can_write`,
   `can_manage_share`, and `can_transfer_to`
 - inventory reads require inventory membership or global `admin`
+- `GET /inventories/{inventory_slug}/items/page` is the server-side paginated
+  inventory-table read contract; the older `/items` array route remains for
+  compatibility
 - inventory writes require inventory `editor` / `owner` membership or global
   `admin`
 - inventory membership management requires inventory `owner` membership or

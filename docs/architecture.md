@@ -133,6 +133,8 @@ shared service.
   - local inventory membership roles: `viewer`, `editor`, `owner`
 - Inventory listing, inventory reads, and inventory writes are now scoped by
   local memberships, with global `admin` as the bypass.
+- Inventory table reads now have both a legacy array route and a paginated
+  envelope route for server-side filtering, sorting, and table paging.
 - Inventory owners and global admins can manage local memberships over the API;
   the backend preserves at least one owner and audits grant, role-change, and
   revoke actions.

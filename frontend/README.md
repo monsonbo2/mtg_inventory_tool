@@ -184,6 +184,12 @@ writes match the table above. Owner/admin membership-management checks can use
 `GET /inventories/{inventory_slug}/members` plus the matching POST/PATCH/DELETE
 member routes.
 
+For larger table workflows, prefer
+`GET /inventories/{inventory_slug}/items/page` over the legacy array endpoint.
+The paginated route returns `items`, `total_count`, `limit`, `offset`,
+`has_more`, `sort_key`, and `sort_direction`, and supports the same inventory
+filters plus server-side sorting.
+
 `GET /inventories` now includes capability fields for permission-aware UI:
 `role`, `can_read`, `can_write`, `can_manage_share`, and `can_transfer_to`.
 Use those fields to gate write, import, transfer, duplicate, and share-link
