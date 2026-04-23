@@ -3296,6 +3296,51 @@ class WebApiTest(unittest.TestCase):
                     [row["name"] for row in response.json()["items"]],
                 )
 
+    def test_demo_api_grouped_name_search_prefers_exact_leading_name_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-cloud-key",
+                    oracle_id="api-cloud-key-oracle",
+                    name="Cloud Key",
+                    collector_number="81",
+                    edhrec_rank=657,
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-cloud-midgar-mercenary",
+                    oracle_id="api-cloud-midgar-mercenary-oracle",
+                    name="Cloud, Midgar Mercenary",
+                    collector_number="82",
+                    edhrec_rank=2010,
+                    is_default_add_searchable=1,
+                )
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-cloud-manta",
+                    oracle_id="api-cloud-manta-oracle",
+                    name="Cloud Manta",
+                    collector_number="83",
+                    edhrec_rank=100,
+                    is_default_add_searchable=1,
+                )
+
+                response = client.get("/cards/search/names", params={"query": "cloud"})
+                self.assertEqual(200, response.status_code)
+                self.assertEqual(3, response.json()["total_count"])
+                self.assertFalse(response.json()["has_more"])
+                self.assertEqual(
+                    [
+                        "Cloud, Midgar Mercenary",
+                        "Cloud Manta",
+                        "Cloud Key",
+                    ],
+                    [row["name"] for row in response.json()["items"]],
+                )
+
     def test_demo_api_bulk_tag_mutation_updates_multiple_rows_and_writes_grouped_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
