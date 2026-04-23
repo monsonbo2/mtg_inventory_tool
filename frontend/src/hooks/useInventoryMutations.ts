@@ -177,18 +177,19 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   }
 
   function getImportIssueLabel(issue: InventoryImportResponse["resolution_issues"][number]) {
-    const requested = issue.requested as Record<string, unknown>;
     const requestedName =
-      typeof requested.name === "string" && requested.name.trim()
-        ? requested.name.trim()
+      typeof issue.requested.name === "string" && issue.requested.name.trim()
+        ? issue.requested.name.trim()
         : null;
     if (requestedName) {
       return requestedName;
     }
 
     const requestedScryfallId =
-      typeof requested.scryfall_id === "string" && requested.scryfall_id.trim()
-        ? requested.scryfall_id.trim()
+      "scryfall_id" in issue.requested &&
+      typeof issue.requested.scryfall_id === "string" &&
+      issue.requested.scryfall_id.trim()
+        ? issue.requested.scryfall_id.trim()
         : null;
     if (requestedScryfallId) {
       return requestedScryfallId;
