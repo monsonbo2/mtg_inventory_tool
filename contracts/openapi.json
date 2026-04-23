@@ -3416,6 +3416,74 @@
         "title": "InventoryTransferResponse",
         "type": "object"
       },
+      "OwnedInventoryItemsPageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "inventory": {
+            "title": "Inventory",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OwnedInventoryRowResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "sort_direction": {
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Sort Direction",
+            "type": "string"
+          },
+          "sort_key": {
+            "enum": [
+              "name",
+              "set",
+              "quantity",
+              "finish",
+              "condition_code",
+              "language_code",
+              "location",
+              "tags",
+              "est_value",
+              "item_id"
+            ],
+            "title": "Sort Key",
+            "type": "string"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inventory",
+          "items",
+          "total_count",
+          "limit",
+          "offset",
+          "has_more",
+          "sort_key",
+          "sort_direction"
+        ],
+        "title": "OwnedInventoryItemsPageResponse",
+        "type": "object"
+      },
       "OwnedInventoryRowResponse": {
         "additionalProperties": false,
         "properties": {
@@ -7423,6 +7491,323 @@
           }
         },
         "summary": "Inventory Items Bulk Mutate"
+      }
+    },
+    "/inventories/{inventory_slug}/items/page": {
+      "get": {
+        "operationId": "inventory_items_page_inventories__inventory_slug__items_page_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inventory_slug",
+            "required": true,
+            "schema": {
+              "title": "Inventory Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "default": "tcgplayer",
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 250,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Server-side inventory table sort key. The paginated endpoint always adds a deterministic item_id tie-breaker.",
+            "in": "query",
+            "name": "sort_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Server-side inventory table sort key. The paginated endpoint always adds a deterministic item_id tie-breaker.",
+              "enum": [
+                "name",
+                "set",
+                "quantity",
+                "finish",
+                "condition_code",
+                "language_code",
+                "location",
+                "tags",
+                "est_value",
+                "item_id"
+              ],
+              "title": "Sort Key"
+            }
+          },
+          {
+            "description": "Sort direction.",
+            "in": "query",
+            "name": "sort_direction",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort direction.",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Sort Direction"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "set_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Set Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rarity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rarity"
+            }
+          },
+          {
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+            "in": "query",
+            "name": "finish",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "normal",
+                    "nonfoil",
+                    "foil",
+                    "etched"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+              "title": "Finish"
+            }
+          },
+          {
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
+            "in": "query",
+            "name": "condition_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
+              "title": "Condition Code"
+            }
+          },
+          {
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
+            "in": "query",
+            "name": "language_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
+              "title": "Language Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tags"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnedInventoryItemsPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Schema not ready"
+          }
+        },
+        "summary": "Inventory Items Page"
       }
     },
     "/inventories/{inventory_slug}/items/{item_id}": {

@@ -156,8 +156,22 @@ Use this as the first-pass UI-to-endpoint map:
 - CSV export download -> `GET /inventories/{inventory_slug}/export.csv`
   Uses `profile=default` today and returns `text/csv`.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
-  Returned rows include `oracle_id`, `allowed_finishes`, and
-  `printing_selection_mode` for printing-aware edit flows.
+  This existing route returns a plain array and remains supported for local
+  demo compatibility. Returned rows include `oracle_id`, `allowed_finishes`,
+  and `printing_selection_mode` for printing-aware edit flows.
+- Paginated owned rows table -> `GET /inventories/{inventory_slug}/items/page`
+  Use this route for server-side table paging, filtering, and sorting when
+  inventories may be large. It returns `items`, `total_count`, `limit`,
+  `offset`, `has_more`, `sort_key`, and `sort_direction`.
+  See `contracts/demo_payloads/owned_items_page.json` for the response shape.
+  - supported filters: `query`, `set_code`, `rarity`, `finish`,
+    `condition_code`, `language_code`, `location`, and repeated `tags`
+  - supported `sort_key` values: `name`, `set`, `quantity`, `finish`,
+    `condition_code`, `language_code`, `location`, `tags`, `est_value`, and
+    `item_id`
+  - supported `sort_direction` values: `asc` and `desc`
+  - `limit` defaults to `50` and is capped at `250`
+  - sort order is deterministic and uses `item_id` as a final tie-breaker
 - Quick edit quantity -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
   Request body: `{"quantity": ...}`
 - Quick edit finish -> `PATCH /inventories/{inventory_slug}/items/{item_id}`
@@ -351,6 +365,8 @@ export default {
     `can_manage_share`, and `can_transfer_to` so write/share/transfer controls
     can be hidden or disabled before a `403`
   - some inventory reads may return `403`
+  - paginated inventory table reads use the same read-access rules as the
+    legacy owned-items array endpoint
   - inventory writes may return `403` if the user is a viewer or non-member
   - membership-management routes may return `403` unless the user is an owner
     or global admin

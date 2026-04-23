@@ -266,6 +266,18 @@ class OwnedInventoryRow(ResponseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class OwnedInventoryPageResult(ResponseModel):
+    inventory: str
+    items: list[OwnedInventoryRow]
+    total_count: int
+    limit: int
+    offset: int
+    has_more: bool
+    sort_key: str
+    sort_direction: str
+
+
+@dataclass(frozen=True, slots=True)
 class PublicInventorySummary(ResponseModel):
     display_name: str
     description: str | None

@@ -136,7 +136,9 @@ The current shared-service behavior is:
   and includes per-inventory capability fields: `role`, `can_read`,
   `can_write`, `can_manage_share`, and `can_transfer_to`
 - card search routes require a user who can read at least one inventory
-- inventory item/audit reads require membership on that inventory
+- inventory item/audit reads require membership on that inventory; use
+  `GET /inventories/{inventory_slug}/items/page` for server-side table
+  pagination and sorting
 - inventory writes require `editor` or `owner` membership on that inventory
 - inventory membership management requires `owner` membership on that
   inventory or global `admin`
@@ -587,7 +589,9 @@ dependencies are missing.
   while share-link `public_path` remains the browser-facing page path.
   Inventory reads and writes are scoped by local memberships. Authenticated
   users can create inventories they own, and owners/admins can manage
-  inventory memberships through the API. Global roles are only for elevated app
+  inventory memberships through the API. Large inventory table views should use
+  the paginated `/inventories/{inventory_slug}/items/page` route instead of
+  loading the legacy array endpoint. Global roles are only for elevated app
   permissions such as admin bypass. The default verified identity header is
   `X-Authenticated-User`, and the default roles header is
   `X-Authenticated-Roles`.

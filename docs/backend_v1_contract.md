@@ -58,6 +58,9 @@ The live backend contract consists of five primary tables:
 - Managed membership changes preserve at least one owner and write audit events
   for grant, role-change, and revoke actions.
 - Quantity edits mutate `inventory_items` in place.
+- Owned inventory table reads support a paginated query envelope with
+  deterministic backend sorting; the original array read remains compatibility
+  behavior.
 - Per-edit inventory mutations are recorded in `inventory_audit_log`.
 - Operator safety comes from explicit commands, per-edit audit history, and
   whole-database snapshots as the coarse backup layer.

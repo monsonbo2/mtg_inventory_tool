@@ -16,6 +16,7 @@ from ..inventory.export_profiles import supported_csv_export_profiles
 from ..inventory.money import coerce_decimal
 from ..inventory.normalize import (
     DEFAULT_AUDIT_EVENT_LIMIT,
+    DEFAULT_OWNED_ROWS_PAGE_LIMIT,
     DEFAULT_PROVIDER,
     DEFAULT_SEARCH_LIMIT,
     MAX_AUDIT_EVENT_LIMIT,
@@ -40,6 +41,9 @@ from ..inventory.service import (
     list_inventory_memberships,
     list_visible_inventories,
     list_owned_filtered,
+    list_owned_filtered_page,
+    OWNED_INVENTORY_PAGE_SORT_DIRECTIONS,
+    OWNED_INVENTORY_PAGE_SORT_KEYS,
     remove_card,
     remove_inventory_membership,
     render_inventory_csv_export,
@@ -116,6 +120,7 @@ from .response_models import (
     InventoryItemPatchResponse,
     InventoryTransferResponse,
     InventoryListRowResponse,
+    OwnedInventoryItemsPageResponse,
     OwnedInventoryRowResponse,
     PublicInventoryShareResponse,
     RemoveInventoryItemResponse,
@@ -147,6 +152,10 @@ CSV_IMPORT_RESOLUTIONS_JSON_DESCRIPTION = (
 CSV_EXPORT_PROFILE_DESCRIPTION = (
     "CSV export profile. Omit this parameter or use `default` for the canonical inventory export format."
 )
+INVENTORY_ITEMS_SORT_KEY_DESCRIPTION = (
+    "Server-side inventory table sort key. The paginated endpoint always adds a deterministic item_id tie-breaker."
+)
+SORT_DIRECTION_DESCRIPTION = "Sort direction."
 
 ERROR_RESPONSE_DESCRIPTIONS = {
     401: "Authentication required",
@@ -901,6 +910,62 @@ def inventory_items_list(
             inventory_slug=inventory_slug,
             provider=provider,
             limit=limit,
+            query=query,
+            set_code=set_code,
+            rarity=rarity,
+            finish=finish,
+            condition_code=condition_code,
+            language_code=language_code,
+            location=location,
+            tags=tags,
+        )
+    )
+
+
+@router.get(
+    "/inventories/{inventory_slug}/items/page",
+    response_model=OwnedInventoryItemsPageResponse,
+    responses=_error_responses(401, 403, 400, 404, 503, 500),
+)
+def inventory_items_page(
+    inventory_slug: str,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+    _context: Annotated[RequestContext, Depends(get_inventory_read_request_context)],
+    provider: str = DEFAULT_PROVIDER,
+    limit: Annotated[int, Query(ge=1, le=MAX_OWNED_ROWS_LIMIT)] = DEFAULT_OWNED_ROWS_PAGE_LIMIT,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    sort_key: Annotated[
+        str | None,
+        Query(
+            description=INVENTORY_ITEMS_SORT_KEY_DESCRIPTION,
+            json_schema_extra={"enum": list(OWNED_INVENTORY_PAGE_SORT_KEYS)},
+        ),
+    ] = None,
+    sort_direction: Annotated[
+        str | None,
+        Query(
+            description=SORT_DIRECTION_DESCRIPTION,
+            json_schema_extra={"enum": list(OWNED_INVENTORY_PAGE_SORT_DIRECTIONS)},
+        ),
+    ] = None,
+    query: str | None = None,
+    set_code: str | None = None,
+    rarity: str | None = None,
+    finish: Annotated[FinishInput | None, Query(description=FINISH_INPUT_DESCRIPTION)] = None,
+    condition_code: Annotated[str | None, Query(description=CONDITION_CODE_DESCRIPTION)] = None,
+    language_code: Annotated[str | None, Query(description=LANGUAGE_CODE_DESCRIPTION)] = None,
+    location: str | None = None,
+    tags: Annotated[list[str] | None, Query()] = None,
+) -> Any:
+    return _serialize(
+        list_owned_filtered_page(
+            settings.db_path,
+            inventory_slug=inventory_slug,
+            provider=provider,
+            limit=limit,
+            offset=offset,
+            sort_key=sort_key,
+            sort_direction=sort_direction,
             query=query,
             set_code=set_code,
             rarity=rarity,

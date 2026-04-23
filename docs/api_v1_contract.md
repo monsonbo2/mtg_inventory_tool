@@ -37,6 +37,9 @@ preserve for the first API-backed version of the project.
 - Inventory membership responses include `inventory`, `actor_id`, `role`,
   `created_at`, and `updated_at`. Membership removal responses include the
   removed `inventory`, `actor_id`, and previous `role`.
+- `GET /inventories/{inventory_slug}/items/page` returns a stable paginated
+  envelope with `inventory`, `items`, `total_count`, `limit`, `offset`,
+  `has_more`, `sort_key`, and `sort_direction`.
 - Dates remain ISO-8601 strings. Audit timestamps are emitted in UTC with an
   explicit timezone suffix, for example `2026-04-01T20:41:10Z`.
 - `PATCH /inventories/{inventory_slug}/items/{item_id}` accepts exactly one
@@ -150,6 +153,39 @@ preserve for the first API-backed version of the project.
     replacing them
   - explicit blank `location` or blank `tags` bypasses those inventory
     defaults instead of reapplying them
+- `GET /inventories/{inventory_slug}/items`
+  - returns the existing array response for compatibility with local/demo UI
+    and older clients
+  - accepts the current filter query parameters and optional `limit`
+  - keeps the legacy deterministic default order by card identity fields
+- `GET /inventories/{inventory_slug}/items/page`
+  - returns a paginated envelope for server-side inventory tables
+  - accepts the same filters as the array endpoint:
+    `query`, `set_code`, `rarity`, `finish`, `condition_code`,
+    `language_code`, `location`, and repeated `tags`
+  - `limit` defaults to `50` and cannot exceed `250`
+  - `offset` defaults to `0`
+  - `total_count` is the filtered count before `limit` and `offset`
+  - `has_more` is true when additional filtered rows exist beyond the returned
+    `items`
+  - `sort_direction` accepts `asc` or `desc`
+  - `sort_key` accepts:
+    - `name`
+    - `set`
+    - `quantity`
+    - `finish`
+    - `condition_code`
+    - `language_code`
+    - `location`
+    - `tags`
+    - `est_value`
+    - `item_id`
+  - sort behavior is deterministic; every non-`item_id` sort adds `item_id` as
+    a final ascending tie-breaker
+  - `finish` sorts in canonical UI order: `normal`, `foil`, `etched`
+  - `condition_code` sorts in canonical UI order:
+    `M`, `NM`, `LP`, `MP`, `HP`, `DMG`
+  - `est_value` treats unpriced rows as zero for sorting
 - `GET /cards/search` query `lang`
   - uses the same published language-code guidance as `language_code`
   - current search behavior still matches against the stored catalog language
@@ -614,6 +650,7 @@ before the generic 500 envelope is returned.
   `GET /cards/oracle/{oracle_id}/printings` require a caller who can read at
   least one inventory, or a global `admin`.
 - `GET /inventories/{inventory_slug}/items` and
+  `GET /inventories/{inventory_slug}/items/page`,
   `GET /inventories/{inventory_slug}/audit`, and
   `GET /inventories/{inventory_slug}/export.csv` require inventory read access.
 - `POST /inventories/{inventory_slug}/items`,

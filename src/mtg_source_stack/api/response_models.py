@@ -269,6 +269,28 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     )
 
 
+class OwnedInventoryItemsPageResponse(ApiBaseModel):
+    inventory: str
+    items: list[OwnedInventoryRowResponse]
+    total_count: int
+    limit: int
+    offset: int
+    has_more: bool
+    sort_key: Literal[
+        "name",
+        "set",
+        "quantity",
+        "finish",
+        "condition_code",
+        "language_code",
+        "location",
+        "tags",
+        "est_value",
+        "item_id",
+    ]
+    sort_direction: Literal["asc", "desc"]
+
+
 class PublicInventorySummaryResponse(ApiBaseModel):
     display_name: str
     description: str | None

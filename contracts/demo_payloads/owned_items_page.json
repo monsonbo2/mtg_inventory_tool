@@ -1,0 +1,44 @@
+{
+  "inventory": "personal",
+  "items": [
+    {
+      "item_id": 2,
+      "scryfall_id": "demo-counterspell",
+      "oracle_id": "demo-counterspell-oracle",
+      "name": "Counterspell",
+      "set_code": "7ed",
+      "set_name": "Seventh Edition",
+      "rarity": "uncommon",
+      "collector_number": "67",
+      "image_uri_small": "https://cards.scryfall.io/small/front/2/9/29bb1b85-9444-4bfa-b622-092a6873631c.jpg?1562234566",
+      "image_uri_normal": "https://cards.scryfall.io/normal/front/2/9/29bb1b85-9444-4bfa-b622-092a6873631c.jpg?1562234566",
+      "quantity": 3,
+      "condition_code": "NM",
+      "finish": "normal",
+      "allowed_finishes": [
+        "normal",
+        "foil"
+      ],
+      "language_code": "en",
+      "location": "Deck Box",
+      "tags": [
+        "control",
+        "blue"
+      ],
+      "acquisition_price": "1.1",
+      "acquisition_currency": "USD",
+      "currency": "USD",
+      "unit_price": "1.25",
+      "est_value": "3.75",
+      "price_date": "2026-04-01",
+      "notes": null,
+      "printing_selection_mode": "explicit"
+    }
+  ],
+  "total_count": 4,
+  "limit": 1,
+  "offset": 0,
+  "has_more": true,
+  "sort_key": "name",
+  "sort_direction": "asc"
+}
