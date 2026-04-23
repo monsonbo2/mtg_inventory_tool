@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type {
   AddInventoryItemRequest,
   CatalogNameSearchRow,
@@ -48,6 +48,18 @@ function getSuggestionStatusMessage(state: SearchPanelState) {
   }
 
   return "Card suggestions are hidden.";
+}
+
+function measureSearchWorkspaceContentHeight(workspaceNode: HTMLDivElement) {
+  const reserveNode = Array.from(workspaceNode.children).find(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      child.dataset.searchWorkspaceReserve === "true",
+  );
+  const reserveHeight = reserveNode?.getBoundingClientRect().height ?? 0;
+  const workspaceHeight = workspaceNode.getBoundingClientRect().height;
+
+  return Math.ceil(Math.max(0, workspaceHeight - reserveHeight));
 }
 
 export type SearchPanelState = {
@@ -128,12 +140,18 @@ export function SearchPanel(props: {
   actions: SearchPanelActions;
   state: SearchPanelState;
 }) {
+  const searchPanelRef = useRef<HTMLElement | null>(null);
   const searchFieldRef = useRef<HTMLLabelElement | null>(null);
   const importMenuRef = useRef<HTMLDivElement | null>(null);
   const searchResultRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const searchResultsPanelRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceDetailRef = useRef<HTMLDivElement | null>(null);
+  const searchWorkspaceGridRef = useRef<HTMLDivElement | null>(null);
+  const searchWorkspaceHeaderRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const searchPanelFlowHeightRef = useRef<number | null>(null);
+  const searchWorkspaceOverlayKeyRef = useRef<string | null>(null);
+  const searchWorkspaceOverlayWidthRef = useRef<number | null>(null);
   const autocompleteListId = useId();
   const autocompleteStatusId = `${autocompleteListId}-status`;
   const [importMenuOpen, setImportMenuOpen] = useState(false);
@@ -155,7 +173,13 @@ export function SearchPanel(props: {
   const [importFormError, setImportFormError] = useState<string | null>(null);
   const [importSubmitBusy, setImportSubmitBusy] = useState<ImportDialogMode | null>(null);
   const [searchResultsPanelHeight, setSearchResultsPanelHeight] = useState<number | null>(null);
-  const [searchWorkspaceOverlayHeight, setSearchWorkspaceOverlayHeight] = useState(0);
+  const [searchWorkspaceOverlay, setSearchWorkspaceOverlay] = useState({
+    gridHeight: 0,
+    headerHeight: 0,
+    height: 0,
+    panelOffsetHeight: 0,
+    reserveHeight: 0,
+  });
   const hasSearchResults = props.state.search.groups.length > 0;
   const showSearchResults = props.state.searchResultsVisible && hasSearchResults;
   const showAutocomplete = props.state.suggestions.isOpen;
@@ -173,6 +197,13 @@ export function SearchPanel(props: {
   const searchResultCountLabel = `${searchResultCount} matching card${
     searchResultCount === 1 ? "" : "s"
   }`;
+  const searchWorkspaceOverlayKey =
+    props.state.search.resultQuery ||
+    [
+      props.state.search.resultScope,
+      props.state.search.totalCount,
+      props.state.search.groups.map((group) => group.groupId).join("|"),
+    ].join(":");
   const nextSearchMatchCount = Math.min(
     10,
     props.state.search.loadedHiddenResultCount > 0
@@ -279,7 +310,22 @@ export function SearchPanel(props: {
     }
   }, [activeSearchGroup, props.state.search.groups, showSearchMatches]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (showSearchResults) {
+      return;
+    }
+
+    const panelNode = searchPanelRef.current;
+    if (!panelNode) {
+      return;
+    }
+
+    searchPanelFlowHeightRef.current = Math.ceil(
+      panelNode.getBoundingClientRect().height,
+    );
+  }, [showSearchResults]);
+
+  useLayoutEffect(() => {
     if (!showSearchMatches) {
       setSearchResultsPanelHeight(null);
       return;
@@ -328,22 +374,112 @@ export function SearchPanel(props: {
     };
   }, [activeSearchGroup?.groupId, showSearchMatches]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showSearchResults) {
-      setSearchWorkspaceOverlayHeight(0);
+      searchWorkspaceOverlayKeyRef.current = null;
+      searchWorkspaceOverlayWidthRef.current = null;
+      setSearchWorkspaceOverlay({
+        gridHeight: 0,
+        headerHeight: 0,
+        height: 0,
+        panelOffsetHeight: 0,
+        reserveHeight: 0,
+      });
       return;
     }
 
     function updateSearchWorkspaceOverlayHeight() {
       const workspaceNode = searchWorkspaceRef.current;
       if (!workspaceNode || window.innerWidth <= 820) {
-        setSearchWorkspaceOverlayHeight(0);
+        searchWorkspaceOverlayWidthRef.current = window.innerWidth;
+        setSearchWorkspaceOverlay({
+          gridHeight: 0,
+          headerHeight: 0,
+          height: 0,
+          panelOffsetHeight: 0,
+          reserveHeight: 0,
+        });
         return;
       }
 
-      setSearchWorkspaceOverlayHeight(
-        Math.max(0, Math.round(workspaceNode.getBoundingClientRect().height)),
+      if (showSearchMatches) {
+        const resultsPanelNode = searchResultsPanelRef.current;
+        const detailNode = searchWorkspaceDetailRef.current;
+        if (resultsPanelNode && detailNode) {
+          const resultsRect = resultsPanelNode.getBoundingClientRect();
+          const detailRect = detailNode.getBoundingClientRect();
+          const isStackedLayout = Math.abs(resultsRect.top - detailRect.top) > 8;
+          if (!isStackedLayout && searchResultsPanelHeight === null) {
+            return;
+          }
+        }
+      }
+
+      const overlayKey = searchWorkspaceOverlayKey;
+      const viewportWidth = window.innerWidth;
+      const measuredHeight = Math.max(
+        0,
+        measureSearchWorkspaceContentHeight(workspaceNode),
       );
+      const measuredHeaderHeight = Math.ceil(
+        searchWorkspaceHeaderRef.current?.getBoundingClientRect().height ?? 0,
+      );
+      const measuredGridHeight = Math.ceil(
+        searchWorkspaceGridRef.current?.getBoundingClientRect().height ?? 0,
+      );
+      const measuredPanelHeight = Math.ceil(
+        searchPanelRef.current?.getBoundingClientRect().height ?? 0,
+      );
+      const targetPanelFlowHeight =
+        searchPanelFlowHeightRef.current ??
+        Math.max(0, measuredPanelHeight - measuredHeight);
+      const shouldResetOverlayHeight =
+        searchWorkspaceOverlayKeyRef.current !== overlayKey ||
+        searchWorkspaceOverlayWidthRef.current !== viewportWidth;
+
+      searchWorkspaceOverlayKeyRef.current = overlayKey;
+      searchWorkspaceOverlayWidthRef.current = viewportWidth;
+      setSearchWorkspaceOverlay((currentOverlay) => {
+        const reservedHeight =
+          shouldResetOverlayHeight || showSearchMatches || currentOverlay.height <= 0
+            ? measuredHeight
+            : currentOverlay.height;
+        const reserveHeight = Math.max(0, reservedHeight - measuredHeight);
+        const panelOffsetHeight = Math.max(
+          0,
+          measuredPanelHeight - targetPanelFlowHeight,
+        );
+        const headerHeight =
+          shouldResetOverlayHeight ||
+          showSearchMatches ||
+          currentOverlay.headerHeight <= 0
+            ? measuredHeaderHeight
+            : currentOverlay.headerHeight;
+        const gridHeight =
+          shouldResetOverlayHeight ||
+          showSearchMatches ||
+          currentOverlay.gridHeight <= 0
+            ? measuredGridHeight
+            : currentOverlay.gridHeight;
+
+        if (
+          currentOverlay.height === reservedHeight &&
+          currentOverlay.reserveHeight === reserveHeight &&
+          currentOverlay.panelOffsetHeight === panelOffsetHeight &&
+          currentOverlay.headerHeight === headerHeight &&
+          currentOverlay.gridHeight === gridHeight
+        ) {
+          return currentOverlay;
+        }
+
+        return {
+          gridHeight,
+          headerHeight,
+          height: reservedHeight,
+          panelOffsetHeight,
+          reserveHeight,
+        };
+      });
     }
 
     updateSearchWorkspaceOverlayHeight();
@@ -364,12 +500,33 @@ export function SearchPanel(props: {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", updateSearchWorkspaceOverlayHeight);
     };
-  }, [activeSearchGroup?.groupId, showSearchMatches, showSearchResults]);
+  }, [
+    activeSearchGroup?.groupId,
+    searchWorkspaceOverlayKey,
+    searchResultsPanelHeight,
+    showSearchMatches,
+    showSearchResults,
+  ]);
 
   const searchPanelOpenStyle =
-    showSearchResults && searchWorkspaceOverlayHeight > 0
+    showSearchResults && searchWorkspaceOverlay.height > 0
       ? {
-          ["--search-workspace-overlay-height" as string]: `${searchWorkspaceOverlayHeight}px`,
+          ["--search-workspace-overlay-height" as string]: `${searchWorkspaceOverlay.height}px`,
+          ...(searchWorkspaceOverlay.panelOffsetHeight > 0
+            ? {
+                ["--search-panel-overlay-offset" as string]: `${searchWorkspaceOverlay.panelOffsetHeight}px`,
+              }
+            : null),
+          ...(searchWorkspaceOverlay.headerHeight > 0
+            ? {
+                ["--search-workspace-header-height" as string]: `${searchWorkspaceOverlay.headerHeight}px`,
+              }
+            : null),
+          ...(searchWorkspaceOverlay.gridHeight > 0
+            ? {
+                ["--search-workspace-grid-height" as string]: `${searchWorkspaceOverlay.gridHeight}px`,
+              }
+            : null),
         }
       : undefined;
 
@@ -765,9 +922,14 @@ export function SearchPanel(props: {
 
   return (
     <section
+      ref={searchPanelRef}
       className={
         showSearchResults
-          ? "panel panel-featured search-panel search-panel-results-open"
+          ? `panel panel-featured search-panel search-panel-results-open ${
+              showSearchMatches
+                ? "search-panel-results-browse"
+                : "search-panel-results-focus"
+            }`
           : "panel panel-featured search-panel"
       }
       style={searchPanelOpenStyle}
@@ -938,7 +1100,7 @@ export function SearchPanel(props: {
 
       {showSearchResults && activeSearchGroup ? (
         <div className="search-workspace" ref={searchWorkspaceRef}>
-          <div className="search-workspace-header">
+          <div className="search-workspace-header" ref={searchWorkspaceHeaderRef}>
             <div className="search-workspace-header-copy">
               <p className="section-kicker">Search Results</p>
               <p className="search-workspace-title">{searchQueryLabel}</p>
@@ -982,6 +1144,7 @@ export function SearchPanel(props: {
                 ? "search-workspace-grid"
                 : "search-workspace-grid search-workspace-grid-focus"
             }
+            ref={searchWorkspaceGridRef}
           >
             {showSearchMatches ? (
               <div
@@ -1075,6 +1238,14 @@ export function SearchPanel(props: {
               />
             </div>
           </div>
+          {searchWorkspaceOverlay.reserveHeight > 0 ? (
+            <div
+              aria-hidden="true"
+              className="search-workspace-reserve"
+              data-search-workspace-reserve="true"
+              style={{ height: `${searchWorkspaceOverlay.reserveHeight}px` }}
+            />
+          ) : null}
         </div>
       ) : null}
 
