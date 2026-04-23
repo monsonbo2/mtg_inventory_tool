@@ -437,7 +437,18 @@ def search_card_names(
         params: list[Any] = []
         if not exact and not include_substring_fallback and fts_query is not None:
             params.append(fts_query)
-        params.extend([trimmed_query, f"{trimmed_query}%"])
+        params.extend(
+            [
+                trimmed_query,
+                f"{trimmed_query}%",
+                trimmed_query,
+                trimmed_query,
+                trimmed_query,
+                trimmed_query,
+                trimmed_query,
+                f"{trimmed_query}%",
+            ]
+        )
         params.extend(match_params)
         params.append(limit)
 
@@ -455,6 +466,17 @@ def search_card_names(
                         WHEN search_match.scryfall_id IS NOT NULL THEN 2
                         ELSE 3
                     END AS match_order,
+                    CASE
+                        WHEN LOWER(mtg_cards.name) = LOWER(?) THEN 0
+                        WHEN LOWER(SUBSTR(mtg_cards.name, 1, LENGTH(?))) = LOWER(?)
+                             AND LENGTH(mtg_cards.name) > LENGTH(?)
+                             AND SUBSTR(mtg_cards.name, LENGTH(?) + 1, 1) IN (
+                                 ',', ':', ';', '!', '?', '.', '-', '/', '(', '['
+                             ) THEN 1
+                        WHEN LOWER(mtg_cards.name) LIKE LOWER(?) THEN 2
+                        WHEN search_match.scryfall_id IS NOT NULL THEN 3
+                        ELSE 4
+                    END AS name_relevance_order,
                     COALESCE(search_match.search_rank, 0) AS search_rank,
                     mtg_cards.edhrec_rank
                 FROM mtg_cards
@@ -465,6 +487,7 @@ def search_card_names(
                 SELECT
                     oracle_id,
                     MIN(match_order) AS match_order,
+                    MIN(name_relevance_order) AS name_relevance_order,
                     MIN(CASE WHEN edhrec_rank IS NULL THEN 1 ELSE 0 END) AS edhrec_rank_missing,
                     MIN(edhrec_rank) AS best_edhrec_rank,
                     MIN(search_rank) AS best_search_rank,
@@ -477,6 +500,7 @@ def search_card_names(
                 SELECT
                     oracle_id,
                     match_order,
+                    name_relevance_order,
                     edhrec_rank_missing,
                     best_edhrec_rank,
                     best_search_rank,
@@ -484,6 +508,7 @@ def search_card_names(
                     ROW_NUMBER() OVER (
                         ORDER BY
                             match_order,
+                            name_relevance_order,
                             edhrec_rank_missing,
                             COALESCE(best_edhrec_rank, 2147483647),
                             best_search_rank,
@@ -495,6 +520,7 @@ def search_card_names(
                     SELECT
                         oracle_id,
                         match_order,
+                        name_relevance_order,
                         edhrec_rank_missing,
                         best_edhrec_rank,
                         best_search_rank,
@@ -508,6 +534,7 @@ def search_card_names(
                 SELECT
                     oracle_id,
                     match_order,
+                    name_relevance_order,
                     edhrec_rank_missing,
                     best_edhrec_rank,
                     best_search_rank,

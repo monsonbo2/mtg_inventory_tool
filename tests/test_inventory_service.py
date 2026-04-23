@@ -1654,6 +1654,52 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(4, result.total_count)
             self.assertFalse(result.has_more)
 
+    def test_search_card_names_prefers_exact_leading_name_boundary_before_popularity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="cloud-key",
+                oracle_id="cloud-key-oracle",
+                name="Cloud Key",
+                collector_number="61",
+                edhrec_rank=657,
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="cloud-midgar-mercenary",
+                oracle_id="cloud-midgar-mercenary-oracle",
+                name="Cloud, Midgar Mercenary",
+                collector_number="62",
+                edhrec_rank=2010,
+                is_default_add_searchable=1,
+            )
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="cloud-manta",
+                oracle_id="cloud-manta-oracle",
+                name="Cloud Manta",
+                collector_number="63",
+                edhrec_rank=100,
+                is_default_add_searchable=1,
+            )
+
+            result = search_card_names(db_path, query="cloud", exact=False, limit=10)
+
+            self.assertEqual(
+                [
+                    "Cloud, Midgar Mercenary",
+                    "Cloud Manta",
+                    "Cloud Key",
+                ],
+                [row.name for row in result.items],
+            )
+            self.assertEqual(3, result.total_count)
+            self.assertFalse(result.has_more)
+
     def test_search_card_names_scope_all_includes_auxiliary_group_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
