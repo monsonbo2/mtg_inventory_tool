@@ -1537,6 +1537,17 @@
             "title": "Quantity",
             "type": "integer"
           },
+          "scryfall_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scryfall Id"
+          },
           "set_code": {
             "anyOf": [
               {
@@ -1550,6 +1561,7 @@
           }
         },
         "required": [
+          "scryfall_id",
           "name",
           "quantity",
           "set_code",
@@ -1565,6 +1577,7 @@
             "enum": [
               "ambiguous_card_name",
               "ambiguous_printing",
+              "unknown_card",
               "finish_required"
             ],
             "title": "Kind",

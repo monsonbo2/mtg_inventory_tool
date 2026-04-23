@@ -617,6 +617,36 @@ def _normalize_remote_finish(value: str | None) -> str:
     return normalize_finish(normalized.replace(" ", ""))
 
 
+def _archidekt_remote_card_name(card: Mapping[str, Any]) -> str | None:
+    oracle_card = card.get("oracleCard")
+    if isinstance(oracle_card, dict):
+        name = text_or_none(oracle_card.get("name"))
+        if name is not None:
+            return name
+    return text_or_none(card.get("displayName")) or text_or_none(card.get("name"))
+
+
+def _archidekt_remote_set_code(card: Mapping[str, Any]) -> str | None:
+    edition = card.get("edition")
+    if isinstance(edition, dict):
+        edition_code = text_or_none(edition.get("editioncode"))
+        if edition_code is not None:
+            return edition_code.upper()
+    return None
+
+
+def _moxfield_remote_card_name(card: Mapping[str, Any]) -> str | None:
+    return text_or_none(card.get("name"))
+
+
+def _moxfield_remote_set_code(card: Mapping[str, Any]) -> str | None:
+    return text_or_none(card.get("set")) or text_or_none(card.get("setCode"))
+
+
+def _moxfield_remote_collector_number(card: Mapping[str, Any]) -> str | None:
+    return text_or_none(card.get("number")) or text_or_none(card.get("collectorNumber"))
+
+
 def _archidekt_deck_id_from_url(source_url: str) -> str:
     parsed = _parse_remote_deck_url(source_url)
     if (parsed.hostname or "").lower() not in _ARCHIDEKT_HOSTS:
@@ -773,6 +803,9 @@ def _archidekt_card_to_remote_card(
         section=section,
         scryfall_id=scryfall_id,
         finish=finish,
+        name=_archidekt_remote_card_name(card),
+        set_code=_archidekt_remote_set_code(card),
+        collector_number=text_or_none(card.get("collectorNumber")),
     )
 
 
@@ -846,6 +879,9 @@ def _moxfield_entry_to_remote_card(
         section=section,
         scryfall_id=scryfall_id,
         finish=_normalize_remote_finish(raw_finish),
+        name=_moxfield_remote_card_name(card),
+        set_code=_moxfield_remote_set_code(card),
+        collector_number=_moxfield_remote_collector_number(card),
     )
 
 
@@ -1545,11 +1581,15 @@ def _remote_card_with_resolved_printing(
         section=card.section,
         scryfall_id=scryfall_id,
         finish=finish or card.finish,
+        name=card.name,
+        set_code=card.set_code,
+        collector_number=card.collector_number,
     )
 
 
 def _build_remote_requested_card(card: RemoteDeckCard) -> RemoteDeckRequestedCard:
     return RemoteDeckRequestedCard(
+        scryfall_id=card.scryfall_id,
         name=card.name,
         quantity=card.quantity,
         set_code=card.set_code,
@@ -1600,24 +1640,53 @@ def _build_remote_resolution_issue(
     )
 
 
+def _build_unknown_remote_card_issue(card: RemoteDeckCard) -> RemoteDeckResolutionIssue:
+    return _build_remote_resolution_issue("unknown_card", card, options=[])
+
+
+def _remote_card_without_exact_printing(card: RemoteDeckCard) -> RemoteDeckCard:
+    return RemoteDeckCard(
+        source_position=card.source_position,
+        quantity=card.quantity,
+        section=card.section,
+        scryfall_id=None,
+        finish=card.finish,
+        name=card.name,
+        set_code=card.set_code,
+        collector_number=card.collector_number,
+    )
+
+
 def _probe_remote_card_resolution(
     connection: sqlite3.Connection,
     *,
     card: RemoteDeckCard,
     default_inventory: str | None,
+    requested_card: RemoteDeckCard | None = None,
 ) -> tuple[PendingImportRow | None, RemoteDeckResolutionIssue | None]:
+    issue_card = requested_card or card
     if card.scryfall_id is not None:
-        resolve_card_row(
-            connection,
-            scryfall_id=card.scryfall_id,
-            oracle_id=None,
-            tcgplayer_product_id=None,
-            name=None,
-            set_code=None,
-            collector_number=None,
-            lang=None,
-            finish=card.finish,
-        )
+        try:
+            resolve_card_row(
+                connection,
+                scryfall_id=card.scryfall_id,
+                oracle_id=None,
+                tcgplayer_product_id=None,
+                name=None,
+                set_code=None,
+                collector_number=None,
+                lang=None,
+                finish=card.finish,
+            )
+        except NotFoundError:
+            if text_or_none(card.name) is None:
+                return None, _build_unknown_remote_card_issue(issue_card)
+            return _probe_remote_card_resolution(
+                connection,
+                card=_remote_card_without_exact_printing(card),
+                default_inventory=default_inventory,
+                requested_card=issue_card,
+            )
         return _build_pending_remote_row(
             card,
             default_inventory=default_inventory,
@@ -1628,12 +1697,15 @@ def _probe_remote_card_resolution(
         raise ValidationError("Remote deck import requires either a printing id or a card name.")
 
     if text_or_none(card.set_code) is None and text_or_none(card.collector_number) is None:
-        candidate_rows = list_default_card_name_candidate_rows(
-            connection,
-            name=card.name or "",
-            lang=None,
-            finish=card.finish,
-        )
+        try:
+            candidate_rows = list_default_card_name_candidate_rows(
+                connection,
+                name=card.name or "",
+                lang=None,
+                finish=card.finish,
+            )
+        except NotFoundError:
+            return None, _build_unknown_remote_card_issue(issue_card)
         oracle_ids = sorted({str(row["oracle_id"]) for row in candidate_rows})
         if len(oracle_ids) > 1:
             options: list[Any] = []
@@ -1654,7 +1726,7 @@ def _probe_remote_card_resolution(
                     requested_finish=card.finish,
                 )
                 options.extend(row_options)
-            return None, _build_remote_resolution_issue("ambiguous_card_name", card, options=options)
+            return None, _build_remote_resolution_issue("ambiguous_card_name", issue_card, options=options)
 
         resolved_card = resolve_default_card_row_for_name(
             connection,
@@ -1682,15 +1754,18 @@ def _probe_remote_card_resolution(
             ),
         ), None
 
-    candidate_rows = list_printing_candidate_rows(
-        connection,
-        name=card.name or "",
-        set_code=card.set_code,
-        set_name=None,
-        collector_number=card.collector_number,
-        lang=None,
-        finish=card.finish,
-    )
+    try:
+        candidate_rows = list_printing_candidate_rows(
+            connection,
+            name=card.name or "",
+            set_code=card.set_code,
+            set_name=None,
+            collector_number=card.collector_number,
+            lang=None,
+            finish=card.finish,
+        )
+    except NotFoundError:
+        return None, _build_unknown_remote_card_issue(issue_card)
     if len(candidate_rows) > 1:
         options: list[Any] = []
         for row in candidate_rows:
@@ -1699,7 +1774,7 @@ def _probe_remote_card_resolution(
                 requested_finish=card.finish,
             )
             options.extend(row_options)
-        return None, _build_remote_resolution_issue("ambiguous_printing", card, options=options)
+        return None, _build_remote_resolution_issue("ambiguous_printing", issue_card, options=options)
 
     return _build_pending_remote_row(
         _remote_card_with_resolved_printing(
@@ -1861,7 +1936,8 @@ def import_deck_url(
         inventory_validator=inventory_validator,
         default_inventory=inventory_slug,
     )
-    if plan.resolution_issues and not dry_run:
+    blocking_resolution_issues = [issue for issue in plan.resolution_issues if issue.options]
+    if blocking_resolution_issues and not dry_run:
         raise ValidationError(
             "Unresolved remote deck import ambiguities remain.",
             details={
@@ -1896,7 +1972,7 @@ def import_deck_url(
         "default_inventory": default_inventory,
         "rows_seen": plan.rows_seen,
         "rows_written": len(imported_rows),
-        "ready_to_commit": not plan.resolution_issues,
+        "ready_to_commit": not blocking_resolution_issues,
         "source_snapshot_token": plan.source_snapshot_token,
         "summary": build_resolvable_deck_import_summary(
             imported_rows,

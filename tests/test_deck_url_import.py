@@ -348,28 +348,48 @@ class DeckUrlImportTest(unittest.TestCase):
                         "companion": False,
                         "modifier": "Normal",
                         "quantity": 1,
-                        "card": {"uid": "cmd-card"},
+                        "card": {
+                            "uid": "cmd-card",
+                            "oracleCard": {"name": "Commander Card"},
+                            "edition": {"editioncode": "cmm"},
+                            "collectorNumber": "10",
+                        },
                     },
                     {
                         "categories": ["Ramp"],
                         "companion": False,
                         "modifier": "Foil",
                         "quantity": 4,
-                        "card": {"uid": "main-card"},
+                        "card": {
+                            "uid": "main-card",
+                            "oracleCard": {"name": "Main Card"},
+                            "edition": {"editioncode": "mh3"},
+                            "collectorNumber": "150",
+                        },
                     },
                     {
                         "categories": ["Maybeboard"],
                         "companion": False,
                         "modifier": "Normal",
                         "quantity": 2,
-                        "card": {"uid": "maybe-card"},
+                        "card": {
+                            "uid": "maybe-card",
+                            "oracleCard": {"name": "Maybe Card"},
+                            "edition": {"editioncode": "lea"},
+                            "collectorNumber": "42",
+                        },
                     },
                     {
                         "categories": ["Sideboard"],
                         "companion": False,
                         "modifier": "Etched",
                         "quantity": 1,
-                        "card": {"uid": "side-card"},
+                        "card": {
+                            "uid": "side-card",
+                            "oracleCard": {"name": "Side Card"},
+                            "edition": {"editioncode": "2xm"},
+                            "collectorNumber": "33",
+                        },
                     },
                 ],
             },
@@ -379,9 +399,9 @@ class DeckUrlImportTest(unittest.TestCase):
         self.assertEqual("Remote Deck", source.deck_name)
         self.assertEqual(
             [
-                (1, "commander", 1, "cmd-card", "normal"),
-                (2, "mainboard", 4, "main-card", "foil"),
-                (4, "sideboard", 1, "side-card", "etched"),
+                (1, "commander", 1, "cmd-card", "Commander Card", "CMM", "10", "normal"),
+                (2, "mainboard", 4, "main-card", "Main Card", "MH3", "150", "foil"),
+                (4, "sideboard", 1, "side-card", "Side Card", "2XM", "33", "etched"),
             ],
             [
                 (
@@ -389,6 +409,9 @@ class DeckUrlImportTest(unittest.TestCase):
                     card.section,
                     card.quantity,
                     card.scryfall_id,
+                    card.name,
+                    card.set_code,
+                    card.collector_number,
                     card.finish,
                 )
                 for card in source.cards
@@ -404,21 +427,36 @@ class DeckUrlImportTest(unittest.TestCase):
                     "cmd-key": {
                         "quantity": 1,
                         "finish": "nonfoil",
-                        "card": {"scryfall_id": "cmd-card"},
+                        "card": {
+                            "scryfall_id": "cmd-card",
+                            "name": "Commander Card",
+                            "set": "CMM",
+                            "number": "10",
+                        },
                     }
                 },
                 "companions": {
                     "comp-key": {
                         "quantity": 1,
                         "finish": "foil",
-                        "card": {"scryfall_id": "comp-card"},
+                        "card": {
+                            "scryfall_id": "comp-card",
+                            "name": "Companion Card",
+                            "setCode": "IKO",
+                            "collectorNumber": "222",
+                        },
                     }
                 },
                 "mainboard": {
                     "main-key": {
                         "quantity": 4,
                         "finish": "etched foil",
-                        "card": {"scryfall_id": "main-card"},
+                        "card": {
+                            "scryfall_id": "main-card",
+                            "name": "Main Card",
+                            "set": "MH3",
+                            "number": "150",
+                        },
                     }
                 },
                 "sideboard": {
@@ -427,6 +465,9 @@ class DeckUrlImportTest(unittest.TestCase):
                         "isFoil": True,
                         "card": {
                             "scryfall_id": "side-card",
+                            "name": "Side Card",
+                            "setCode": "2XM",
+                            "collectorNumber": "33",
                             "defaultFinish": "nonfoil",
                         },
                     }
@@ -435,7 +476,12 @@ class DeckUrlImportTest(unittest.TestCase):
                     "sig-key": {
                         "quantity": 1,
                         "finish": "normal",
-                        "card": {"scryfall_id": "sig-card"},
+                        "card": {
+                            "scryfall_id": "sig-card",
+                            "name": "Signature Spell",
+                            "set": "STA",
+                            "number": "7",
+                        },
                     }
                 },
                 "maybeboard": {
@@ -455,11 +501,11 @@ class DeckUrlImportTest(unittest.TestCase):
         self.assertEqual("Moxfield Deck", source.deck_name)
         self.assertEqual(
             [
-                (1, "commander", 1, "cmd-card", "normal"),
-                (2, "companion", 1, "comp-card", "foil"),
-                (3, "signature-spell", 1, "sig-card", "normal"),
-                (4, "mainboard", 4, "main-card", "etched"),
-                (5, "sideboard", 2, "side-card", "foil"),
+                (1, "commander", 1, "cmd-card", "Commander Card", "CMM", "10", "normal"),
+                (2, "companion", 1, "comp-card", "Companion Card", "IKO", "222", "foil"),
+                (3, "signature-spell", 1, "sig-card", "Signature Spell", "STA", "7", "normal"),
+                (4, "mainboard", 4, "main-card", "Main Card", "MH3", "150", "etched"),
+                (5, "sideboard", 2, "side-card", "Side Card", "2XM", "33", "foil"),
             ],
             [
                 (
@@ -467,6 +513,9 @@ class DeckUrlImportTest(unittest.TestCase):
                     card.section,
                     card.quantity,
                     card.scryfall_id,
+                    card.name,
+                    card.set_code,
+                    card.collector_number,
                     card.finish,
                 )
                 for card in source.cards
@@ -1259,6 +1308,142 @@ class DeckUrlImportTest(unittest.TestCase):
                 [("cmd-card", 1), ("main-card", 2)],
                 [(row["scryfall_id"], row["quantity"]) for row in rows],
             )
+
+    def test_import_deck_url_falls_back_from_missing_scryfall_id_to_name_based_exact_printing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="refreshed-card",
+                oracle_id="remote-oracle-1",
+                name="Wildgrowth Archaic",
+                collector_number="168",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/15761099/counters_and_counters",
+                deck_name="Counters and Counters",
+                cards=[
+                    RemoteDeckCard(
+                        14,
+                        1,
+                        "mainboard",
+                        "stale-card-id",
+                        "normal",
+                        name="Wildgrowth Archaic",
+                        set_code="TST",
+                        collector_number="168",
+                    )
+                ],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ):
+                preview = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/15761099/counters_and_counters",
+                    default_inventory="personal",
+                    dry_run=True,
+                )
+                committed = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/15761099/counters_and_counters",
+                    default_inventory="personal",
+                    dry_run=False,
+                    source_snapshot_token=preview["source_snapshot_token"],
+                )
+
+            self.assertTrue(preview["ready_to_commit"])
+            self.assertEqual([], preview["resolution_issues"])
+            self.assertEqual("refreshed-card", preview["imported_rows"][0]["scryfall_id"])
+            self.assertEqual("explicit", preview["imported_rows"][0]["printing_selection_mode"])
+            self.assertEqual(1, committed["rows_written"])
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    "SELECT scryfall_id, quantity, printing_selection_mode FROM inventory_items"
+                ).fetchone()
+
+            self.assertEqual(("refreshed-card", 1, "explicit"), tuple(row))
+
+    def test_import_deck_url_keeps_known_rows_and_reports_unknown_cards_by_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_card(
+                db_path,
+                scryfall_id="known-card",
+                oracle_id="remote-oracle-1",
+                name="Known Card",
+                collector_number="10",
+                finishes_json='["normal"]',
+            )
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            remote_source = RemoteDeckSource(
+                provider="archidekt",
+                source_url="https://archidekt.com/decks/15761099/counters_and_counters",
+                deck_name="Counters and Counters",
+                cards=[
+                    RemoteDeckCard(1, 2, "mainboard", "known-card", "normal"),
+                    RemoteDeckCard(
+                        227,
+                        1,
+                        "mainboard",
+                        "stale-wildgrowth-id",
+                        "normal",
+                        name="Wildgrowth Archaic",
+                        set_code="TST",
+                        collector_number="168",
+                    ),
+                ],
+            )
+
+            with patch(
+                "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
+                return_value=remote_source,
+            ):
+                committed = import_deck_url(
+                    db_path,
+                    source_url="https://archidekt.com/decks/15761099/counters_and_counters",
+                    default_inventory="personal",
+                    dry_run=False,
+                )
+
+            self.assertTrue(committed["ready_to_commit"])
+            self.assertEqual(2, committed["summary"]["total_card_quantity"])
+            self.assertEqual(3, committed["summary"]["requested_card_quantity"])
+            self.assertEqual(1, committed["summary"]["unresolved_card_quantity"])
+            self.assertEqual(1, committed["rows_written"])
+            self.assertEqual(1, len(committed["resolution_issues"]))
+            issue = committed["resolution_issues"][0]
+            self.assertEqual("unknown_card", issue["kind"])
+            self.assertEqual("Wildgrowth Archaic", issue["requested"]["name"])
+            self.assertEqual("stale-wildgrowth-id", issue["requested"]["scryfall_id"])
+            self.assertEqual([], issue["options"])
+
+            with connect(db_path) as connection:
+                rows = connection.execute(
+                    "SELECT scryfall_id, quantity FROM inventory_items ORDER BY scryfall_id"
+                ).fetchall()
+
+            self.assertEqual([("known-card", 2)], [(row["scryfall_id"], row["quantity"]) for row in rows])
 
     def test_import_deck_url_supports_default_name_resolution_for_name_only_provider_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

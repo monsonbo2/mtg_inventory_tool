@@ -48,6 +48,7 @@ export type InventoryTransferItemStatus =
 export type ImportResolutionIssueKind =
   | "ambiguous_card_name"
   | "ambiguous_printing"
+  | "unknown_card"
   | "finish_required";
 export type CsvImportDetectedFormat =
   | "deckbox_collection_csv"
@@ -595,6 +596,7 @@ export interface DeckUrlImportResolutionRequest {
 }
 
 export interface DeckUrlImportRequestedCardResponse {
+  scryfall_id: string | null;
   name: string | null;
   quantity: number;
   set_code: string | null;
