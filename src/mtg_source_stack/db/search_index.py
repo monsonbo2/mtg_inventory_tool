@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from .connection import connect
+
+T = TypeVar("T")
 
 
 SEARCH_INDEX_COLUMNS: tuple[str, ...] = (
@@ -15,6 +18,21 @@ SEARCH_INDEX_COLUMNS: tuple[str, ...] = (
     "collector_number",
     "lang",
 )
+SEARCH_INDEX_CHECK_PHASE_LABELS: dict[str, str] = {
+    "prepare_indexed_snapshot": "preparing indexed FTS snapshot",
+    "missing_rows": "checking missing rows",
+    "orphan_rows": "checking orphan rows",
+    "duplicate_rows": "checking duplicate rows",
+    "mismatched_rows": "checking field mismatches",
+}
+SearchIndexProgressCallback = Callable[[str, str], None]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchIndexPhaseTiming:
+    phase: str
+    label: str
+    elapsed_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +45,8 @@ class SearchIndexCheckResult:
     orphan_rows: list[dict[str, Any]]
     duplicate_rows: list[dict[str, Any]]
     mismatch_rows: list[dict[str, Any]]
+    phase_timings: tuple[SearchIndexPhaseTiming, ...] = ()
+    total_elapsed_seconds: float = 0.0
 
     @property
     def is_healthy(self) -> bool:
@@ -73,163 +93,237 @@ def _rows_to_dicts(rows: list[Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIndexCheckResult:
+def _run_check_phase(
+    phase: str,
+    *,
+    phase_timings: list[SearchIndexPhaseTiming],
+    progress_callback: SearchIndexProgressCallback | None,
+    action: Callable[[], T],
+) -> T:
+    label = SEARCH_INDEX_CHECK_PHASE_LABELS[phase]
+    if progress_callback is not None:
+        progress_callback(phase, label)
+    started = time.perf_counter()
+    try:
+        return action()
+    finally:
+        phase_timings.append(
+            SearchIndexPhaseTiming(
+                phase=phase,
+                label=label,
+                elapsed_seconds=time.perf_counter() - started,
+            )
+        )
+
+
+def check_card_search_index(
+    db_path: str | Path,
+    *,
+    limit: int = 10,
+    progress_callback: SearchIndexProgressCallback | None = None,
+) -> SearchIndexCheckResult:
     _validate_limit(limit)
 
+    overall_started = time.perf_counter()
+    phase_timings: list[SearchIndexPhaseTiming] = []
     with connect(db_path) as connection:
-        connection.execute("DROP TABLE IF EXISTS temp.search_index_check_fts")
-        connection.execute(
-            """
-            CREATE TEMP TABLE search_index_check_fts AS
-            SELECT
-                rowid AS fts_rowid,
-                scryfall_id,
-                name,
-                set_code,
-                set_name,
-                collector_number,
-                lang
-            FROM mtg_cards_fts
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX temp.search_index_check_fts_scryfall_id_idx
-            ON search_index_check_fts (scryfall_id)
-            """
-        )
-
-        missing_count = int(
+        def _prepare_indexed_snapshot() -> None:
+            connection.execute("DROP TABLE IF EXISTS temp.search_index_check_fts")
             connection.execute(
                 """
-                SELECT COUNT(*)
-                FROM mtg_cards AS cards
-                LEFT JOIN search_index_check_fts AS fts
-                    ON fts.scryfall_id = cards.scryfall_id
-                WHERE fts.scryfall_id IS NULL
-                """
-            ).fetchone()[0]
-        )
-        missing_rows = _rows_to_dicts(
-            connection.execute(
-                """
+                CREATE TEMP TABLE search_index_check_fts AS
                 SELECT
-                    cards.scryfall_id,
-                    cards.name,
-                    cards.set_code,
-                    cards.collector_number,
-                    cards.lang
-                FROM mtg_cards AS cards
-                LEFT JOIN search_index_check_fts AS fts
-                    ON fts.scryfall_id = cards.scryfall_id
-                WHERE fts.scryfall_id IS NULL
-                ORDER BY cards.scryfall_id
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+                    rowid AS fts_rowid,
+                    scryfall_id,
+                    name,
+                    set_code,
+                    set_name,
+                    collector_number,
+                    lang
+                FROM mtg_cards_fts
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX temp.search_index_check_fts_scryfall_id_idx
+                ON search_index_check_fts (scryfall_id)
+                """
+            )
+
+        _run_check_phase(
+            "prepare_indexed_snapshot",
+            phase_timings=phase_timings,
+            progress_callback=progress_callback,
+            action=_prepare_indexed_snapshot,
         )
 
-        orphan_count = int(
-            connection.execute(
-                """
-                SELECT COUNT(*)
-                FROM search_index_check_fts AS fts
-                LEFT JOIN mtg_cards AS cards
-                    ON cards.scryfall_id = fts.scryfall_id
-                WHERE cards.scryfall_id IS NULL
-                """
-            ).fetchone()[0]
-        )
-        orphan_rows = _rows_to_dicts(
-            connection.execute(
-                """
-                SELECT
-                    fts.scryfall_id,
-                    fts.name,
-                    fts.set_code,
-                    fts.collector_number,
-                    fts.lang
-                FROM search_index_check_fts AS fts
-                LEFT JOIN mtg_cards AS cards
-                    ON cards.scryfall_id = fts.scryfall_id
-                WHERE cards.scryfall_id IS NULL
-                ORDER BY fts.scryfall_id
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+        def _check_missing_rows() -> tuple[int, list[dict[str, Any]]]:
+            missing_count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM mtg_cards AS cards
+                    LEFT JOIN search_index_check_fts AS fts
+                        ON fts.scryfall_id = cards.scryfall_id
+                    WHERE fts.scryfall_id IS NULL
+                    """
+                ).fetchone()[0]
+            )
+            missing_rows = _rows_to_dicts(
+                connection.execute(
+                    """
+                    SELECT
+                        cards.scryfall_id,
+                        cards.name,
+                        cards.set_code,
+                        cards.collector_number,
+                        cards.lang
+                    FROM mtg_cards AS cards
+                    LEFT JOIN search_index_check_fts AS fts
+                        ON fts.scryfall_id = cards.scryfall_id
+                    WHERE fts.scryfall_id IS NULL
+                    ORDER BY cards.scryfall_id
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            )
+            return missing_count, missing_rows
+
+        missing_count, missing_rows = _run_check_phase(
+            "missing_rows",
+            phase_timings=phase_timings,
+            progress_callback=progress_callback,
+            action=_check_missing_rows,
         )
 
-        duplicate_count = int(
-            connection.execute(
-                """
-                SELECT COUNT(*)
-                FROM (
-                    SELECT fts.scryfall_id
+        def _check_orphan_rows() -> tuple[int, list[dict[str, Any]]]:
+            orphan_count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM search_index_check_fts AS fts
+                    LEFT JOIN mtg_cards AS cards
+                        ON cards.scryfall_id = fts.scryfall_id
+                    WHERE cards.scryfall_id IS NULL
+                    """
+                ).fetchone()[0]
+            )
+            orphan_rows = _rows_to_dicts(
+                connection.execute(
+                    """
+                    SELECT
+                        fts.scryfall_id,
+                        fts.name,
+                        fts.set_code,
+                        fts.collector_number,
+                        fts.lang
+                    FROM search_index_check_fts AS fts
+                    LEFT JOIN mtg_cards AS cards
+                        ON cards.scryfall_id = fts.scryfall_id
+                    WHERE cards.scryfall_id IS NULL
+                    ORDER BY fts.scryfall_id
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            )
+            return orphan_count, orphan_rows
+
+        orphan_count, orphan_rows = _run_check_phase(
+            "orphan_rows",
+            phase_timings=phase_timings,
+            progress_callback=progress_callback,
+            action=_check_orphan_rows,
+        )
+
+        def _check_duplicate_rows() -> tuple[int, list[dict[str, Any]]]:
+            duplicate_count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT fts.scryfall_id
+                        FROM search_index_check_fts AS fts
+                        GROUP BY fts.scryfall_id
+                        HAVING COUNT(*) > 1
+                    )
+                    """
+                ).fetchone()[0]
+            )
+            duplicate_rows = _rows_to_dicts(
+                connection.execute(
+                    """
+                    SELECT
+                        fts.scryfall_id,
+                        COUNT(*) AS row_count
                     FROM search_index_check_fts AS fts
                     GROUP BY fts.scryfall_id
                     HAVING COUNT(*) > 1
-                )
-                """
-            ).fetchone()[0]
-        )
-        duplicate_rows = _rows_to_dicts(
-            connection.execute(
-                """
-                SELECT
-                    fts.scryfall_id,
-                    COUNT(*) AS row_count
-                FROM search_index_check_fts AS fts
-                GROUP BY fts.scryfall_id
-                HAVING COUNT(*) > 1
-                ORDER BY row_count DESC, fts.scryfall_id
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+                    ORDER BY row_count DESC, fts.scryfall_id
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            )
+            return duplicate_count, duplicate_rows
+
+        duplicate_count, duplicate_rows = _run_check_phase(
+            "duplicate_rows",
+            phase_timings=phase_timings,
+            progress_callback=progress_callback,
+            action=_check_duplicate_rows,
         )
 
-        mismatch_query = """
-            SELECT
-                cards.scryfall_id,
-                cards.name AS card_name,
-                cards.set_code AS card_set_code,
-                cards.set_name AS card_set_name,
-                cards.collector_number AS card_collector_number,
-                cards.lang AS card_lang,
-                fts.name AS fts_name,
-                fts.set_code AS fts_set_code,
-                fts.set_name AS fts_set_name,
-                fts.collector_number AS fts_collector_number,
-                fts.lang AS fts_lang
-            FROM mtg_cards AS cards
-            JOIN search_index_check_fts AS fts
-                ON fts.scryfall_id = cards.scryfall_id
-            WHERE
-                cards.name IS NOT fts.name
-                OR cards.set_code IS NOT fts.set_code
-                OR cards.set_name IS NOT fts.set_name
-                OR cards.collector_number IS NOT fts.collector_number
-                OR cards.lang IS NOT fts.lang
-            ORDER BY cards.scryfall_id, fts.fts_rowid
-        """
-        mismatch_count = int(
-            connection.execute(
-                f"""
-                SELECT COUNT(*)
-                FROM ({mismatch_query})
-                """
-            ).fetchone()[0]
-        )
-        raw_mismatch_rows = _rows_to_dicts(
-            connection.execute(
-                f"""
-                {mismatch_query}
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+        def _check_mismatched_rows() -> tuple[int, list[dict[str, Any]]]:
+            mismatch_query = """
+                SELECT
+                    cards.scryfall_id,
+                    cards.name AS card_name,
+                    cards.set_code AS card_set_code,
+                    cards.set_name AS card_set_name,
+                    cards.collector_number AS card_collector_number,
+                    cards.lang AS card_lang,
+                    fts.name AS fts_name,
+                    fts.set_code AS fts_set_code,
+                    fts.set_name AS fts_set_name,
+                    fts.collector_number AS fts_collector_number,
+                    fts.lang AS fts_lang
+                FROM mtg_cards AS cards
+                JOIN search_index_check_fts AS fts
+                    ON fts.scryfall_id = cards.scryfall_id
+                WHERE
+                    cards.name IS NOT fts.name
+                    OR cards.set_code IS NOT fts.set_code
+                    OR cards.set_name IS NOT fts.set_name
+                    OR cards.collector_number IS NOT fts.collector_number
+                    OR cards.lang IS NOT fts.lang
+                ORDER BY cards.scryfall_id, fts.fts_rowid
+            """
+            mismatch_count = int(
+                connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM ({mismatch_query})
+                    """
+                ).fetchone()[0]
+            )
+            raw_mismatch_rows = _rows_to_dicts(
+                connection.execute(
+                    f"""
+                    {mismatch_query}
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            )
+            return mismatch_count, raw_mismatch_rows
+
+        mismatch_count, raw_mismatch_rows = _run_check_phase(
+            "mismatched_rows",
+            phase_timings=phase_timings,
+            progress_callback=progress_callback,
+            action=_check_mismatched_rows,
         )
 
     mismatch_rows: list[dict[str, Any]] = []
@@ -267,6 +361,8 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
         orphan_rows=orphan_rows,
         duplicate_rows=duplicate_rows,
         mismatch_rows=mismatch_rows,
+        phase_timings=tuple(phase_timings),
+        total_elapsed_seconds=time.perf_counter() - overall_started,
     )
 
 

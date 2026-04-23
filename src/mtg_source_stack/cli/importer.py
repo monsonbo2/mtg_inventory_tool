@@ -351,6 +351,10 @@ def _print_search_index_section(
     print_table(rows, columns)
 
 
+def _print_search_index_progress(_phase: str, label: str) -> None:
+    print(f"check-search-index: {label}", flush=True)
+
+
 def _print_search_index_check_result(result: Any) -> None:
     status = "healthy" if result.is_healthy else "drift_detected"
     print("check-search-index completed")
@@ -362,6 +366,11 @@ def _print_search_index_check_result(result: Any) -> None:
         f"duplicate_rows={result.duplicate_count} "
         f"mismatched_rows={result.mismatch_count}"
     )
+    if result.phase_timings:
+        print("timings:")
+        for phase_timing in result.phase_timings:
+            print(f"  {phase_timing.label}: {phase_timing.elapsed_seconds:.3f}s")
+        print(f"  total: {result.total_elapsed_seconds:.3f}s")
     _print_search_index_section(
         "missing rows preview",
         result.missing_rows,
@@ -790,7 +799,11 @@ def main() -> None:
 
         if args.command == "check-search-index":
             require_current_schema(args.db)
-            result = check_card_search_index(args.db, limit=args.limit)
+            result = check_card_search_index(
+                args.db,
+                limit=args.limit,
+                progress_callback=_print_search_index_progress,
+            )
             _print_search_index_check_result(result)
             if not result.is_healthy:
                 raise SystemExit(1)
@@ -806,7 +819,11 @@ def main() -> None:
             snapshot = ensure_snapshot()
             print(f"snapshot: {snapshot['snapshot_path']}")
             rebuild_result = rebuild_card_search_index(args.db)
-            check_result = check_card_search_index(args.db, limit=args.limit)
+            check_result = check_card_search_index(
+                args.db,
+                limit=args.limit,
+                progress_callback=_print_search_index_progress,
+            )
             print("rebuild-search-index completed")
             print(f"previous_rows: {rebuild_result.previous_row_count}")
             print(f"source_rows: {rebuild_result.source_row_count}")

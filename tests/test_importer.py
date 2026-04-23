@@ -2741,9 +2741,20 @@ class ImporterTest(RepoSmokeTestCase):
                 str(db_path),
             )
 
+            self.assertIn("check-search-index: preparing indexed FTS snapshot", output)
+            self.assertIn("check-search-index: checking missing rows", output)
+            self.assertIn("check-search-index: checking orphan rows", output)
+            self.assertIn("check-search-index: checking duplicate rows", output)
+            self.assertIn("check-search-index: checking field mismatches", output)
+            self.assertLess(
+                output.index("check-search-index: preparing indexed FTS snapshot"),
+                output.index("check-search-index completed"),
+            )
             self.assertIn("check-search-index completed", output)
             self.assertIn("status: healthy", output)
             self.assertIn("missing_rows=0 orphan_rows=0 duplicate_rows=0 mismatched_rows=0", output)
+            self.assertIn("timings:", output)
+            self.assertIn("  total:", output)
 
     def test_check_search_index_detects_missing_orphan_duplicate_and_mismatched_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2871,6 +2882,19 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertEqual("search-service-duplicate-1", result.duplicate_rows[0]["scryfall_id"])
             self.assertEqual("search-service-mismatch-1", result.mismatch_rows[0]["scryfall_id"])
             self.assertIn("collector_number", result.mismatch_rows[0]["differences"])
+            self.assertEqual(
+                [
+                    "prepare_indexed_snapshot",
+                    "missing_rows",
+                    "orphan_rows",
+                    "duplicate_rows",
+                    "mismatched_rows",
+                ],
+                [phase_timing.phase for phase_timing in result.phase_timings],
+            )
+            self.assertGreaterEqual(result.total_elapsed_seconds, 0.0)
+            for phase_timing in result.phase_timings:
+                self.assertGreaterEqual(phase_timing.elapsed_seconds, 0.0)
 
     def test_rebuild_search_index_repairs_detected_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
