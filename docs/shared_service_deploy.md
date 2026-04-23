@@ -73,13 +73,16 @@ Effective behavior:
 - `GET /inventories` returns only the inventories visible to the caller
 - each `GET /inventories` row includes permission-aware frontend hints:
   `role`, `can_read`, `can_write`, `can_manage_share`, and `can_transfer_to`
-  using the same policy as the read, write, share-link, and transfer routes
+  using the same policy as the corresponding read, write, share-link, and
+  transfer-target checks
 - inventory card search routes require a caller who can read at least one
   inventory, or a global `admin`
 - inventory reads require `viewer`, `editor`, or `owner` membership on that
   inventory, or a global `admin`
 - inventory writes require `editor` or `owner` membership on that inventory,
   or a global `admin`
+- inventory transfer `copy` requires source read access and target write
+  access; inventory transfer `move` requires write access on both inventories
 - inventory membership management requires `owner` membership on that
   inventory, or a global `admin`
 - inventory share-link management requires `owner` membership on that

@@ -58,6 +58,7 @@ Current authz model:
 - `GET /inventories/{inventory_slug}/items/page` is the server-side paginated
   inventory-table read contract; the older `/items` array route remains for
   compatibility
+- CSV export requires read access to the source inventory
 - inventory writes require inventory `editor` / `owner` membership or global
   `admin`
 - inventory membership management requires inventory `owner` membership or
@@ -78,7 +79,9 @@ Current authz model:
   - `set_condition`
 - `POST /inventories/{source_inventory_slug}/transfer` now supports atomic
   selected-row and whole-inventory `copy` / `move` operations, `dry_run`
-  previews, `on_conflict=fail|merge`, and `keep_acquisition`
+  previews, `on_conflict=fail|merge`, and `keep_acquisition`; in
+  `shared_service`, `copy` requires source read plus target write, while
+  `move` requires source write plus target write
 - `POST /inventories/{source_inventory_slug}/duplicate` creates a new inventory
   atomically, copies all source rows into it, requires write access to the
   source inventory, and grants the caller `owner`

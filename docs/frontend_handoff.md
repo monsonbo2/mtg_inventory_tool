@@ -145,6 +145,10 @@ Use this as the first-pass UI-to-endpoint map:
   Request body is JSON.
   - supports selected `item_ids` or `all_items=true`
   - use `mode=copy|move`
+  - for shared-service permission UX, allow `copy` when the source has
+    `can_read=true` and the chosen target has `can_transfer_to=true`
+  - allow `move` only when the source has `can_write=true` and the chosen
+    target has `can_transfer_to=true`
   - use `dry_run=true` to preview `copy`, `move`, `merge`, or `fail` outcomes
   - whole-inventory previews can truncate the returned per-row `results`, so
     use the summary counts as the authoritative top-level signal
@@ -154,7 +158,8 @@ Use this as the first-pass UI-to-endpoint map:
   - the response includes both the created inventory and the stable transfer
     summary payload
 - CSV export download -> `GET /inventories/{inventory_slug}/export.csv`
-  Uses `profile=default` today and returns `text/csv`.
+  Uses `profile=default` today, returns `text/csv`, and requires source
+  inventory read access in shared-service mode.
 - Owned rows table -> `GET /inventories/{inventory_slug}/items`
   This existing route returns a plain array and remains supported for local
   demo compatibility. Returned rows include `oracle_id`, `allowed_finishes`,
@@ -364,6 +369,9 @@ export default {
   - each inventory list row includes `role`, `can_read`, `can_write`,
     `can_manage_share`, and `can_transfer_to` so write/share/transfer controls
     can be hidden or disabled before a `403`
+  - `can_transfer_to` describes whether that inventory can be used as a
+    transfer destination; source-side copy affordances should use `can_read`,
+    while source-side move affordances should use `can_write`
   - some inventory reads may return `403`
   - paginated inventory table reads use the same read-access rules as the
     legacy owned-items array endpoint
