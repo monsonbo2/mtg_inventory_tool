@@ -177,7 +177,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   }
 
   function getImportIssueLabel(issue: InventoryImportResponse["resolution_issues"][number]) {
-    const requested = issue.requested as Record<string, unknown>;
+    const requested = issue.requested as {
+      name?: string | null;
+      scryfall_id?: string | null;
+    };
     const requestedName =
       typeof requested.name === "string" && requested.name.trim()
         ? requested.name.trim()

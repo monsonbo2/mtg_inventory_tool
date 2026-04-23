@@ -128,8 +128,15 @@ export default function App() {
     selectedInventoryRow,
     setSelectedInventory,
     viewError,
+    viewInventorySlug,
     viewStatus,
   } = useInventoryOverview();
+  const isCollectionSwitchPending =
+    selectedInventory !== null && selectedInventory !== viewInventorySlug;
+  const collectionItems = isCollectionSwitchPending ? [] : items;
+  const collectionAuditEvents = isCollectionSwitchPending ? [] : auditEvents;
+  const collectionViewError = isCollectionSwitchPending ? null : viewError;
+  const collectionViewStatus = isCollectionSwitchPending ? "loading" : viewStatus;
   const {
     activeSearchGroupId,
     handleSearchFieldFocus,
@@ -210,7 +217,7 @@ export default function App() {
     visibleCollectionItems,
     visibleTableItems,
   } = useCollectionViewState({
-    items,
+    items: collectionItems,
     selectedInventory,
   });
   const {
@@ -238,7 +245,7 @@ export default function App() {
     reloadInventorySummaries,
     resetSearchWorkspace,
     selectedInventory,
-    selectedInventoryItemCount: items.length,
+    selectedInventoryItemCount: collectionItems.length,
     selectedItemIds,
   });
 
@@ -246,7 +253,7 @@ export default function App() {
     setActivityOpen(false);
   }, [selectedInventory]);
 
-  const totalEstimatedValue = items.reduce(
+  const totalEstimatedValue = collectionItems.reduce(
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
   );
@@ -313,11 +320,11 @@ export default function App() {
       searchQuery: collectionSearchQuery,
       detailModalItemId,
       focusedItemId,
-      items,
+      items: collectionItems,
       visibleItems: visibleCollectionItems,
       view: collectionView,
-      viewError,
-      viewStatus,
+      viewError: collectionViewError,
+      viewStatus: collectionViewStatus,
     },
     selectedInventoryRow,
     table: {
@@ -433,7 +440,11 @@ export default function App() {
         </div>
         <div className="hero-metrics">
           <MetricCard accent="Sunrise" label="Collections" value={String(inventories.length)} />
-          <MetricCard accent="Lagoon" label="Entries In View" value={String(items.length)} />
+          <MetricCard
+            accent="Lagoon"
+            label="Entries In View"
+            value={String(collectionItems.length)}
+          />
           <MetricCard
             accent="Paper"
             label="Est. Value"
@@ -504,11 +515,11 @@ export default function App() {
         title="Collection Activity"
       >
         <AuditFeed
-          auditEvents={auditEvents}
+          auditEvents={collectionAuditEvents}
           embedded
           selectedInventoryRow={selectedInventoryRow}
-          viewError={viewError}
-          viewStatus={viewStatus}
+          viewError={collectionViewError}
+          viewStatus={collectionViewStatus}
         />
       </ActivityDrawer>
 

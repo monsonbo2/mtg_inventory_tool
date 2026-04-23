@@ -29,6 +29,7 @@ export function useInventoryOverview() {
   const [accessSummary, setAccessSummary] = useState<AccessSummaryResponse | null>(null);
   const [inventoryStatus, setInventoryStatus] = useState<AsyncStatus>("loading");
   const [viewStatus, setViewStatus] = useState<AsyncStatus>("idle");
+  const [viewInventorySlug, setViewInventorySlug] = useState<string | null>(null);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [inventoryErrorStatus, setInventoryErrorStatus] = useState<number | null>(null);
   const [viewError, setViewError] = useState<string | null>(null);
@@ -56,8 +57,13 @@ export function useInventoryOverview() {
           setInventories([]);
           selectedInventoryRef.current = null;
           setSelectedInventory(null);
+          setItems([]);
+          setAuditEvents([]);
           setInventoryError(null);
           setInventoryErrorStatus(null);
+          setViewError(null);
+          setViewInventorySlug(null);
+          setViewStatus("idle");
           setInventoryStatus("ready");
           return;
         }
@@ -98,11 +104,20 @@ export function useInventoryOverview() {
       setItems([]);
       setAuditEvents([]);
       setViewError(null);
+      setViewInventorySlug(null);
       setViewStatus("idle");
       return;
     }
 
-    void loadInventoryOverview(selectedInventory);
+    setItems([]);
+    setAuditEvents([]);
+    setViewError(null);
+    setViewInventorySlug(selectedInventory);
+    setViewStatus("loading");
+
+    void loadInventoryOverview(selectedInventory, {
+      showLoading: false,
+    });
   }, [selectedInventory]);
 
   async function reloadInventorySummaries(preferredSlug: string | null = null) {
@@ -113,8 +128,13 @@ export function useInventoryOverview() {
         setInventories([]);
         selectedInventoryRef.current = null;
         setSelectedInventory(null);
+        setItems([]);
+        setAuditEvents([]);
         setInventoryError(null);
         setInventoryErrorStatus(null);
+        setViewError(null);
+        setViewInventorySlug(null);
+        setViewStatus("idle");
         setInventoryStatus("ready");
         return true;
       }
@@ -171,6 +191,7 @@ export function useInventoryOverview() {
       setItems(nextItems);
       setAuditEvents(nextAuditEvents);
       setViewError(null);
+      setViewInventorySlug(inventorySlug);
       setViewStatus("ready");
 
       if (options.reloadInventories) {
@@ -189,6 +210,7 @@ export function useInventoryOverview() {
       setViewError(
         toUserMessage(error, `Could not load collection data for '${inventorySlug}'.`),
       );
+      setViewInventorySlug(inventorySlug);
       setViewStatus("error");
       throw error;
     }
@@ -219,6 +241,7 @@ export function useInventoryOverview() {
     selectedInventoryRow,
     setSelectedInventory,
     viewError,
+    viewInventorySlug,
     viewStatus,
   };
 }

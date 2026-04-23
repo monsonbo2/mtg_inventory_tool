@@ -2383,6 +2383,10 @@
   margin-bottom: 18px;
 }
 
+.inventory-summary-bar-minimal {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .editor-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 18px;

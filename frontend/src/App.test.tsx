@@ -1893,6 +1893,91 @@ describe("App", () => {
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps empty collection chrome minimal until cards exist", async () => {
+    mockCollectionViewApp({ items: [] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Personal Collection is empty")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Browse entries shown" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Search this collection" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Entries")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total cards")).not.toBeInTheDocument();
+    expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recent Activity" })).toBeInTheDocument();
+  });
+
+  it("clears collection chrome and stale rows while a new collection is loading", async () => {
+    const user = userEvent.setup();
+    const tradeBinderItems = deferred<OwnedInventoryRow[]>();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+      inventories: [
+        buildInventorySummary({
+          item_rows: 1,
+          total_cards: 2,
+        }),
+        buildInventorySummary({
+          slug: "trade-binder",
+          display_name: "Trade Binder",
+          description: "Cards available to trade",
+          item_rows: 1,
+          total_cards: 1,
+        }),
+      ],
+    });
+    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => {
+      if (inventorySlug === "trade-binder") {
+        return tradeBinderItems.promise;
+      }
+
+      return [buildOwnedRow()];
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Personal Collection/i }));
+    await user.click(screen.getByRole("button", { name: /Trade Binder/i }));
+
+    expect(await screen.findByText("Loading collection")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Lightning Bolt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Browse entries shown" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
+
+    tradeBinderItems.resolve([
+      buildOwnedRow({
+        item_id: 101,
+        scryfall_id: "sol-ring-1",
+        oracle_id: "sol-ring-oracle",
+        name: "Sol Ring",
+        set_code: "cmm",
+        set_name: "Commander Masters",
+        collector_number: "396",
+        quantity: 1,
+        location: "Trade Tray",
+        tags: ["trade"],
+        est_value: "1.50",
+        unit_price: "1.50",
+        notes: null,
+      }),
+    ]);
+
+    expect(await screen.findByRole("heading", { name: "Sol Ring" })).toBeInTheDocument();
+  });
+
   it("caps browse and table entries by default and supports pagination in each view", async () => {
     const user = userEvent.setup();
     const items = Array.from({ length: 60 }, (_, index) =>
