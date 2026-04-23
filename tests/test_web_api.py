@@ -6027,6 +6027,187 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("moved", allowed.json()["results"][0]["status"])
                 self.assertEqual("target", allowed.json()["target_inventory"])
 
+    def test_shared_service_transfer_allows_viewer_copy_out_to_writable_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            viewer_headers = {"X-Authenticated-User": "viewer-user"}
+
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            create_inventory(
+                db_path,
+                slug="target-selected",
+                display_name="Selected Copy Target",
+                description=None,
+                actor_id="viewer-user",
+            )
+            create_inventory(
+                db_path,
+                slug="target-all",
+                display_name="All Rows Copy Target",
+                description=None,
+                actor_id="viewer-user",
+            )
+            create_inventory(
+                db_path,
+                slug="target-move",
+                display_name="Move Target",
+                description=None,
+                actor_id="viewer-user",
+            )
+            grant_inventory_membership(
+                db_path,
+                inventory_slug="source",
+                actor_id="viewer-user",
+                role="viewer",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+                self._insert_catalog_card(
+                    db_path,
+                    scryfall_id="api-card-2",
+                    oracle_id="api-oracle-2",
+                    name="API Test Card Two",
+                    collector_number="11",
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                    quantity=2,
+                    tags_json='["copy"]',
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-2",
+                    quantity=1,
+                )
+                with connect(db_path) as connection:
+                    source_item_ids = [
+                        int(row["id"])
+                        for row in connection.execute(
+                            """
+                            SELECT ii.id
+                            FROM inventory_items ii
+                            JOIN inventories i ON i.id = ii.inventory_id
+                            WHERE i.slug = 'source'
+                            ORDER BY ii.id
+                            """
+                        ).fetchall()
+                    ]
+
+                selected_copy = client.post(
+                    "/inventories/source/transfer",
+                    headers=viewer_headers,
+                    json={
+                        "target_inventory_slug": "target-selected",
+                        "mode": "copy",
+                        "item_ids": [source_item_ids[0]],
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(200, selected_copy.status_code)
+                self.assertEqual("copied", selected_copy.json()["results"][0]["status"])
+                self.assertFalse(selected_copy.json()["results"][0]["source_removed"])
+
+                all_copy = client.post(
+                    "/inventories/source/transfer",
+                    headers=viewer_headers,
+                    json={
+                        "target_inventory_slug": "target-all",
+                        "mode": "copy",
+                        "all_items": True,
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(200, all_copy.status_code)
+                self.assertEqual("all_items", all_copy.json()["selection_kind"])
+                self.assertEqual(2, all_copy.json()["copied_count"])
+
+                denied_move = client.post(
+                    "/inventories/source/transfer",
+                    headers=viewer_headers,
+                    json={
+                        "target_inventory_slug": "target-move",
+                        "mode": "move",
+                        "item_ids": [source_item_ids[0]],
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(403, denied_move.status_code)
+                self.assertEqual("forbidden", denied_move.json()["error"]["code"])
+
+                source_rows = client.get("/inventories/source/items", headers=viewer_headers)
+                selected_target_rows = client.get("/inventories/target-selected/items", headers=viewer_headers)
+                all_target_rows = client.get("/inventories/target-all/items", headers=viewer_headers)
+                self.assertEqual(200, source_rows.status_code)
+                self.assertEqual(200, selected_target_rows.status_code)
+                self.assertEqual(200, all_target_rows.status_code)
+                self.assertEqual(2, len(source_rows.json()))
+                self.assertEqual(1, len(selected_target_rows.json()))
+                self.assertEqual(2, len(all_target_rows.json()))
+
+    def test_shared_service_transfer_rejects_no_access_copy_from_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            outsider_headers = {"X-Authenticated-User": "outsider-user"}
+
+            create_inventory(
+                db_path,
+                slug="source",
+                display_name="Source Collection",
+                description=None,
+                actor_id="owner-user",
+            )
+            create_inventory(
+                db_path,
+                slug="target",
+                display_name="Outsider Target",
+                description=None,
+                actor_id="outsider-user",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="source",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    source_item_id = int(
+                        connection.execute(
+                            """
+                            SELECT ii.id
+                            FROM inventory_items ii
+                            JOIN inventories i ON i.id = ii.inventory_id
+                            WHERE i.slug = 'source'
+                            """
+                        ).fetchone()["id"]
+                    )
+
+                denied = client.post(
+                    "/inventories/source/transfer",
+                    headers=outsider_headers,
+                    json={
+                        "target_inventory_slug": "target",
+                        "mode": "copy",
+                        "item_ids": [source_item_id],
+                        "on_conflict": "fail",
+                    },
+                )
+                self.assertEqual(403, denied.status_code)
+                self.assertEqual("forbidden", denied.json()["error"]["code"])
+
     def test_shared_service_duplicate_requires_source_write_access_and_grants_owner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"
