@@ -77,12 +77,34 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
     _validate_limit(limit)
 
     with connect(db_path) as connection:
+        connection.execute("DROP TABLE IF EXISTS temp.search_index_check_fts")
+        connection.execute(
+            """
+            CREATE TEMP TABLE search_index_check_fts AS
+            SELECT
+                rowid AS fts_rowid,
+                scryfall_id,
+                name,
+                set_code,
+                set_name,
+                collector_number,
+                lang
+            FROM mtg_cards_fts
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX temp.search_index_check_fts_scryfall_id_idx
+            ON search_index_check_fts (scryfall_id)
+            """
+        )
+
         missing_count = int(
             connection.execute(
                 """
                 SELECT COUNT(*)
                 FROM mtg_cards AS cards
-                LEFT JOIN mtg_cards_fts AS fts
+                LEFT JOIN search_index_check_fts AS fts
                     ON fts.scryfall_id = cards.scryfall_id
                 WHERE fts.scryfall_id IS NULL
                 """
@@ -98,7 +120,7 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
                     cards.collector_number,
                     cards.lang
                 FROM mtg_cards AS cards
-                LEFT JOIN mtg_cards_fts AS fts
+                LEFT JOIN search_index_check_fts AS fts
                     ON fts.scryfall_id = cards.scryfall_id
                 WHERE fts.scryfall_id IS NULL
                 ORDER BY cards.scryfall_id
@@ -112,7 +134,7 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
             connection.execute(
                 """
                 SELECT COUNT(*)
-                FROM mtg_cards_fts AS fts
+                FROM search_index_check_fts AS fts
                 LEFT JOIN mtg_cards AS cards
                     ON cards.scryfall_id = fts.scryfall_id
                 WHERE cards.scryfall_id IS NULL
@@ -128,7 +150,7 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
                     fts.set_code,
                     fts.collector_number,
                     fts.lang
-                FROM mtg_cards_fts AS fts
+                FROM search_index_check_fts AS fts
                 LEFT JOIN mtg_cards AS cards
                     ON cards.scryfall_id = fts.scryfall_id
                 WHERE cards.scryfall_id IS NULL
@@ -145,7 +167,7 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
                 SELECT COUNT(*)
                 FROM (
                     SELECT fts.scryfall_id
-                    FROM mtg_cards_fts AS fts
+                    FROM search_index_check_fts AS fts
                     GROUP BY fts.scryfall_id
                     HAVING COUNT(*) > 1
                 )
@@ -158,7 +180,7 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
                 SELECT
                     fts.scryfall_id,
                     COUNT(*) AS row_count
-                FROM mtg_cards_fts AS fts
+                FROM search_index_check_fts AS fts
                 GROUP BY fts.scryfall_id
                 HAVING COUNT(*) > 1
                 ORDER BY row_count DESC, fts.scryfall_id
@@ -182,7 +204,7 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
                 fts.collector_number AS fts_collector_number,
                 fts.lang AS fts_lang
             FROM mtg_cards AS cards
-            JOIN mtg_cards_fts AS fts
+            JOIN search_index_check_fts AS fts
                 ON fts.scryfall_id = cards.scryfall_id
             WHERE
                 cards.name IS NOT fts.name
@@ -190,7 +212,7 @@ def check_card_search_index(db_path: str | Path, *, limit: int = 10) -> SearchIn
                 OR cards.set_name IS NOT fts.set_name
                 OR cards.collector_number IS NOT fts.collector_number
                 OR cards.lang IS NOT fts.lang
-            ORDER BY cards.scryfall_id, fts.rowid
+            ORDER BY cards.scryfall_id, fts.fts_rowid
         """
         mismatch_count = int(
             connection.execute(
