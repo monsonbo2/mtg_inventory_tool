@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mtg_source_stack.db.connection import SQLITE_BUSY_TIMEOUT_MS, connect
+from mtg_source_stack.db.search_index import check_card_search_index
 from tests.common import RepoSmokeTestCase
 from mtg_source_stack.mvp_importer import import_scryfall_cards, initialize_database
 
@@ -2740,9 +2741,20 @@ class ImporterTest(RepoSmokeTestCase):
                 str(db_path),
             )
 
+            self.assertIn("check-search-index: preparing indexed FTS snapshot", output)
+            self.assertIn("check-search-index: checking missing rows", output)
+            self.assertIn("check-search-index: checking orphan rows", output)
+            self.assertIn("check-search-index: checking duplicate rows", output)
+            self.assertIn("check-search-index: checking field mismatches", output)
+            self.assertLess(
+                output.index("check-search-index: preparing indexed FTS snapshot"),
+                output.index("check-search-index completed"),
+            )
             self.assertIn("check-search-index completed", output)
             self.assertIn("status: healthy", output)
             self.assertIn("missing_rows=0 orphan_rows=0 duplicate_rows=0 mismatched_rows=0", output)
+            self.assertIn("timings:", output)
+            self.assertIn("  total:", output)
 
     def test_check_search_index_detects_missing_orphan_duplicate_and_mismatched_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2807,6 +2819,82 @@ class ImporterTest(RepoSmokeTestCase):
             self.assertIn("orphan rows preview:", result.stdout)
             self.assertIn("duplicate rows preview:", result.stdout)
             self.assertIn("mismatched rows preview:", result.stdout)
+
+    def test_check_search_index_service_detects_drift_via_indexed_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+
+            initialize_database(db_path)
+            with connect(db_path) as connection:
+                connection.executemany(
+                    """
+                    INSERT INTO mtg_cards (
+                        scryfall_id,
+                        oracle_id,
+                        name,
+                        set_code,
+                        set_name,
+                        collector_number
+                    )
+                    VALUES (?, ?, ?, 'svc', 'Service Drift Set', ?)
+                    """,
+                    [
+                        ("search-service-missing-1", "oracle-search-service-missing-1", "Missing Service Card", "1"),
+                        ("search-service-mismatch-1", "oracle-search-service-mismatch-1", "Mismatch Service Card", "2"),
+                        ("search-service-duplicate-1", "oracle-search-service-duplicate-1", "Duplicate Service Card", "3"),
+                    ],
+                )
+                connection.execute(
+                    "DELETE FROM mtg_cards_fts WHERE scryfall_id = 'search-service-missing-1'"
+                )
+                connection.execute(
+                    """
+                    UPDATE mtg_cards_fts
+                    SET collector_number = '999'
+                    WHERE scryfall_id = 'search-service-mismatch-1'
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards_fts (scryfall_id, name, set_code, set_name, collector_number, lang)
+                    SELECT scryfall_id, name, set_code, set_name, collector_number, lang
+                    FROM mtg_cards_fts
+                    WHERE scryfall_id = 'search-service-duplicate-1'
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mtg_cards_fts (scryfall_id, name, set_code, set_name, collector_number, lang)
+                    VALUES ('search-service-orphan-1', 'Orphan Service Card', 'svc', 'Service Drift Set', '9', 'en')
+                    """
+                )
+                connection.commit()
+
+            result = check_card_search_index(db_path, limit=1)
+
+            self.assertFalse(result.is_healthy)
+            self.assertEqual(1, result.missing_count)
+            self.assertEqual(1, result.orphan_count)
+            self.assertEqual(1, result.duplicate_count)
+            self.assertEqual(1, result.mismatch_count)
+            self.assertEqual("search-service-missing-1", result.missing_rows[0]["scryfall_id"])
+            self.assertEqual("search-service-orphan-1", result.orphan_rows[0]["scryfall_id"])
+            self.assertEqual("search-service-duplicate-1", result.duplicate_rows[0]["scryfall_id"])
+            self.assertEqual("search-service-mismatch-1", result.mismatch_rows[0]["scryfall_id"])
+            self.assertIn("collector_number", result.mismatch_rows[0]["differences"])
+            self.assertEqual(
+                [
+                    "prepare_indexed_snapshot",
+                    "missing_rows",
+                    "orphan_rows",
+                    "duplicate_rows",
+                    "mismatched_rows",
+                ],
+                [phase_timing.phase for phase_timing in result.phase_timings],
+            )
+            self.assertGreaterEqual(result.total_elapsed_seconds, 0.0)
+            for phase_timing in result.phase_timings:
+                self.assertGreaterEqual(phase_timing.elapsed_seconds, 0.0)
 
     def test_rebuild_search_index_repairs_detected_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

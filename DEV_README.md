@@ -339,6 +339,21 @@ PYTHONPATH=src .venv/bin/python -m mtg_source_stack.mvp_importer check-search-in
 PYTHONPATH=src .venv/bin/python -m mtg_source_stack.mvp_importer rebuild-search-index --db var/db/mtg_mvp.db
 ```
 
+`check-search-index` is an exhaustive drift check. It verifies missing FTS
+rows, orphan FTS rows, duplicate FTS rows, and searchable-field mismatches
+between `mtg_cards` and `mtg_cards_fts`. The command materializes an indexed
+temporary FTS snapshot before comparing, prints phase progress before each
+potentially long step, and reports per-phase timings. Exit behavior is
+unchanged: healthy catalogs exit `0`; detected drift exits `1`.
+
+Full-catalog validation snapshot from `2026-04-23`:
+
+- input cache: Scryfall `default_cards`, MTGJSON `AllIdentifiers`, MTGJSON
+  `AllPricesToday`
+- imported rows: `113,726` `mtg_cards`, `113,726` `mtg_cards_fts`, `118,615`
+  `mtgjson_card_links`, `554,798` `price_snapshots`
+- full `check-search-index` result: healthy in `0.507s`
+
 Sync run history:
 
 ```bash

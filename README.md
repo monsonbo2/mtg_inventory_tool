@@ -225,6 +225,13 @@ mtg-mvp-importer list-sync-runs --db "var/db/mtg_mvp.db"
 mtg-mvp-importer show-sync-run --db "var/db/mtg_mvp.db" --run-id 42
 ```
 
+`check-search-index` is safe to run as a periodic exhaustive validation check.
+It prints phase progress, reports per-phase timings, exits `0` when healthy,
+and exits `1` when drift is detected. On `2026-04-23`, a fresh full-catalog
+validation database built from cached Scryfall `default_cards`, MTGJSON
+`AllIdentifiers`, and MTGJSON `AllPricesToday` contained `113,726` catalog
+rows and completed `check-search-index` healthy in `0.507s`.
+
 Important upgrade note:
 
 - migration `0008` adds the durable catalog-classification fields used by the
