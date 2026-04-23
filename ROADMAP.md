@@ -10,56 +10,75 @@ status and ownership.
 
 ## Current Checkpoint
 
-Last refreshed: `2026-04-22`
+Last refreshed: `2026-04-23`
 
-Current review branch:
+Current local branch:
 
-- `frontend-refinement`
+- `local_install_prep`
 
 Current reviewed base:
 
-- `31095e4` / `origin/master`
+- `1d35591` / `origin/master`
+
+Most recent merge:
+
+- PR `#74` / `frontend-refinement`
 
 Open review PR:
 
 - none currently
 
+Open GitHub issues:
+
+- `#72` Aggregate public inventory share rows by visible identity
+- `#70` Allow viewer copy-out and export for readable inventories
+- `#57` Future work: production reverse-proxy path for shared-service rollout
+- `#52` Frontend: complete owner-managed read-only inventory sharing links
+- `#47` Break up oversized backend modules before more feature work lands
+- `#41` Support bulk inventory mutations across all filtered rows
+
 Readiness summary:
 
-- demo readiness: controlled-demo ready for the core happy path
+- demo readiness: controlled-demo ready for the core happy path after the
+  frontend-refinement merge
 - small rollout readiness: conditionally ready for a trusted 10-15 person pilot
   only after the real proxy, backup/restore, membership, and browser-session
   checks below are rehearsed on the target host
 - not ready for broader shared use, direct API exposure, separate-origin CORS,
   or an unmanaged "open it and see what happens" rollout
+- share-link UI/public-page, browser export, duplicate UI, transfer dry-run,
+  and ambiguous import resolution should be framed as incomplete or API-only
+  unless they are explicitly added to the demo story
 
 ## Current Validation Snapshot
 
-Last known green checks from the readiness review:
+Last known green checks from the post-merge readiness review:
 
-- `PATH=.venv/bin:$PATH ./scripts/test_backend.sh`
-  - `427` passed, `0` skipped when optional web dependencies are installed and
-    localhost socket binding is allowed
-- `PATH=.venv/bin:$PATH ./scripts/test_backend_web.sh`
-  - `108` passed, `84` skipped in the normal wrapper because the live socket
-    tests are covered by the full elevated backend run above
+- `PATH=.venv/bin:$PATH ./scripts/test_backend.sh` with localhost socket
+  binding allowed
+  - `440` tests ran, `OK`, `0` skipped
+- `PATH=.venv/bin:$PATH ./scripts/test_backend_web.sh` with localhost socket
+  binding allowed
+  - `113` tests ran, `OK`, `0` skipped
 - `cd frontend && npm test`
-  - `71` passed
+  - `75` passed
 - `cd frontend && npm run build`
   - production build passed
 - `cd frontend && npm run demo:bootstrap -- --force --shared-service-fixtures`
   - shared-service fixture DB bootstrap passed
-- `cd frontend && npm run smoke:shared-service-proxy -- --start-backend`
+- `cd frontend && npm run smoke:shared-service-proxy -- --start-backend` with
+  localhost socket binding allowed
   - passed when localhost socket binding was allowed
   - verified `/api` prefix stripping, static frontend serving, spoofed auth
     header stripping, fixture identity injection, expected visible inventories,
     readable-user search, and no-access search denial
 - `cd frontend && npm run demo:bootstrap -- --force --shared-service-fixtures --full-catalog ...`
-  - full-catalog shared-service demo DB bootstrapped at
+  - historical full-catalog shared-service demo DB bootstrapped at
     `var/db/frontend_demo_full.db`
   - imported `113776` Scryfall cards, `113774` MTGJSON identifier links, and
     `558116` MTGJSON price snapshots
-- shared-service full-catalog demo served through the local proxy harness
+- historical shared-service full-catalog demo served through the local proxy
+  harness
   - backend: `http://127.0.0.1:8000`
   - browser URL: `http://127.0.0.1:5174`
   - fixture identity: `writer@example.com`
@@ -82,7 +101,40 @@ Important validation caveat:
 
 ## Highest Priority Follow-Ups
 
-### 1. Production Reverse Proxy Runbook
+### 1. Demo Scope Closure And Issue Cleanup
+
+The core happy-path demo is ready. The biggest near-term planning task is to
+decide whether the next demo stays on that core path or expands into features
+that are currently incomplete in the browser.
+
+Needed:
+
+- keep the first demo focused on:
+  - inventory selection
+  - card search and autocomplete
+  - quick add
+  - compact browse and table views
+  - quick edits
+  - selected-row bulk edits
+  - selected-row copy/move as a writable user
+  - audit drawer
+- if viewer copy/export is part of the story, finish or re-scope `#70`:
+  - copy source eligibility should follow readable source access
+  - move source eligibility should require writable source access
+  - destination choices should use `can_transfer_to`
+  - browser CSV export still needs a UI affordance if it is demo-visible
+- if public share links are part of the story, finish `#72` and `#52` first
+- leave ambiguous import resolution, duplicate inventory UI, and transfer
+  dry-run preview out of the first demo unless explicitly framed as API-only
+
+Why:
+
+- the merged frontend can support a strong controlled demo, but the open issue
+  tracker still contains product surfaces that should not be implied as done
+- the roadmap previously listed closed issue dependencies as blockers; GitHub is
+  now the source of truth for live issue state
+
+### 2. Production Reverse Proxy Runbook (`#57`)
 
 This is the biggest blocker for even a small real rollout.
 
@@ -107,7 +159,7 @@ Why:
   proxy
 - exposing `mtg-web-api` directly would let clients spoof trusted headers
 
-### 2. First-Live Backup And Restore Rehearsal
+### 3. First-Live Backup And Restore Rehearsal
 
 Needed:
 
@@ -125,7 +177,7 @@ Why:
 - bulk imports, bad membership grants, or mistaken write actions need a clear
   recovery path
 
-### 3. Real User Permission Rehearsal
+### 4. Real User Permission Rehearsal
 
 Needed:
 
@@ -143,7 +195,47 @@ Why:
   launch-critical integration
 - membership management is currently CLI-first, so operator mistakes are likely
 
-### 4. Frontend Import Resolution UX
+### 5. Public Share-Link Completion (`#52`, `#72`)
+
+Needed:
+
+- aggregate public share rows by the fields visible in the public response:
+  `scryfall_id`, `condition_code`, `finish`, and `language_code`
+- keep public payloads free of private fields such as item IDs, location, tags,
+  notes, acquisition fields, and pricing
+- add owner/admin sharing controls in the inventory UI:
+  status, create, copy active link, rotate, and revoke
+- add the anonymous public inventory page at
+  `/shared/inventories/{share_token}`
+- have the public page fetch JSON through
+  `/api/shared/inventories/{share_token}` in shared-service deployments
+- handle loading, empty, revoked/not-found, and permission-denied states
+
+Why:
+
+- backend share-link routes exist, but the browser experience is not complete
+- `#72` is a backend projection issue that can make public rows look duplicated
+  because the fields that distinguish private rows are intentionally hidden
+
+### 6. Viewer Copy-Out And Browser Export Completion (`#70`)
+
+Needed:
+
+- verify the frontend treats `can_transfer_to` as a destination capability, not
+  as a source-copy requirement
+- allow copy controls when the source inventory is readable and the target is
+  writable/transferable
+- keep move controls gated on writable source plus writable/transferable target
+- add a CSV export UI if readable-inventory export should be demo-visible
+- close or update `#70` once the remaining frontend scope is confirmed
+
+Why:
+
+- the backend authorization and API tests are in place after PR `#73`
+- the remaining issue comment calls out browser-side capability behavior and
+  export visibility
+
+### 7. Frontend Import Resolution UX
 
 Needed:
 
@@ -167,35 +259,7 @@ Blocked / needs backend confirmation:
   building the full resolver UI
 - deck URL resolution must preserve and resubmit `source_snapshot_token`
 
-### 5. Permission-Aware Frontend Controls
-
-Needed:
-
-- update frontend inventory types after `#62` lands
-- use per-inventory capabilities to gate:
-  - add card
-  - import
-  - inline edits and remove row
-  - bulk edit
-  - copy/move source and destination eligibility
-  - duplicate inventory
-  - CSV export if export is not meant to be read-only
-  - public share-link management
-- make read-only viewer mode feel intentional rather than letting users discover
-  permissions by receiving `403` errors
-
-Blocked by:
-
-- `#62` Expose per-inventory capabilities for permission-aware frontend
-
-Why:
-
-- the frontend can currently list visible inventories, but it cannot tell which
-  ones are writable or manageable
-- this is the highest-value frontend/backend contract gap for a clean
-  shared-service pilot
-
-### 6. Surface Or Explicitly De-Scope Backend-Only API Features
+### 8. Surface Or Explicitly De-Scope Backend-Only API Features
 
 Needed:
 
@@ -213,18 +277,21 @@ Why:
   app
 - demo expectations should match what the browser can actually do
 
-### 7. Frontend Work That Can Proceed Now
+### 9. Frontend Work That Can Proceed Now
 
-These workstreams are not blocked by `#62`, `#63`, or `#64`.
+These workstreams are no longer blocked by the previously tracked capability,
+pagination, and membership API slices, but some are still product-scope
+decisions for the next demo.
 
 Recommended order:
 
 1. full-catalog browser polish
-2. CSV export UI
-3. duplicate inventory UI
-4. transfer dry-run preview
-5. Playwright smoke coverage
-6. public share-link UI, if it belongs in the demo narrative
+2. Playwright smoke coverage for the shared-service fixture modes
+3. viewer copy/export polish if `#70` remains in demo scope
+4. public share-link UI and public page if `#52` is in demo scope
+5. CSV export UI
+6. duplicate inventory UI
+7. transfer dry-run preview
 
 Details:
 
@@ -254,21 +321,25 @@ Details:
   - cover writer, viewer, no-access, and admin fixture modes
   - cover add/edit/remove, table selection, bulk actions, copy/move, mobile
     layout, full-catalog search, and image behavior
+- viewer copy/export polish
+  - align source and destination gating with `can_read`, `can_write`, and
+    `can_transfer_to`
+  - expose CSV export only if it belongs in the browser demo
 - public share-link UI
   - backend routes already exist for status/create/rotate/revoke and public
     JSON reads
-  - can start with graceful `403` handling until `#62` capability gating lands
+  - also needs the public page and `#72` row aggregation before being presented
+    as a complete public-sharing story
   - should be skipped if share links are not part of the near-term demo story
 
 Do not start yet:
 
-- broad permission-aware hiding/disabling across the app, blocked by `#62`
-- server-backed table pagination, blocked by `#63`
-- membership management UI, blocked by `#64`
 - full import resolution UI until the ambiguous preview/commit behavior is
   verified against realistic examples
+- broad organization/team administration UI until there is a deliberate product
+  story for it
 
-### 8. Full-Catalog Browser UX Pass
+### 10. Full-Catalog Browser UX Pass
 
 Done:
 
@@ -297,7 +368,7 @@ Why:
 - API timings are now reassuring, but browser rendering, remote card images,
   and dense-table behavior still need human-facing review
 
-### 9. Minimal Pilot Ops Checklist
+### 11. Minimal Pilot Ops Checklist
 
 Needed:
 
@@ -320,7 +391,7 @@ Why:
 - the repo has enough pieces for a small pilot, but the operational sequence is
   still spread across docs and scripts
 
-### 10. Dependency And Packaging Tightening
+### 12. Dependency And Packaging Tightening
 
 Needed:
 
@@ -336,6 +407,22 @@ Why:
 - production dependency audit is clean, but the Python web dependency versions
   are currently range-based
 - dev-only audit findings should not be allowed to become background noise
+
+### 13. General Backlog (`#41`, `#47`)
+
+Needed:
+
+- add first-class filtered-row bulk mutation support instead of relying only on
+  selected explicit item IDs (`#41`)
+- break up at least one oversized backend module along a clean boundary before
+  piling on another large feature wave (`#47`)
+
+Why:
+
+- `#41` is the product-grade answer for applying edits to the current filtered
+  result set
+- `#47` is not demo-critical, but it lowers the cost and risk of the next
+  backend changes
 
 ## Demo Guidance
 
