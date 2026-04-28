@@ -31,6 +31,7 @@ import type {
   InventoryCreateResult,
   ItemMutationAction,
   ItemMutationState,
+  MutationOutcome,
   NoticeState,
   NoticeTone,
   ViewRefreshOutcome,
@@ -99,17 +100,19 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     inventorySlug: string,
     successMessage: string,
     refreshOptions: { reloadInventories?: boolean } = {},
-  ) {
+  ): Promise<MutationOutcome> {
     try {
       await options.loadInventoryOverview(inventorySlug, {
         reloadInventories: refreshOptions.reloadInventories ?? true,
       });
       showNotice(successMessage, "success");
+      return "applied";
     } catch {
       showNotice(
         `${successMessage} The latest view could not refresh automatically.`,
         "error",
       );
+      return "applied_view_stale";
     }
   }
 
@@ -390,12 +393,12 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     itemId: number,
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
-  ) {
+  ): Promise<MutationOutcome> {
     const inventorySlug = requireSelectedInventory(
       "Select a collection before making changes.",
     );
     if (!inventorySlug) {
-      return;
+      return "failed";
     }
 
     setBusyItem({ itemId, action });
@@ -403,23 +406,27 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
     try {
       const response = await patchInventoryItem(inventorySlug, itemId, payload);
-      await refreshAfterMutation(
+      return await refreshAfterMutation(
         inventorySlug,
         getPatchSuccessMessage(response, options.describeInventory(inventorySlug)),
       );
     } catch (error) {
       showNotice(toUserMessage(error, "Could not save the change."), "error");
+      return "failed";
     } finally {
       setBusyItem(null);
     }
   }
 
-  async function handleDeleteItem(itemId: number, cardName: string) {
+  async function handleDeleteItem(
+    itemId: number,
+    cardName: string,
+  ): Promise<MutationOutcome> {
     const inventorySlug = requireSelectedInventory(
       "Select a collection before removing cards.",
     );
     if (!inventorySlug) {
-      return;
+      return "failed";
     }
 
     setBusyItem({ itemId, action: "delete" });
@@ -427,12 +434,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
     try {
       const response = await deleteInventoryItem(inventorySlug, itemId);
-      await refreshAfterMutation(
+      return await refreshAfterMutation(
         inventorySlug,
         `Removed ${response.card_name || cardName} from ${options.describeInventory(inventorySlug)}.`,
       );
     } catch (error) {
       showNotice(toUserMessage(error, "Could not remove the card."), "error");
+      return "failed";
     } finally {
       setBusyItem(null);
     }

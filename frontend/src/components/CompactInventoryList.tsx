@@ -6,7 +6,7 @@ import type {
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
-import type { ItemMutationAction } from "../uiTypes";
+import type { ItemMutationAction, MutationOutcome } from "../uiTypes";
 import {
   decimalToNumber,
   equalStringArrays,
@@ -29,7 +29,7 @@ export function CompactInventoryList(props: {
     itemId: number,
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
-  ) => Promise<void>;
+  ) => Promise<MutationOutcome>;
 }) {
   const locationSuggestionsId = useId();
   const locationSuggestions = getInventoryLocationSuggestions(props.items);
@@ -66,7 +66,7 @@ function CompactInventoryRow(props: {
     itemId: number,
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
-  ) => Promise<void>;
+  ) => Promise<MutationOutcome>;
 }) {
   const [quantity, setQuantity] = useState(String(props.item.quantity));
   const [finish, setFinish] = useState<FinishValue>(props.item.finish);
@@ -140,6 +140,10 @@ function CompactInventoryRow(props: {
     setSavedField(action);
   }
 
+  function didMutationApply(outcome: MutationOutcome) {
+    return outcome === "applied" || outcome === "applied_view_stale";
+  }
+
   function deactivateTagsEditor() {
     setTagsActive(false);
     tagInputRef.current?.blur();
@@ -149,27 +153,36 @@ function CompactInventoryRow(props: {
     if (!quantityIsValid) {
       return;
     }
-    await props.onPatch(props.item.item_id, "quantity", { quantity: parsedQuantity });
-    markFieldSaved("quantity");
+    const outcome = await props.onPatch(props.item.item_id, "quantity", {
+      quantity: parsedQuantity,
+    });
+    if (didMutationApply(outcome)) {
+      markFieldSaved("quantity");
+    }
   }
 
   async function saveLocation() {
     const trimmed = location.trim();
-    await props.onPatch(
+    const outcome = await props.onPatch(
       props.item.item_id,
       "location",
       trimmed ? { location: trimmed } : { clear_location: true },
     );
-    markFieldSaved("location");
+    if (didMutationApply(outcome)) {
+      markFieldSaved("location");
+    }
   }
 
   async function saveTags(nextTags: string[]) {
-    await props.onPatch(
+    const outcome = await props.onPatch(
       props.item.item_id,
       "tags",
       nextTags.length ? { tags: nextTags } : { clear_tags: true },
     );
-    markFieldSaved("tags");
+    if (didMutationApply(outcome)) {
+      markFieldSaved("tags");
+    }
+    return outcome;
   }
 
   async function commitPendingTags() {
@@ -187,15 +200,19 @@ function CompactInventoryRow(props: {
       }
     }
 
-    setTagDraft("");
     setTagFeedback(null);
     if (!didAddTag) {
       return;
     }
 
     shouldRestoreTagFocusRef.current = true;
+    const outcome = await saveTags(nextTags);
+    if (!didMutationApply(outcome)) {
+      return;
+    }
+
+    setTagDraft("");
     setTags(nextTags);
-    await saveTags(nextTags);
   }
 
   async function removeTag(tagToRemove: string) {
@@ -203,9 +220,14 @@ function CompactInventoryRow(props: {
     shouldRestoreTagFocusRef.current = true;
     setRemovingTag(tagToRemove);
     setTagFeedback(null);
-    requestedRemovalTagRef.current = tagToRemove;
-    await saveTags(nextTags);
+    const outcome = await saveTags(nextTags);
     setRemovingTag(null);
+    if (!didMutationApply(outcome)) {
+      return;
+    }
+
+    requestedRemovalTagRef.current = tagToRemove;
+    setTags(nextTags);
   }
 
   const isBusy = props.busyAction !== null;
@@ -311,10 +333,18 @@ function CompactInventoryRow(props: {
                 const nextFinish = event.target.value as FinishValue;
                 setSavedField(null);
                 setFinish(nextFinish);
-                if (nextFinish !== props.item.finish) {
+                const persistedFinish = props.item.finish;
+                if (nextFinish !== persistedFinish) {
                   void (async () => {
-                    await props.onPatch(props.item.item_id, "finish", { finish: nextFinish });
-                    markFieldSaved("finish");
+                    const outcome = await props.onPatch(props.item.item_id, "finish", {
+                      finish: nextFinish,
+                    });
+                    if (didMutationApply(outcome)) {
+                      markFieldSaved("finish");
+                      return;
+                    }
+
+                    setFinish(persistedFinish);
                   })();
                 }
               }}

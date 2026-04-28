@@ -12,6 +12,7 @@ import type {
   AsyncStatus,
   InventoryCreateResult,
   ItemMutationAction,
+  MutationOutcome,
   NoticeTone,
 } from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
@@ -68,8 +69,8 @@ type OwnedCollectionPanelActions = {
     itemId: number,
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
-  ) => Promise<void>;
-  onDelete: (itemId: number, cardName: string) => Promise<void>;
+  ) => Promise<MutationOutcome>;
+  onDelete: (itemId: number, cardName: string) => Promise<MutationOutcome>;
   onNotice: (message: string, tone?: NoticeTone) => void;
   onCreateInventory: (
     payload: InventoryCreateRequest,
@@ -465,8 +466,11 @@ export function OwnedCollectionPanel(props: {
             }
             item={detailModalItem}
             onDelete={async (itemId: number, cardName: string) => {
-              await props.actions.onDelete(itemId, cardName);
-              props.actions.onCloseItemDetails();
+              const result = await props.actions.onDelete(itemId, cardName);
+              if (result !== "failed") {
+                props.actions.onCloseItemDetails();
+              }
+              return result;
             }}
             onNotice={props.actions.onNotice}
             onPatch={props.actions.onPatch}

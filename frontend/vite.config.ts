@@ -21,6 +21,18 @@ export default defineConfig(({ mode }) => {
       environment: "jsdom",
       setupFiles: "./src/test/setup.ts",
       css: true,
+      include: [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.spec.ts",
+        "src/**/*.spec.tsx",
+      ],
+      exclude: [
+        "playwright/**",
+        "dist/**",
+        "test-results/**",
+        "node_modules/**",
+      ],
     },
   };
 });

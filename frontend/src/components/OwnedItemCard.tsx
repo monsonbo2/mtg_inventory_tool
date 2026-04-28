@@ -6,7 +6,11 @@ import type {
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
-import type { ItemMutationAction, NoticeTone } from "../uiTypes";
+import type {
+  ItemMutationAction,
+  MutationOutcome,
+  NoticeTone,
+} from "../uiTypes";
 import {
   decimalToNumber,
   equalStringArrays,
@@ -31,8 +35,8 @@ export function OwnedItemCard(props: {
     itemId: number,
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
-  ) => Promise<void>;
-  onDelete: (itemId: number, cardName: string) => Promise<void>;
+  ) => Promise<MutationOutcome>;
+  onDelete: (itemId: number, cardName: string) => Promise<MutationOutcome>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 }) {
   const [quantity, setQuantity] = useState(String(props.item.quantity));

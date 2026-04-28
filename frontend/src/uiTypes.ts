@@ -13,6 +13,7 @@ export type AppShellState =
   | "access_needed"
   | "error";
 export type ViewRefreshOutcome = "applied" | "skipped";
+export type MutationOutcome = "applied" | "applied_view_stale" | "failed";
 export type NoticeTone = "info" | "success" | "error";
 export type ItemMutationAction =
   | "quantity"
