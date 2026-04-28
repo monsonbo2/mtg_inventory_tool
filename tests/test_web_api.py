@@ -5249,6 +5249,94 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(200, revoked_again.status_code)
                 self.assertFalse(revoked_again.json()["active"])
 
+    def test_inventory_share_links_public_route_groups_rows_by_visible_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            owner_headers = {"X-Authenticated-User": "owner-user"}
+
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description="Cards I want to share",
+                actor_id="owner-user",
+            )
+
+            with self._client(db_path, runtime_mode="shared_service", auto_migrate=False) as client:
+                self._seed_card(db_path)
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    quantity=2,
+                    finish="normal",
+                    location="Private Binder A",
+                    acquisition_price="1.25",
+                    acquisition_currency="USD",
+                    notes="private owner note a",
+                    tags_json='["trade-a"]',
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    quantity=3,
+                    finish="normal",
+                    location="Private Binder B",
+                    acquisition_price="2.50",
+                    acquisition_currency="USD",
+                    notes="private owner note b",
+                    tags_json='["trade-b"]',
+                )
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                    quantity=1,
+                    finish="foil",
+                    location="Private Binder C",
+                    acquisition_price="4.00",
+                    acquisition_currency="USD",
+                    notes="private foil note",
+                    tags_json='["trade-c"]',
+                )
+
+                created = client.post("/inventories/personal/share-link", headers=owner_headers)
+                self.assertEqual(201, created.status_code)
+
+                public_view = client.get(f"/shared/inventories/{created.json()['token']}")
+                self.assertEqual(200, public_view.status_code)
+                public_payload = public_view.json()
+
+                self.assertEqual(
+                    {
+                        "display_name": "Personal Collection",
+                        "description": "Cards I want to share",
+                        "item_rows": 2,
+                        "total_cards": 6,
+                    },
+                    public_payload["inventory"],
+                )
+                self.assertEqual(2, len(public_payload["items"]))
+
+                items_by_finish = {
+                    item["finish"]: item for item in public_payload["items"]
+                }
+                self.assertEqual({"normal", "foil"}, set(items_by_finish))
+                self.assertEqual(5, items_by_finish["normal"]["quantity"])
+                self.assertEqual(1, items_by_finish["foil"]["quantity"])
+                for public_item in items_by_finish.values():
+                    self.assertNotIn("notes", public_item)
+                    self.assertNotIn("acquisition_price", public_item)
+                    self.assertNotIn("acquisition_currency", public_item)
+                    self.assertNotIn("location", public_item)
+                    self.assertNotIn("tags", public_item)
+                    self.assertNotIn("item_id", public_item)
+                    self.assertNotIn("currency", public_item)
+                    self.assertNotIn("unit_price", public_item)
+                    self.assertNotIn("est_value", public_item)
+
     def test_inventory_share_links_allow_global_admin_management(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "api.db"

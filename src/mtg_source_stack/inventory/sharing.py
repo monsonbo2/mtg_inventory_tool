@@ -31,6 +31,25 @@ SHARE_TOKEN_VERSION = "v1"
 # that page fetches JSON through the proxied API route
 # `/api/shared/inventories/{share_token}`.
 PUBLIC_SHARE_PAGE_PATH_PREFIX = "/shared/inventories"
+_GROUPED_PUBLIC_ITEMS_CTE = """
+WITH grouped_public_items AS (
+    SELECT
+        ii.inventory_id,
+        ii.scryfall_id,
+        ii.condition_code,
+        ii.finish,
+        ii.language_code,
+        SUM(ii.quantity) AS quantity
+    FROM inventory_items ii
+    WHERE ii.inventory_id = ?
+    GROUP BY
+        ii.inventory_id,
+        ii.scryfall_id,
+        ii.condition_code,
+        ii.finish,
+        ii.language_code
+)
+"""
 
 
 def _normalize_actor_id(actor_id: str | None) -> str:
@@ -456,6 +475,50 @@ def _public_summary_from_row(row: sqlite3.Row) -> PublicInventorySummary:
     )
 
 
+def _public_summary_row(connection: sqlite3.Connection, inventory_id: int) -> sqlite3.Row | None:
+    return connection.execute(
+        _GROUPED_PUBLIC_ITEMS_CTE
+        + """
+        SELECT
+            i.display_name,
+            COALESCE(i.description, '') AS description,
+            COUNT(gpi.scryfall_id) AS item_rows,
+            COALESCE(SUM(gpi.quantity), 0) AS total_cards
+        FROM inventories i
+        LEFT JOIN grouped_public_items gpi ON gpi.inventory_id = i.id
+        WHERE i.id = ?
+        GROUP BY i.id, i.display_name, i.description
+        """,
+        (inventory_id, inventory_id),
+    ).fetchone()
+
+
+def _public_item_rows(connection: sqlite3.Connection, inventory_id: int) -> list[sqlite3.Row]:
+    return connection.execute(
+        _GROUPED_PUBLIC_ITEMS_CTE
+        + """
+        SELECT
+            gpi.scryfall_id,
+            c.oracle_id,
+            c.name,
+            c.set_code,
+            c.set_name,
+            c.rarity,
+            c.collector_number,
+            c.image_uris_json,
+            c.finishes_json,
+            gpi.quantity,
+            gpi.condition_code,
+            gpi.finish,
+            gpi.language_code
+        FROM grouped_public_items gpi
+        JOIN mtg_cards c ON c.scryfall_id = gpi.scryfall_id
+        ORDER BY c.name, c.set_code, c.collector_number, gpi.condition_code, gpi.finish, gpi.language_code
+        """,
+        (inventory_id,),
+    ).fetchall()
+
+
 def get_public_inventory_share(
     db_path: str | Path,
     *,
@@ -483,46 +546,11 @@ def get_public_inventory_share(
             raise NotFoundError("Shared inventory link was not found.")
 
         inventory_id = int(share["inventory_id"])
-        summary_row = connection.execute(
-            """
-            SELECT
-                i.display_name,
-                COALESCE(i.description, '') AS description,
-                COUNT(ii.id) AS item_rows,
-                COALESCE(SUM(ii.quantity), 0) AS total_cards
-            FROM inventories i
-            LEFT JOIN inventory_items ii ON ii.inventory_id = i.id
-            WHERE i.id = ?
-            GROUP BY i.id, i.display_name, i.description
-            """,
-            (inventory_id,),
-        ).fetchone()
+        summary_row = _public_summary_row(connection, inventory_id)
         if summary_row is None:
             raise NotFoundError("Shared inventory link was not found.")
 
-        item_rows = connection.execute(
-            """
-            SELECT
-                ii.scryfall_id,
-                c.oracle_id,
-                c.name,
-                c.set_code,
-                c.set_name,
-                c.rarity,
-                c.collector_number,
-                c.image_uris_json,
-                c.finishes_json,
-                ii.quantity,
-                ii.condition_code,
-                ii.finish,
-                ii.language_code
-            FROM inventory_items ii
-            JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
-            WHERE ii.inventory_id = ?
-            ORDER BY c.name, c.set_code, c.collector_number, ii.condition_code, ii.finish
-            """,
-            (inventory_id,),
-        ).fetchall()
+        item_rows = _public_item_rows(connection, inventory_id)
 
     return PublicInventoryShareResult(
         inventory=_public_summary_from_row(summary_row),
