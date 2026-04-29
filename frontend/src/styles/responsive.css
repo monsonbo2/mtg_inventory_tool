@@ -45,6 +45,16 @@
     padding-top: 18px;
   }
 
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .hero-actions {
+    justify-self: stretch;
+    justify-content: flex-start;
+  }
+
   .sticky-workspace-controls {
     display: none;
   }
@@ -52,10 +62,6 @@
   .search-panel-heading {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .search-panel-heading .search-import {
-    margin-left: 0;
   }
 
   .inventory-sidebar-ready-header {

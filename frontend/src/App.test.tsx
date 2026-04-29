@@ -1315,6 +1315,173 @@ describe("App", () => {
     expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
   });
 
+  it("scrolls autocomplete suggestions far enough to preview the next result", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
+    const originalInnerHeight = window.innerHeight;
+    const scrollToSpy = vi.fn();
+
+    function buildRect(top: number, height: number, left = 0, width = 520): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 820,
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (this.classList.contains("search-autocomplete")) {
+          return buildRect(680, 260);
+        }
+        if (this.classList.contains("search-autocomplete-list")) {
+          return buildRect(680, 120);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy,
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "Fo") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "forest-oracle",
+              name: "Forest",
+              printings_count: 1,
+            }),
+            buildNameSearchRow({
+              oracle_id: "force-oracle",
+              name: "Force of Will",
+              printings_count: 4,
+            }),
+            buildNameSearchRow({
+              oracle_id: "forbidden-orchard-oracle",
+              name: "Forbidden Orchard",
+              printings_count: 2,
+            }),
+            buildNameSearchRow({
+              oracle_id: "forge-oracle",
+              name: "Forge Anew",
+              printings_count: 3,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.clear(input);
+      await user.type(input, "Fo");
+
+      const listbox = await screen.findByRole("listbox", { name: "Card suggestions" });
+      await screen.findByRole("option", { name: /Forge Anew/i });
+      const suggestionList = listbox.querySelector(
+        ".search-autocomplete-list",
+      ) as HTMLDivElement | null;
+      expect(suggestionList).not.toBeNull();
+      await waitFor(() => {
+        expect(suggestionList).toHaveStyle({ maxHeight: "120px" });
+      });
+
+      Object.defineProperty(suggestionList!, "clientHeight", {
+        configurable: true,
+        value: 120,
+      });
+      Object.defineProperty(suggestionList!, "scrollHeight", {
+        configurable: true,
+        value: 304,
+      });
+      Object.defineProperty(suggestionList!, "scrollTop", {
+        configurable: true,
+        value: 0,
+        writable: true,
+      });
+
+      const forestOption = await screen.findByRole("option", { name: /Forest/i });
+      const forceOption = await screen.findByRole("option", { name: /Force of Will/i });
+      const orchardOption = await screen.findByRole("option", { name: /Forbidden Orchard/i });
+      const forgeOption = await screen.findByRole("option", { name: /Forge Anew/i });
+
+      Object.defineProperty(forestOption, "offsetTop", {
+        configurable: true,
+        value: 0,
+      });
+      Object.defineProperty(forestOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(forceOption, "offsetTop", {
+        configurable: true,
+        value: 76,
+      });
+      Object.defineProperty(forceOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(orchardOption, "offsetTop", {
+        configurable: true,
+        value: 152,
+      });
+      Object.defineProperty(orchardOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(forgeOption, "offsetTop", {
+        configurable: true,
+        value: 228,
+      });
+      Object.defineProperty(forgeOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+
+      scrollToSpy.mockClear();
+
+      await user.keyboard("{ArrowDown}");
+      await user.keyboard("{ArrowDown}");
+
+      await waitFor(() => {
+        expect(scrollToSpy).toHaveBeenCalledWith({
+          top: 140,
+        });
+      });
+    } finally {
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: originalInnerHeight,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+        configurable: true,
+        value: originalScrollTo,
+      });
+    }
+  });
+
   it("shows default-printing thumbnails in autocomplete suggestions", async () => {
     const user = userEvent.setup();
     const forest = buildNameSearchRow({
@@ -1480,13 +1647,13 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
   });
 
-  it("scrolls matching-card navigation into view as keyboard selection moves", async () => {
+  it("scrolls matching-card navigation far enough to preview the next result", async () => {
     const user = userEvent.setup();
-    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
-    const scrollIntoViewSpy = vi.fn();
-    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
       configurable: true,
-      value: scrollIntoViewSpy,
+      value: scrollToSpy,
     });
 
     try {
@@ -1514,7 +1681,7 @@ describe("App", () => {
         return buildNameSearchResult();
       });
 
-      render(<App />);
+      const { container } = render(<App />);
 
       const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
       await user.type(input, "lightn");
@@ -1524,15 +1691,68 @@ describe("App", () => {
       await user.keyboard("{Enter}");
 
       await screen.findByText("Matching cards");
-      scrollIntoViewSpy.mockClear();
+      const resultList = container.querySelector(
+        ".search-workspace-result-list",
+      ) as HTMLDivElement | null;
+      expect(resultList).not.toBeNull();
+
+      Object.defineProperty(resultList!, "clientHeight", {
+        configurable: true,
+        value: 160,
+      });
+      Object.defineProperty(resultList!, "scrollHeight", {
+        configurable: true,
+        value: 260,
+      });
+      Object.defineProperty(resultList!, "scrollTop", {
+        configurable: true,
+        value: 0,
+        writable: true,
+      });
+
+      const boltResult = screen.getByRole("button", { name: /Lightning Bolt/i });
+      const angelResult = screen.getByRole("button", { name: /Lightning Angel/i });
+      const axeResult = screen.getByRole("button", { name: /Lightning Axe/i });
+
+      Object.defineProperty(boltResult, "offsetTop", {
+        configurable: true,
+        value: 0,
+      });
+      Object.defineProperty(boltResult, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(angelResult, "offsetTop", {
+        configurable: true,
+        value: 110,
+      });
+      Object.defineProperty(angelResult, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(axeResult, "offsetTop", {
+        configurable: true,
+        value: 188,
+      });
+      Object.defineProperty(axeResult, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+
+      scrollToSpy.mockClear();
 
       await user.keyboard("{ArrowDown}");
 
-      expect(scrollIntoViewSpy).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(scrollToSpy).toHaveBeenCalledWith({
+          behavior: "smooth",
+          top: 58,
+        });
+      });
     } finally {
-      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
         configurable: true,
-        value: originalScrollIntoView,
+        value: originalScrollTo,
       });
     }
   });

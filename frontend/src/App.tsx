@@ -124,6 +124,10 @@ export default function App() {
     token: number;
   } | null>(null);
   const [stickyControlsVisible, setStickyControlsVisible] = useState(false);
+  const [workspaceCreateActionHost, setWorkspaceCreateActionHost] =
+    useState<HTMLDivElement | null>(null);
+  const [workspaceImportActionHost, setWorkspaceImportActionHost] =
+    useState<HTMLDivElement | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const {
     accessSummary,
@@ -423,6 +427,15 @@ export default function App() {
   });
   const shellStatePanels =
     appShellState === "ready" ? null : getShellStatePanelContent(appShellState);
+  const showHeroCreateAction =
+    appShellState === "ready" || appShellState === "bootstrap_available";
+  const showHeroImportAction = appShellState === "ready";
+  const workspaceTopGridClassName =
+    appShellState === "ready" &&
+    selectedInventoryCanWrite &&
+    !searchResultsVisible
+      ? "workspace-top-grid workspace-top-grid-controls-aligned"
+      : "workspace-top-grid";
 
   useEffect(() => {
     setCollectionMenuOpen(false);
@@ -481,17 +494,29 @@ export default function App() {
             Search cards, compare printings, and organize your collection in one place.
           </p>
         </div>
+        {showHeroCreateAction || showHeroImportAction ? (
+          <div aria-label="Workspace actions" className="hero-actions">
+            {showHeroCreateAction ? (
+              <div className="hero-action-slot hero-action-slot-create" ref={setWorkspaceCreateActionHost} />
+            ) : null}
+            {showHeroImportAction ? (
+              <div className="hero-action-slot hero-action-slot-import" ref={setWorkspaceImportActionHost} />
+            ) : null}
+          </div>
+        ) : null}
       </header>
 
       {bannerNotice ? <NoticeBanner notice={bannerNotice} /> : null}
 
       <div className="workspace-grid">
-        <div className="workspace-top-grid" ref={workspaceTopRef}>
+        <div className={workspaceTopGridClassName} ref={workspaceTopRef}>
           <aside className="sidebar-column">
             <InventorySidebar
               appShellState={appShellState}
               collectionMenuInteractionEnabled={!stickyControlsVisible}
               collectionMenuOpen={collectionMenuOpen}
+              createActionHost={workspaceCreateActionHost}
+              createActionHostEnabled={showHeroCreateAction}
               createInventoryBusy={createInventoryBusy}
               inventories={inventories}
               inventoryError={inventoryError}
@@ -508,6 +533,8 @@ export default function App() {
               <SearchPanel
                 actions={searchPanelActions}
                 focusRequest={searchFocusRequest}
+                importActionHost={workspaceImportActionHost}
+                importActionHostEnabled={showHeroImportAction}
                 state={searchPanelState}
               />
             ) : (
