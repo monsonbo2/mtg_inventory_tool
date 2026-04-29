@@ -232,7 +232,7 @@ Current import surfaces:
 Current shared-service auth shape:
 
 - `_require_import_inventory_write_access(...)` in
-  `src/mtg_source_stack/api/routes/__init__.py` is the real shared write-access
+  `src/mtg_source_stack/api/routes/imports.py` is the real shared write-access
   rule for
   import routes.
 - `_require_csv_import_inventory_write_access(...)` is currently a naming seam

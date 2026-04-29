@@ -37,7 +37,7 @@ if WEB_TESTING_AVAILABLE:
 
     from mtg_source_stack.api.app import create_app
     from mtg_source_stack.api.dependencies import ApiSettings, RequestContext
-    from mtg_source_stack.api.routes import (
+    from mtg_source_stack.api.routes.imports import (
         _parse_resolutions_json_form,
         _require_csv_import_inventory_write_access,
         _validate_uploaded_csv_size,
@@ -1440,7 +1440,7 @@ class WebApiTest(unittest.TestCase):
             db_path = Path(tmp_dir) / "api.db"
             with self._client(db_path) as client:
                 with patch(
-                    "mtg_source_stack.api.routes.import_csv_stream",
+                    "mtg_source_stack.api.routes.imports.import_csv_stream",
                     return_value={
                         "csv_filename": "inventory_import.csv",
                         "detected_format": "generic_csv",
@@ -2205,7 +2205,7 @@ class WebApiTest(unittest.TestCase):
             db_path = Path(tmp_dir) / "api.db"
             with self._client(db_path) as client:
                 with patch(
-                    "mtg_source_stack.api.routes.import_decklist_text",
+                    "mtg_source_stack.api.routes.imports.import_decklist_text",
                     return_value={
                         "deck_name": None,
                         "default_inventory": "personal",
@@ -2498,7 +2498,7 @@ class WebApiTest(unittest.TestCase):
             db_path = Path(tmp_dir) / "api.db"
             with self._client(db_path) as client:
                 with patch(
-                    "mtg_source_stack.api.routes.import_deck_url",
+                    "mtg_source_stack.api.routes.imports.import_deck_url",
                     return_value={
                         "source_url": "https://archidekt.com/decks/123/test",
                         "provider": "archidekt",
