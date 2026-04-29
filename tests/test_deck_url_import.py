@@ -288,7 +288,7 @@ class DeckUrlImportTest(unittest.TestCase):
         url = "https://www.mtggoldfish.com/deck/7171667#paper"
 
         with patch(
-            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            "mtg_source_stack.inventory.remote_deck_sources.urlopen",
             side_effect=HTTPError(url, 404, "missing", hdrs=None, fp=None),
         ):
             with self.assertRaises(_RemoteDeckSourceError) as not_found_error:
@@ -297,7 +297,7 @@ class DeckUrlImportTest(unittest.TestCase):
         self.assertEqual("not_found", not_found_error.exception.code)
 
         with patch(
-            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            "mtg_source_stack.inventory.remote_deck_sources.urlopen",
             side_effect=HTTPError(url, 403, "blocked", hdrs=None, fp=None),
         ):
             with self.assertRaises(_RemoteDeckSourceError) as blocked_error:
@@ -307,7 +307,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_text_rejects_redirect_to_unsupported_host(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            "mtg_source_stack.inventory.remote_deck_sources.urlopen",
             return_value=self._FakeUrlopenResponse(
                 b"{}",
                 final_url="https://example.test/decks/redirected",
@@ -320,7 +320,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_text_rejects_oversized_payload(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import.urlopen",
+            "mtg_source_stack.inventory.remote_deck_sources.urlopen",
             return_value=self._FakeUrlopenResponse(
                 b"x" * ((2 * 1024 * 1024) + 1),
                 final_url="https://archidekt.com/api/decks/123/",
@@ -1766,7 +1766,7 @@ class DeckUrlImportTest(unittest.TestCase):
                 "mtg_source_stack.inventory.deck_url_import.fetch_remote_deck_source",
                 return_value=remote_source,
             ):
-                with patch("mtg_source_stack.inventory.deck_url_import.time.time", return_value=100):
+                with patch("mtg_source_stack.inventory.remote_deck_sources.time.time", return_value=100):
                     preview = import_deck_url(
                         db_path,
                         source_url="https://archidekt.com/decks/654/test",
@@ -1775,7 +1775,7 @@ class DeckUrlImportTest(unittest.TestCase):
                         snapshot_signing_secret="custom-secret",
                     )
 
-            with patch("mtg_source_stack.inventory.deck_url_import.time.time", return_value=5000):
+            with patch("mtg_source_stack.inventory.remote_deck_sources.time.time", return_value=5000):
                 with self.assertRaisesRegex(ValidationError, "source_snapshot_token has expired. Re-run preview."):
                     import_deck_url(
                         db_path,
