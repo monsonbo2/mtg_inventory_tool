@@ -30,7 +30,7 @@ from .catalog import (
     resolve_default_card_row_for_name,
 )
 from .decklist_import import ParsedDecklistEntry, parse_decklist_text
-from .import_engine import InventoryValidator, PendingImportRow, _import_pending_rows
+from .import_engine import InventoryValidator, PendingImportRow, import_pending_rows
 from .import_resolution import (
     RemoteDeckRequestedCard,
     RemoteDeckResolutionIssue,
@@ -1945,12 +1945,11 @@ def import_deck_url(
                 "source_snapshot_token": plan.source_snapshot_token,
             },
         )
-    imported_rows = _import_pending_rows(
+    imported_rows = _import_pending_remote_deck_rows(
         prepared_db_path,
         pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,
-        allow_inventory_auto_create=False,
         inventory_validator=inventory_validator,
         actor_type=actor_type,
         actor_id=actor_id,
@@ -1982,3 +1981,27 @@ def import_deck_url(
         "dry_run": dry_run,
         "imported_rows": imported_rows,
     }
+
+
+def _import_pending_remote_deck_rows(
+    prepared_db_path: str | Path,
+    *,
+    pending_rows: list[PendingImportRow],
+    dry_run: bool = False,
+    before_write: Callable[[], Any] | None = None,
+    inventory_validator: InventoryValidator | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> list[dict[str, Any]]:
+    return import_pending_rows(
+        prepared_db_path,
+        pending_rows=pending_rows,
+        dry_run=dry_run,
+        before_write=before_write,
+        allow_inventory_auto_create=False,
+        inventory_validator=inventory_validator,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )

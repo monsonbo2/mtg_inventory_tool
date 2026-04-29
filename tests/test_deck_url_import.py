@@ -86,7 +86,7 @@ class DeckUrlImportTest(unittest.TestCase):
                 return_value=plan,
             ) as plan_remote_deck_import,
             patch(
-                "mtg_source_stack.inventory.deck_url_import._import_pending_rows",
+                "mtg_source_stack.inventory.deck_url_import._import_pending_remote_deck_rows",
                 return_value=[],
             ) as import_pending_rows,
         ):
@@ -130,7 +130,7 @@ class DeckUrlImportTest(unittest.TestCase):
                 return_value=plan,
             ),
             patch(
-                "mtg_source_stack.inventory.deck_url_import._import_pending_rows",
+                "mtg_source_stack.inventory.deck_url_import._import_pending_remote_deck_rows",
                 return_value=[],
             ),
         ):

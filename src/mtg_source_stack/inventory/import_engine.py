@@ -14,6 +14,8 @@ from .mutations import add_card_with_connection
 from .normalize import normalize_external_id, normalized_catalog_finish_list
 from .response_models import serialize_response
 
+__all__ = ["InventoryValidator", "PendingImportRow", "import_pending_rows"]
+
 
 InventoryValidator = Callable[[sqlite3.Connection, str], Any]
 
@@ -60,7 +62,7 @@ def _resolve_pending_row_finish(
     return card
 
 
-def _import_pending_rows(
+def import_pending_rows(
     prepared_db_path: str | Path,
     *,
     pending_rows: list[PendingImportRow],

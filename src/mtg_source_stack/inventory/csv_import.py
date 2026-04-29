@@ -20,7 +20,7 @@ from .catalog import (
     resolve_default_card_row_for_name,
 )
 from .csv_formats import GENERIC_CSV_FORMAT, detect_csv_import_format
-from .import_engine import InventoryValidator, PendingImportRow, _import_pending_rows
+from .import_engine import InventoryValidator, PendingImportRow, import_pending_rows
 from .import_resolution import (
     CsvRequestedCard,
     CsvResolutionIssue,
@@ -676,7 +676,7 @@ def _import_pending_csv_rows(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    return _import_pending_rows(
+    return import_pending_rows(
         prepared_db_path,
         pending_rows=pending_rows,
         dry_run=dry_run,
