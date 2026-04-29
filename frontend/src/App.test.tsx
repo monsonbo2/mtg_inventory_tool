@@ -439,7 +439,9 @@ describe("App", () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(buildDecklistImportResponse({ dry_run: true }))
+      .mockResolvedValueOnce(buildDecklistImportResponse({ dry_run: false }));
 
     render(<App />);
 
@@ -451,9 +453,15 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
 
     await waitFor(() => {
-      expect(importDecklist).toHaveBeenCalledWith({
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
         deck_text: "4 Lightning Bolt",
         default_inventory: "personal",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "personal",
+        dry_run: false,
       });
     });
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -475,9 +483,13 @@ describe("App", () => {
 
     mockBaseSearchApp();
     vi.mocked(listInventories).mockResolvedValue([personal, trade]);
-    vi.mocked(importDecklist).mockResolvedValue(
-      buildDecklistImportResponse({ default_inventory: "trade" }),
-    );
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: true }),
+      )
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: false }),
+      );
 
     render(<App />);
 
@@ -490,9 +502,15 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
 
     await waitFor(() => {
-      expect(importDecklist).toHaveBeenCalledWith({
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
         deck_text: "4 Lightning Bolt",
         default_inventory: "trade",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "trade",
+        dry_run: false,
       });
     });
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -586,9 +604,13 @@ describe("App", () => {
 
     mockBaseSearchApp();
     vi.mocked(listInventories).mockResolvedValue([personalViewer, tradeEditor, archiveViewer]);
-    vi.mocked(importDecklist).mockResolvedValue(
-      buildDecklistImportResponse({ default_inventory: "trade" }),
-    );
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: true }),
+      )
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: false }),
+      );
 
     render(<App />);
 
@@ -609,9 +631,15 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
 
     await waitFor(() => {
-      expect(importDecklist).toHaveBeenCalledWith({
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
         deck_text: "4 Lightning Bolt",
         default_inventory: "trade",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "trade",
+        dry_run: false,
       });
     });
   });
@@ -682,41 +710,209 @@ describe("App", () => {
     expect(within(dialog).getAllByRole("button", { name: "View only" }).length).toBeGreaterThan(0);
   });
 
+  it("opens the resolution step for ambiguous URL imports and reuses the preview snapshot token on commit", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(importDeckUrl)
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: true,
+          ready_to_commit: false,
+          source_snapshot_token: "snapshot-42",
+          rows_seen: 3,
+          rows_written: 0,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 2,
+            distinct_printings: 2,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 3,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "ambiguous_printing",
+              source_position: 7,
+              section: "mainboard",
+              requested: {
+                scryfall_id: null,
+                name: "Counterspell",
+                quantity: 1,
+                set_code: "7ED",
+                collector_number: "67",
+                finish: "normal",
+              },
+              options: [
+                {
+                  scryfall_id: "counterspell-7ed-normal",
+                  finish: "normal",
+                  name: "Counterspell",
+                  set_code: "7ed",
+                  set_name: "Seventh Edition",
+                  collector_number: "67",
+                  lang: "en",
+                  image_uri_small: null,
+                  image_uri_normal: null,
+                },
+                {
+                  scryfall_id: "counterspell-7ed-foil",
+                  finish: "foil",
+                  name: "Counterspell",
+                  set_code: "7ed",
+                  set_name: "Seventh Edition",
+                  collector_number: "67",
+                  lang: "en",
+                  image_uri_small: null,
+                  image_uri_normal: null,
+                },
+              ],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: false,
+          ready_to_commit: true,
+          source_snapshot_token: "snapshot-42",
+          rows_seen: 3,
+          rows_written: 3,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 2,
+            distinct_printings: 2,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 3,
+            unresolved_card_quantity: 0,
+          },
+          resolution_issues: [],
+        }),
+      );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Import Cards" }));
+    await user.click(screen.getByRole("menuitem", { name: /Import from URL/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import From URL" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Deck URL" }),
+      "https://www.moxfield.com/decks/demo",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
+
+    expect(
+      await within(dialog).findByText(
+        "Review the preview, resolve the remaining import questions, and continue when every required entry is mapped.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Counterspell", {
+        selector: ".search-import-resolution-heading",
+      }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Continue import" })).toBeDisabled();
+
+    await user.click(within(dialog).getAllByRole("radio")[0]);
+    expect(within(dialog).getByRole("button", { name: "Continue import" })).toBeEnabled();
+    await user.click(within(dialog).getByRole("button", { name: "Continue import" }));
+
+    await waitFor(() => {
+      expect(importDeckUrl).toHaveBeenNthCalledWith(1, {
+        source_url: "https://www.moxfield.com/decks/demo",
+        default_inventory: "personal",
+        dry_run: true,
+      });
+      expect(importDeckUrl).toHaveBeenNthCalledWith(2, {
+        source_url: "https://www.moxfield.com/decks/demo",
+        default_inventory: "personal",
+        dry_run: false,
+        source_snapshot_token: "snapshot-42",
+        resolutions: [
+          {
+            source_position: 7,
+            scryfall_id: "counterspell-7ed-normal",
+            finish: "normal",
+          },
+        ],
+      });
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Imported 3 cards into Personal Collection.",
+    );
+    expect(screen.queryByRole("dialog", { name: "Import From URL" })).not.toBeInTheDocument();
+  });
+
   it("shows the unresolved card name after a partial URL import and closes the dialog", async () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(importDeckUrl).mockResolvedValue(
-      buildDeckUrlImportResponse({
-        rows_seen: 2,
-        rows_written: 1,
-        ready_to_commit: true,
-        summary: {
-          total_card_quantity: 3,
-          distinct_card_names: 1,
-          distinct_printings: 1,
-          section_card_quantities: { mainboard: 3 },
-          requested_card_quantity: 4,
-          unresolved_card_quantity: 1,
-        },
-        resolution_issues: [
-          {
-            kind: "unknown_card",
-            source_position: 227,
-            section: "mainboard",
-            requested: {
-              scryfall_id: "stale-wildgrowth-id",
-              name: "Wildgrowth Archaic",
-              quantity: 1,
-              set_code: "TST",
-              collector_number: "168",
-              finish: "normal",
-            },
-            options: [],
+    vi.mocked(importDeckUrl)
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: true,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
           },
-        ],
-      }),
-    );
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: false,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      );
 
     render(<App />);
 
@@ -731,9 +927,16 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
 
     await waitFor(() => {
-      expect(importDeckUrl).toHaveBeenCalledWith({
+      expect(importDeckUrl).toHaveBeenNthCalledWith(1, {
         source_url: "https://archidekt.com/decks/15761099/counters_and_counters",
         default_inventory: "personal",
+        dry_run: true,
+      });
+      expect(importDeckUrl).toHaveBeenNthCalledWith(2, {
+        source_url: "https://archidekt.com/decks/15761099/counters_and_counters",
+        default_inventory: "personal",
+        dry_run: false,
+        source_snapshot_token: null,
       });
     });
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -763,9 +966,13 @@ describe("App", () => {
         description: null,
       })]);
     vi.mocked(createInventory).mockResolvedValue(demoImports);
-    vi.mocked(importDecklist).mockResolvedValue(
-      buildDecklistImportResponse({ default_inventory: "demo-imports" }),
-    );
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "demo-imports", dry_run: true }),
+      )
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "demo-imports", dry_run: false }),
+      );
 
     render(<App />);
 
@@ -799,9 +1006,15 @@ describe("App", () => {
       });
     });
     await waitFor(() => {
-      expect(importDecklist).toHaveBeenCalledWith({
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
         deck_text: "4 Lightning Bolt",
         default_inventory: "demo-imports",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "demo-imports",
+        dry_run: false,
       });
     });
     expect(await screen.findByRole("status")).toHaveTextContent(

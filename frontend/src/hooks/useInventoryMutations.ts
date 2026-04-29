@@ -12,11 +12,21 @@ import {
   patchInventoryItem,
   transferInventoryItems,
 } from "../api";
+import {
+  createCsvImportSession,
+  createDeckUrlImportSession,
+  createDecklistImportSession,
+  replaceInventoryImportSessionPreview,
+  type InventoryImportResponse,
+} from "../importFlowHelpers";
 import type {
   AddInventoryItemRequest,
   BulkInventoryItemMutationRequest,
+  CsvImportResolutionRequest,
   CsvImportResponse,
+  DeckUrlImportResolutionRequest,
   DeckUrlImportResponse,
+  DecklistImportResolutionRequest,
   DecklistImportResponse,
   InventoryCreateRequest,
   InventoryTransferMode,
@@ -28,6 +38,11 @@ import {
   toUserMessage,
 } from "../uiHelpers";
 import type {
+  CsvImportSession,
+  DeckUrlImportSession,
+  DecklistImportSession,
+  InventoryImportCommitResult,
+  InventoryImportPreviewResult,
   InventoryCreateResult,
   ItemMutationAction,
   ItemMutationState,
@@ -39,11 +54,6 @@ import type {
 
 const BULK_MUTATION_MAX_ITEMS = 200;
 const TRANSFER_MUTATION_MAX_ITEMS = 100;
-
-type InventoryImportResponse =
-  | CsvImportResponse
-  | DeckUrlImportResponse
-  | DecklistImportResponse;
 
 type UseInventoryMutationsOptions = {
   selectedInventory: string | null;
@@ -99,13 +109,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   async function refreshAfterMutation(
     inventorySlug: string,
     successMessage: string,
-    refreshOptions: { reloadInventories?: boolean } = {},
+    refreshOptions: { reloadInventories?: boolean; successTone?: NoticeTone } = {},
   ): Promise<MutationOutcome> {
     try {
       await options.loadInventoryOverview(inventorySlug, {
         reloadInventories: refreshOptions.reloadInventories ?? true,
       });
-      showNotice(successMessage, "success");
+      showNotice(successMessage, refreshOptions.successTone ?? "success");
       return "applied";
     } catch {
       showNotice(
@@ -292,6 +302,204 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     } catch (error) {
       showNotice(toUserMessage(error, fallbackMessage), "error");
       return false;
+    }
+  }
+
+  async function previewCsvImport(
+    file: Blob,
+    inventorySlug: string | null,
+    inventoryLabel?: string | null,
+  ): Promise<InventoryImportPreviewResult> {
+    if (!inventorySlug) {
+      showNotice("Choose a collection before importing cards.");
+      return { ok: false, reason: "missing_inventory" };
+    }
+
+    clearNotice();
+
+    try {
+      const response = await importCsv({
+        file,
+        default_inventory: inventorySlug,
+        dry_run: true,
+      });
+      return {
+        ok: true,
+        session: createCsvImportSession({
+          file,
+          inventoryLabel,
+          inventorySlug,
+          preview: response,
+        }),
+      };
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not preview cards from the CSV file."), "error");
+      return { ok: false, reason: "error" };
+    }
+  }
+
+  async function previewDecklistImport(
+    deckText: string,
+    inventorySlug: string | null,
+    inventoryLabel?: string | null,
+  ): Promise<InventoryImportPreviewResult> {
+    if (!inventorySlug) {
+      showNotice("Choose a collection before importing cards.");
+      return { ok: false, reason: "missing_inventory" };
+    }
+
+    clearNotice();
+
+    try {
+      const response = await importDecklist({
+        deck_text: deckText,
+        default_inventory: inventorySlug,
+        dry_run: true,
+      });
+      return {
+        ok: true,
+        session: createDecklistImportSession({
+          deckText,
+          inventoryLabel,
+          inventorySlug,
+          preview: response,
+        }),
+      };
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not preview cards from text."), "error");
+      return { ok: false, reason: "error" };
+    }
+  }
+
+  async function previewDeckUrlImport(
+    sourceUrl: string,
+    inventorySlug: string | null,
+    inventoryLabel?: string | null,
+  ): Promise<InventoryImportPreviewResult> {
+    if (!inventorySlug) {
+      showNotice("Choose a collection before importing cards.");
+      return { ok: false, reason: "missing_inventory" };
+    }
+
+    clearNotice();
+
+    try {
+      const response = await importDeckUrl({
+        source_url: sourceUrl,
+        default_inventory: inventorySlug,
+        dry_run: true,
+      });
+      return {
+        ok: true,
+        session: createDeckUrlImportSession({
+          inventoryLabel,
+          inventorySlug,
+          preview: response,
+          sourceUrl,
+        }),
+      };
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not preview cards from the deck URL."), "error");
+      return { ok: false, reason: "error" };
+    }
+  }
+
+  async function finalizeCommittedImport(
+    session: CsvImportSession | DecklistImportSession | DeckUrlImportSession,
+    response: InventoryImportResponse,
+  ): Promise<InventoryImportCommitResult> {
+    const nextSession = replaceInventoryImportSessionPreview(session, response);
+
+    if (nextSession.step !== "ready_to_commit") {
+      return {
+        ok: false,
+        reason: "still_needs_resolution",
+        session: nextSession,
+      };
+    }
+
+    const importingIntoDifferentCollection =
+      session.inventorySlug !== options.selectedInventory;
+    if (importingIntoDifferentCollection) {
+      await options.reloadInventorySummaries(session.inventorySlug);
+    }
+
+    const issueMessage =
+      response.resolution_issues.length > 0 ? ` ${getImportIssueMessage(response)}` : "";
+    const refreshOutcome = await refreshAfterMutation(
+      session.inventorySlug,
+      `${getImportSuccessMessage(response, session.inventorySlug, session.inventoryLabel)}${issueMessage}`,
+      {
+        reloadInventories: !importingIntoDifferentCollection,
+        successTone: response.resolution_issues.length > 0 ? "error" : "success",
+      },
+    );
+    options.resetSearchWorkspace();
+    return {
+      ok: true,
+      refreshOutcome,
+      session: nextSession,
+    };
+  }
+
+  async function commitCsvImport(
+    session: CsvImportSession,
+    resolutions: CsvImportResolutionRequest[] = [],
+  ): Promise<InventoryImportCommitResult> {
+    clearNotice();
+
+    try {
+      const response = await importCsv({
+        file: session.source.file,
+        default_inventory: session.inventorySlug,
+        dry_run: false,
+        ...(resolutions.length ? { resolutions } : null),
+      });
+      return finalizeCommittedImport(session, response);
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not import cards from the CSV file."), "error");
+      return { ok: false, reason: "error" };
+    }
+  }
+
+  async function commitDecklistImport(
+    session: DecklistImportSession,
+    resolutions: DecklistImportResolutionRequest[] = [],
+  ): Promise<InventoryImportCommitResult> {
+    clearNotice();
+
+    try {
+      const response = await importDecklist({
+        deck_text: session.source.deckText,
+        default_inventory: session.inventorySlug,
+        dry_run: false,
+        ...(resolutions.length ? { resolutions } : null),
+      });
+      return finalizeCommittedImport(session, response);
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not import cards from text."), "error");
+      return { ok: false, reason: "error" };
+    }
+  }
+
+  async function commitDeckUrlImport(
+    session: DeckUrlImportSession,
+    resolutions: DeckUrlImportResolutionRequest[] = [],
+  ): Promise<InventoryImportCommitResult> {
+    clearNotice();
+
+    try {
+      const response = await importDeckUrl({
+        source_url: session.source.sourceUrl,
+        default_inventory: session.inventorySlug,
+        dry_run: false,
+        source_snapshot_token: session.preview.source_snapshot_token,
+        ...(resolutions.length ? { resolutions } : null),
+      });
+      return finalizeCommittedImport(session, response);
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not import cards from the deck URL."), "error");
+      return { ok: false, reason: "error" };
     }
   }
 
@@ -637,6 +845,9 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     busyItem,
     clearNotice,
     createInventoryBusy,
+    commitCsvImport,
+    commitDeckUrlImport,
+    commitDecklistImport,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
@@ -647,6 +858,9 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     handlePatchItem,
     handleTransferItems,
     notice,
+    previewCsvImport,
+    previewDeckUrlImport,
+    previewDecklistImport,
     reportNotice,
     transferBusy,
   };

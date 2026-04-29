@@ -4,9 +4,19 @@ import type {
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
   CatalogScope,
+  CsvImportResolutionRequest,
+  DeckUrlImportResolutionRequest,
+  DecklistImportResolutionRequest,
   InventoryCreateRequest,
   InventorySummary,
 } from "../types";
+import {
+  buildInitialInventoryImportResolutionSelectionMap,
+  buildInventoryImportResolutionSelections,
+  getInventoryImportResolutionProgress,
+  reconcileInventoryImportResolutionSelectionMap,
+  type InventoryImportResolutionSelectionMap,
+} from "../importFlowHelpers";
 import {
   summarizeSearchGroup,
   type SearchCardGroup,
@@ -18,7 +28,14 @@ import {
 } from "../uiHelpers";
 import type {
   AsyncStatus,
+  CsvImportSession,
+  DeckUrlImportSession,
+  DecklistImportSession,
   InventoryCreateResult,
+  InventoryImportCommitResult,
+  InventoryImportPreviewResult,
+  InventoryImportSession,
+  InventoryImportStep,
   NoticeTone,
   SearchAddAvailability,
 } from "../uiTypes";
@@ -102,6 +119,18 @@ export type SearchPanelState = {
 };
 
 export type SearchPanelActions = {
+  commitCsvImport: (
+    session: CsvImportSession,
+    resolutions?: CsvImportResolutionRequest[],
+  ) => Promise<InventoryImportCommitResult>;
+  commitDeckUrlImport: (
+    session: DeckUrlImportSession,
+    resolutions?: DeckUrlImportResolutionRequest[],
+  ) => Promise<InventoryImportCommitResult>;
+  commitDecklistImport: (
+    session: DecklistImportSession,
+    resolutions?: DecklistImportResolutionRequest[],
+  ) => Promise<InventoryImportCommitResult>;
   onSearchQueryChange: (value: string) => void;
   onSearchFieldFocus: () => void;
   onSearchInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -114,21 +143,21 @@ export type SearchPanelActions = {
   onCreateInventory: (
     payload: InventoryCreateRequest,
   ) => Promise<InventoryCreateResult>;
-  onImportCsv: (
+  previewCsvImport: (
     file: Blob,
     inventorySlug: string | null,
     inventoryLabel?: string | null,
-  ) => Promise<boolean>;
-  onImportDeckUrl: (
+  ) => Promise<InventoryImportPreviewResult>;
+  previewDeckUrlImport: (
     sourceUrl: string,
     inventorySlug: string | null,
     inventoryLabel?: string | null,
-  ) => Promise<boolean>;
-  onImportDecklist: (
+  ) => Promise<InventoryImportPreviewResult>;
+  previewDecklistImport: (
     deckText: string,
     inventorySlug: string | null,
     inventoryLabel?: string | null,
-  ) => Promise<boolean>;
+  ) => Promise<InventoryImportPreviewResult>;
   onLoadPrintings: (
     group: SearchCardGroup,
     options?: { includeAllLanguages?: boolean },
@@ -142,6 +171,69 @@ export type SearchPanelActions = {
 
 type ImportDialogMode = "url" | "text" | "csv";
 type ImportTargetMode = "existing" | "create";
+
+function getImportDialogStepTitle(mode: ImportDialogMode) {
+  switch (mode) {
+    case "url":
+      return "Import From URL";
+    case "text":
+      return "Import As Text";
+    case "csv":
+      return "Import From CSV";
+  }
+}
+
+function getImportDialogStepSubtitle(
+  mode: ImportDialogMode,
+  step: InventoryImportStep | null,
+) {
+  if (step === "needs_resolution") {
+    return "Review the preview, resolve the remaining import questions, and continue when every required entry is mapped.";
+  }
+
+  switch (mode) {
+    case "url":
+      return "Paste a supported public deck URL, then choose an existing collection or create a new one for the import.";
+    case "text":
+      return "Paste a decklist or card list, then choose an existing collection or create a new one for the import.";
+    case "csv":
+      return "Upload a collection CSV, then choose an existing collection or create a new one for the import.";
+  }
+}
+
+function getInventoryImportModeForDialog(mode: ImportDialogMode) {
+  switch (mode) {
+    case "url":
+      return "deck_url" as const;
+    case "text":
+      return "decklist" as const;
+    case "csv":
+      return "csv" as const;
+  }
+}
+
+function getImportSourceSummary(session: InventoryImportSession) {
+  switch (session.mode) {
+    case "csv":
+      return {
+        label: "Source",
+        value: session.source.file instanceof File ? session.source.file.name : session.preview.csv_filename,
+        detail: `Detected as ${session.preview.detected_format.replaceAll("_", " ")}.`,
+      };
+    case "decklist":
+      return {
+        label: "Source",
+        value: session.preview.deck_name || "Pasted card list",
+        detail: `${session.preview.rows_seen} line${session.preview.rows_seen === 1 ? "" : "s"} reviewed.`,
+      };
+    case "deck_url":
+      return {
+        label: "Source",
+        value: session.preview.deck_name || session.source.sourceUrl,
+        detail: `${session.preview.provider} preview from ${session.preview.source_url}.`,
+      };
+  }
+}
 
 export function SearchPanel(props: {
   actions: SearchPanelActions;
@@ -178,6 +270,9 @@ export function SearchPanel(props: {
   const [createCollectionSlugTouched, setCreateCollectionSlugTouched] = useState(false);
   const [showCreateCollectionSlugField, setShowCreateCollectionSlugField] = useState(false);
   const [importFormError, setImportFormError] = useState<string | null>(null);
+  const [importSession, setImportSession] = useState<InventoryImportSession | null>(null);
+  const [importResolutionSelections, setImportResolutionSelections] =
+    useState<InventoryImportResolutionSelectionMap>({});
   const [importSubmitBusy, setImportSubmitBusy] = useState<ImportDialogMode | null>(null);
   const [searchResultsPanelHeight, setSearchResultsPanelHeight] = useState<number | null>(null);
   const [searchWorkspaceOverlay, setSearchWorkspaceOverlay] = useState({
@@ -190,6 +285,30 @@ export function SearchPanel(props: {
   const hasSearchResults = props.state.search.groups.length > 0;
   const existingImportTargetInventories = props.state.writableInventories;
   const hasExistingImportTargets = existingImportTargetInventories.length > 0;
+  const activeImportMode = activeImportDialog
+    ? getInventoryImportModeForDialog(activeImportDialog)
+    : null;
+  const activeImportSession =
+    importSession && activeImportMode && importSession.mode === activeImportMode
+      ? importSession
+      : null;
+  const importResolutionProgress =
+    activeImportSession?.step === "needs_resolution"
+      ? getInventoryImportResolutionProgress(
+          activeImportSession,
+          importResolutionSelections,
+        )
+      : null;
+  const importResolutionCanContinue =
+    importResolutionProgress !== null &&
+    importResolutionProgress.blockedCount === 0 &&
+    importResolutionProgress.selectedCount === importResolutionProgress.requiredCount;
+  const urlImportNeedsResolution =
+    activeImportSession?.mode === "deck_url" && activeImportSession.step === "needs_resolution";
+  const textImportNeedsResolution =
+    activeImportSession?.mode === "decklist" && activeImportSession.step === "needs_resolution";
+  const csvImportNeedsResolution =
+    activeImportSession?.mode === "csv" && activeImportSession.step === "needs_resolution";
   const selectedInventoryAddAvailability: SearchAddAvailability =
     !props.state.selectedInventoryRow
       ? "unselected"
@@ -556,6 +675,20 @@ export function SearchPanel(props: {
     return existingImportTargetInventories[0]?.slug ?? null;
   }
 
+  function startImportResolutionSession(nextSession: InventoryImportSession) {
+    setImportSession(nextSession);
+    setImportResolutionSelections(
+      buildInitialInventoryImportResolutionSelectionMap(nextSession),
+    );
+  }
+
+  function updateImportResolutionSession(nextSession: InventoryImportSession) {
+    setImportSession(nextSession);
+    setImportResolutionSelections((currentSelections) =>
+      reconcileInventoryImportResolutionSelectionMap(nextSession, currentSelections),
+    );
+  }
+
   function resetImportDialogState() {
     setImportTargetMode(getDefaultImportTargetInventorySlug() ? "existing" : "create");
     setImportTargetInventorySlug(getDefaultImportTargetInventorySlug());
@@ -570,6 +703,8 @@ export function SearchPanel(props: {
     setCreateCollectionSlugTouched(false);
     setShowCreateCollectionSlugField(false);
     setImportFormError(null);
+    setImportSession(null);
+    setImportResolutionSelections({});
     setImportSubmitBusy(null);
   }
 
@@ -585,6 +720,22 @@ export function SearchPanel(props: {
     setImportMenuOpen(false);
     resetImportDialogState();
     setActiveImportDialog(mode);
+  }
+
+  function handleImportResolutionSelectionChange(issueKey: string, optionKey: string) {
+    setImportResolutionSelections((current) => ({
+      ...current,
+      [issueKey]: optionKey,
+    }));
+    if (importFormError) {
+      setImportFormError(null);
+    }
+  }
+
+  function handleImportBackToEdit() {
+    setImportSession(null);
+    setImportResolutionSelections({});
+    setImportFormError(null);
   }
 
   function toggleImportMenu() {
@@ -714,8 +865,112 @@ export function SearchPanel(props: {
     return null;
   }
 
+  async function commitResolvedImport(
+    session: InventoryImportSession,
+    dialogMode: ImportDialogMode,
+  ) {
+    const progress = getInventoryImportResolutionProgress(
+      session,
+      importResolutionSelections,
+    );
+    if (progress.blockedCount > 0) {
+      setImportFormError(
+        "Some unresolved entries still do not have selectable matches, so this import cannot continue yet.",
+      );
+      return;
+    }
+
+    const resolutionSelections = buildInventoryImportResolutionSelections(
+      session,
+      importResolutionSelections,
+    );
+    if (!resolutionSelections) {
+      const missingCount = Math.max(0, progress.requiredCount - progress.selectedCount);
+      setImportFormError(
+        missingCount === 1
+          ? "Choose a match for the remaining unresolved entry before continuing."
+          : `Choose matches for the remaining ${missingCount} unresolved entries before continuing.`,
+      );
+      return;
+    }
+
+    setImportFormError(null);
+    setImportSubmitBusy(dialogMode);
+    try {
+      let result: InventoryImportCommitResult;
+      switch (session.mode) {
+        case "csv":
+          result = await props.actions.commitCsvImport(session, resolutionSelections.mode === "csv" ? resolutionSelections.resolutions : []);
+          break;
+        case "decklist":
+          result = await props.actions.commitDecklistImport(
+            session,
+            resolutionSelections.mode === "decklist" ? resolutionSelections.resolutions : [],
+          );
+          break;
+        case "deck_url":
+          result = await props.actions.commitDeckUrlImport(
+            session,
+            resolutionSelections.mode === "deck_url" ? resolutionSelections.resolutions : [],
+          );
+          break;
+      }
+
+      if (result.ok) {
+        closeImportDialog(true);
+        return;
+      }
+
+      if (result.reason === "still_needs_resolution" && result.session) {
+        updateImportResolutionSession(result.session);
+      }
+    } finally {
+      setImportSubmitBusy(null);
+    }
+  }
+
+  async function handlePreviewResult(previewResult: InventoryImportPreviewResult) {
+    if (!previewResult.ok) {
+      return;
+    }
+
+    if (previewResult.session.step === "needs_resolution") {
+      setImportFormError(null);
+      startImportResolutionSession(previewResult.session);
+      return;
+    }
+
+    let commitResult: InventoryImportCommitResult;
+    switch (previewResult.session.mode) {
+      case "csv":
+        commitResult = await props.actions.commitCsvImport(previewResult.session);
+        break;
+      case "decklist":
+        commitResult = await props.actions.commitDecklistImport(previewResult.session);
+        break;
+      case "deck_url":
+        commitResult = await props.actions.commitDeckUrlImport(previewResult.session);
+        break;
+    }
+
+    if (commitResult.ok) {
+      closeImportDialog(true);
+      return;
+    }
+
+    if (commitResult.reason === "still_needs_resolution" && commitResult.session) {
+      updateImportResolutionSession(commitResult.session);
+      return;
+    }
+  }
+
   async function handleImportUrlSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (activeImportSession?.mode === "deck_url" && activeImportSession.step === "needs_resolution") {
+      await commitResolvedImport(activeImportSession, "url");
+      return;
+    }
 
     const sourceUrl = importUrl.trim();
     if (!sourceUrl) {
@@ -731,14 +986,13 @@ export function SearchPanel(props: {
         return;
       }
 
-      const didImport = await props.actions.onImportDeckUrl(
-        sourceUrl,
-        importTarget.inventorySlug,
-        importTarget.inventoryLabel,
+      await handlePreviewResult(
+        await props.actions.previewDeckUrlImport(
+          sourceUrl,
+          importTarget.inventorySlug,
+          importTarget.inventoryLabel,
+        ),
       );
-      if (didImport) {
-        closeImportDialog(true);
-      }
     } finally {
       setImportSubmitBusy(null);
     }
@@ -746,6 +1000,11 @@ export function SearchPanel(props: {
 
   async function handleImportTextSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (activeImportSession?.mode === "decklist" && activeImportSession.step === "needs_resolution") {
+      await commitResolvedImport(activeImportSession, "text");
+      return;
+    }
 
     const deckText = importDeckText.trim();
     if (!deckText) {
@@ -761,14 +1020,13 @@ export function SearchPanel(props: {
         return;
       }
 
-      const didImport = await props.actions.onImportDecklist(
-        deckText,
-        importTarget.inventorySlug,
-        importTarget.inventoryLabel,
+      await handlePreviewResult(
+        await props.actions.previewDecklistImport(
+          deckText,
+          importTarget.inventorySlug,
+          importTarget.inventoryLabel,
+        ),
       );
-      if (didImport) {
-        closeImportDialog(true);
-      }
     } finally {
       setImportSubmitBusy(null);
     }
@@ -776,6 +1034,11 @@ export function SearchPanel(props: {
 
   async function handleImportCsvSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (activeImportSession?.mode === "csv" && activeImportSession.step === "needs_resolution") {
+      await commitResolvedImport(activeImportSession, "csv");
+      return;
+    }
 
     if (!importCsvFile) {
       setImportFormError("Choose a CSV file before importing.");
@@ -790,17 +1053,140 @@ export function SearchPanel(props: {
         return;
       }
 
-      const didImport = await props.actions.onImportCsv(
-        importCsvFile,
-        importTarget.inventorySlug,
-        importTarget.inventoryLabel,
+      await handlePreviewResult(
+        await props.actions.previewCsvImport(
+          importCsvFile,
+          importTarget.inventorySlug,
+          importTarget.inventoryLabel,
+        ),
       );
-      if (didImport) {
-        closeImportDialog(true);
-      }
     } finally {
       setImportSubmitBusy(null);
     }
+  }
+
+  function renderImportResolutionStep(session: InventoryImportSession) {
+    const resolutionProgress = getInventoryImportResolutionProgress(
+      session,
+      importResolutionSelections,
+    );
+    const importSourceSummary = getImportSourceSummary(session);
+    const unresolvedCount = session.preview.summary.unresolved_card_quantity;
+    const requestedCount = session.preview.summary.requested_card_quantity;
+    const rowsMatched = session.preview.rows_written;
+
+    return (
+      <>
+        <div className="search-import-preview">
+          <div className="form-section search-import-preview-summary">
+            <div className="form-section-header">
+              <strong>Preview summary</strong>
+              <span>
+                {resolutionProgress.requiredCount === 1
+                  ? "1 entry still needs a match before import can continue."
+                  : `${resolutionProgress.requiredCount} entries still need matches before import can continue.`}
+              </span>
+            </div>
+            <div className="search-import-preview-grid">
+              <div className="search-import-preview-card">
+                <span className="search-import-preview-label">
+                  {importSourceSummary.label}
+                </span>
+                <strong>{importSourceSummary.value}</strong>
+                <span>{importSourceSummary.detail}</span>
+              </div>
+              <div className="search-import-preview-card">
+                <span className="search-import-preview-label">Destination</span>
+                <strong>{session.inventoryLabel || session.inventorySlug}</strong>
+                <span>Cards will land in this collection after the import completes.</span>
+              </div>
+              <div className="search-import-preview-card">
+                <span className="search-import-preview-label">Requested cards</span>
+                <strong>{requestedCount}</strong>
+                <span>
+                  {session.preview.summary.distinct_card_names} name
+                  {session.preview.summary.distinct_card_names === 1 ? "" : "s"} across{" "}
+                  {session.preview.summary.distinct_printings} printing
+                  {session.preview.summary.distinct_printings === 1 ? "" : "s"}.
+                </span>
+              </div>
+              <div className="search-import-preview-card">
+                <span className="search-import-preview-label">Ready now</span>
+                <strong>{rowsMatched}</strong>
+                <span>
+                  {unresolvedCount} unresolved card
+                  {unresolvedCount === 1 ? "" : "s"} still need
+                  {unresolvedCount === 1 ? "s" : ""} attention.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {resolutionProgress.blockedCount > 0 ? (
+            <p className="field-hint field-hint-error">
+              Some entries still do not have selectable matches. Update the source list or wait
+              for backend support before continuing.
+            </p>
+          ) : resolutionProgress.selectedCount < resolutionProgress.requiredCount ? (
+            <p className="field-hint field-hint-info">
+              Choose matches for all unresolved entries to continue the import.
+            </p>
+          ) : (
+            <p className="field-hint field-hint-success">
+              All required matches are selected. Continue to commit the import.
+            </p>
+          )}
+
+          <div className="search-import-resolution-list">
+            {resolutionProgress.issues.map((issue) => (
+              <fieldset className="form-section search-import-resolution-card" key={issue.key}>
+                <legend className="search-import-resolution-legend">
+                  <span className="search-import-resolution-heading">{issue.heading}</span>
+                  <span className="search-import-resolution-source">{issue.sourceLabel}</span>
+                </legend>
+                <p className="search-import-resolution-requested">
+                  Requested: {issue.requestedDetail}
+                </p>
+                <p className="field-hint field-hint-info">{issue.prompt}</p>
+
+                {issue.options.length ? (
+                  <div className="search-import-resolution-options">
+                    {issue.options.map((option) => (
+                      <label
+                        className={
+                          importResolutionSelections[issue.key] === option.key
+                            ? "search-import-resolution-option search-import-resolution-option-active"
+                            : "search-import-resolution-option"
+                        }
+                        key={option.key}
+                      >
+                        <input
+                          checked={importResolutionSelections[issue.key] === option.key}
+                          disabled={Boolean(importSubmitBusy)}
+                          name={issue.key}
+                          onChange={() =>
+                            handleImportResolutionSelectionChange(issue.key, option.key)
+                          }
+                          type="radio"
+                          value={option.key}
+                        />
+                        <span className="search-import-resolution-option-copy">
+                          <strong>{option.name}</strong>
+                          <span>{option.detail}</span>
+                          <span>{option.setName}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ) : issue.blockedMessage ? (
+                  <p className="field-hint field-hint-error">{issue.blockedMessage}</p>
+                ) : null}
+              </fieldset>
+            ))}
+          </div>
+        </div>
+      </>
+    );
   }
 
   function renderImportTargetFields() {
@@ -1287,37 +1673,62 @@ export function SearchPanel(props: {
         isOpen={activeImportDialog === "url"}
         kicker="Import Cards"
         onClose={closeImportDialog}
-        subtitle="Paste a supported public deck URL, then choose an existing collection or create a new one for the import."
-        title="Import From URL"
+        size={urlImportNeedsResolution ? "wide" : "default"}
+        subtitle={getImportDialogStepSubtitle("url", urlImportNeedsResolution ? "needs_resolution" : null)}
+        title={getImportDialogStepTitle("url")}
       >
         <form className="search-import-form" onSubmit={handleImportUrlSubmit}>
-          {renderImportTargetFields()}
+          {urlImportNeedsResolution && activeImportSession ? (
+            renderImportResolutionStep(activeImportSession)
+          ) : (
+            <>
+              {renderImportTargetFields()}
 
-          <label className="field">
-            <span>Deck URL</span>
-            <input
-              className="text-input"
-              data-autofocus
-              disabled={Boolean(importSubmitBusy)}
-              onChange={(event) => setImportUrl(event.target.value)}
-              placeholder="https://www.moxfield.com/decks/..."
-              value={importUrl}
-            />
-          </label>
+              <label className="field">
+                <span>Deck URL</span>
+                <input
+                  className="text-input"
+                  data-autofocus
+                  disabled={Boolean(importSubmitBusy)}
+                  onChange={(event) => setImportUrl(event.target.value)}
+                  placeholder="https://www.moxfield.com/decks/..."
+                  value={importUrl}
+                />
+              </label>
+            </>
+          )}
 
           {importFormError ? <p className="field-hint field-hint-error">{importFormError}</p> : null}
 
           <div className="search-import-actions">
-            <button className="primary-button" disabled={Boolean(importSubmitBusy)} type="submit">
-              {importSubmitBusy === "url" ? "Importing..." : "Import cards"}
+            <button
+              className="primary-button"
+              disabled={Boolean(importSubmitBusy) || (urlImportNeedsResolution && !importResolutionCanContinue)}
+              type="submit"
+            >
+              {importSubmitBusy === "url"
+                ? "Importing..."
+                : urlImportNeedsResolution
+                  ? "Continue import"
+                  : "Import cards"}
             </button>
+            {urlImportNeedsResolution ? (
+              <button
+                className="secondary-button"
+                disabled={Boolean(importSubmitBusy)}
+                onClick={handleImportBackToEdit}
+                type="button"
+              >
+                Back to edit
+              </button>
+            ) : null}
             <button
               className="secondary-button"
               disabled={Boolean(importSubmitBusy)}
               onClick={() => closeImportDialog()}
               type="button"
             >
-              Cancel
+              {urlImportNeedsResolution ? "Close" : "Cancel"}
             </button>
           </div>
         </form>
@@ -1327,37 +1738,62 @@ export function SearchPanel(props: {
         isOpen={activeImportDialog === "text"}
         kicker="Import Cards"
         onClose={closeImportDialog}
-        subtitle="Paste a decklist or card list, then choose an existing collection or create a new one for the import."
-        title="Import As Text"
+        size={textImportNeedsResolution ? "wide" : "default"}
+        subtitle={getImportDialogStepSubtitle("text", textImportNeedsResolution ? "needs_resolution" : null)}
+        title={getImportDialogStepTitle("text")}
       >
         <form className="search-import-form" onSubmit={handleImportTextSubmit}>
-          {renderImportTargetFields()}
+          {textImportNeedsResolution && activeImportSession ? (
+            renderImportResolutionStep(activeImportSession)
+          ) : (
+            <>
+              {renderImportTargetFields()}
 
-          <label className="field">
-            <span>Card list</span>
-            <textarea
-              className="text-area search-import-text-area"
-              data-autofocus
-              disabled={Boolean(importSubmitBusy)}
-              onChange={(event) => setImportDeckText(event.target.value)}
-              placeholder={"4 Lightning Bolt\n2 Counterspell\nSB: 3 Pyroblast"}
-              value={importDeckText}
-            />
-          </label>
+              <label className="field">
+                <span>Card list</span>
+                <textarea
+                  className="text-area search-import-text-area"
+                  data-autofocus
+                  disabled={Boolean(importSubmitBusy)}
+                  onChange={(event) => setImportDeckText(event.target.value)}
+                  placeholder={"4 Lightning Bolt\n2 Counterspell\nSB: 3 Pyroblast"}
+                  value={importDeckText}
+                />
+              </label>
+            </>
+          )}
 
           {importFormError ? <p className="field-hint field-hint-error">{importFormError}</p> : null}
 
           <div className="search-import-actions">
-            <button className="primary-button" disabled={Boolean(importSubmitBusy)} type="submit">
-              {importSubmitBusy === "text" ? "Importing..." : "Import cards"}
+            <button
+              className="primary-button"
+              disabled={Boolean(importSubmitBusy) || (textImportNeedsResolution && !importResolutionCanContinue)}
+              type="submit"
+            >
+              {importSubmitBusy === "text"
+                ? "Importing..."
+                : textImportNeedsResolution
+                  ? "Continue import"
+                  : "Import cards"}
             </button>
+            {textImportNeedsResolution ? (
+              <button
+                className="secondary-button"
+                disabled={Boolean(importSubmitBusy)}
+                onClick={handleImportBackToEdit}
+                type="button"
+              >
+                Back to edit
+              </button>
+            ) : null}
             <button
               className="secondary-button"
               disabled={Boolean(importSubmitBusy)}
               onClick={() => closeImportDialog()}
               type="button"
             >
-              Cancel
+              {textImportNeedsResolution ? "Close" : "Cancel"}
             </button>
           </div>
         </form>
@@ -1367,37 +1803,62 @@ export function SearchPanel(props: {
         isOpen={activeImportDialog === "csv"}
         kicker="Import Cards"
         onClose={closeImportDialog}
-        subtitle="Upload a collection CSV, then choose an existing collection or create a new one for the import."
-        title="Import From CSV"
+        size={csvImportNeedsResolution ? "wide" : "default"}
+        subtitle={getImportDialogStepSubtitle("csv", csvImportNeedsResolution ? "needs_resolution" : null)}
+        title={getImportDialogStepTitle("csv")}
       >
         <form className="search-import-form" onSubmit={handleImportCsvSubmit}>
-          {renderImportTargetFields()}
+          {csvImportNeedsResolution && activeImportSession ? (
+            renderImportResolutionStep(activeImportSession)
+          ) : (
+            <>
+              {renderImportTargetFields()}
 
-          <label className="field">
-            <span>CSV file</span>
-            <input
-              accept=".csv,text/csv"
-              className="search-import-file-input"
-              data-autofocus
-              disabled={Boolean(importSubmitBusy)}
-              onChange={(event) => setImportCsvFile(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </label>
+              <label className="field">
+                <span>CSV file</span>
+                <input
+                  accept=".csv,text/csv"
+                  className="search-import-file-input"
+                  data-autofocus
+                  disabled={Boolean(importSubmitBusy)}
+                  onChange={(event) => setImportCsvFile(event.target.files?.[0] ?? null)}
+                  type="file"
+                />
+              </label>
+            </>
+          )}
 
           {importFormError ? <p className="field-hint field-hint-error">{importFormError}</p> : null}
 
           <div className="search-import-actions">
-            <button className="primary-button" disabled={Boolean(importSubmitBusy)} type="submit">
-              {importSubmitBusy === "csv" ? "Importing..." : "Import cards"}
+            <button
+              className="primary-button"
+              disabled={Boolean(importSubmitBusy) || (csvImportNeedsResolution && !importResolutionCanContinue)}
+              type="submit"
+            >
+              {importSubmitBusy === "csv"
+                ? "Importing..."
+                : csvImportNeedsResolution
+                  ? "Continue import"
+                  : "Import cards"}
             </button>
+            {csvImportNeedsResolution ? (
+              <button
+                className="secondary-button"
+                disabled={Boolean(importSubmitBusy)}
+                onClick={handleImportBackToEdit}
+                type="button"
+              >
+                Back to edit
+              </button>
+            ) : null}
             <button
               className="secondary-button"
               disabled={Boolean(importSubmitBusy)}
               onClick={() => closeImportDialog()}
               type="button"
             >
-              Cancel
+              {csvImportNeedsResolution ? "Close" : "Cancel"}
             </button>
           </div>
         </form>
