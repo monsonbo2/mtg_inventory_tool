@@ -271,19 +271,37 @@ Multipart caveat:
 
 ## File Map
 
-- access control:
+- access control and memberships:
   - `src/mtg_source_stack/inventory/access.py`
   - `src/mtg_source_stack/api/dependencies.py`
-  - `src/mtg_source_stack/api/routes/`
-- catalog search and printing resolution:
-  - `src/mtg_source_stack/inventory/catalog.py`
+  - `src/mtg_source_stack/api/routes/memberships.py`
+  - `src/mtg_source_stack/api/routes/sharing.py`
+- inventory reads, reporting, and export prep:
+  - `src/mtg_source_stack/inventory/service.py`
+  - `src/mtg_source_stack/inventory/analysis.py` (compatibility facade)
+  - `src/mtg_source_stack/inventory/owned_items.py`
+  - `src/mtg_source_stack/inventory/reporting.py`
+  - `src/mtg_source_stack/inventory/valuation.py`
+- catalog search and printing/default-add resolution:
+  - `src/mtg_source_stack/inventory/catalog.py` (compatibility facade)
+  - `src/mtg_source_stack/inventory/catalog_search.py`
+  - `src/mtg_source_stack/inventory/catalog_printings.py`
+  - `src/mtg_source_stack/inventory/catalog_resolution.py`
   - `src/mtg_source_stack/inventory/query_catalog.py`
-  - `tests/test_inventory_service.py`
-  - `tests/test_web_api.py`
-- mutations and response shaping:
-  - `src/mtg_source_stack/inventory/mutations.py`
+- inventory writes and response shaping:
+  - `src/mtg_source_stack/inventory/mutations.py` (compatibility facade)
+  - `src/mtg_source_stack/inventory/operations/`
   - `src/mtg_source_stack/inventory/response_models.py`
   - `src/mtg_source_stack/api/response_models.py`
+- import workflows:
+  - `src/mtg_source_stack/api/routes/imports.py`
+  - `src/mtg_source_stack/inventory/import_engine.py`
+  - `src/mtg_source_stack/inventory/csv_import.py`
+  - `src/mtg_source_stack/inventory/decklist_import.py`
+  - `src/mtg_source_stack/inventory/deck_url_import.py`
+  - `src/mtg_source_stack/inventory/remote_deck_sources.py`
+  - `src/mtg_source_stack/inventory/remote_deck_providers.py`
+  - `src/mtg_source_stack/inventory/remote_deck_planning.py`
 - importer and migrations:
   - `src/mtg_source_stack/importer/scryfall.py`
   - `src/mtg_source_stack/db/migrations/`
@@ -472,11 +490,13 @@ PY
 These files are still understandable, but they are coordination bottlenecks:
 
 - `src/mtg_source_stack/inventory/access.py`
-- `src/mtg_source_stack/inventory/catalog.py`
-- `src/mtg_source_stack/inventory/mutations.py`
-- `src/mtg_source_stack/inventory/analysis.py`
+- `src/mtg_source_stack/inventory/operations/bulk.py`
+- `src/mtg_source_stack/inventory/remote_deck_providers.py`
+- `src/mtg_source_stack/inventory/report_formatters.py`
+- `src/mtg_source_stack/inventory/transfer.py`
 - `src/mtg_source_stack/cli/inventory.py`
 - `scripts/bootstrap_frontend_demo.py`
+- `tests/test_inventory_service.py`
 - `tests/test_web_api.py`
 
 Prefer small extractions and targeted tests over broad rewrites.

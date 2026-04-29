@@ -10,19 +10,31 @@ status and ownership.
 
 ## Current Checkpoint
 
-Last refreshed: `2026-04-23`
+Last refreshed: `2026-04-29`
+
+This checkpoint was refreshed from the local repo state. GitHub remains the
+source of truth for live issue state, PR status, and ownership.
 
 Current local branch:
 
-- `local_install_prep`
+- `issue/47-split-backend-modules`
 
 Current reviewed base:
 
-- `1d35591` / `origin/master`
+- `9a08ed9` / `origin/master`
 
-Most recent merge:
+Most recent local commit:
 
-- PR `#74` / `frontend-refinement`
+- `39fa272` / `Replace CLI star import with explicit shim exports`
+
+Current branch focus:
+
+- finish the `#47` backend module split with explicit public surfaces and doc
+  cleanup
+- keep the compatibility facades stable while documenting the new concrete
+  module layout underneath them
+- avoid starting a second broad refactor unless one of the new concrete
+  hotspots grows again
 
 Open review PR:
 
@@ -36,6 +48,22 @@ Open GitHub issues:
 - `#52` Frontend: complete owner-managed read-only inventory sharing links
 - `#47` Break up oversized backend modules before more feature work lands
 - `#41` Support bulk inventory mutations across all filtered rows
+
+Local structural status:
+
+- the shared import engine split is in place
+- inventory write operations now live under `inventory/operations/`
+- API routes now live under `api/routes/` by route family
+- inventory reads/reporting now live under `owned_items.py`, `reporting.py`,
+  and `valuation.py`, with `analysis.py` kept as a compatibility facade
+- remote deck URL imports now split transport, provider parsing, and planning
+  across `remote_deck_sources.py`, `remote_deck_providers.py`, and
+  `remote_deck_planning.py`
+- catalog logic now splits across `catalog_search.py`,
+  `catalog_printings.py`, and `catalog_resolution.py`, with `catalog.py` kept
+  as a compatibility facade
+- the remaining local follow-through is documentation, explicit surface
+  declarations, and small cleanup rather than another large structural slice
 
 Readiness summary:
 
