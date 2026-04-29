@@ -14,6 +14,14 @@ import { useCardSearch } from "./hooks/useCardSearch";
 import { useCollectionViewState } from "./hooks/useCollectionViewState";
 import { useInventoryOverview } from "./hooks/useInventoryOverview";
 import { useInventoryMutations } from "./hooks/useInventoryMutations";
+import {
+  canCopyFromInventory,
+  canMoveFromInventory,
+  getAvailableTransferTargetInventories,
+  getTransferTargetInventories,
+  getWritableInventories,
+  isWritableInventory,
+} from "./inventoryCapabilities";
 import { decimalToNumber, formatUsd } from "./uiHelpers";
 import type { AppShellState } from "./uiTypes";
 import type { AccessSummaryResponse } from "./types";
@@ -257,10 +265,25 @@ export default function App() {
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
   );
+  const selectedInventoryCanWrite = isWritableInventory(selectedInventoryRow);
+  const writableInventories = getWritableInventories(inventories);
+  const availableCopyTargetInventories = getTransferTargetInventories(inventories, {
+    mode: "copy",
+    sourceInventory: selectedInventoryRow,
+  });
+  const availableMoveTargetInventories = getTransferTargetInventories(inventories, {
+    mode: "move",
+    sourceInventory: selectedInventoryRow,
+  });
+  const availableTransferTargetInventories = getAvailableTransferTargetInventories(
+    inventories,
+    selectedInventoryRow,
+  );
   const searchPanelState = {
     activeSearchGroupId,
     busyAddCardId,
     inventories,
+    selectedInventoryCanWrite,
     searchResultsVisible,
     searchWorkspaceMode,
     search: {
@@ -280,6 +303,7 @@ export default function App() {
       totalCount: searchTotalCount,
     },
     selectedInventoryRow,
+    writableInventories,
     suggestions: {
       error: suggestionError,
       highlightedIndex: highlightedSuggestionIndex,
@@ -327,12 +351,16 @@ export default function App() {
       viewStatus: collectionViewStatus,
     },
     selectedInventoryRow,
+    selectedInventoryCanWrite,
     table: {
       allItemsCount: filteredTableItemsCount,
-      availableTargetInventories: inventories.filter(
-        (inventory) => inventory.slug !== selectedInventory,
-      ),
+      availableCopyTargetInventories,
+      availableMoveTargetInventories,
+      availableTargetInventories: availableTransferTargetInventories,
       bulkMutationBusy,
+      canBulkEditSelectedInventory: selectedInventoryCanWrite,
+      canCopyFromSelectedInventory: canCopyFromInventory(selectedInventoryRow),
+      canMoveFromSelectedInventory: canMoveFromInventory(selectedInventoryRow),
       createInventoryBusy,
       filterOptions: tableFilterOptions,
       filters: tableFilters,

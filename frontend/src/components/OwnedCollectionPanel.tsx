@@ -30,6 +30,7 @@ import { StatusPill } from "./ui/StatusPill";
 
 type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
+  selectedInventoryCanWrite: boolean;
   collection: {
     browsePage: number;
     browsePageCount: number;
@@ -49,7 +50,12 @@ type OwnedCollectionPanelState = {
   table: {
     allItemsCount: number;
     availableTargetInventories: InventorySummary[];
+    availableCopyTargetInventories: InventorySummary[];
+    availableMoveTargetInventories: InventorySummary[];
     bulkMutationBusy: boolean;
+    canBulkEditSelectedInventory: boolean;
+    canCopyFromSelectedInventory: boolean;
+    canMoveFromSelectedInventory: boolean;
     createInventoryBusy: boolean;
     filterOptions: InventoryTableFilterOptions;
     filters: InventoryTableFilters;
@@ -243,8 +249,13 @@ export function OwnedCollectionPanel(props: {
         props.state.collection.view === "table" ? (
           <InventoryTableView
             allItemsCount={props.state.table.allItemsCount}
+            availableCopyTargetInventories={props.state.table.availableCopyTargetInventories}
+            availableMoveTargetInventories={props.state.table.availableMoveTargetInventories}
             availableTargetInventories={props.state.table.availableTargetInventories}
             bulkMutationBusy={props.state.table.bulkMutationBusy}
+            canBulkEditSelectedInventory={props.state.table.canBulkEditSelectedInventory}
+            canCopyFromSelectedInventory={props.state.table.canCopyFromSelectedInventory}
+            canMoveFromSelectedInventory={props.state.table.canMoveFromSelectedInventory}
             collectionItemCount={props.state.collection.items.length}
             createInventoryBusy={props.state.table.createInventoryBusy}
             filterOptions={props.state.table.filterOptions}
@@ -269,6 +280,7 @@ export function OwnedCollectionPanel(props: {
         ) : (
           <CompactInventoryList
             busyItem={props.state.collection.busyItem}
+            editable={props.state.selectedInventoryCanWrite}
             items={props.state.collection.visibleItems}
             onOpenDetails={props.actions.onOpenItemDetails}
             onPatch={props.actions.onPatch}
@@ -445,6 +457,13 @@ export function OwnedCollectionPanel(props: {
         <p className="panel-error">Could not refresh this collection right now.</p>
       ) : null}
 
+      {showViewControls && !props.state.selectedInventoryCanWrite ? (
+        <p className="panel-hint">
+          This collection is read-only. You can browse cards, but edits and row removal are
+          disabled.
+        </p>
+      ) : null}
+
       <div className="collection-grid">
         {collectionContent}
       </div>
@@ -455,7 +474,11 @@ export function OwnedCollectionPanel(props: {
           kicker="Collection Entry"
           onClose={props.actions.onCloseItemDetails}
           size="wide"
-          subtitle="Review and edit this card without leaving Browse mode."
+          subtitle={
+            props.state.selectedInventoryCanWrite
+              ? "Review and edit this card without leaving Browse mode."
+              : "Review this card without leaving Browse mode. This collection is read-only."
+          }
           title="Card details"
         >
           <OwnedItemCard
@@ -464,6 +487,7 @@ export function OwnedCollectionPanel(props: {
                 ? props.state.collection.busyItem.action
                 : null
             }
+            editable={props.state.selectedInventoryCanWrite}
             item={detailModalItem}
             onDelete={async (itemId: number, cardName: string) => {
               const result = await props.actions.onDelete(itemId, cardName);

@@ -30,6 +30,7 @@ import { CardThumbnail } from "./ui/CardThumbnail";
 export function OwnedItemCard(props: {
   item: OwnedInventoryRow;
   busyAction: ItemMutationAction | null;
+  editable: boolean;
   focused?: boolean;
   onPatch: (
     itemId: number,
@@ -87,6 +88,9 @@ export function OwnedItemCard(props: {
   }, [props.focused]);
 
   async function saveQuantity() {
+    if (!props.editable) {
+      return;
+    }
     if (!quantityIsValid) {
       props.onNotice("Enter a whole-number quantity greater than 0.", "error");
       return;
@@ -95,10 +99,16 @@ export function OwnedItemCard(props: {
   }
 
   async function saveFinish() {
+    if (!props.editable) {
+      return;
+    }
     await props.onPatch(props.item.item_id, "finish", { finish });
   }
 
   async function saveLocation() {
+    if (!props.editable) {
+      return;
+    }
     const trimmed = location.trim();
     await props.onPatch(
       props.item.item_id,
@@ -108,6 +118,9 @@ export function OwnedItemCard(props: {
   }
 
   async function saveNotes() {
+    if (!props.editable) {
+      return;
+    }
     const trimmed = notes.trim();
     await props.onPatch(
       props.item.item_id,
@@ -117,6 +130,9 @@ export function OwnedItemCard(props: {
   }
 
   async function saveTags() {
+    if (!props.editable) {
+      return;
+    }
     const parsedTags = parseTags(tags);
     await props.onPatch(
       props.item.item_id,
@@ -126,6 +142,9 @@ export function OwnedItemCard(props: {
   }
 
   async function handleDelete() {
+    if (!props.editable) {
+      return;
+    }
     const confirmed = window.confirm(
       `Remove ${props.item.name} from the selected collection?`,
     );
@@ -247,21 +266,28 @@ export function OwnedItemCard(props: {
 
       <div className="editor-section-header">
         <strong>Inline edits</strong>
-        <span>{hasDirtyChanges ? "Save the highlighted changes below" : "Adjust any field below"}</span>
+        <span>
+          {props.editable
+            ? hasDirtyChanges
+              ? "Save the highlighted changes below"
+              : "Adjust any field below"
+            : "This collection is read-only. Edits and row removal are disabled."}
+        </span>
       </div>
 
       <div className="editor-grid">
         <InlineEditor
           dirty={quantityDirty}
           invalid={quantityHasError}
-          disabled={isBusy || !quantityDirty}
+          disabled={!props.editable || isBusy || !quantityDirty}
           busy={props.busyAction === "quantity"}
           label="Quantity"
           onSave={saveQuantity}
+          readOnly={!props.editable}
         >
           <input
             className="text-input"
-            disabled={isBusy}
+            disabled={isBusy || !props.editable}
             min="1"
             onChange={(event) => setQuantity(event.target.value)}
             type="number"
@@ -271,16 +297,17 @@ export function OwnedItemCard(props: {
 
         <InlineEditor
           dirty={finishDirty}
-          disabled={isBusy || !finishDirty || finishEditorLocked}
+          disabled={!props.editable || isBusy || !finishDirty || finishEditorLocked}
           busy={props.busyAction === "finish"}
           hint={finishHint}
           hintTone="info"
           label="Finish"
           onSave={saveFinish}
+          readOnly={!props.editable}
         >
           <select
             className="text-input"
-            disabled={isBusy || finishEditorLocked}
+            disabled={isBusy || !props.editable || finishEditorLocked}
             onChange={(event) => setFinish(event.target.value as FinishValue)}
             value={finish}
           >
@@ -294,14 +321,15 @@ export function OwnedItemCard(props: {
 
         <InlineEditor
           dirty={locationDirty}
-          disabled={isBusy || !locationDirty}
+          disabled={!props.editable || isBusy || !locationDirty}
           busy={props.busyAction === "location"}
           label="Location"
           onSave={saveLocation}
+          readOnly={!props.editable}
         >
           <input
             className="text-input"
-            disabled={isBusy}
+            disabled={isBusy || !props.editable}
             onChange={(event) => setLocation(event.target.value)}
             placeholder="Row location"
             value={location}
@@ -310,14 +338,15 @@ export function OwnedItemCard(props: {
 
         <InlineEditor
           dirty={tagsDirty}
-          disabled={isBusy || !tagsDirty}
+          disabled={!props.editable || isBusy || !tagsDirty}
           busy={props.busyAction === "tags"}
           label="Tags"
           onSave={saveTags}
+          readOnly={!props.editable}
         >
           <input
             className="text-input"
-            disabled={isBusy}
+            disabled={isBusy || !props.editable}
             onChange={(event) => setTags(event.target.value)}
             placeholder="burn, trade"
             value={tags}
@@ -327,15 +356,16 @@ export function OwnedItemCard(props: {
 
       <InlineEditor
         dirty={notesDirty}
-        disabled={isBusy || !notesDirty}
+        disabled={!props.editable || isBusy || !notesDirty}
         busy={props.busyAction === "notes"}
         label="Notes"
         onSave={saveNotes}
+        readOnly={!props.editable}
         wide
       >
         <textarea
           className="text-area"
-          disabled={isBusy}
+          disabled={isBusy || !props.editable}
           onChange={(event) => setNotes(event.target.value)}
           rows={3}
           value={notes}
@@ -356,7 +386,7 @@ export function OwnedItemCard(props: {
         </div>
         <button
           className="danger-button"
-          disabled={isBusy}
+          disabled={isBusy || !props.editable}
           onClick={() => {
             void handleDelete();
           }}
@@ -377,6 +407,7 @@ function InlineEditor(props: {
   dirty?: boolean;
   invalid?: boolean;
   disabled?: boolean;
+  readOnly?: boolean;
   hint?: string;
   hintTone?: "info" | "error" | "success";
   wide?: boolean;
@@ -404,6 +435,8 @@ function InlineEditor(props: {
         >
           {props.busy
             ? "Saving..."
+            : props.readOnly
+              ? "View only"
             : props.invalid
               ? "Fix value"
               : props.dirty

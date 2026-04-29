@@ -501,6 +501,187 @@ describe("App", () => {
     expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
   });
 
+  it("keeps quick add read-only when the selected collection cannot be written to", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(listInventories).mockResolvedValue([viewerInventory]);
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
+        return buildNameSearchResult([buildNameSearchRow()]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(
+      buildPrintingSummary([
+        buildSearchRow({
+          scryfall_id: "bolt-m11",
+          set_code: "m11",
+          set_name: "Magic 2011",
+          collector_number: "146",
+          finishes: ["normal", "foil"],
+          is_default_add_choice: true,
+        }),
+      ]),
+    );
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.type(input, "Lightning");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    expect(
+      await screen.findByText(
+        "Personal Collection is read-only. Switch to a writable collection to add cards, or choose another destination when importing.",
+      ),
+    ).toBeInTheDocument();
+
+    const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltCard).not.toBeNull();
+    const boltCardScope = within(boltCard!);
+    expect(
+      boltCardScope.getByText(
+        "This collection is read-only. Choose a writable collection before adding cards.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      boltCardScope.getByRole("button", { name: "Read-only collection" }),
+    ).toBeDisabled();
+    expect(boltCardScope.getByRole("spinbutton", { name: "Qty" })).toBeDisabled();
+    expect(addInventoryItem).not.toHaveBeenCalled();
+  });
+
+  it("shows only writable collections as existing import targets", async () => {
+    const user = userEvent.setup();
+    const personalViewer = buildInventorySummary({
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+    const tradeEditor = buildInventorySummary({
+      slug: "trade",
+      display_name: "Trade Binder",
+      description: "Cards for trades",
+      item_rows: 3,
+      total_cards: 12,
+      role: "editor",
+      can_write: true,
+    });
+    const archiveViewer = buildInventorySummary({
+      slug: "archive",
+      display_name: "Archive Box",
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+      can_transfer_to: false,
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(listInventories).mockResolvedValue([personalViewer, tradeEditor, archiveViewer]);
+    vi.mocked(importDecklist).mockResolvedValue(
+      buildDecklistImportResponse({ default_inventory: "trade" }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Import Cards" }));
+    await user.click(screen.getByRole("menuitem", { name: /Import as Text/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import As Text" });
+    expect(within(dialog).getByRole("button", { name: /Add to existing/i })).toBeEnabled();
+    expect(
+      within(dialog).queryByRole("button", { name: /Personal Collection/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /Trade Binder/i }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: /Archive Box/i })).not.toBeInTheDocument();
+
+    await user.type(within(dialog).getByRole("textbox", { name: "Card list" }), "4 Lightning Bolt");
+    await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
+
+    await waitFor(() => {
+      expect(importDecklist).toHaveBeenCalledWith({
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "trade",
+      });
+    });
+  });
+
+  it("keeps browse rows read-only for viewer access", async () => {
+    const viewerInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockCollectionViewApp({ inventories: [viewerInventory] });
+
+    render(<App />);
+
+    expect(
+      await screen.findByText(
+        "This collection is read-only. You can browse cards, but edits and row removal are disabled.",
+      ),
+    ).toBeInTheDocument();
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+
+    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("combobox", { name: /Location/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("textbox", { name: /Tags/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("button", { name: "Open details" })).toBeEnabled();
+  });
+
+  it("keeps the detail dialog read-only for viewer access", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockCollectionViewApp({ inventories: [viewerInventory] });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+
+    await user.click(within(boltRow!).getByRole("button", { name: "Open details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Card details" });
+    expect(
+      within(dialog).getByText("This collection is read-only. Edits and row removal are disabled."),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("spinbutton", { name: /Quantity/ })).toBeDisabled();
+    expect(within(dialog).getByRole("combobox", { name: /Finish/ })).toBeDisabled();
+    expect(within(dialog).getByRole("textbox", { name: /Location/ })).toBeDisabled();
+    expect(within(dialog).getByRole("textbox", { name: /Tags/ })).toBeDisabled();
+    expect(within(dialog).getByRole("textbox", { name: /Notes/ })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Remove row" })).toBeDisabled();
+    expect(within(dialog).getAllByRole("button", { name: "View only" }).length).toBeGreaterThan(0);
+  });
+
   it("shows the unresolved card name after a partial URL import and closes the dialog", async () => {
     const user = userEvent.setup();
 
@@ -3212,6 +3393,54 @@ describe("App", () => {
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).toBeChecked();
   });
 
+  it("keeps table selection available for viewer access without showing write actions", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      item_rows: 2,
+      total_cards: 3,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+      inventories: [viewerInventory],
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+
+    expect(screen.getByText("2 entries selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Clear selection" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Bulk edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy to collection" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Move to collection" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This collection is read-only. Selection is available, but bulk edit, copy, and move are unavailable.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("can select the entire collection from the table even when not all rows are visible", async () => {
     const user = userEvent.setup();
     const items = Array.from({ length: 60 }, (_, index) =>
@@ -3320,6 +3549,52 @@ describe("App", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Copied 2 entries to Trade Binder.",
     );
+  });
+
+  it("filters non-transferable collections out of the table copy tray", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+      inventories: [
+        buildInventorySummary({
+          item_rows: 1,
+          total_cards: 2,
+        }),
+        buildInventorySummary({
+          slug: "trade",
+          display_name: "Trade Binder",
+          description: "Cards available for swaps",
+          item_rows: 4,
+          total_cards: 6,
+          can_transfer_to: true,
+        }),
+        buildInventorySummary({
+          slug: "archive",
+          display_name: "Archive Box",
+          description: "Long-term storage",
+          item_rows: 10,
+          total_cards: 120,
+          can_transfer_to: false,
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+    await user.click(screen.getByRole("button", { name: "Copy to collection" }));
+
+    const tray = screen.getByRole("region", { name: "Copy to collection tray" });
+    const destinationSelect = within(tray).getByRole("combobox", {
+      name: "Destination collection",
+    });
+
+    expect(within(destinationSelect).getByRole("option", { name: "Trade Binder" })).toBeInTheDocument();
+    expect(
+      within(destinationSelect).queryByRole("option", { name: "Archive Box" }),
+    ).not.toBeInTheDocument();
   });
 
   it("creates a new collection during a move transfer and sends the whole collection when selected", async () => {

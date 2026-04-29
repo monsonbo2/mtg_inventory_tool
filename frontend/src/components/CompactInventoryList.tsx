@@ -24,6 +24,7 @@ import { CardThumbnail } from "./ui/CardThumbnail";
 export function CompactInventoryList(props: {
   items: OwnedInventoryRow[];
   busyItem: { itemId: number; action: ItemMutationAction } | null;
+  editable: boolean;
   onOpenDetails: (itemId: number) => void;
   onPatch: (
     itemId: number,
@@ -46,6 +47,7 @@ export function CompactInventoryList(props: {
       {props.items.map((item) => (
         <CompactInventoryRow
           busyAction={props.busyItem?.itemId === item.item_id ? props.busyItem.action : null}
+          editable={props.editable}
           item={item}
           key={item.item_id}
           locationSuggestionsId={locationSuggestions.length ? locationSuggestionsId : undefined}
@@ -60,6 +62,7 @@ export function CompactInventoryList(props: {
 function CompactInventoryRow(props: {
   item: OwnedInventoryRow;
   busyAction: ItemMutationAction | null;
+  editable: boolean;
   locationSuggestionsId?: string;
   onOpenDetails: (itemId: number) => void;
   onPatch: (
@@ -150,6 +153,9 @@ function CompactInventoryRow(props: {
   }
 
   async function saveQuantity() {
+    if (!props.editable) {
+      return;
+    }
     if (!quantityIsValid) {
       return;
     }
@@ -162,6 +168,9 @@ function CompactInventoryRow(props: {
   }
 
   async function saveLocation() {
+    if (!props.editable) {
+      return;
+    }
     const trimmed = location.trim();
     const outcome = await props.onPatch(
       props.item.item_id,
@@ -174,6 +183,9 @@ function CompactInventoryRow(props: {
   }
 
   async function saveTags(nextTags: string[]) {
+    if (!props.editable) {
+      return "failed" as const;
+    }
     const outcome = await props.onPatch(
       props.item.item_id,
       "tags",
@@ -186,6 +198,9 @@ function CompactInventoryRow(props: {
   }
 
   async function commitPendingTags() {
+    if (!props.editable) {
+      return;
+    }
     const parsedDraftTags = parseTags(tagDraft);
     if (!parsedDraftTags.length) {
       return;
@@ -216,6 +231,9 @@ function CompactInventoryRow(props: {
   }
 
   async function removeTag(tagToRemove: string) {
+    if (!props.editable) {
+      return;
+    }
     const nextTags = tags.filter((tag) => tag !== tagToRemove);
     shouldRestoreTagFocusRef.current = true;
     setRemovingTag(tagToRemove);
@@ -303,10 +321,10 @@ function CompactInventoryRow(props: {
           >
             <input
               className="text-input"
-              disabled={isBusy}
+              disabled={isBusy || !props.editable}
               min="1"
               onBlur={() => {
-                if (quantityDirty && quantityIsValid) {
+                if (props.editable && quantityDirty && quantityIsValid) {
                   void saveQuantity();
                 }
               }}
@@ -328,13 +346,13 @@ function CompactInventoryRow(props: {
           <InlineEditor dirty={finishDirty} label="Finish" saved={savedField === "finish"}>
             <select
               className="text-input"
-              disabled={isBusy || finishEditorLocked}
+              disabled={isBusy || !props.editable || finishEditorLocked}
               onChange={(event) => {
                 const nextFinish = event.target.value as FinishValue;
                 setSavedField(null);
                 setFinish(nextFinish);
                 const persistedFinish = props.item.finish;
-                if (nextFinish !== persistedFinish) {
+                if (props.editable && nextFinish !== persistedFinish) {
                   void (async () => {
                     const outcome = await props.onPatch(props.item.item_id, "finish", {
                       finish: nextFinish,
@@ -361,10 +379,10 @@ function CompactInventoryRow(props: {
           <InlineEditor dirty={locationDirty} label="Location" saved={savedField === "location"}>
             <input
               className="text-input"
-              disabled={isBusy}
+              disabled={isBusy || !props.editable}
               list={props.locationSuggestionsId}
               onBlur={() => {
-                if (locationDirty) {
+                if (props.editable && locationDirty) {
                   void saveLocation();
                 }
               }}
@@ -400,6 +418,9 @@ function CompactInventoryRow(props: {
                 }
               }}
               onMouseDown={(event) => {
+                if (!props.editable) {
+                  return;
+                }
                 if (tagsActive) {
                   return;
                 }
@@ -414,12 +435,16 @@ function CompactInventoryRow(props: {
                   tagInputRef.current?.focus();
                 });
               }}
-              onFocus={() => setTagsActive(true)}
+              onFocus={() => {
+                if (props.editable) {
+                  setTagsActive(true);
+                }
+              }}
               ref={tagsFieldRef}
             >
               <input
                 className="text-input"
-                disabled={isBusy}
+                disabled={isBusy || !props.editable}
                 ref={tagInputRef}
                 onChange={(event) => {
                   setSavedField(null);
@@ -428,7 +453,9 @@ function CompactInventoryRow(props: {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    void commitPendingTags();
+                    if (props.editable) {
+                      void commitPendingTags();
+                    }
                     return;
                   }
 

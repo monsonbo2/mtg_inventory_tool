@@ -16,7 +16,12 @@ import {
   normalizeOptionalText,
   normalizeTagInputText,
 } from "../uiHelpers";
-import type { AsyncStatus, InventoryCreateResult, NoticeTone } from "../uiTypes";
+import type {
+  AsyncStatus,
+  InventoryCreateResult,
+  NoticeTone,
+  SearchAddAvailability,
+} from "../uiTypes";
 import { SearchAutocomplete } from "./SearchAutocomplete";
 import { PanelState } from "./ui/PanelState";
 import { ModalDialog } from "./ui/ModalDialog";
@@ -64,7 +69,9 @@ function measureSearchWorkspaceContentHeight(workspaceNode: HTMLDivElement) {
 
 export type SearchPanelState = {
   selectedInventoryRow: InventorySummary | null;
+  selectedInventoryCanWrite: boolean;
   inventories: InventorySummary[];
+  writableInventories: InventorySummary[];
   activeSearchGroupId: string | null;
   busyAddCardId: string | null;
   searchResultsVisible: boolean;
@@ -181,6 +188,14 @@ export function SearchPanel(props: {
     reserveHeight: 0,
   });
   const hasSearchResults = props.state.search.groups.length > 0;
+  const existingImportTargetInventories = props.state.writableInventories;
+  const hasExistingImportTargets = existingImportTargetInventories.length > 0;
+  const selectedInventoryAddAvailability: SearchAddAvailability =
+    !props.state.selectedInventoryRow
+      ? "unselected"
+      : props.state.selectedInventoryCanWrite
+        ? "writable"
+        : "read_only";
   const showSearchResults = props.state.searchResultsVisible && hasSearchResults;
   const showAutocomplete = props.state.suggestions.isOpen;
   const activeSearchGroup =
@@ -274,21 +289,25 @@ export function SearchPanel(props: {
   }, [importMenuOpen]);
 
   useEffect(() => {
-    const defaultInventorySlug =
-      props.state.selectedInventoryRow?.slug ?? props.state.inventories[0]?.slug ?? null;
+    const defaultInventorySlug = getDefaultImportTargetInventorySlug();
     setImportTargetInventorySlug((current) => {
       if (
         current &&
-        props.state.inventories.some((inventory) => inventory.slug === current)
+        existingImportTargetInventories.some((inventory) => inventory.slug === current)
       ) {
         return current;
       }
       return defaultInventorySlug;
     });
-    if (!props.state.inventories.length) {
+    if (!hasExistingImportTargets) {
       setImportTargetMode("create");
     }
-  }, [props.state.inventories, props.state.selectedInventoryRow]);
+  }, [
+    existingImportTargetInventories,
+    hasExistingImportTargets,
+    props.state.selectedInventoryCanWrite,
+    props.state.selectedInventoryRow,
+  ]);
 
   useEffect(() => {
     if (!showSearchMatches || !activeSearchGroup) {
@@ -531,7 +550,10 @@ export function SearchPanel(props: {
       : undefined;
 
   function getDefaultImportTargetInventorySlug() {
-    return props.state.selectedInventoryRow?.slug ?? props.state.inventories[0]?.slug ?? null;
+    if (props.state.selectedInventoryCanWrite && props.state.selectedInventoryRow) {
+      return props.state.selectedInventoryRow.slug;
+    }
+    return existingImportTargetInventories[0]?.slug ?? null;
   }
 
   function resetImportDialogState() {
@@ -638,8 +660,9 @@ export function SearchPanel(props: {
       return {
         inventorySlug: importTargetInventorySlug,
         inventoryLabel:
-          props.state.inventories.find((inventory) => inventory.slug === importTargetInventorySlug)
-            ?.display_name || null,
+          existingImportTargetInventories.find(
+            (inventory) => inventory.slug === importTargetInventorySlug,
+          )?.display_name || null,
       };
     }
 
@@ -796,7 +819,7 @@ export function SearchPanel(props: {
                 ? "secondary-button search-import-target-mode-button search-import-target-mode-button-active"
                 : "secondary-button search-import-target-mode-button"
             }
-            disabled={!props.state.inventories.length || Boolean(importSubmitBusy)}
+            disabled={!hasExistingImportTargets || Boolean(importSubmitBusy)}
             onClick={() => handleImportTargetModeChange("existing")}
             type="button"
           >
@@ -818,26 +841,32 @@ export function SearchPanel(props: {
         </div>
 
         {importTargetMode === "existing" ? (
-          <div className="search-import-target-list">
-            {props.state.inventories.map((inventory) => (
-              <button
-                key={inventory.slug}
-                className={
-                  importTargetInventorySlug === inventory.slug
-                    ? "search-import-target-option search-import-target-option-active"
-                    : "search-import-target-option"
-                }
-                disabled={Boolean(importSubmitBusy)}
-                onClick={() => handleImportTargetInventoryChange(inventory.slug)}
-                type="button"
-              >
-                <strong>{inventory.display_name}</strong>
-                <span className="search-import-target-option-meta">
-                  {inventory.item_rows} entr{inventory.item_rows === 1 ? "y" : "ies"} · {inventory.total_cards} cards
-                </span>
-              </button>
-            ))}
-          </div>
+          hasExistingImportTargets ? (
+            <div className="search-import-target-list">
+              {existingImportTargetInventories.map((inventory) => (
+                <button
+                  key={inventory.slug}
+                  className={
+                    importTargetInventorySlug === inventory.slug
+                      ? "search-import-target-option search-import-target-option-active"
+                      : "search-import-target-option"
+                  }
+                  disabled={Boolean(importSubmitBusy)}
+                  onClick={() => handleImportTargetInventoryChange(inventory.slug)}
+                  type="button"
+                >
+                  <strong>{inventory.display_name}</strong>
+                  <span className="search-import-target-option-meta">
+                    {inventory.item_rows} entr{inventory.item_rows === 1 ? "y" : "ies"} · {inventory.total_cards} cards
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="field-hint field-hint-info">
+              No writable collections are available yet. Create a new collection to continue.
+            </p>
+          )
         ) : (
           <div className="search-import-create-grid">
             <label className="field">
@@ -1069,6 +1098,11 @@ export function SearchPanel(props: {
         <p className="panel-hint">
           Search is available now. Choose a collection to enable add actions.
         </p>
+      ) : selectedInventoryAddAvailability === "read_only" ? (
+        <p className="panel-hint">
+          {props.state.selectedInventoryRow.display_name} is read-only. Switch to a writable
+          collection to add cards, or choose another destination when importing.
+        </p>
       ) : props.state.selectedInventoryRow.total_cards === 0 ? (
         <p className="panel-hint panel-hint-success">
           {props.state.selectedInventoryRow.display_name} is ready for its first cards. Use search
@@ -1228,7 +1262,7 @@ export function SearchPanel(props: {
             <div className="search-workspace-detail" ref={searchWorkspaceDetailRef}>
               <SearchResultCard
                 busyPrintingId={props.state.busyAddCardId}
-                canAdd={Boolean(props.state.selectedInventoryRow)}
+                addAvailability={selectedInventoryAddAvailability}
                 defaultLocation={props.state.selectedInventoryRow?.default_location || null}
                 defaultTags={props.state.selectedInventoryRow?.default_tags || null}
                 group={activeSearchGroup}

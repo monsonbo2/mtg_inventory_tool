@@ -36,6 +36,7 @@ function renderCard(overrides: Partial<OwnedInventoryRow> = {}) {
   return render(
     <OwnedItemCard
       busyAction={null}
+      editable
       item={{ ...item, ...overrides }}
       onDelete={async () => "applied"}
       onNotice={() => {}}
