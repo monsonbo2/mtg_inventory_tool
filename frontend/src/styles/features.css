@@ -2291,6 +2291,31 @@
   padding-right: 0;
 }
 
+.search-result-titlebar {
+  align-items: start;
+}
+
+.search-result-title-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-result-title-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.search-result-title-detail {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .result-card-header,
 .owned-card-header,
 .owned-card-footer,
@@ -2299,20 +2324,6 @@
   justify-content: space-between;
   gap: 12px;
   align-items: start;
-}
-
-.result-card-subtitle {
-  color: var(--text-muted);
-  margin: 4px 0 0;
-  font-size: 0.84rem;
-  line-height: 1.35;
-}
-
-.search-result-hero-actions {
-  align-items: start;
-  display: grid;
-  gap: 0;
-  justify-items: end;
 }
 
 .search-result-add-button {
@@ -2347,6 +2358,8 @@
 .search-result-form-shell {
   gap: 10px;
   padding: 12px;
+  scroll-margin-top: 32px;
+  scroll-margin-bottom: 32px;
 }
 
 .result-card .card-thumb-search {
@@ -2388,8 +2401,9 @@
 }
 
 .search-result-support-strip {
-  align-items: start;
+  align-items: center;
   grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 32px;
 }
 
 .search-result-support-copy {
@@ -2399,6 +2413,7 @@
 .search-result-support-actions {
   align-items: center;
   grid-auto-flow: column;
+  gap: 8px;
   justify-content: end;
 }
 
@@ -2413,40 +2428,33 @@
 
 .search-result-note-toggle {
   align-self: center;
-  color: var(--accent-paper);
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 .search-printing-expander-button {
   flex: 0 0 auto;
-  padding: 9px 12px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
   white-space: nowrap;
-}
-
-.search-printing-current {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.34);
-  color: var(--text-soft);
-  font-size: 0.83rem;
-  line-height: 1.35;
 }
 
 .search-language-picker-inline {
   display: grid;
-  gap: 6px;
-  min-width: 124px;
+  gap: 4px;
+  min-width: 116px;
 }
 
 .search-language-picker-inline label {
   color: var(--text-muted);
   font-size: 0.74rem;
   line-height: 1.2;
+}
+
+.search-language-picker-inline .text-input {
+  min-height: 40px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 .search-printing-mode-pill {

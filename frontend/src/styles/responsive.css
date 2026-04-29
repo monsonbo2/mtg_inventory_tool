@@ -111,6 +111,11 @@
     padding-right: 0;
   }
 
+  .search-result-titlebar {
+    flex-direction: row;
+    align-items: start;
+  }
+
   .card-thumb-search,
   .card-thumb-owned {
     width: min(180px, 44vw);
@@ -181,13 +186,6 @@
   .table-query-panel-header {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .search-result-hero-actions {
-    justify-content: end;
-    min-width: 0;
-    position: static;
-    transform: none;
   }
 
   .search-result-add-button {

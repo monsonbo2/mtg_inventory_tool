@@ -1541,10 +1541,8 @@ describe("App", () => {
     const user = userEvent.setup();
     const originalGetBoundingClientRect =
       window.HTMLElement.prototype.getBoundingClientRect;
-    const originalWindowScrollTo = window.scrollTo;
-    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
-    const windowScrollToSpy = vi.fn();
-    const scrollToSpy = vi.fn();
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
 
     function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
       return {
@@ -1560,28 +1558,21 @@ describe("App", () => {
       } as DOMRect;
     }
 
-    Object.defineProperty(window, "scrollTo", {
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
-      value: windowScrollToSpy,
-    });
-    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
-      configurable: true,
-      value: scrollToSpy,
+      value: scrollIntoViewSpy,
     });
     Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
       configurable: true,
       value: function mockGetBoundingClientRect(this: HTMLElement) {
         if (this.classList.contains("search-workspace")) {
-          return buildRect(96, 420);
-        }
-        if (this.classList.contains("search-workspace-header")) {
-          return buildRect(112, 86);
+          return buildRect(520, 420);
         }
         if (
           this.classList.contains("form-section") &&
           this.querySelector(".search-result-quick-add-grid")
         ) {
-          return buildRect(352, 280);
+          return buildRect(584, 280);
         }
         return originalGetBoundingClientRect.call(this);
       },
@@ -1628,36 +1619,128 @@ describe("App", () => {
       });
       workspace!.scrollTop = 0;
 
-      scrollToSpy.mockClear();
+      scrollIntoViewSpy.mockClear();
 
       await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
 
       await waitFor(() => {
-        expect(windowScrollToSpy).toHaveBeenCalledWith(
+        expect(scrollIntoViewSpy).toHaveBeenCalledWith(
           expect.objectContaining({
             behavior: "smooth",
-          }),
-        );
-      });
-      await waitFor(() => {
-        expect(scrollToSpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            behavior: "smooth",
+            block: "start",
           }),
         );
       });
     } finally {
-      Object.defineProperty(window, "scrollTo", {
-        configurable: true,
-        value: originalWindowScrollTo,
-      });
       Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
         configurable: true,
         value: originalGetBoundingClientRect,
       });
-      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
         configurable: true,
-        value: originalScrollTo,
+        value: originalScrollIntoView,
+      });
+    }
+  });
+
+  it("expands the focus workspace height to fit the full add-card pane content", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (this.classList.contains("search-workspace")) {
+          return buildRect(520, 420);
+        }
+        if (
+          this.classList.contains("form-section") &&
+          this.querySelector(".search-result-quick-add-grid")
+        ) {
+          return buildRect(584, 280);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+      await screen.findByText("Matching cards");
+      const workspace = container.querySelector(".search-workspace") as HTMLDivElement | null;
+      const searchPanel = container.querySelector(".search-panel") as HTMLElement | null;
+      expect(workspace).not.toBeNull();
+      expect(searchPanel).not.toBeNull();
+
+      Object.defineProperty(workspace!, "clientHeight", {
+        configurable: true,
+        value: 420,
+      });
+      Object.defineProperty(workspace!, "scrollHeight", {
+        configurable: true,
+        value: 680,
+      });
+
+      await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
+
+      await waitFor(() => {
+        expect(searchPanel).toHaveStyle({
+          "--search-workspace-overlay-height": "680px",
+        });
+      });
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
       });
     }
   });
@@ -2074,7 +2157,7 @@ describe("App", () => {
       }),
     ).not.toBeInTheDocument();
     expect(within(boltCard!).getByText("Using default printing")).toBeInTheDocument();
-    expect(boltCard!.querySelector(".search-printing-current")).toHaveTextContent(
+    expect(boltCard!.querySelector(".search-result-title-meta")).toHaveTextContent(
       /M11 #146 .* Magic 2011/i,
     );
     expect(finishSelect).toBeEnabled();
@@ -2309,7 +2392,7 @@ describe("App", () => {
     await user.selectOptions(printingSelect, "bolt-m11");
 
     expect(within(boltCard!).getByText("Selected printing")).toBeInTheDocument();
-    expect(boltCard!.querySelector(".search-printing-current")).toHaveTextContent(
+    expect(boltCard!.querySelector(".search-result-title-meta")).toHaveTextContent(
       /M11 #146 .* Magic 2011/i,
     );
     expect(finishSelect).toBeEnabled();

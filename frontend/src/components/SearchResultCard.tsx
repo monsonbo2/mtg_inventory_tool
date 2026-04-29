@@ -245,14 +245,16 @@ export function SearchResultCard(props: {
   const effectivePrintingDetail = effectivePrinting
     ? formatPrintingDetail(effectivePrinting)
     : null;
-  const effectivePrintingModeLabel = activePrinting
+  const headerPrintingModeLabel = activePrinting
     ? "Selected printing"
     : defaultPrinting
       ? "Using default printing"
-      : null;
-  const selectedPrintingSummary = isLoadingInitialPrintings
-    ? "Loading add-ready printings..."
-    : printingsAvailableLabel;
+      : isLoadingInitialPrintings
+        ? "Loading printings"
+        : needsPrintingSelection
+          ? "Printing required"
+          : "Printings";
+  const headerPrintingDetail = effectivePrintingDetail ?? printingsAvailableLabel;
   const addStatusTone =
     !canAdd || !quantityIsValid || printingStatus === "error"
       ? "error"
@@ -280,20 +282,22 @@ export function SearchResultCard(props: {
                 : activePrinting
                   ? "Ready to add the selected printing."
                   : defaultPrinting
-                    ? "Ready to add the backend default printing."
+                  ? "Ready to add the backend default printing."
                     : "Ready.";
   const showAddStatus = recentlyAdded || !canAdd || !quantityIsValid;
-  const printingsHint = isLoadingInitialPrintings
-    ? `Loading add-ready printings for ${props.group.name}...`
-    : isLoadingAllLanguages
-      ? `Loading all available languages for ${props.group.name}...`
-      : printingStatus === "error"
-        ? printingError || "Could not load printings for this card."
-        : hasLoadedAllPrintings && showLanguagePicker
-          ? "All available languages are loaded."
-          : !activePrinting && !defaultPrinting && hasLoadedPrimaryPrintings
-            ? "Choose a printing to finish adding this card."
-            : null;
+  const supportMessage = showAddStatus
+    ? addStatusMessage
+    : isLoadingInitialPrintings
+      ? `Loading add-ready printings for ${props.group.name}...`
+      : isLoadingAllLanguages
+        ? `Loading all available languages for ${props.group.name}...`
+        : printingStatus === "error"
+          ? printingError || "Could not load printings for this card."
+          : hasLoadedAllPrintings && showLanguagePicker
+            ? "All available languages are loaded."
+            : !activePrinting && !defaultPrinting && hasLoadedPrimaryPrintings
+              ? "Choose a printing to finish adding this card."
+              : null;
   const tagPlaceholder = props.defaultTags?.trim() || "burn, trade";
 
   async function loadPrintings(mode: PrintingLoadMode) {
@@ -424,23 +428,33 @@ export function SearchResultCard(props: {
           />
 
           <div className="card-hero-body">
-            <div className="result-card-header">
-              <div>
+            <div className="result-card-header search-result-titlebar">
+              <div className="search-result-title-copy">
                 <h3>{props.group.name}</h3>
-                <p className="result-card-subtitle">{selectedPrintingSummary}</p>
+                <div aria-live="polite" className="search-result-title-meta">
+                  <span
+                    className={
+                      activePrinting
+                        ? "search-printing-mode-pill search-printing-mode-selected"
+                        : defaultPrinting
+                          ? "search-printing-mode-pill search-printing-mode-default"
+                          : "search-printing-mode-pill"
+                    }
+                  >
+                    {headerPrintingModeLabel}
+                  </span>
+                  <span className="search-result-title-detail">{headerPrintingDetail}</span>
+                </div>
               </div>
+              <button
+                aria-label="Close add card pane"
+                className="search-result-close"
+                onClick={props.onClose}
+                type="button"
+              >
+                ×
+              </button>
             </div>
-          </div>
-
-          <div className="search-result-hero-actions">
-            <button
-              aria-label="Close add card pane"
-              className="search-result-close"
-              onClick={props.onClose}
-              type="button"
-            >
-              ×
-            </button>
           </div>
         </div>
 
@@ -523,35 +537,18 @@ export function SearchResultCard(props: {
 
           <div className="search-result-support-strip">
             <div className="search-result-support-copy">
-              {effectivePrintingDetail ? (
-                <div className="search-printing-current" aria-live="polite">
-                  <span
-                    className={
-                      activePrinting
-                        ? "search-printing-mode-pill search-printing-mode-selected"
-                        : "search-printing-mode-pill search-printing-mode-default"
-                    }
-                  >
-                    {effectivePrintingModeLabel}
-                  </span>
-                  <span>{effectivePrintingDetail}</span>
-                </div>
-              ) : printingsHint ? (
-                <p
-                  className={`field-hint ${
-                    printingStatus === "error" ? "field-hint-error" : "field-hint-info"
-                  } search-result-support-message`}
-                >
-                  {printingsHint}
-                </p>
-              ) : null}
-
-              {showAddStatus ? (
+              {supportMessage ? (
                 <p
                   aria-live="polite"
-                  className={`field-hint search-result-support-message search-result-add-status-${addStatusTone}`}
+                  className={`field-hint ${
+                    addStatusTone === "error" || printingStatus === "error"
+                      ? "field-hint-error"
+                      : addStatusTone === "success"
+                        ? "field-hint-success"
+                        : "field-hint-info"
+                  } search-result-support-message`}
                 >
-                  {addStatusMessage}
+                  {supportMessage}
                 </p>
               ) : null}
             </div>

@@ -80,8 +80,14 @@ function measureSearchWorkspaceContentHeight(workspaceNode: HTMLDivElement) {
   );
   const reserveHeight = reserveNode?.getBoundingClientRect().height ?? 0;
   const workspaceHeight = workspaceNode.getBoundingClientRect().height;
+  const workspaceScrollHeight = workspaceNode.scrollHeight;
 
-  return Math.ceil(Math.max(0, workspaceHeight - reserveHeight));
+  return Math.ceil(
+    Math.max(
+      0,
+      Math.max(workspaceHeight, workspaceScrollHeight - reserveHeight),
+    ),
+  );
 }
 
 export type SearchPanelState = {
@@ -505,43 +511,30 @@ export function SearchPanel(props: {
           return;
         }
 
-        const maxScrollTop = workspaceNode.scrollHeight - workspaceNode.clientHeight;
-        if (workspaceNode.clientHeight <= 0 || maxScrollTop <= 4) {
-          return;
-        }
-
         const workspaceRect = workspaceNode.getBoundingClientRect();
         const quickAddRect = quickAddNode.getBoundingClientRect();
         if (workspaceRect.height <= 0 || quickAddRect.height <= 0) {
           return;
         }
 
-        const desiredWorkspaceViewportTop = 32;
-        const pageScrollDelta = Math.max(
-          0,
-          Math.round(workspaceRect.top - desiredWorkspaceViewportTop),
-        );
-        if (pageScrollDelta > 8 && typeof window.scrollTo === "function") {
-          window.scrollTo({
-            top: window.scrollY + pageScrollDelta,
-            behavior: "smooth",
-          });
-        }
-
         const desiredQuickAddTop = 36;
         const desiredQuickAddBottomInset = 32;
+        const desiredPageTop = 32;
+        const desiredPageBottomInset = 32;
+        const visibleTopBoundary = Math.max(
+          workspaceRect.top + desiredQuickAddTop,
+          desiredPageTop,
+        );
+        const visibleBottomBoundary = Math.min(
+          workspaceRect.bottom - desiredQuickAddBottomInset,
+          window.innerHeight - desiredPageBottomInset,
+        );
         const availableQuickAddViewportHeight = Math.max(
           0,
-          workspaceRect.height - desiredQuickAddTop - desiredQuickAddBottomInset,
+          visibleBottomBoundary - visibleTopBoundary,
         );
-        const visibleQuickAddTop = Math.max(
-          quickAddRect.top,
-          workspaceRect.top + desiredQuickAddTop,
-        );
-        const visibleQuickAddBottom = Math.min(
-          quickAddRect.bottom,
-          workspaceRect.bottom - desiredQuickAddBottomInset,
-        );
+        const visibleQuickAddTop = Math.max(quickAddRect.top, visibleTopBoundary);
+        const visibleQuickAddBottom = Math.min(quickAddRect.bottom, visibleBottomBoundary);
         const visibleQuickAddHeight = Math.max(
           0,
           visibleQuickAddBottom - visibleQuickAddTop,
@@ -556,25 +549,12 @@ export function SearchPanel(props: {
           return;
         }
 
-        const nextScrollTop = Math.max(
-          workspaceNode.scrollTop,
-          Math.min(
-            maxScrollTop,
-            workspaceNode.scrollTop +
-              (quickAddRect.top - workspaceRect.top) -
-              desiredQuickAddTop,
-          ),
-        );
-
-        if (Math.abs(nextScrollTop - workspaceNode.scrollTop) < 8) {
-          searchWorkspaceGuidedSelectionRef.current = guideKey;
-          return;
-        }
-
-        if (typeof workspaceNode.scrollTo === "function") {
-          workspaceNode.scrollTo({ top: nextScrollTop, behavior: "smooth" });
-        } else {
-          workspaceNode.scrollTop = nextScrollTop;
+        if (typeof quickAddNode.scrollIntoView === "function") {
+          quickAddNode.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+            inline: "nearest",
+          });
         }
         searchWorkspaceGuidedSelectionRef.current = guideKey;
       });
@@ -726,7 +706,7 @@ export function SearchPanel(props: {
         const reservedHeight =
           shouldResetOverlayHeight || showSearchMatches || currentOverlay.height <= 0
             ? measuredHeight
-            : currentOverlay.height;
+            : Math.max(currentOverlay.height, measuredHeight);
         const reserveHeight = Math.max(0, reservedHeight - measuredHeight);
         const panelOffsetHeight = Math.max(
           0,
