@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, RefObject } from "react";
 
 import type {
   AddInventoryItemRequest,
@@ -10,7 +10,6 @@ import type { SearchCardGroup } from "../searchResultHelpers";
 import type { AsyncStatus, NoticeTone, SearchAddAvailability } from "../uiTypes";
 import {
   formatPrintingOptionLabel,
-  summarizeSearchGroup,
 } from "../searchResultHelpers";
 import {
   FINISH_OPTIONS,
@@ -59,6 +58,8 @@ export function SearchResultCard(props: {
   addAvailability: SearchAddAvailability;
   defaultLocation: string | null;
   defaultTags: string | null;
+  onClose: () => void;
+  quickAddSectionRef?: RefObject<HTMLDivElement | null>;
   onLoadPrintings: (
     group: SearchCardGroup,
     options?: { includeAllLanguages?: boolean },
@@ -77,6 +78,7 @@ export function SearchResultCard(props: {
   );
   const [selectedPrintingId, setSelectedPrintingId] = useState("");
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
+  const [showNotesField, setShowNotesField] = useState(false);
   const [selectedLanguageCode, setSelectedLanguageCode] = useState("en");
   const [quantity, setQuantity] = useState("1");
   const [finish, setFinish] = useState<FinishValue>("normal");
@@ -109,6 +111,7 @@ export function SearchResultCard(props: {
     setPrintingLoadMode(null);
     setSelectedPrintingId("");
     setShowLanguagePicker(false);
+    setShowNotesField(false);
     setSelectedLanguageCode("en");
     setQuantity("1");
     setFinish("normal");
@@ -211,14 +214,7 @@ export function SearchResultCard(props: {
     ? Array.from(new Set([...fallbackTags, ...parsedTags]))
     : fallbackTags;
   const quantityIsValid = Number.isInteger(parsedQuantity) && parsedQuantity > 0;
-  const optionalDetailSummary =
-    [
-      effectiveLocation ? `Location: ${effectiveLocation}` : null,
-      effectiveTags.length
-        ? `${effectiveTags.length} tag${effectiveTags.length === 1 ? "" : "s"}`
-        : null,
-      trimmedNotes ? "Note ready" : null,
-    ].filter(Boolean).join(" · ") || "No optional details yet";
+  const notesVisible = showNotesField || Boolean(trimmedNotes);
   const canAdd = props.addAvailability === "writable";
   const needsPrintingSelection = canAdd && !effectivePrinting;
   const printingsAvailableLabel = `${props.group.printingsCount} printing${
@@ -254,19 +250,9 @@ export function SearchResultCard(props: {
     : defaultPrinting
       ? "Using default printing"
       : null;
-  const selectedPrintingSummary = activePrinting
-    ? `Selected printing: ${formatPrintingDetail(activePrinting)}${
-        activePrinting.is_default_add_choice ? " · Default add choice" : ""
-      }`
-    : isLoadingAllLanguages
-      ? "Loading all available printings for this card."
-      : isLoadingInitialPrintings
-        ? "Loading quick-add printings for this card."
-        : defaultPrinting
-          ? `Using default printing: ${formatPrintingDetail(defaultPrinting)}`
-          : hasLoadedPrimaryPrintings
-            ? "Choose a printing below to add this card."
-            : "Loading quick-add printings for this card.";
+  const selectedPrintingSummary = isLoadingInitialPrintings
+    ? "Loading add-ready printings..."
+    : printingsAvailableLabel;
   const addStatusTone =
     !canAdd || !quantityIsValid || printingStatus === "error"
       ? "error"
@@ -296,6 +282,19 @@ export function SearchResultCard(props: {
                   : defaultPrinting
                     ? "Ready to add the backend default printing."
                     : "Ready.";
+  const showAddStatus = recentlyAdded || !canAdd || !quantityIsValid;
+  const printingsHint = isLoadingInitialPrintings
+    ? `Loading add-ready printings for ${props.group.name}...`
+    : isLoadingAllLanguages
+      ? `Loading all available languages for ${props.group.name}...`
+      : printingStatus === "error"
+        ? printingError || "Could not load printings for this card."
+        : hasLoadedAllPrintings && showLanguagePicker
+          ? "All available languages are loaded."
+          : !activePrinting && !defaultPrinting && hasLoadedPrimaryPrintings
+            ? "Choose a printing to finish adding this card."
+            : null;
+  const tagPlaceholder = props.defaultTags?.trim() || "burn, trade";
 
   async function loadPrintings(mode: PrintingLoadMode) {
     if (
@@ -431,41 +430,21 @@ export function SearchResultCard(props: {
                 <p className="result-card-subtitle">{selectedPrintingSummary}</p>
               </div>
             </div>
-
-            <p className="search-result-summary">{summarizeSearchGroup(props.group)}</p>
           </div>
 
           <div className="search-result-hero-actions">
             <button
-              className="primary-button search-result-add-button"
-              disabled={
-                busy ||
-                !canAdd ||
-                !quantityIsValid ||
-                (isLoadingInitialPrintings && !effectivePrinting) ||
-                (hasLoadedPrimaryPrintings && !effectivePrinting)
-              }
-              type="submit"
+              aria-label="Close add card pane"
+              className="search-result-close"
+              onClick={props.onClose}
+              type="button"
             >
-              {addButtonLabel}
+              ×
             </button>
-            <p
-              aria-live="polite"
-              className={`search-result-add-status search-result-add-status-${addStatusTone}`}
-            >
-              {addStatusMessage}
-            </p>
           </div>
         </div>
 
-        <div className="form-section">
-          <div className="form-section-header">
-            <strong>Quick add</strong>
-            <span>
-              {effectivePrintingModeLabel || "Printing required"}
-            </span>
-          </div>
-
+        <div className="form-section search-result-form-shell" ref={props.quickAddSectionRef}>
           <div className="search-result-quick-add-grid">
             <div className="field search-printing-field">
               <label htmlFor={printingFieldId}>Printing</label>
@@ -527,28 +506,59 @@ export function SearchResultCard(props: {
               </select>
             </label>
 
-            {hasAdditionalLanguages && !hasLoadedAllPrintings ? (
-              <div className="search-printing-expander">
-                <div className="search-printing-expander-copy">
-                  <strong>Other languages</strong>
-                  <span>Showing add-ready printings first.</span>
+            <button
+              className="primary-button search-result-add-button"
+              disabled={
+                busy ||
+                !canAdd ||
+                !quantityIsValid ||
+                (isLoadingInitialPrintings && !effectivePrinting) ||
+                (hasLoadedPrimaryPrintings && !effectivePrinting)
+              }
+              type="submit"
+            >
+              {addButtonLabel}
+            </button>
+          </div>
+
+          <div className="search-result-support-strip">
+            <div className="search-result-support-copy">
+              {effectivePrintingDetail ? (
+                <div className="search-printing-current" aria-live="polite">
+                  <span
+                    className={
+                      activePrinting
+                        ? "search-printing-mode-pill search-printing-mode-selected"
+                        : "search-printing-mode-pill search-printing-mode-default"
+                    }
+                  >
+                    {effectivePrintingModeLabel}
+                  </span>
+                  <span>{effectivePrintingDetail}</span>
                 </div>
-                <button
-                  className="secondary-button search-printing-expander-button"
-                  disabled={isLoadingAllLanguages}
-                  onClick={() => {
-                    void handleLoadAllLanguages();
-                    setRecentlyAdded(false);
-                  }}
-                  type="button"
+              ) : printingsHint ? (
+                <p
+                  className={`field-hint ${
+                    printingStatus === "error" ? "field-hint-error" : "field-hint-info"
+                  } search-result-support-message`}
                 >
-                  {isLoadingAllLanguages ? "Loading all languages..." : "Load all languages"}
-                </button>
-              </div>
-            ) : null}
-            {showLanguagePicker ? (
-              <div className="search-printing-helper">
-                <div className="search-language-picker">
+                  {printingsHint}
+                </p>
+              ) : null}
+
+              {showAddStatus ? (
+                <p
+                  aria-live="polite"
+                  className={`field-hint search-result-support-message search-result-add-status-${addStatusTone}`}
+                >
+                  {addStatusMessage}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="search-result-support-actions">
+              {showLanguagePicker ? (
+                <div className="search-language-picker-inline">
                   <label htmlFor={languageFieldId}>Language</label>
                   <select
                     aria-label="Language"
@@ -568,118 +578,98 @@ export function SearchResultCard(props: {
                     ))}
                   </select>
                 </div>
-              </div>
-            ) : null}
-          </div>
+              ) : null}
 
-          {effectivePrintingDetail ? (
-            <div className="search-printing-current" aria-live="polite">
-              <span
-                className={
-                  activePrinting
-                    ? "search-printing-mode-pill search-printing-mode-selected"
-                    : "search-printing-mode-pill search-printing-mode-default"
-                }
-              >
-                {effectivePrintingModeLabel}
-              </span>
-              <span>{effectivePrintingDetail}</span>
-            </div>
-          ) : null}
+              {hasAdditionalLanguages && !hasLoadedAllPrintings ? (
+                <button
+                  className="secondary-button search-printing-expander-button"
+                  disabled={isLoadingAllLanguages}
+                  onClick={() => {
+                    void handleLoadAllLanguages();
+                    setRecentlyAdded(false);
+                  }}
+                  type="button"
+                >
+                  {isLoadingAllLanguages ? "Loading all languages..." : "Load all languages"}
+                </button>
+              ) : null}
 
-          {isLoadingInitialPrintings ? (
-            <p className="field-hint field-hint-info">
-              Loading the fastest add-ready printings for {props.group.name}...
-            </p>
-          ) : isLoadingAllLanguages ? (
-            <p className="field-hint field-hint-info">
-              Loading all available languages for {props.group.name}...
-            </p>
-          ) : printingStatus === "error" ? (
-            <div className="search-printing-state">
-              <p className="field-hint field-hint-error">
-                {printingError || "Could not load printings for this card."}
-              </p>
+              {printingStatus === "error" ? (
+                <button
+                  className="secondary-button search-printing-expander-button"
+                  onClick={() => {
+                    void loadPrintings(hasLoadedPrimaryPrintings ? "all" : "primary");
+                  }}
+                  type="button"
+                >
+                  Retry loading printings
+                </button>
+              ) : null}
+
               <button
-                className="secondary-button"
+                className="field-link-button search-result-note-toggle"
                 onClick={() => {
-                  void loadPrintings(hasLoadedPrimaryPrintings ? "all" : "primary");
+                  setShowNotesField((current) => {
+                    if (current && trimmedNotes) {
+                      return true;
+                    }
+                    return !current;
+                  });
+                  setRecentlyAdded(false);
                 }}
                 type="button"
               >
-                Retry loading printings
+                {notesVisible ? "Hide note" : "Add note"}
               </button>
             </div>
-          ) : hasLoadedAllPrintings && showLanguagePicker ? (
-            <>
-              <p className="field-hint field-hint-info">
-                All available languages are loaded.
-              </p>
-              {!activePrinting && !defaultPrinting ? (
-                <p className="field-hint field-hint-info">
-                  Choose a printing to finish adding this card.
-                </p>
-              ) : null}
-            </>
-          ) : !activePrinting && !defaultPrinting && hasLoadedPrimaryPrintings ? (
-            <p className="field-hint field-hint-info">
-              Choose a printing to finish adding this card.
-            </p>
-          ) : hasAdditionalLanguages && !hasLoadedAllPrintings ? (
-            <p className="field-hint field-hint-info">
-              Load all languages to browse every available printing for this card.
-            </p>
-          ) : null}
-        </div>
-
-        <div className="form-section form-section-muted">
-          <div className="form-section-header">
-            <strong>Optional details</strong>
-            <span>{optionalDetailSummary}</span>
           </div>
 
-          <label className="field">
-            <span>Location</span>
-            <input
-              className="text-input"
-              disabled={busy || !canAdd}
-              onChange={(event) => {
-                setLocation(event.target.value);
-                setRecentlyAdded(false);
-              }}
-              placeholder="Red Binder"
-              value={location}
-            />
-          </label>
+          <div className="search-result-details-grid">
+            <label className="field">
+              <span>Location</span>
+              <input
+                className="text-input"
+                disabled={busy || !canAdd}
+                onChange={(event) => {
+                  setLocation(event.target.value);
+                  setRecentlyAdded(false);
+                }}
+                placeholder={fallbackLocation || "Red Binder"}
+                value={location}
+              />
+            </label>
 
-          <label className="field">
-            <span>Tags</span>
-            <input
-              className="text-input"
-              disabled={busy || !canAdd}
-              onChange={(event) => {
-                setTags(event.target.value);
-                setRecentlyAdded(false);
-              }}
-              placeholder="burn, trade"
-              value={tags}
-            />
-          </label>
+            <label className="field">
+              <span>Tags</span>
+              <input
+                className="text-input"
+                disabled={busy || !canAdd}
+                onChange={(event) => {
+                  setTags(event.target.value);
+                  setRecentlyAdded(false);
+                }}
+                placeholder={tagPlaceholder}
+                value={tags}
+              />
+            </label>
 
-          <label className="field">
-            <span>Notes</span>
-            <textarea
-              className="text-area"
-              disabled={busy || !canAdd}
-              onChange={(event) => {
-                setNotes(event.target.value);
-                setRecentlyAdded(false);
-              }}
-              placeholder="Add an optional note"
-              rows={3}
-              value={notes}
-            />
-          </label>
+            {notesVisible ? (
+              <label className="field search-result-notes-field">
+                <span>Notes</span>
+                <textarea
+                  className="text-area"
+                  disabled={busy || !canAdd}
+                  onChange={(event) => {
+                    setNotes(event.target.value);
+                    setRecentlyAdded(false);
+                  }}
+                  placeholder="Add an optional note"
+                  rows={2}
+                  value={notes}
+                />
+              </label>
+            ) : null}
+          </div>
         </div>
 
         {!quantityIsValid ? (

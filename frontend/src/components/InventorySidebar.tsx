@@ -420,10 +420,10 @@ export function InventorySidebar(props: {
           variant="error"
         />
       ) : currentInventory ? (
-        <>
-          <div className="inventory-sidebar-actions">
+        <div className="inventory-sidebar-ready-shell">
+          <div className="inventory-sidebar-ready-header">
             <button
-              className="secondary-button inventory-sidebar-action inventory-sidebar-action-support"
+              className="utility-button inventory-sidebar-compact-action"
               onClick={openCreateForm}
               type="button"
             >
@@ -431,11 +431,8 @@ export function InventorySidebar(props: {
                 aria-hidden="true"
                 className="inventory-action-icon inventory-action-icon-create"
               />
-              <span className="inventory-sidebar-action-content">
-                <span className="inventory-sidebar-action-create-label">Create Collection</span>
-                <span aria-hidden="true" className="inventory-sidebar-action-meta">
-                  Add another deck, binder, or project space
-                </span>
+              <span className="inventory-sidebar-action-create-label">
+                Create Collection
               </span>
             </button>
           </div>
@@ -509,8 +506,7 @@ export function InventorySidebar(props: {
               ) : null}
             </div>
           </div>
-
-        </>
+        </div>
       ) : props.appShellState === "bootstrap_available" ? (
         <>
           <PanelState

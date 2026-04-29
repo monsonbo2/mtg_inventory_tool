@@ -49,12 +49,31 @@
     display: none;
   }
 
+  .search-panel-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-panel-heading .search-import {
+    margin-left: 0;
+  }
+
+  .inventory-sidebar-ready-header {
+    min-height: 0;
+  }
+
+  .inventory-sidebar-compact-action {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .search-form,
   .item-meta-grid,
   .editor-grid,
   .inventory-summary-bar,
   .mini-grid,
   .search-result-quick-add-grid,
+  .search-result-details-grid,
   .compact-row-stats {
     grid-template-columns: 1fr;
   }
@@ -83,8 +102,7 @@
     justify-self: start;
   }
 
-  .search-workspace-count,
-  .search-results-close {
+  .search-workspace-count {
     justify-self: start;
   }
 
@@ -166,7 +184,7 @@
   }
 
   .search-result-hero-actions {
-    justify-content: stretch;
+    justify-content: end;
     min-width: 0;
     position: static;
     transform: none;
@@ -177,9 +195,17 @@
     min-width: 0;
   }
 
-  .search-result-add-status {
-    width: 100%;
-    text-align: left;
+  .search-result-support-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .search-result-support-actions {
+    grid-auto-flow: row;
+    justify-content: stretch;
+  }
+
+  .search-language-picker-inline {
+    min-width: 0;
   }
 
   .search-printing-expander {

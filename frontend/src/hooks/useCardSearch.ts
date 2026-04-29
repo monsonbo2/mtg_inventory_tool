@@ -43,6 +43,10 @@ function getSuggestionCacheKey(query: string, scope: CatalogScope) {
   return `${scope}:${query}`;
 }
 
+function getSuggestionThumbnailCacheKey(oracleId: string, scope: CatalogScope) {
+  return `${scope}:${oracleId}`;
+}
+
 function getPrintingLookupCacheKey(
   groupId: string,
   scope: CatalogScope,
@@ -50,6 +54,11 @@ function getPrintingLookupCacheKey(
 ) {
   return `${groupId}:${scope}:${mode}`;
 }
+
+type SuggestionThumbnail = {
+  image_uri_normal: string | null;
+  image_uri_small: string | null;
+};
 
 export function useCardSearch(options: UseCardSearchOptions = {}) {
   const [searchScope, setSearchScope] = useState<CatalogScope>("default");
@@ -87,6 +96,10 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
   const suggestionLookupRequestIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
   const suggestionCacheRef = useRef<Record<string, CatalogNameSearchRow[]>>({});
+  const suggestionThumbnailCacheRef = useRef<Record<string, SuggestionThumbnail>>({});
+  const suggestionThumbnailPromisesRef = useRef<
+    Record<string, Promise<SuggestionThumbnail>>
+  >({});
   const printingLookupCacheRef = useRef<Record<string, CatalogPrintingLookupRow[]>>(
     {},
   );
@@ -120,6 +133,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       return;
     }
 
+    const requestId = ++suggestionLookupRequestIdRef.current;
     const cacheKey = getSuggestionCacheKey(normalizedQuery, searchScope);
     const cachedResults = suggestionCacheRef.current[cacheKey];
     if (cachedResults) {
@@ -127,10 +141,14 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       setSuggestionError(null);
       setSuggestionResults(cachedResults);
       setHighlightedSuggestionIndex(cachedResults.length ? 0 : -1);
+      void hydrateSuggestionThumbnails(cachedResults, {
+        cacheKey,
+        requestId,
+        scope: searchScope,
+      });
       return;
     }
 
-    const requestId = ++suggestionLookupRequestIdRef.current;
     const timeoutId = window.setTimeout(() => {
       setSuggestionStatus("loading");
       setSuggestionError(null);
@@ -148,6 +166,11 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
           setSuggestionResults(response.items);
           setSuggestionStatus("ready");
           setHighlightedSuggestionIndex(response.items.length ? 0 : -1);
+          void hydrateSuggestionThumbnails(response.items, {
+            cacheKey,
+            requestId,
+            scope: searchScope,
+          });
         })
         .catch((error) => {
           if (requestId !== suggestionLookupRequestIdRef.current) {
@@ -164,6 +187,95 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       window.clearTimeout(timeoutId);
     };
   }, [searchQuery, searchScope]);
+
+  async function loadSuggestionThumbnail(
+    row: CatalogNameSearchRow,
+    scope: CatalogScope,
+  ): Promise<SuggestionThumbnail> {
+    const cacheKey = getSuggestionThumbnailCacheKey(row.oracle_id, scope);
+    const cachedThumbnail = suggestionThumbnailCacheRef.current[cacheKey];
+    if (cachedThumbnail) {
+      return cachedThumbnail;
+    }
+
+    const inFlightRequest = suggestionThumbnailPromisesRef.current[cacheKey];
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    const scopeQuery = getScopeQueryValue(scope);
+    const request = (
+      scopeQuery
+        ? getCardPrintingSummary(row.oracle_id, { scope: scopeQuery })
+        : getCardPrintingSummary(row.oracle_id)
+    )
+      .then((summary) => {
+        const thumbnail = {
+          image_uri_normal:
+            summary.default_printing?.image_uri_normal ?? row.image_uri_normal,
+          image_uri_small:
+            summary.default_printing?.image_uri_small ?? row.image_uri_small,
+        };
+        suggestionThumbnailCacheRef.current[cacheKey] = thumbnail;
+        delete suggestionThumbnailPromisesRef.current[cacheKey];
+        return thumbnail;
+      })
+      .catch(() => {
+        delete suggestionThumbnailPromisesRef.current[cacheKey];
+        return {
+          image_uri_normal: row.image_uri_normal,
+          image_uri_small: row.image_uri_small,
+        };
+      });
+
+    suggestionThumbnailPromisesRef.current[cacheKey] = request;
+    return request;
+  }
+
+  async function hydrateSuggestionThumbnails(
+    rows: CatalogNameSearchRow[],
+    options: {
+      cacheKey: string;
+      requestId: number;
+      scope: CatalogScope;
+    },
+  ) {
+    if (!rows.length) {
+      return;
+    }
+
+    const hydratedRows = await Promise.all(
+      rows.map(async (row) => {
+        const thumbnail = await loadSuggestionThumbnail(row, options.scope);
+        if (
+          thumbnail.image_uri_small === row.image_uri_small &&
+          thumbnail.image_uri_normal === row.image_uri_normal
+        ) {
+          return row;
+        }
+        return {
+          ...row,
+          image_uri_normal: thumbnail.image_uri_normal,
+          image_uri_small: thumbnail.image_uri_small,
+        };
+      }),
+    );
+
+    if (options.requestId !== suggestionLookupRequestIdRef.current) {
+      return;
+    }
+
+    suggestionCacheRef.current[options.cacheKey] = hydratedRows;
+    setSuggestionResults((currentRows) => {
+      if (
+        currentRows.length !== hydratedRows.length ||
+        currentRows.some((row, index) => row !== hydratedRows[index])
+      ) {
+        return hydratedRows;
+      }
+      return currentRows;
+    });
+  }
 
   function closeSuggestionList() {
     setSuggestionOpen(false);

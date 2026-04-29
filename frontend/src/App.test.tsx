@@ -1315,6 +1315,79 @@ describe("App", () => {
     expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
   });
 
+  it("shows default-printing thumbnails in autocomplete suggestions", async () => {
+    const user = userEvent.setup();
+    const forest = buildNameSearchRow({
+      oracle_id: "forest-oracle",
+      name: "Forest",
+      printings_count: 1,
+      image_uri_small: "https://example.test/cards/forest-suggestion-small.jpg",
+      image_uri_normal: "https://example.test/cards/forest-suggestion-normal.jpg",
+    });
+    const forceOfWill = buildNameSearchRow({
+      oracle_id: "force-oracle",
+      name: "Force of Will",
+      printings_count: 4,
+      available_languages: ["en", "de"],
+      image_uri_small: "https://example.test/cards/force-suggestion-small.jpg",
+      image_uri_normal: "https://example.test/cards/force-suggestion-normal.jpg",
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Fo") {
+        return buildNameSearchResult([forest, forceOfWill]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(getCardPrintingSummary).mockImplementation(async (oracleId) => {
+      if (oracleId === "forest-oracle") {
+        return buildPrintingSummary([
+          buildSearchRow({
+            scryfall_id: "forest-default",
+            name: "Forest",
+            image_uri_small: "https://example.test/cards/forest-default-small.jpg",
+            image_uri_normal: "https://example.test/cards/forest-default-normal.jpg",
+            is_default_add_choice: true,
+          }),
+        ], { oracle_id: oracleId });
+      }
+
+      if (oracleId === "force-oracle") {
+        return buildPrintingSummary([
+          buildSearchRow({
+            scryfall_id: "force-default",
+            name: "Force of Will",
+            image_uri_small: "https://example.test/cards/force-default-small.jpg",
+            image_uri_normal: "https://example.test/cards/force-default-normal.jpg",
+            is_default_add_choice: true,
+          }),
+        ], { oracle_id: oracleId });
+      }
+
+      return buildPrintingSummary([], { oracle_id: oracleId, default_printing: null });
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.clear(input);
+    await user.type(input, "Fo");
+
+    await screen.findByRole("listbox", { name: "Card suggestions" });
+    const forceOption = await screen.findByRole("option", { name: /Force of Will/i });
+
+    await waitFor(() => {
+      expect(within(forceOption).getByAltText("Force of Will card art")).toHaveAttribute(
+        "src",
+        "https://example.test/cards/force-default-small.jpg",
+      );
+    });
+
+    expect(getCardPrintingSummary).toHaveBeenCalledWith("forest-oracle");
+    expect(getCardPrintingSummary).toHaveBeenCalledWith("force-oracle");
+  });
+
   it("lets arrow-up return keyboard focus to the search input so Enter submits the full search", async () => {
     const user = userEvent.setup();
     const forest = buildNameSearchRow({
@@ -1460,6 +1533,131 @@ describe("App", () => {
       Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
         configurable: true,
         value: originalScrollIntoView,
+      });
+    }
+  });
+
+  it("guides focus mode toward quick-add fields when the form is only partially visible", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalWindowScrollTo = window.scrollTo;
+    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
+    const windowScrollToSpy = vi.fn();
+    const scrollToSpy = vi.fn();
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: windowScrollToSpy,
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy,
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (this.classList.contains("search-workspace")) {
+          return buildRect(96, 420);
+        }
+        if (this.classList.contains("search-workspace-header")) {
+          return buildRect(112, 86);
+        }
+        if (
+          this.classList.contains("form-section") &&
+          this.querySelector(".search-result-quick-add-grid")
+        ) {
+          return buildRect(352, 280);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+      await screen.findByText("Matching cards");
+      const workspace = container.querySelector(".search-workspace") as HTMLDivElement | null;
+      expect(workspace).not.toBeNull();
+
+      Object.defineProperty(workspace!, "clientHeight", {
+        configurable: true,
+        value: 420,
+      });
+      Object.defineProperty(workspace!, "scrollHeight", {
+        configurable: true,
+        value: 980,
+      });
+      workspace!.scrollTop = 0;
+
+      scrollToSpy.mockClear();
+
+      await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
+
+      await waitFor(() => {
+        expect(windowScrollToSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            behavior: "smooth",
+          }),
+        );
+      });
+      await waitFor(() => {
+        expect(scrollToSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            behavior: "smooth",
+          }),
+        );
+      });
+    } finally {
+      Object.defineProperty(window, "scrollTo", {
+        configurable: true,
+        value: originalWindowScrollTo,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+        configurable: true,
+        value: originalScrollTo,
       });
     }
   });
@@ -1875,12 +2073,10 @@ describe("App", () => {
         name: /Default choice/i,
       }),
     ).not.toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText(/Using default printing: M11 #146 .* Magic 2011/i),
-    ).toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText("Ready to add the backend default printing."),
-    ).toBeInTheDocument();
+    expect(within(boltCard!).getByText("Using default printing")).toBeInTheDocument();
+    expect(boltCard!.querySelector(".search-printing-current")).toHaveTextContent(
+      /M11 #146 .* Magic 2011/i,
+    );
     expect(finishSelect).toBeEnabled();
     const addButton = within(boltCard!).getByRole("button", { name: "Add to collection" });
     expect(addButton).toBeEnabled();
@@ -1955,7 +2151,14 @@ describe("App", () => {
       "article",
     );
     expect(boltCard).not.toBeNull();
-    expect(within(boltCard!).getByText("Location: Trade Binder · 2 tags")).toBeInTheDocument();
+    expect(within(boltCard!).getByRole("textbox", { name: "Location" })).toHaveAttribute(
+      "placeholder",
+      "Trade Binder",
+    );
+    expect(within(boltCard!).getByRole("textbox", { name: "Tags" })).toHaveAttribute(
+      "placeholder",
+      "trade, staples",
+    );
 
     await user.click(within(boltCard!).getByRole("button", { name: "Add to collection" }));
 
@@ -2082,10 +2285,6 @@ describe("App", () => {
     expect(
       within(boltCard!).getByRole("button", { name: "Load all languages" }),
     ).toBeInTheDocument();
-    expect(within(boltCard!).getByText("Other languages")).toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText("Showing add-ready printings first."),
-    ).toBeInTheDocument();
     expect(
       within(printingSelect).queryByRole("option", { name: /STRIXHAVEN MYSTICAL ARCHIVE/i }),
     ).not.toBeInTheDocument();
@@ -2109,12 +2308,10 @@ describe("App", () => {
     await user.selectOptions(languageSelect, "en");
     await user.selectOptions(printingSelect, "bolt-m11");
 
-    expect(
-      within(boltCard!).getByText(/Selected printing: M11 #146 .* Magic 2011/i),
-    ).toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText("Ready to add the selected printing."),
-    ).toBeInTheDocument();
+    expect(within(boltCard!).getByText("Selected printing")).toBeInTheDocument();
+    expect(boltCard!.querySelector(".search-printing-current")).toHaveTextContent(
+      /M11 #146 .* Magic 2011/i,
+    );
     expect(finishSelect).toBeEnabled();
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
 

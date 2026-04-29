@@ -251,9 +251,11 @@ export function SearchPanel(props: {
   const searchWorkspaceGridRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceHeaderRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const searchQuickAddSectionRef = useRef<HTMLDivElement | null>(null);
   const searchPanelFlowHeightRef = useRef<number | null>(null);
   const searchWorkspaceOverlayKeyRef = useRef<string | null>(null);
   const searchWorkspaceOverlayWidthRef = useRef<number | null>(null);
+  const searchWorkspaceGuidedSelectionRef = useRef<string | null>(null);
   const autocompleteListId = useId();
   const autocompleteStatusId = `${autocompleteListId}-status`;
   const [importMenuOpen, setImportMenuOpen] = useState(false);
@@ -469,6 +471,127 @@ export function SearchPanel(props: {
       nextNode.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   }, [activeSearchGroup, props.state.search.groups, showSearchMatches]);
+
+  useEffect(() => {
+    if (!showSearchResults || props.state.searchWorkspaceMode !== "focus") {
+      searchWorkspaceGuidedSelectionRef.current = null;
+    }
+  }, [props.state.searchWorkspaceMode, showSearchResults]);
+
+  useEffect(() => {
+    if (
+      !showSearchResults ||
+      props.state.searchWorkspaceMode !== "focus" ||
+      !activeSearchGroup ||
+      typeof window === "undefined" ||
+      window.innerWidth <= 820
+    ) {
+      return;
+    }
+
+    const guideKey = `${activeSearchGroup.groupId}:${searchWorkspaceOverlayKey}`;
+    if (searchWorkspaceGuidedSelectionRef.current === guideKey) {
+      return;
+    }
+
+    let frameId = 0;
+    let nestedFrameId = 0;
+
+    frameId = window.requestAnimationFrame(() => {
+      nestedFrameId = window.requestAnimationFrame(() => {
+        const workspaceNode = searchWorkspaceRef.current;
+        const quickAddNode = searchQuickAddSectionRef.current;
+        if (!workspaceNode || !quickAddNode) {
+          return;
+        }
+
+        const maxScrollTop = workspaceNode.scrollHeight - workspaceNode.clientHeight;
+        if (workspaceNode.clientHeight <= 0 || maxScrollTop <= 4) {
+          return;
+        }
+
+        const workspaceRect = workspaceNode.getBoundingClientRect();
+        const quickAddRect = quickAddNode.getBoundingClientRect();
+        if (workspaceRect.height <= 0 || quickAddRect.height <= 0) {
+          return;
+        }
+
+        const desiredWorkspaceViewportTop = 32;
+        const pageScrollDelta = Math.max(
+          0,
+          Math.round(workspaceRect.top - desiredWorkspaceViewportTop),
+        );
+        if (pageScrollDelta > 8 && typeof window.scrollTo === "function") {
+          window.scrollTo({
+            top: window.scrollY + pageScrollDelta,
+            behavior: "smooth",
+          });
+        }
+
+        const desiredQuickAddTop = 36;
+        const desiredQuickAddBottomInset = 32;
+        const availableQuickAddViewportHeight = Math.max(
+          0,
+          workspaceRect.height - desiredQuickAddTop - desiredQuickAddBottomInset,
+        );
+        const visibleQuickAddTop = Math.max(
+          quickAddRect.top,
+          workspaceRect.top + desiredQuickAddTop,
+        );
+        const visibleQuickAddBottom = Math.min(
+          quickAddRect.bottom,
+          workspaceRect.bottom - desiredQuickAddBottomInset,
+        );
+        const visibleQuickAddHeight = Math.max(
+          0,
+          visibleQuickAddBottom - visibleQuickAddTop,
+        );
+        const desiredVisibleQuickAddHeight = Math.min(
+          quickAddRect.height,
+          availableQuickAddViewportHeight,
+        );
+
+        if (visibleQuickAddHeight >= desiredVisibleQuickAddHeight - 8) {
+          searchWorkspaceGuidedSelectionRef.current = guideKey;
+          return;
+        }
+
+        const nextScrollTop = Math.max(
+          workspaceNode.scrollTop,
+          Math.min(
+            maxScrollTop,
+            workspaceNode.scrollTop +
+              (quickAddRect.top - workspaceRect.top) -
+              desiredQuickAddTop,
+          ),
+        );
+
+        if (Math.abs(nextScrollTop - workspaceNode.scrollTop) < 8) {
+          searchWorkspaceGuidedSelectionRef.current = guideKey;
+          return;
+        }
+
+        if (typeof workspaceNode.scrollTo === "function") {
+          workspaceNode.scrollTo({ top: nextScrollTop, behavior: "smooth" });
+        } else {
+          workspaceNode.scrollTop = nextScrollTop;
+        }
+        searchWorkspaceGuidedSelectionRef.current = guideKey;
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.cancelAnimationFrame(nestedFrameId);
+    };
+  }, [
+    activeSearchGroup?.groupId,
+    props.state.searchWorkspaceMode,
+    searchWorkspaceOverlay.headerHeight,
+    searchWorkspaceOverlay.height,
+    searchWorkspaceOverlayKey,
+    showSearchResults,
+  ]);
 
   useLayoutEffect(() => {
     if (showSearchResults) {
@@ -1371,14 +1494,11 @@ export function SearchPanel(props: {
       }
       style={searchPanelOpenStyle}
     >
-      <div className="panel-heading">
-        <div>
+      <div className="panel-heading search-panel-heading">
+        <div className="search-panel-heading-copy">
           <p className="section-kicker">Search And Add</p>
           <h2>Card Search</h2>
         </div>
-      </div>
-
-      <div className="search-panel-toolbar">
         <div className="search-import" ref={importMenuRef}>
           <button
             aria-expanded={importMenuOpen}
@@ -1563,14 +1683,6 @@ export function SearchPanel(props: {
                   <span className="search-workspace-count">{searchResultCountLabel}</span>
                 )
               ) : null}
-              <button
-                aria-label="Close add card pane"
-                className="search-results-close"
-                onClick={props.actions.onSearchResultsDismiss}
-                type="button"
-              >
-                ×
-              </button>
             </div>
           </div>
 
@@ -1669,8 +1781,10 @@ export function SearchPanel(props: {
                 defaultTags={props.state.selectedInventoryRow?.default_tags || null}
                 group={activeSearchGroup}
                 onAdd={props.actions.onAdd}
+                onClose={props.actions.onSearchResultsDismiss}
                 onLoadPrintings={props.actions.onLoadPrintings}
                 onNotice={props.actions.onNotice}
+                quickAddSectionRef={searchQuickAddSectionRef}
               />
             </div>
           </div>
