@@ -10,7 +10,7 @@ from typing import Any, Callable
 from ..db.connection import connect
 from ..errors import MtgStackError, ValidationError
 from .catalog import resolve_card_row
-from .mutations import add_card_with_connection
+from .operations.add import add_card_with_connection
 from .normalize import normalize_external_id, normalized_catalog_finish_list
 from .response_models import serialize_response
 
