@@ -179,9 +179,10 @@ export function OwnedCollectionPanel(props: {
     collectionDisplayState === "empty" ||
     collectionDisplayState === "ready" ||
     collectionDisplayState === "search_empty";
-  const showSummaryBar = collectionDisplayState !== "unselected";
   const showCollectionMetrics = showViewControls;
   const showCollectionSearchRow = showViewControls;
+  const showSummaryBar = showCollectionMetrics;
+  const collectionPanelTitle = props.state.selectedInventoryRow?.display_name || "No collection selected";
   let collectionContent: ReactNode;
 
   switch (collectionDisplayState) {
@@ -295,7 +296,7 @@ export function OwnedCollectionPanel(props: {
         <div className="panel-heading collection-panel-heading">
           <div>
             <p className="section-kicker">Your Collection</p>
-            <h2>Collection</h2>
+            <h2>{collectionPanelTitle}</h2>
           </div>
           <StatusPill status={props.state.collection.viewStatus} />
         </div>
@@ -333,7 +334,7 @@ export function OwnedCollectionPanel(props: {
 
             {showActivityButton ? (
               <button
-                className="secondary-button"
+                className="utility-button"
                 onClick={props.actions.onOpenActivity}
                 type="button"
               >
@@ -345,33 +346,19 @@ export function OwnedCollectionPanel(props: {
       </div>
 
       {showSummaryBar ? (
-        <div
-          className={
-            showCollectionMetrics
-              ? "inventory-summary-bar"
-              : "inventory-summary-bar inventory-summary-bar-minimal"
-          }
-        >
+        <div className="inventory-summary-bar">
           <div className="summary-chip">
-            <span>Collection</span>
-            <strong>{props.state.selectedInventoryRow?.display_name || "No collection"}</strong>
+            <span>Entries</span>
+            <strong>{totalRows}</strong>
           </div>
-          {showCollectionMetrics ? (
-            <>
-              <div className="summary-chip">
-                <span>Entries</span>
-                <strong>{totalRows}</strong>
-              </div>
-              <div className="summary-chip">
-                <span>Total cards</span>
-                <strong>{totalCards}</strong>
-              </div>
-              <div className="summary-chip">
-                <span>Estimated value</span>
-                <strong>{formatUsd(totalEstimatedValue)}</strong>
-              </div>
-            </>
-          ) : null}
+          <div className="summary-chip">
+            <span>Total cards</span>
+            <strong>{totalCards}</strong>
+          </div>
+          <div className="summary-chip">
+            <span>Estimated value</span>
+            <strong>{formatUsd(totalEstimatedValue)}</strong>
+          </div>
         </div>
       ) : null}
 

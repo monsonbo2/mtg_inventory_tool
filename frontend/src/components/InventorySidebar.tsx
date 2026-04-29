@@ -423,7 +423,7 @@ export function InventorySidebar(props: {
         <>
           <div className="inventory-sidebar-actions">
             <button
-              className="primary-button inventory-sidebar-action inventory-sidebar-action-create"
+              className="secondary-button inventory-sidebar-action inventory-sidebar-action-support"
               onClick={openCreateForm}
               type="button"
             >
@@ -431,7 +431,12 @@ export function InventorySidebar(props: {
                 aria-hidden="true"
                 className="inventory-action-icon inventory-action-icon-create"
               />
-              <span className="inventory-sidebar-action-create-label">Create Collection</span>
+              <span className="inventory-sidebar-action-content">
+                <span className="inventory-sidebar-action-create-label">Create Collection</span>
+                <span aria-hidden="true" className="inventory-sidebar-action-meta">
+                  Add another deck, binder, or project space
+                </span>
+              </span>
             </button>
           </div>
 

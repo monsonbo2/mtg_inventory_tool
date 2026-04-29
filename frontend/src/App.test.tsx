@@ -412,7 +412,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Current collection: Personal Collection")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Personal Collection" })).toBeInTheDocument();
     expect(getAccessSummary).toHaveBeenCalledTimes(1);
     expect(listInventories).toHaveBeenCalledTimes(1);
     expect(vi.mocked(getAccessSummary).mock.invocationCallOrder[0]).toBeLessThan(
@@ -516,7 +516,7 @@ describe("App", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Imported 4 cards into Trade Binder.",
     );
-    expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Trade Binder" })).toBeInTheDocument();
   });
 
   it("keeps quick add read-only when the selected collection cannot be written to", async () => {
@@ -1163,7 +1163,7 @@ describe("App", () => {
     expect(bootstrapDefaultInventory).not.toHaveBeenCalled();
 
     expect(await screen.findByRole("status")).toHaveTextContent("Created Commander Decks.");
-    expect(await screen.findByText("Current collection: Commander Decks")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Commander Decks" })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(listInventoryItems).toHaveBeenCalledWith("commander-decks");
@@ -4345,7 +4345,7 @@ describe("App", () => {
     });
 
     expect(await screen.findByRole("status")).toHaveTextContent("Created Trade Binder.");
-    expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Trade Binder" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Create Collection" })).not.toBeInTheDocument();
 
     await waitFor(() => {

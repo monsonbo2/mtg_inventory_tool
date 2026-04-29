@@ -1354,9 +1354,6 @@ export function SearchPanel(props: {
           <p className="section-kicker">Search And Add</p>
           <h2>Card Search</h2>
         </div>
-        <span className="muted-note">
-          Current collection: {props.state.selectedInventoryRow?.display_name || "None"}
-        </span>
       </div>
 
       <div className="search-panel-toolbar">
@@ -1364,7 +1361,7 @@ export function SearchPanel(props: {
           <button
             aria-expanded={importMenuOpen}
             aria-haspopup="menu"
-            className="secondary-button search-import-trigger"
+            className="utility-button search-import-trigger"
             disabled={!props.state.inventories.length}
             onClick={toggleImportMenu}
             type="button"

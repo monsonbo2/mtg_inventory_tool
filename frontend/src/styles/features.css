@@ -132,6 +132,7 @@
 
 .search-import-trigger {
   min-height: 44px;
+  padding-inline: 14px;
 }
 
 .search-import-menu {
@@ -1459,6 +1460,35 @@
     linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(9, 15, 29, 0.96));
 }
 
+.inventory-sidebar-action-support.secondary-button {
+  color: var(--text-main);
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 13px;
+  padding-bottom: 13px;
+  padding-left: 15px;
+  padding-right: 18px;
+  background:
+    radial-gradient(circle at top left, rgba(93, 231, 206, 0.08), transparent 58%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.76), rgba(9, 15, 29, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow:
+    inset 0 0 0 1px rgba(148, 163, 184, 0.04),
+    0 8px 18px rgba(7, 12, 24, 0.12);
+}
+
+.inventory-sidebar-action-support.secondary-button:hover {
+  border-color: rgba(93, 231, 206, 0.22);
+  background:
+    radial-gradient(circle at top left, rgba(93, 231, 206, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(9, 15, 29, 0.96));
+}
+
+.inventory-sidebar-action-support .inventory-action-icon {
+  margin-top: 3px;
+}
+
 .inventory-sidebar-action-create-label {
   letter-spacing: 0.005em;
 }
@@ -2125,6 +2155,7 @@
 
 .primary-button,
 .secondary-button,
+.utility-button,
 .danger-button {
   border: 0;
   border-radius: 999px;
@@ -2134,6 +2165,7 @@
 
 .primary-button:hover,
 .secondary-button:hover,
+.utility-button:hover,
 .danger-button:hover {
   transform: translateY(-1px);
 }
@@ -2150,6 +2182,20 @@
   border: 1px solid rgba(248, 240, 218, 0.16);
 }
 
+.utility-button {
+  background: rgba(15, 23, 42, 0.56);
+  color: var(--text-soft);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.03);
+  font-weight: 600;
+}
+
+.utility-button:hover {
+  color: var(--text-main);
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.7);
+}
+
 .danger-button {
   background: rgba(255, 137, 116, 0.16);
   color: var(--accent-danger);
@@ -2158,6 +2204,7 @@
 
 .primary-button:disabled,
 .secondary-button:disabled,
+.utility-button:disabled,
 .danger-button:disabled,
 .text-input:disabled,
 .text-area:disabled {
@@ -2498,7 +2545,7 @@
 }
 
 .inventory-summary-bar {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 18px;
 }
 
@@ -2535,6 +2582,11 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 18px;
+}
+
+.collection-header-controls .utility-button {
+  min-height: 40px;
+  padding-inline: 14px;
 }
 
 .collection-search-row {

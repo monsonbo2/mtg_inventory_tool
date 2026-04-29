@@ -12,7 +12,6 @@ function visualArtifactPath(projectName: string, fileName: string) {
 
 async function openMainWorkspace(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText(/^Current collection:/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Import Cards" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Quick Add and Card Search" })).toBeVisible();
 }
