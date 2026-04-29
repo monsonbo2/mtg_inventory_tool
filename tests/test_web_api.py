@@ -4709,7 +4709,7 @@ class WebApiTest(unittest.TestCase):
                 def add_card_with_collision(*args, **kwargs):
                     return service_add_card(*args, before_write=insert_conflicting_row, **kwargs)
 
-                with patch("mtg_source_stack.api.routes.add_card", side_effect=add_card_with_collision):
+                with patch("mtg_source_stack.api.routes.owned_items.add_card", side_effect=add_card_with_collision):
                     response = client.post(
                         "/inventories/personal/items",
                         json={
@@ -4766,7 +4766,7 @@ class WebApiTest(unittest.TestCase):
                 def set_location_with_collision(*args, **kwargs):
                     return service_set_location(*args, before_write=insert_conflicting_row, **kwargs)
 
-                with patch("mtg_source_stack.api.routes.set_location", side_effect=set_location_with_collision):
+                with patch("mtg_source_stack.api.routes.owned_items.set_location", side_effect=set_location_with_collision):
                     response = client.patch(
                         f"/inventories/personal/items/{item_id}",
                         json={"location": "Binder B"},
@@ -4819,7 +4819,7 @@ class WebApiTest(unittest.TestCase):
                 def set_condition_with_collision(*args, **kwargs):
                     return service_set_condition(*args, before_write=insert_conflicting_row, **kwargs)
 
-                with patch("mtg_source_stack.api.routes.set_condition", side_effect=set_condition_with_collision):
+                with patch("mtg_source_stack.api.routes.owned_items.set_condition", side_effect=set_condition_with_collision):
                     response = client.patch(
                         f"/inventories/personal/items/{item_id}",
                         json={"condition_code": "LP"},
