@@ -232,7 +232,8 @@ Current import surfaces:
 Current shared-service auth shape:
 
 - `_require_import_inventory_write_access(...)` in
-  `src/mtg_source_stack/api/routes.py` is the real shared write-access rule for
+  `src/mtg_source_stack/api/routes/__init__.py` is the real shared write-access
+  rule for
   import routes.
 - `_require_csv_import_inventory_write_access(...)` is currently a naming seam
   on top of that shared helper, not separate policy.
@@ -273,7 +274,7 @@ Multipart caveat:
 - access control:
   - `src/mtg_source_stack/inventory/access.py`
   - `src/mtg_source_stack/api/dependencies.py`
-  - `src/mtg_source_stack/api/routes.py`
+  - `src/mtg_source_stack/api/routes/`
 - catalog search and printing resolution:
   - `src/mtg_source_stack/inventory/catalog.py`
   - `src/mtg_source_stack/inventory/query_catalog.py`

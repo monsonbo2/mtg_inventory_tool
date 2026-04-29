@@ -10,75 +10,52 @@ from typing import Annotated, Any, Callable
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from starlette.concurrency import run_in_threadpool
 
-from ..errors import AuthorizationError, MtgStackError, ValidationError
-from ..inventory.access import actor_inventory_role_with_connection, can_write_inventory
-from ..inventory.export_profiles import supported_csv_export_profiles
-from ..inventory.money import coerce_decimal
-from ..inventory.normalize import (
-    DEFAULT_AUDIT_EVENT_LIMIT,
+from ...errors import AuthorizationError, MtgStackError, ValidationError
+from ...inventory.access import actor_inventory_role_with_connection, can_write_inventory
+from ...inventory.export_profiles import supported_csv_export_profiles
+from ...inventory.money import coerce_decimal
+from ...inventory.normalize import (
     DEFAULT_OWNED_ROWS_PAGE_LIMIT,
     DEFAULT_PROVIDER,
-    DEFAULT_SEARCH_LIMIT,
-    MAX_AUDIT_EVENT_LIMIT,
     MAX_OWNED_ROWS_LIMIT,
-    MAX_SEARCH_LIMIT,
 )
-from ..inventory.response_models import serialize_response
-from ..inventory.service import (
+from ...inventory.service import (
     add_card,
     bulk_mutate_inventory_items,
     create_inventory,
-    create_inventory_share_link,
     duplicate_inventory,
     ensure_default_inventory,
-    get_inventory_share_link_status,
-    get_public_inventory_share,
     import_csv_stream,
     import_decklist_text,
     import_deck_url,
-    list_card_printings_for_oracle,
-    list_inventory_audit_events,
-    list_inventory_memberships,
     list_visible_inventories,
     list_owned_filtered,
     list_owned_filtered_page,
     OWNED_INVENTORY_PAGE_SORT_DIRECTIONS,
     OWNED_INVENTORY_PAGE_SORT_KEYS,
     remove_card,
-    remove_inventory_membership,
     render_inventory_csv_export,
-    revoke_inventory_share_link,
-    rotate_inventory_share_link,
-    search_card_names,
-    search_cards,
     set_acquisition,
     set_condition,
     set_finish,
-    set_inventory_membership_role,
     set_location,
     set_notes,
     set_printing,
     set_quantity,
     set_tags,
-    summarize_card_printings_for_oracle,
-    summarize_actor_access,
     transfer_inventory_items,
-    update_inventory_membership_role,
 )
-from .dependencies import (
+from ..dependencies import (
     ApiSettings,
     RequestContext,
     get_inventory_read_request_context,
     get_inventory_write_request_context,
-    get_inventory_scoped_read_request_context,
     get_authenticated_request_context,
     get_settings,
-    require_inventory_membership_management_access,
     require_inventory_read_access,
-    require_inventory_share_management_access,
     require_inventory_write_access,
 )
-from .request_models import (
+from ..request_models import (
     AddInventoryItemRequest,
     BulkInventoryItemMutationRequest,
     CONDITION_CODE_DESCRIPTION,
@@ -88,57 +65,43 @@ from .request_models import (
     FinishInput,
     InventoryCreateRequest,
     InventoryDuplicateRequest,
-    InventoryMembershipGrantRequest,
-    InventoryMembershipUpdateRequest,
     InventoryTransferRequest,
     LANGUAGE_CODE_DESCRIPTION,
     PatchInventoryItemRequest,
-    SEARCH_LANG_DESCRIPTION,
     SetInventoryItemPrintingRequest,
 )
-from .response_models import (
-    AccessSummaryResponse,
+from ..response_models import (
     AddInventoryItemResponse,
-    ApiErrorResponse,
     BulkInventoryItemMutationResponse,
-    CatalogNameSearchResponse,
-    CatalogNameSearchRowResponse,
-    CatalogPrintingLookupRowResponse,
-    CatalogPrintingSummaryResponse,
-    CatalogSearchRowResponse,
     CsvImportResponse,
     DecklistImportResponse,
     DeckUrlImportResponse,
     DefaultInventoryBootstrapResponse,
-    HealthResponse,
-    InventoryAuditEventResponse,
     InventoryCreateResponse,
     InventoryDuplicateResponse,
-    InventoryMembershipRemovalResponse,
-    InventoryMembershipResponse,
-    InventoryShareLinkStatusResponse,
-    InventoryShareLinkTokenResponse,
     InventoryItemPatchResponse,
-    InventoryTransferResponse,
     InventoryListRowResponse,
+    InventoryTransferResponse,
     OwnedInventoryItemsPageResponse,
     OwnedInventoryRowResponse,
-    PublicInventoryShareResponse,
     RemoveInventoryItemResponse,
     SetPrintingResponse,
 )
+from ._common import _error_responses, _serialize
+from .audit import router as audit_router
+from .catalog import router as catalog_router
+from .health import router as health_router
+from .memberships import router as memberships_router
+from .sharing import router as sharing_router
 
 
 router = APIRouter()
+router.include_router(health_router)
+router.include_router(memberships_router)
+router.include_router(sharing_router)
+router.include_router(catalog_router)
+router.include_router(audit_router)
 
-PRINTINGS_LANG_DESCRIPTION = (
-    f"{SEARCH_LANG_DESCRIPTION} Omit this parameter to prefer English printings by default. "
-    "Use `all` to include every available catalog language."
-)
-SEARCH_SCOPE_DESCRIPTION = (
-    "Catalog scope to search. Omit this parameter or use `default` for the mainline card-add flow. "
-    "Use `all` to include auxiliary catalog objects such as tokens, emblems, and art-series rows."
-)
 CSV_IMPORT_FILE_DESCRIPTION = "CSV file to import."
 CSV_IMPORT_DEFAULT_INVENTORY_DESCRIPTION = (
     "Optional default inventory slug when the CSV does not include an inventory column."
@@ -158,27 +121,6 @@ INVENTORY_ITEMS_SORT_KEY_DESCRIPTION = (
 )
 SORT_DIRECTION_DESCRIPTION = "Sort direction."
 
-ERROR_RESPONSE_DESCRIPTIONS = {
-    401: "Authentication required",
-    403: "Forbidden",
-    400: "Validation error",
-    404: "Not found",
-    409: "Conflict",
-    500: "Internal server error",
-    503: "Schema not ready",
-}
-
-
-def _error_responses(*status_codes: int) -> dict[int, dict[str, Any]]:
-    return {
-        status_code: {
-            "model": ApiErrorResponse,
-            "description": ERROR_RESPONSE_DESCRIPTIONS[status_code],
-        }
-        for status_code in status_codes
-    }
-
-
 def _csv_success_response(description: str = "Successful Response") -> dict[int, dict[str, Any]]:
     return {
         200: {
@@ -192,10 +134,6 @@ def _csv_success_response(description: str = "Successful Response") -> dict[int,
             },
         }
     }
-
-
-def _serialize(payload: Any) -> Any:
-    return serialize_response(payload)
 
 
 def _csv_download_response(csv_text: str, filename: str) -> Response:
@@ -332,16 +270,6 @@ def _build_import_inventory_validator(
 
     return inventory_validator
 
-
-@router.get("/health", response_model=HealthResponse, responses=_error_responses(500))
-def health(settings: Annotated[ApiSettings, Depends(get_settings)]) -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "auto_migrate": settings.auto_migrate,
-        "trusted_actor_headers": settings.trust_actor_headers,
-    }
-
-
 @router.get(
     "/inventories",
     response_model=list[InventoryListRowResponse],
@@ -403,227 +331,6 @@ def bootstrap_default_inventory(
             actor_roles=context.roles,
         )
     )
-
-
-@router.get(
-    "/inventories/{inventory_slug}/members",
-    response_model=list[InventoryMembershipResponse],
-    responses=_error_responses(401, 403, 404, 503, 500),
-)
-def inventory_members_list(
-    inventory_slug: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_membership_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        list_inventory_memberships(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-        )
-    )
-
-
-@router.post(
-    "/inventories/{inventory_slug}/members",
-    status_code=status.HTTP_201_CREATED,
-    response_model=InventoryMembershipResponse,
-    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
-)
-def inventory_member_grant(
-    inventory_slug: str,
-    payload: InventoryMembershipGrantRequest,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_membership_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        set_inventory_membership_role(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            member_actor_id=payload.actor_id,
-            role=payload.role,
-            actor_id=context.actor_id,
-            actor_type=context.actor_type,
-            request_id=context.request_id,
-        )
-    )
-
-
-@router.patch(
-    "/inventories/{inventory_slug}/members/{actor_id}",
-    response_model=InventoryMembershipResponse,
-    responses=_error_responses(401, 403, 400, 404, 409, 503, 500),
-)
-def inventory_member_update(
-    inventory_slug: str,
-    actor_id: str,
-    payload: InventoryMembershipUpdateRequest,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_membership_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        update_inventory_membership_role(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            member_actor_id=actor_id,
-            role=payload.role,
-            actor_id=context.actor_id,
-            actor_type=context.actor_type,
-            request_id=context.request_id,
-        )
-    )
-
-
-@router.delete(
-    "/inventories/{inventory_slug}/members/{actor_id}",
-    response_model=InventoryMembershipRemovalResponse,
-    responses=_error_responses(401, 403, 404, 409, 503, 500),
-)
-def inventory_member_revoke(
-    inventory_slug: str,
-    actor_id: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_membership_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        remove_inventory_membership(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            member_actor_id=actor_id,
-            actor_id=context.actor_id,
-            actor_type=context.actor_type,
-            request_id=context.request_id,
-        )
-    )
-
-
-@router.get(
-    "/me/access-summary",
-    response_model=AccessSummaryResponse,
-    responses=_error_responses(401, 403, 503, 500),
-)
-def get_access_summary(
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    return _serialize(
-        summarize_actor_access(
-            settings.db_path,
-            actor_id=context.actor_id,
-            actor_roles=context.roles,
-        )
-    )
-
-
-@router.get(
-    "/inventories/{inventory_slug}/share-link",
-    response_model=InventoryShareLinkStatusResponse,
-    responses=_error_responses(401, 403, 404, 503, 500),
-)
-def inventory_share_link_status(
-    inventory_slug: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        get_inventory_share_link_status(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            token_secret=settings.snapshot_signing_secret,
-        )
-    )
-
-
-@router.post(
-    "/inventories/{inventory_slug}/share-link",
-    status_code=status.HTTP_201_CREATED,
-    response_model=InventoryShareLinkTokenResponse,
-    responses=_error_responses(401, 403, 404, 409, 503, 500),
-)
-def inventory_share_link_create(
-    inventory_slug: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        create_inventory_share_link(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            actor_id=context.actor_id,
-            token_secret=settings.snapshot_signing_secret,
-            actor_type=context.actor_type,
-            request_id=context.request_id,
-        )
-    )
-
-
-@router.post(
-    "/inventories/{inventory_slug}/share-link/rotate",
-    response_model=InventoryShareLinkTokenResponse,
-    responses=_error_responses(401, 403, 404, 503, 500),
-)
-def inventory_share_link_rotate(
-    inventory_slug: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        rotate_inventory_share_link(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            actor_id=context.actor_id,
-            token_secret=settings.snapshot_signing_secret,
-            actor_type=context.actor_type,
-            request_id=context.request_id,
-        )
-    )
-
-
-@router.delete(
-    "/inventories/{inventory_slug}/share-link",
-    response_model=InventoryShareLinkStatusResponse,
-    responses=_error_responses(401, 403, 404, 503, 500),
-)
-def inventory_share_link_revoke(
-    inventory_slug: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    context: Annotated[RequestContext, Depends(get_authenticated_request_context)],
-) -> Any:
-    require_inventory_share_management_access(settings, context, inventory_slug=inventory_slug)
-    return _serialize(
-        revoke_inventory_share_link(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            actor_id=context.actor_id,
-            actor_type=context.actor_type,
-            request_id=context.request_id,
-        )
-    )
-
-
-@router.get(
-    "/shared/inventories/{share_token}",
-    response_model=PublicInventoryShareResponse,
-    responses=_error_responses(404, 503, 500),
-)
-def public_inventory_share(
-    share_token: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-) -> Any:
-    return _serialize(
-        get_public_inventory_share(
-            settings.db_path,
-            token=share_token,
-            token_secret=settings.snapshot_signing_secret,
-        )
-    )
-
 
 @router.post(
     "/inventories/{source_inventory_slug}/duplicate",
@@ -774,116 +481,6 @@ async def imports_deck_url(
         schema_policy="require_current",
     )
     return _serialize(result)
-
-
-@router.get(
-    "/cards/search",
-    response_model=list[CatalogSearchRowResponse],
-    responses=_error_responses(401, 403, 400, 503, 500),
-)
-def cards_search(
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
-    query: str,
-    set_code: str | None = None,
-    rarity: str | None = None,
-    finish: Annotated[FinishInput | None, Query(description=FINISH_INPUT_DESCRIPTION)] = None,
-    lang: Annotated[str | None, Query(description=SEARCH_LANG_DESCRIPTION)] = None,
-    scope: Annotated[
-        str | None,
-        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
-    ] = None,
-    exact: bool = False,
-    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
-) -> Any:
-    return _serialize(
-        search_cards(
-            settings.db_path,
-            query=query,
-            set_code=set_code,
-            rarity=rarity,
-            finish=finish,
-            lang=lang,
-            scope=scope,
-            exact=exact,
-            limit=limit,
-        )
-    )
-
-
-@router.get(
-    "/cards/search/names",
-    response_model=CatalogNameSearchResponse,
-    responses=_error_responses(401, 403, 400, 503, 500),
-)
-def card_names_search(
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
-    query: str,
-    scope: Annotated[
-        str | None,
-        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
-    ] = None,
-    exact: bool = False,
-    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
-) -> Any:
-    return _serialize(
-        search_card_names(
-            settings.db_path,
-            query=query,
-            scope=scope,
-            exact=exact,
-            limit=limit,
-        )
-    )
-
-
-@router.get(
-    "/cards/oracle/{oracle_id}/printings",
-    response_model=list[CatalogPrintingLookupRowResponse],
-    responses=_error_responses(401, 403, 400, 404, 503, 500),
-)
-def card_printings_lookup(
-    oracle_id: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
-    lang: Annotated[str | None, Query(description=PRINTINGS_LANG_DESCRIPTION)] = None,
-    scope: Annotated[
-        str | None,
-        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
-    ] = None,
-) -> Any:
-    rows = list_card_printings_for_oracle(
-        settings.db_path,
-        oracle_id=oracle_id,
-        lang=lang,
-        scope=scope,
-    )
-    return _serialize(rows)
-
-
-@router.get(
-    "/cards/oracle/{oracle_id}/printings/summary",
-    response_model=CatalogPrintingSummaryResponse,
-    responses=_error_responses(401, 403, 400, 404, 503, 500),
-)
-def card_printings_summary(
-    oracle_id: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_inventory_scoped_read_request_context)],
-    scope: Annotated[
-        str | None,
-        Query(description=SEARCH_SCOPE_DESCRIPTION, json_schema_extra={"enum": ["default", "all"]}),
-    ] = None,
-) -> Any:
-    return _serialize(
-        summarize_card_printings_for_oracle(
-            settings.db_path,
-            oracle_id=oracle_id,
-            scope=scope,
-        )
-    )
-
 
 @router.get(
     "/inventories/{inventory_slug}/items",
@@ -1248,27 +845,5 @@ def inventory_items_delete(
             actor_type=context.actor_type,
             actor_id=context.actor_id,
             request_id=context.request_id,
-        )
-    )
-
-
-@router.get(
-    "/inventories/{inventory_slug}/audit",
-    response_model=list[InventoryAuditEventResponse],
-    responses=_error_responses(401, 403, 400, 404, 503, 500),
-)
-def inventory_audit_list(
-    inventory_slug: str,
-    settings: Annotated[ApiSettings, Depends(get_settings)],
-    _context: Annotated[RequestContext, Depends(get_inventory_read_request_context)],
-    limit: Annotated[int, Query(ge=1, le=MAX_AUDIT_EVENT_LIMIT)] = DEFAULT_AUDIT_EVENT_LIMIT,
-    item_id: int | None = None,
-) -> Any:
-    return _serialize(
-        list_inventory_audit_events(
-            settings.db_path,
-            inventory_slug=inventory_slug,
-            limit=limit,
-            item_id=item_id,
         )
     )

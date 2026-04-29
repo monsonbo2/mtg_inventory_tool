@@ -361,7 +361,7 @@ Primary files likely involved:
 
 - `src/mtg_source_stack/api/request_models.py`
 - `src/mtg_source_stack/api/response_models.py`
-- `src/mtg_source_stack/api/routes.py`
+- `src/mtg_source_stack/api/routes/`
 - `src/mtg_source_stack/inventory/service.py`
 - `src/mtg_source_stack/inventory/mutations.py`
 - `tests/test_inventory_service.py`
