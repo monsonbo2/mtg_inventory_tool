@@ -232,7 +232,7 @@ class DeckUrlImportTest(unittest.TestCase):
         )
 
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             return_value="""
                 <html>
                   <a class="dropdown-item" href="/deck/download/7252087">Text File (Default)</a>
@@ -260,7 +260,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_mtgtop8_dec_export_url_from_url_discovers_export_link_from_page(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             return_value='<a href=dec?d=749833&f=Premodern_Optimal_Dreadnought_Decklist_by_Ondrej_Kedrovic>.dec</a>',
         ):
             self.assertEqual(
@@ -835,7 +835,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_uses_moxfield_api_payload(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_json",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_json",
             return_value={
                 "name": "Fetched Moxfield Deck",
                 "mainboard": {
@@ -856,7 +856,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_surfaces_moxfield_paste_fallback_on_blocked_fetch(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_json",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_json",
             side_effect=_RemoteDeckSourceError(
                 code="private_or_blocked",
                 message="blocked",
@@ -870,7 +870,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_surfaces_provider_specific_timeout(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             side_effect=_RemoteDeckSourceError(
                 code="timeout",
                 message="timed out",
@@ -884,7 +884,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_surfaces_provider_parse_drift(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_json",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_json",
             return_value={},
         ):
             with self.assertRaisesRegex(
@@ -895,7 +895,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_uses_mtggoldfish_downloads(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             side_effect=[
                 """
                     <textarea class='copy-paste-box'>About
@@ -923,7 +923,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_uses_aetherhub_deck_page(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             return_value="""
                 <html>
                   <meta property="og:title" content="Commander - Precon" />
@@ -941,7 +941,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_uses_manabox_shared_page(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             return_value=self._manabox_page_html(
                 {
                     "name": [0, "ManaBox Deck"],
@@ -973,7 +973,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_uses_mtgtop8_dec_export(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             return_value="""
                 // Deck file created with mtgtop8.com
                 // NAME : Optimal Dreadnought Decklist
@@ -993,7 +993,7 @@ class DeckUrlImportTest(unittest.TestCase):
 
     def test_fetch_remote_deck_source_uses_tappedout_page_export(self) -> None:
         with patch(
-            "mtg_source_stack.inventory.deck_url_import._fetch_text",
+            "mtg_source_stack.inventory.remote_deck_providers._fetch_text",
             return_value="""
                 <textarea id="mtga-textarea">About
                 Name Commander EDH deck
