@@ -1,9 +1,12 @@
+import type { ReactNode } from "react";
+
 export function PanelState(props: {
   title: string;
-  body: string;
+  body: ReactNode;
   variant?: "idle" | "loading" | "error";
   compact?: boolean;
   eyebrow?: string;
+  actions?: ReactNode;
 }) {
   const variant = props.variant || "idle";
   const className = props.compact
@@ -25,6 +28,7 @@ export function PanelState(props: {
           <strong>{props.title}</strong>
         </div>
         <p>{props.body}</p>
+        {props.actions ? <div className="state-block-actions">{props.actions}</div> : null}
       </div>
     </div>
   );

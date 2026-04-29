@@ -1,24 +1,27 @@
 .app-shell {
-  width: min(1440px, calc(100vw - 32px));
+  width: min(1400px, calc(100vw - 40px));
   margin: 0 auto;
-  padding: 32px 0 48px;
+  padding: 24px 0 40px;
 }
 
 .hero {
+  max-width: min(860px, 100%);
+  margin-bottom: 16px;
+}
+
+.hero-copy-block {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
-  gap: 20px;
-  align-items: stretch;
-  margin-bottom: 20px;
+  gap: 8px;
+  padding: 4px 0;
 }
 
 .eyebrow,
 .section-kicker {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   text-transform: uppercase;
   letter-spacing: 0.16em;
   color: var(--accent-lagoon);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
 }
 
 .hero h1,
@@ -30,25 +33,19 @@
 }
 
 .hero h1 {
-  font-size: clamp(2.4rem, 4vw, 4.5rem);
+  font-size: clamp(2.2rem, 3.8vw, 4rem);
   line-height: 0.96;
   letter-spacing: -0.05em;
 }
 
 .hero-copy {
-  max-width: 62ch;
-  margin: 18px 0 0;
+  max-width: 54ch;
+  margin: 2px 0 0;
   color: var(--text-soft);
-  line-height: 1.6;
+  font-size: 0.98rem;
+  line-height: 1.5;
 }
 
-.hero-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.metric-card,
 .panel,
 .notice-banner,
 .result-card,
@@ -58,96 +55,6 @@
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   box-shadow: var(--panel-shadow);
-}
-
-.metric-card {
-  border-radius: 24px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 132px;
-  position: relative;
-  overflow: hidden;
-}
-
-.metric-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 1;
-  pointer-events: none;
-}
-
-.metric-card > * {
-  position: relative;
-  z-index: 1;
-}
-
-.metric-accent {
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.72rem;
-}
-
-.metric-card-sunrise {
-  border-color: rgba(244, 171, 98, 0.3);
-  box-shadow:
-    var(--panel-shadow),
-    inset 0 0 0 1px rgba(244, 171, 98, 0.08);
-}
-
-.metric-card-sunrise::before {
-  background:
-    radial-gradient(circle at top right, rgba(244, 171, 98, 0.26), transparent 44%),
-    linear-gradient(180deg, rgba(244, 171, 98, 0.12), transparent 72%);
-}
-
-.metric-accent.metric-card-sunrise {
-  color: var(--accent-sunrise);
-}
-
-.metric-card-lagoon {
-  border-color: rgba(93, 231, 206, 0.28);
-  box-shadow:
-    var(--panel-shadow),
-    inset 0 0 0 1px rgba(93, 231, 206, 0.08);
-}
-
-.metric-card-lagoon::before {
-  background:
-    radial-gradient(circle at top left, rgba(93, 231, 206, 0.22), transparent 46%),
-    linear-gradient(180deg, rgba(93, 231, 206, 0.12), transparent 72%);
-}
-
-.metric-accent.metric-card-lagoon {
-  color: var(--accent-lagoon);
-}
-
-.metric-card-paper {
-  border-color: rgba(248, 240, 218, 0.26);
-  box-shadow:
-    var(--panel-shadow),
-    inset 0 0 0 1px rgba(248, 240, 218, 0.08);
-}
-
-.metric-card-paper::before {
-  background:
-    radial-gradient(circle at top center, rgba(248, 240, 218, 0.16), transparent 44%),
-    linear-gradient(180deg, rgba(248, 240, 218, 0.1), transparent 76%);
-}
-
-.metric-accent.metric-card-paper {
-  color: var(--accent-paper);
-}
-
-.metric-card strong {
-  font-size: 1.9rem;
-  margin: 18px 0 6px;
-}
-
-.metric-card span:last-child {
-  color: var(--text-muted);
 }
 
 .notice-banner {
@@ -225,14 +132,14 @@
 
 .workspace-grid {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .workspace-top-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: stretch;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
   position: relative;
   z-index: 6;
 }

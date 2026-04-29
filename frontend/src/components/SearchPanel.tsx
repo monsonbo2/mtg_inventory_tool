@@ -237,10 +237,13 @@ function getImportSourceSummary(session: InventoryImportSession) {
 
 export function SearchPanel(props: {
   actions: SearchPanelActions;
+  focusRequest?: { target: "search" | "import"; token: number } | null;
   state: SearchPanelState;
 }) {
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const searchFieldRef = useRef<HTMLLabelElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const importTriggerRef = useRef<HTMLButtonElement | null>(null);
   const importMenuRef = useRef<HTMLDivElement | null>(null);
   const searchResultRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const searchResultsPanelRef = useRef<HTMLDivElement | null>(null);
@@ -406,6 +409,25 @@ export function SearchPanel(props: {
       document.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [importMenuOpen]);
+
+  useEffect(() => {
+    if (!props.focusRequest) {
+      return;
+    }
+
+    const targetNode =
+      props.focusRequest.target === "import"
+        ? importTriggerRef.current
+        : searchInputRef.current;
+    if (!targetNode) {
+      return;
+    }
+
+    if (typeof targetNode.scrollIntoView === "function") {
+      targetNode.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+    targetNode.focus();
+  }, [props.focusRequest]);
 
   useEffect(() => {
     const defaultInventorySlug = getDefaultImportTargetInventorySlug();
@@ -1364,6 +1386,7 @@ export function SearchPanel(props: {
             className="utility-button search-import-trigger"
             disabled={!props.state.inventories.length}
             onClick={toggleImportMenu}
+            ref={importTriggerRef}
             type="button"
           >
             Import Cards
@@ -1420,6 +1443,7 @@ export function SearchPanel(props: {
               onFocus={props.actions.onSearchFieldFocus}
               onKeyDown={props.actions.onSearchInputKeyDown}
               placeholder="e.g. Lightning Bolt"
+              ref={searchInputRef}
               role="combobox"
               value={props.state.search.query}
             />
@@ -1485,11 +1509,6 @@ export function SearchPanel(props: {
         <p className="panel-hint">
           {props.state.selectedInventoryRow.display_name} is read-only. Switch to a writable
           collection to add cards, or choose another destination when importing.
-        </p>
-      ) : props.state.selectedInventoryRow.total_cards === 0 ? (
-        <p className="panel-hint panel-hint-success">
-          {props.state.selectedInventoryRow.display_name} is ready for its first cards. Use search
-          results below to get started.
         </p>
       ) : null}
 

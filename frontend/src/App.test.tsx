@@ -2288,24 +2288,60 @@ describe("App", () => {
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps empty collection chrome minimal until cards exist", async () => {
-    mockCollectionViewApp({ items: [] });
+  it("turns an empty collection into a launch point for search and import", async () => {
+    const user = userEvent.setup();
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
 
-    render(<App />);
+    try {
+      mockCollectionViewApp({ items: [] });
 
-    expect(await screen.findByText("Personal Collection is empty")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("combobox", { name: "Browse entries shown" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("textbox", { name: "Search this collection" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Entries")).not.toBeInTheDocument();
-    expect(screen.queryByText("Total cards")).not.toBeInTheDocument();
-    expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Recent Activity" })).toBeInTheDocument();
+      render(<App />);
+
+      expect(await screen.findByText("Personal Collection is empty")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("combobox", { name: "Browse entries shown" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("textbox", { name: "Search this collection" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Entries")).not.toBeInTheDocument();
+      expect(screen.queryByText("Total cards")).not.toBeInTheDocument();
+      expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Recent Activity" })).not.toBeInTheDocument();
+
+      const searchInput = screen.getByRole("combobox", {
+        name: "Quick Add and Card Search",
+      });
+      const importTrigger = screen.getByRole("button", { name: "Import Cards" });
+
+      await user.click(screen.getByRole("button", { name: "Add first card" }));
+
+      await waitFor(() => {
+        expect(searchInput).toHaveFocus();
+      });
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+
+      scrollIntoViewSpy.mockClear();
+
+      await user.click(screen.getByRole("button", { name: "Import a list" }));
+
+      await waitFor(() => {
+        expect(importTrigger).toHaveFocus();
+      });
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    }
   });
 
   it("clears collection chrome and stale rows while a new collection is loading", async () => {

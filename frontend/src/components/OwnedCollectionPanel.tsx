@@ -15,7 +15,7 @@ import type {
   MutationOutcome,
   NoticeTone,
 } from "../uiTypes";
-import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
+import { decimalToNumber, formatUsd } from "../uiHelpers";
 import type {
   InventoryTableFilters,
   InventoryTableFilterOptions,
@@ -81,6 +81,8 @@ type OwnedCollectionPanelActions = {
   onCreateInventory: (
     payload: InventoryCreateRequest,
   ) => Promise<InventoryCreateResult>;
+  onFocusImport: () => void;
+  onFocusSearch: () => void;
   onBrowsePageChange: (nextPage: number) => void;
   onBrowseVisibleLimitChange: (nextLimit: number) => void;
   onCollectionViewChange: (nextView: "browse" | "table") => void;
@@ -176,9 +178,7 @@ export function OwnedCollectionPanel(props: {
   const showViewControls =
     collectionDisplayState === "ready" || collectionDisplayState === "search_empty";
   const showActivityButton =
-    collectionDisplayState === "empty" ||
-    collectionDisplayState === "ready" ||
-    collectionDisplayState === "search_empty";
+    collectionDisplayState === "ready" || collectionDisplayState === "search_empty";
   const showCollectionMetrics = showViewControls;
   const showCollectionSearchRow = showViewControls;
   const showSummaryBar = showCollectionMetrics;
@@ -226,9 +226,30 @@ export function OwnedCollectionPanel(props: {
         );
         break;
       }
+      const emptyCollectionBody = props.state.selectedInventoryCanWrite
+        ? "Use search to add the first card to this collection, or import a list if you already have one ready."
+        : "Use search to review printings, or import a list into another collection to keep building inventory.";
       collectionContent = (
         <PanelState
-          body={getInventoryCollectionEmptyMessage(props.state.selectedInventoryRow)}
+          actions={
+            <>
+              <button
+                className="primary-button"
+                onClick={props.actions.onFocusSearch}
+                type="button"
+              >
+                {props.state.selectedInventoryCanWrite ? "Add first card" : "Find cards"}
+              </button>
+              <button
+                className="secondary-button"
+                onClick={props.actions.onFocusImport}
+                type="button"
+              >
+                Import a list
+              </button>
+            </>
+          }
+          body={emptyCollectionBody}
           eyebrow="Collection"
           title={`${props.state.selectedInventoryRow.display_name} is empty`}
         />

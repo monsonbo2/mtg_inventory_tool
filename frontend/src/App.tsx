@@ -7,7 +7,6 @@ import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
 import { PanelState } from "./components/ui/PanelState";
 import { SearchPanel } from "./components/SearchPanel";
 import { StickyWorkspaceControls } from "./components/StickyWorkspaceControls";
-import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
 import { NoticeToast } from "./components/ui/NoticeToast";
 import { useCardSearch } from "./hooks/useCardSearch";
@@ -22,7 +21,7 @@ import {
   getWritableInventories,
   isWritableInventory,
 } from "./inventoryCapabilities";
-import { decimalToNumber, formatUsd } from "./uiHelpers";
+import { decimalToNumber } from "./uiHelpers";
 import type { AppShellState } from "./uiTypes";
 import type { AccessSummaryResponse } from "./types";
 
@@ -120,6 +119,10 @@ function getShellStatePanelContent(
 export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
+  const [searchFocusRequest, setSearchFocusRequest] = useState<{
+    target: "search" | "import";
+    token: number;
+  } | null>(null);
   const [stickyControlsVisible, setStickyControlsVisible] = useState(false);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const {
@@ -264,10 +267,6 @@ export default function App() {
     setActivityOpen(false);
   }, [selectedInventory]);
 
-  const totalEstimatedValue = collectionItems.reduce(
-    (sum, row) => sum + decimalToNumber(row.est_value),
-    0,
-  );
   const selectedInventoryCanWrite = isWritableInventory(selectedInventoryRow);
   const writableInventories = getWritableInventories(inventories);
   const availableCopyTargetInventories = getTransferTargetInventories(inventories, {
@@ -390,6 +389,16 @@ export default function App() {
     onCloseItemDetails: handleCloseItemDetails,
     onCollectionSearchQueryChange: handleCollectionSearchQueryChange,
     onDelete: handleDeleteItem,
+    onFocusImport: () =>
+      setSearchFocusRequest((current) => ({
+        target: "import",
+        token: (current?.token ?? 0) + 1,
+      })),
+    onFocusSearch: () =>
+      setSearchFocusRequest((current) => ({
+        target: "search",
+        token: (current?.token ?? 0) + 1,
+      })),
     onNotice: reportNotice,
     onOpenActivity: () => setActivityOpen(true),
     onOpenItemDetails: handleOpenItemDetails,
@@ -465,25 +474,12 @@ export default function App() {
       ) : null}
 
       <header className="hero">
-        <div>
+        <div className="hero-copy-block">
           <p className="eyebrow">Card Collection</p>
           <h1>Stash Counter</h1>
           <p className="hero-copy">
             Search cards, compare printings, and organize your collection in one place.
           </p>
-        </div>
-        <div className="hero-metrics">
-          <MetricCard accent="Sunrise" label="Collections" value={String(inventories.length)} />
-          <MetricCard
-            accent="Lagoon"
-            label="Entries In View"
-            value={String(collectionItems.length)}
-          />
-          <MetricCard
-            accent="Paper"
-            label="Est. Value"
-            value={formatUsd(totalEstimatedValue)}
-          />
         </div>
       </header>
 
@@ -509,7 +505,11 @@ export default function App() {
 
           <div className="workspace-search-column">
             {appShellState === "ready" ? (
-              <SearchPanel actions={searchPanelActions} state={searchPanelState} />
+              <SearchPanel
+                actions={searchPanelActions}
+                focusRequest={searchFocusRequest}
+                state={searchPanelState}
+              />
             ) : (
               <PanelState
                 body={shellStatePanels!.search.body}

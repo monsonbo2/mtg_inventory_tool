@@ -1,10 +1,10 @@
 .panel {
-  border-radius: 26px;
-  padding: 24px;
+  border-radius: 24px;
+  padding: 22px;
 }
 
 .inventory-sidebar-panel {
-  padding-bottom: 20px;
+  padding-bottom: 18px;
   position: relative;
   overflow: visible;
   border-color: rgba(148, 163, 184, 0.18);
@@ -64,13 +64,13 @@
 .panel-heading {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   align-items: start;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .panel-heading h2 {
-  font-size: 1.45rem;
+  font-size: 1.36rem;
 }
 
 .status-pill,
@@ -110,19 +110,19 @@
 }
 
 .panel-error {
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   color: var(--accent-danger);
 }
 
 .panel-hint {
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   color: var(--text-muted);
 }
 
 .search-panel-toolbar {
   display: flex;
   justify-content: flex-start;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .search-import {
@@ -131,7 +131,7 @@
 }
 
 .search-import-trigger {
-  min-height: 44px;
+  min-height: 42px;
   padding-inline: 14px;
 }
 
@@ -1287,7 +1287,7 @@
   background:
     linear-gradient(180deg, rgba(19, 30, 51, 0.76), rgba(10, 18, 34, 0.88));
   border-radius: 18px;
-  padding: 10px 12px;
+  padding: 9px 12px;
 }
 
 .inventory-switcher {
@@ -1370,7 +1370,7 @@
 
 .inventory-focus-block {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .inventory-focus-kicker {
@@ -1390,25 +1390,24 @@
 }
 
 .inventory-sidebar-actions + .inventory-focus-block {
-  margin-top: 20px;
+  margin-top: 14px;
 }
 
 @media (min-width: 821px) {
   .sidebar-column > .inventory-sidebar-panel {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
+    display: block;
+    min-height: 0;
   }
 
   .sidebar-column > .inventory-sidebar-panel .inventory-sidebar-actions + .inventory-focus-block {
-    margin-top: auto;
-    padding-top: 18px;
+    margin-top: 14px;
+    padding-top: 0;
   }
 }
 
 .inventory-sidebar-action {
   width: 100%;
-  min-height: 58px;
+  min-height: 54px;
   border-radius: 18px;
   display: inline-flex;
   align-items: center;
@@ -1697,7 +1696,7 @@
 .search-form,
 .add-card-form {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .search-import-form {
@@ -1923,14 +1922,14 @@
 .search-form {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   position: relative;
   z-index: 3;
 }
 
 .search-form-actions {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   justify-items: end;
 }
 
@@ -1967,13 +1966,8 @@
 
 @media (min-width: 821px) {
   .workspace-search-column > .search-panel:not(.search-panel-results-open) {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
-  }
-
-  .workspace-search-column > .search-panel:not(.search-panel-results-open) .search-panel-toolbar {
-    margin-top: auto;
+    display: block;
+    min-height: 0;
   }
 
   .workspace-search-column > .search-panel:not(.search-panel-results-open) .search-form {
@@ -1981,7 +1975,7 @@
   }
 
   .workspace-search-column > .search-panel:not(.search-panel-results-open) .panel-hint {
-    margin-top: 18px;
+    margin-top: 14px;
   }
 }
 
@@ -2564,7 +2558,7 @@
 
 .collection-panel-header {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .collection-panel-heading {
@@ -2581,7 +2575,7 @@
 .collection-header-controls {
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .collection-header-controls .utility-button {
@@ -2595,7 +2589,7 @@
   align-items: end;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .collection-display-controls {
@@ -3351,7 +3345,7 @@
 }
 
 .state-block {
-  min-height: 168px;
+  min-height: 152px;
   align-items: start;
 }
 
@@ -3371,6 +3365,19 @@
   margin: 0;
   line-height: 1.55;
   max-width: 58ch;
+}
+
+.state-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.state-block-actions .primary-button,
+.state-block-actions .secondary-button,
+.state-block-actions .utility-button {
+  white-space: nowrap;
 }
 
 .state-block-header {
