@@ -130,6 +130,57 @@ args through npm:
 npm run backend:demo -- --db /absolute/path/to/other.db
 ```
 
+## Playwright Visual Review
+
+The frontend now includes a small Playwright harness for layout review and
+repeatable screenshot capture.
+
+Install Chromium once:
+
+```bash
+npm run playwright:install
+```
+
+That command also downloads the small Ubuntu shared-library packages Playwright
+needs into `frontend/.playwright-linux-libs/`, so frontend visual review does
+not depend on a root-level system package install on this machine.
+
+For local visual review, keep the demo backend running on `127.0.0.1:8000`.
+Then run:
+
+```bash
+npm run test:visual
+```
+
+By default, Playwright starts a dedicated Vite dev server on
+`http://127.0.0.1:4173`, captures desktop and mobile Chromium screenshots, and
+writes them to:
+
+```text
+frontend/test-results/visual-review/
+```
+
+Current visual smoke coverage captures:
+
+- main workspace
+- Import From URL dialog
+- item details dialog
+
+If you want to target an already-running Vite server instead of starting a
+Playwright-owned one, set:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:5173 \
+PLAYWRIGHT_START_DEV_SERVER=0 \
+npm run test:visual
+```
+
+For interactive debugging, use:
+
+```bash
+npm run test:visual:headed
+```
+
 ## Current UI Shape
 
 The scaffold currently includes:

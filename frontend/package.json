@@ -12,20 +12,26 @@
     "build": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:playwright": "bash ./scripts/run_playwright_with_local_libs.sh test",
+    "test:visual": "bash ./scripts/run_playwright_with_local_libs.sh test playwright/visual-review.spec.ts",
+    "test:visual:headed": "bash ./scripts/run_playwright_with_local_libs.sh test playwright/visual-review.spec.ts --headed",
+    "playwright:install:host-libs": "bash ./scripts/bootstrap_playwright_host_libs.sh",
+    "playwright:install": "npm run playwright:install:host-libs && bash ./scripts/run_playwright_with_local_libs.sh install chromium"
   },
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
     "@types/node": "^24.12.0",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
-    "@testing-library/jest-dom": "^6.8.0",
-    "@testing-library/react": "^16.1.0",
-    "@testing-library/user-event": "^14.5.2",
     "jsdom": "^25.0.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",

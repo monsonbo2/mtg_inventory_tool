@@ -76,6 +76,11 @@ export function InventoryTableView(props: {
   items: OwnedInventoryRow[];
   allItemsCount: number;
   availableTargetInventories: InventorySummary[];
+  availableCopyTargetInventories: InventorySummary[];
+  availableMoveTargetInventories: InventorySummary[];
+  canBulkEditSelectedInventory: boolean;
+  canCopyFromSelectedInventory: boolean;
+  canMoveFromSelectedInventory: boolean;
   collectionItemCount: number;
   selectedItemIds: number[];
   bulkMutationBusy: boolean;
@@ -140,8 +145,18 @@ export function InventoryTableView(props: {
   const hasSelection = totalSelectedCount > 0;
   const bulkEditorOpen = activeTray === "bulk";
   const activeTransferMode = activeTray === "copy" || activeTray === "move" ? activeTray : null;
+  const activeTransferTargetInventories =
+    activeTransferMode === "copy"
+      ? props.availableCopyTargetInventories
+      : activeTransferMode === "move"
+        ? props.availableMoveTargetInventories
+        : props.availableTargetInventories;
   const transferSubmitBusy =
     activeTransferMode !== null && props.transferBusy === activeTransferMode;
+  const hasAnySelectionActions =
+    props.canBulkEditSelectedInventory ||
+    props.canCopyFromSelectedInventory ||
+    props.canMoveFromSelectedInventory;
   const selectedCountLabel =
     totalSelectedCount === 0
       ? "No entries selected"
@@ -164,19 +179,34 @@ export function InventoryTableView(props: {
   }, [hasSelection]);
 
   useEffect(() => {
+    if (
+      (activeTray === "bulk" && !props.canBulkEditSelectedInventory) ||
+      (activeTray === "copy" && !props.canCopyFromSelectedInventory) ||
+      (activeTray === "move" && !props.canMoveFromSelectedInventory)
+    ) {
+      setActiveTray(null);
+    }
+  }, [
+    activeTray,
+    props.canBulkEditSelectedInventory,
+    props.canCopyFromSelectedInventory,
+    props.canMoveFromSelectedInventory,
+  ]);
+
+  useEffect(() => {
     setTransferTargetInventorySlug((currentTargetInventorySlug) =>
       currentTargetInventorySlug &&
-      props.availableTargetInventories.some(
+      activeTransferTargetInventories.some(
         (inventory) => inventory.slug === currentTargetInventorySlug,
       )
         ? currentTargetInventorySlug
-        : props.availableTargetInventories[0]?.slug ?? null,
+        : activeTransferTargetInventories[0]?.slug ?? null,
     );
 
-    if (!props.availableTargetInventories.length) {
+    if (!activeTransferTargetInventories.length) {
       setTransferTargetMode("create");
     }
-  }, [props.availableTargetInventories]);
+  }, [activeTransferTargetInventories]);
 
   useEffect(() => {
     if (!activeColumn) {
@@ -227,9 +257,20 @@ export function InventoryTableView(props: {
   }
 
   function openTray(nextTray: Exclude<ActiveTableTray, null>) {
+    if (
+      (nextTray === "bulk" && !props.canBulkEditSelectedInventory) ||
+      (nextTray === "copy" && !props.canCopyFromSelectedInventory) ||
+      (nextTray === "move" && !props.canMoveFromSelectedInventory)
+    ) {
+      return;
+    }
+
     setTransferFormError(null);
     setActiveTray((currentTray) => (currentTray === nextTray ? null : nextTray));
-    if ((nextTray === "copy" || nextTray === "move") && !props.availableTargetInventories.length) {
+    if (nextTray === "copy" && !props.availableCopyTargetInventories.length) {
+      setTransferTargetMode("create");
+    }
+    if (nextTray === "move" && !props.availableMoveTargetInventories.length) {
       setTransferTargetMode("create");
     }
   }
@@ -351,7 +392,7 @@ export function InventoryTableView(props: {
 
     if (transferTargetMode === "existing") {
       const targetInventory =
-        props.availableTargetInventories.find(
+        activeTransferTargetInventories.find(
           (inventory) => inventory.slug === transferTargetInventorySlug,
         ) ?? null;
 
@@ -593,7 +634,7 @@ export function InventoryTableView(props: {
   }
 
   function renderBulkEditor() {
-    if (!hasSelection || !bulkEditorOpen) {
+    if (!hasSelection || !bulkEditorOpen || !props.canBulkEditSelectedInventory) {
       return null;
     }
 
@@ -813,6 +854,13 @@ export function InventoryTableView(props: {
       return null;
     }
 
+    if (
+      (activeTransferMode === "copy" && !props.canCopyFromSelectedInventory) ||
+      (activeTransferMode === "move" && !props.canMoveFromSelectedInventory)
+    ) {
+      return null;
+    }
+
     const title =
       activeTransferMode === "copy" ? "Copy to collection" : "Move to collection";
 
@@ -858,7 +906,7 @@ export function InventoryTableView(props: {
                 ? "secondary-button table-bulk-mode-button table-bulk-mode-button-active"
                 : "secondary-button table-bulk-mode-button"
             }
-            disabled={!props.availableTargetInventories.length}
+            disabled={!activeTransferTargetInventories.length}
             onClick={() => handleTransferSubmitModeChange("existing")}
             type="button"
           >
@@ -880,7 +928,7 @@ export function InventoryTableView(props: {
 
         {transferTargetMode === "existing" ? (
           <div className="table-bulk-pane table-transfer-pane">
-            {props.availableTargetInventories.length ? (
+            {activeTransferTargetInventories.length ? (
               <label className="field table-bulk-field">
                 <span>Destination collection</span>
                 <select
@@ -894,7 +942,7 @@ export function InventoryTableView(props: {
                   }}
                   value={transferTargetInventorySlug ?? ""}
                 >
-                  {props.availableTargetInventories.map((inventory) => (
+                  {activeTransferTargetInventories.map((inventory) => (
                     <option key={inventory.slug} value={inventory.slug}>
                       {inventory.display_name}
                     </option>
@@ -918,7 +966,7 @@ export function InventoryTableView(props: {
             <div className="table-bulk-pane-actions">
               <button
                 className="secondary-button"
-                disabled={!props.availableTargetInventories.length || transferSubmitBusy}
+                disabled={!activeTransferTargetInventories.length || transferSubmitBusy}
                 onClick={() => void handleTransferSubmit()}
                 type="button"
               >
@@ -1106,50 +1154,64 @@ export function InventoryTableView(props: {
 
           <div className="table-toolbar-selection-slot">
             {hasSelection ? (
-              <div className="table-selection-actions">
-                <button
-                  className={
-                    bulkEditorOpen
-                      ? "secondary-button table-selection-action table-selection-action-active"
-                      : "secondary-button table-selection-action"
-                  }
-                  disabled={exceedsBulkSelectionLimit}
-                  onClick={() => openTray("bulk")}
-                  type="button"
-                >
-                  Bulk edit
-                </button>
-                <button
-                  className={
-                    activeTransferMode === "copy"
-                      ? "secondary-button table-selection-action table-selection-action-active"
-                      : "secondary-button table-selection-action"
-                  }
-                  disabled={props.transferBusy !== null}
-                  onClick={() => openTray("copy")}
-                  type="button"
-                >
-                  Copy to collection
-                </button>
-                <button
-                  className={
-                    activeTransferMode === "move"
-                      ? "secondary-button table-selection-action table-selection-action-active"
-                      : "secondary-button table-selection-action"
-                  }
-                  disabled={props.transferBusy !== null}
-                  onClick={() => openTray("move")}
-                  type="button"
-                >
-                  Move to collection
-                </button>
-                <button
-                  className="secondary-button table-selection-action"
-                  onClick={props.onClearSelection}
-                  type="button"
-                >
-                  Clear selection
-                </button>
+              <div>
+                <div className="table-selection-actions">
+                  {props.canBulkEditSelectedInventory ? (
+                    <button
+                      className={
+                        bulkEditorOpen
+                          ? "secondary-button table-selection-action table-selection-action-active"
+                          : "secondary-button table-selection-action"
+                      }
+                      disabled={exceedsBulkSelectionLimit}
+                      onClick={() => openTray("bulk")}
+                      type="button"
+                    >
+                      Bulk edit
+                    </button>
+                  ) : null}
+                  {props.canCopyFromSelectedInventory ? (
+                    <button
+                      className={
+                        activeTransferMode === "copy"
+                          ? "secondary-button table-selection-action table-selection-action-active"
+                          : "secondary-button table-selection-action"
+                      }
+                      disabled={props.transferBusy !== null}
+                      onClick={() => openTray("copy")}
+                      type="button"
+                    >
+                      Copy to collection
+                    </button>
+                  ) : null}
+                  {props.canMoveFromSelectedInventory ? (
+                    <button
+                      className={
+                        activeTransferMode === "move"
+                          ? "secondary-button table-selection-action table-selection-action-active"
+                          : "secondary-button table-selection-action"
+                      }
+                      disabled={props.transferBusy !== null}
+                      onClick={() => openTray("move")}
+                      type="button"
+                    >
+                      Move to collection
+                    </button>
+                  ) : null}
+                  <button
+                    className="secondary-button table-selection-action"
+                    onClick={props.onClearSelection}
+                    type="button"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+                {!hasAnySelectionActions ? (
+                  <span className="table-selection-slot-copy">
+                    This collection is read-only. Selection is available, but bulk edit, copy,
+                    and move are unavailable.
+                  </span>
+                ) : null}
               </div>
             ) : (
               <span className="table-selection-slot-copy">

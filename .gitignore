@@ -25,6 +25,9 @@ frontend/dist/
 frontend/build/
 frontend/.cache/
 frontend/.temp/
+frontend/.playwright-linux-libs/
+frontend/playwright-report/
+frontend/test-results/
 
 # Local databases and notebook state
 *.db

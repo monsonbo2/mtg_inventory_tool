@@ -12,6 +12,7 @@ import type {
   AsyncStatus,
   InventoryCreateResult,
   ItemMutationAction,
+  MutationOutcome,
   NoticeTone,
 } from "../uiTypes";
 import { decimalToNumber, formatUsd, getInventoryCollectionEmptyMessage } from "../uiHelpers";
@@ -29,6 +30,7 @@ import { StatusPill } from "./ui/StatusPill";
 
 type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
+  selectedInventoryCanWrite: boolean;
   collection: {
     browsePage: number;
     browsePageCount: number;
@@ -48,7 +50,12 @@ type OwnedCollectionPanelState = {
   table: {
     allItemsCount: number;
     availableTargetInventories: InventorySummary[];
+    availableCopyTargetInventories: InventorySummary[];
+    availableMoveTargetInventories: InventorySummary[];
     bulkMutationBusy: boolean;
+    canBulkEditSelectedInventory: boolean;
+    canCopyFromSelectedInventory: boolean;
+    canMoveFromSelectedInventory: boolean;
     createInventoryBusy: boolean;
     filterOptions: InventoryTableFilterOptions;
     filters: InventoryTableFilters;
@@ -68,8 +75,8 @@ type OwnedCollectionPanelActions = {
     itemId: number,
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
-  ) => Promise<void>;
-  onDelete: (itemId: number, cardName: string) => Promise<void>;
+  ) => Promise<MutationOutcome>;
+  onDelete: (itemId: number, cardName: string) => Promise<MutationOutcome>;
   onNotice: (message: string, tone?: NoticeTone) => void;
   onCreateInventory: (
     payload: InventoryCreateRequest,
@@ -108,6 +115,19 @@ export function OwnedCollectionPanel(props: {
   actions: OwnedCollectionPanelActions;
   state: OwnedCollectionPanelState;
 }) {
+  const collectionDisplayState = !props.state.selectedInventoryRow
+    ? "unselected"
+    : props.state.collection.viewStatus === "loading" &&
+        props.state.collection.items.length === 0
+      ? "loading"
+      : props.state.collection.viewStatus === "error" &&
+          props.state.collection.items.length === 0
+        ? "error"
+        : props.state.collection.items.length === 0
+          ? "empty"
+          : props.state.collection.visibleItems.length === 0
+            ? "search_empty"
+            : "ready";
   const detailModalItem =
     props.state.collection.detailModalItemId === null
       ? null
@@ -148,102 +168,125 @@ export function OwnedCollectionPanel(props: {
   const activeLimitLabel =
     props.state.collection.view === "browse" ? "Browse entries shown" : "Table rows shown";
   const activeLimitSummary =
-    props.state.collection.items.length === 0
-      ? "This collection is ready for its first cards."
-      : activeViewCount > activeShownCount
+    activeViewCount > activeShownCount
       ? `Showing ${activeShownCount} of ${activeViewCount} entries in ${props.state.collection.view}. Use page controls or increase the limit to see more.`
       : activeViewCount > 0
         ? `Showing all ${activeViewCount} entr${activeViewCount === 1 ? "y" : "ies"} in ${props.state.collection.view}.`
         : `No entries currently match this ${props.state.collection.view} view.`;
+  const showViewControls =
+    collectionDisplayState === "ready" || collectionDisplayState === "search_empty";
+  const showActivityButton =
+    collectionDisplayState === "empty" ||
+    collectionDisplayState === "ready" ||
+    collectionDisplayState === "search_empty";
+  const showSummaryBar = collectionDisplayState !== "unselected";
+  const showCollectionMetrics = showViewControls;
+  const showCollectionSearchRow = showViewControls;
   let collectionContent: ReactNode;
 
-  if (!props.state.selectedInventoryRow) {
-    collectionContent = (
-      <PanelState
-        body="Choose a collection on the left to see your cards and values."
-        eyebrow="Collection"
-        title="No collection selected"
-      />
-    );
-  } else if (
-    props.state.collection.viewStatus === "loading" &&
-    props.state.collection.items.length === 0
-  ) {
-    collectionContent = (
-      <PanelState
-        body="Loading cards, values, and tags for this collection."
-        eyebrow="Collection"
-        title="Loading collection"
-        variant="loading"
-      />
-    );
-  } else if (
-    props.state.collection.viewStatus === "error" &&
-    props.state.collection.items.length === 0
-  ) {
-    collectionContent = (
-      <PanelState
-        body="This collection could not be loaded right now. Try refreshing and opening it again."
-        eyebrow="Collection"
-        title="Collection unavailable"
-        variant="error"
-      />
-    );
-  } else if (!props.state.collection.items.length) {
-    collectionContent = (
-      <PanelState
-        body={getInventoryCollectionEmptyMessage(props.state.selectedInventoryRow)}
-        eyebrow="Collection"
-        title={`${props.state.selectedInventoryRow.display_name} is empty`}
-      />
-    );
-  } else if (!props.state.collection.visibleItems.length) {
-    collectionContent = (
-      <div className="collection-search-empty">
-        <strong>No matching cards</strong>
-        <span>
-          Try a different card name or clear the collection search to bring
-          entries back into view.
-        </span>
-      </div>
-    );
-  } else if (props.state.collection.view === "table") {
-    collectionContent = (
-      <InventoryTableView
-        allItemsCount={props.state.table.allItemsCount}
-        availableTargetInventories={props.state.table.availableTargetInventories}
-        bulkMutationBusy={props.state.table.bulkMutationBusy}
-        collectionItemCount={props.state.collection.items.length}
-        createInventoryBusy={props.state.table.createInventoryBusy}
-        filterOptions={props.state.table.filterOptions}
-        filters={props.state.table.filters}
-        items={props.state.table.items}
-        onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
-        onClearSelection={props.actions.onClearSelectedItems}
-        onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
-        onCreateInventory={props.actions.onCreateInventory}
-        onFiltersChange={props.actions.onTableFiltersChange}
-        onOpenDetails={props.actions.onOpenItemDetails}
-        onSelectAllCollection={props.actions.onSelectAllCollectionItems}
-        onSelectItem={props.actions.onSelectTableItem}
-        onSelectAllVisible={props.actions.onSelectAllVisibleItems}
-        onSortChange={props.actions.onTableSortChange}
-        onTransferItems={props.actions.onTransferItems}
-        onToggleItemSelection={props.actions.onToggleItemSelection}
-        selectedItemIds={props.state.table.selectedItemIds}
-        sortState={props.state.table.sort}
-        transferBusy={props.state.table.transferBusy}
-      />
-    );
-  } else {
-    collectionContent = (
-      <CompactInventoryList
-        busyItem={props.state.collection.busyItem}
-        items={props.state.collection.visibleItems}
-        onOpenDetails={props.actions.onOpenItemDetails}
-        onPatch={props.actions.onPatch}
-      />
-    );
+  switch (collectionDisplayState) {
+    case "unselected":
+      collectionContent = (
+        <PanelState
+          body="Choose a collection on the left to see your cards and values."
+          eyebrow="Collection"
+          title="No collection selected"
+        />
+      );
+      break;
+    case "loading":
+      collectionContent = (
+        <PanelState
+          body="Loading cards, values, and tags for this collection."
+          eyebrow="Collection"
+          title="Loading collection"
+          variant="loading"
+        />
+      );
+      break;
+    case "error":
+      collectionContent = (
+        <PanelState
+          body="This collection could not be loaded right now. Try refreshing and opening it again."
+          eyebrow="Collection"
+          title="Collection unavailable"
+          variant="error"
+        />
+      );
+      break;
+    case "empty":
+      if (!props.state.selectedInventoryRow) {
+        collectionContent = (
+          <PanelState
+            body="Choose a collection on the left to see your cards and values."
+            eyebrow="Collection"
+            title="No collection selected"
+          />
+        );
+        break;
+      }
+      collectionContent = (
+        <PanelState
+          body={getInventoryCollectionEmptyMessage(props.state.selectedInventoryRow)}
+          eyebrow="Collection"
+          title={`${props.state.selectedInventoryRow.display_name} is empty`}
+        />
+      );
+      break;
+    case "search_empty":
+      collectionContent = (
+        <div className="collection-search-empty">
+          <strong>No matching cards</strong>
+          <span>
+            Try a different card name or clear the collection search to bring
+            entries back into view.
+          </span>
+        </div>
+      );
+      break;
+    case "ready":
+      collectionContent =
+        props.state.collection.view === "table" ? (
+          <InventoryTableView
+            allItemsCount={props.state.table.allItemsCount}
+            availableCopyTargetInventories={props.state.table.availableCopyTargetInventories}
+            availableMoveTargetInventories={props.state.table.availableMoveTargetInventories}
+            availableTargetInventories={props.state.table.availableTargetInventories}
+            bulkMutationBusy={props.state.table.bulkMutationBusy}
+            canBulkEditSelectedInventory={props.state.table.canBulkEditSelectedInventory}
+            canCopyFromSelectedInventory={props.state.table.canCopyFromSelectedInventory}
+            canMoveFromSelectedInventory={props.state.table.canMoveFromSelectedInventory}
+            collectionItemCount={props.state.collection.items.length}
+            createInventoryBusy={props.state.table.createInventoryBusy}
+            filterOptions={props.state.table.filterOptions}
+            filters={props.state.table.filters}
+            items={props.state.table.items}
+            onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
+            onClearSelection={props.actions.onClearSelectedItems}
+            onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
+            onCreateInventory={props.actions.onCreateInventory}
+            onFiltersChange={props.actions.onTableFiltersChange}
+            onOpenDetails={props.actions.onOpenItemDetails}
+            onSelectAllCollection={props.actions.onSelectAllCollectionItems}
+            onSelectItem={props.actions.onSelectTableItem}
+            onSelectAllVisible={props.actions.onSelectAllVisibleItems}
+            onSortChange={props.actions.onTableSortChange}
+            onTransferItems={props.actions.onTransferItems}
+            onToggleItemSelection={props.actions.onToggleItemSelection}
+            selectedItemIds={props.state.table.selectedItemIds}
+            sortState={props.state.table.sort}
+            transferBusy={props.state.table.transferBusy}
+          />
+        ) : (
+          <CompactInventoryList
+            busyItem={props.state.collection.busyItem}
+            editable={props.state.selectedInventoryCanWrite}
+            items={props.state.collection.visibleItems}
+            onOpenDetails={props.actions.onOpenItemDetails}
+            onPatch={props.actions.onPatch}
+          />
+        );
+      break;
   }
 
   return (
@@ -257,65 +300,82 @@ export function OwnedCollectionPanel(props: {
           <StatusPill status={props.state.collection.viewStatus} />
         </div>
 
-        <div className="collection-header-controls">
-          <div aria-label="Collection view" className="view-toggle" role="group">
-            <button
-              aria-pressed={props.state.collection.view === "browse"}
-              className={
-                props.state.collection.view === "browse"
-                  ? "view-toggle-button view-toggle-button-active"
-                  : "view-toggle-button"
-              }
-              onClick={() => props.actions.onCollectionViewChange("browse")}
-              type="button"
-            >
-              Browse
-            </button>
-            <button
-              aria-pressed={props.state.collection.view === "table"}
-              className={
-                props.state.collection.view === "table"
-                  ? "view-toggle-button view-toggle-button-active"
-                  : "view-toggle-button"
-              }
-              onClick={() => props.actions.onCollectionViewChange("table")}
-              type="button"
-            >
-              Table
-            </button>
+        {showViewControls || showActivityButton ? (
+          <div className="collection-header-controls">
+            {showViewControls ? (
+              <div aria-label="Collection view" className="view-toggle" role="group">
+                <button
+                  aria-pressed={props.state.collection.view === "browse"}
+                  className={
+                    props.state.collection.view === "browse"
+                      ? "view-toggle-button view-toggle-button-active"
+                      : "view-toggle-button"
+                  }
+                  onClick={() => props.actions.onCollectionViewChange("browse")}
+                  type="button"
+                >
+                  Browse
+                </button>
+                <button
+                  aria-pressed={props.state.collection.view === "table"}
+                  className={
+                    props.state.collection.view === "table"
+                      ? "view-toggle-button view-toggle-button-active"
+                      : "view-toggle-button"
+                  }
+                  onClick={() => props.actions.onCollectionViewChange("table")}
+                  type="button"
+                >
+                  Table
+                </button>
+              </div>
+            ) : null}
+
+            {showActivityButton ? (
+              <button
+                className="secondary-button"
+                onClick={props.actions.onOpenActivity}
+                type="button"
+              >
+                Recent Activity
+              </button>
+            ) : null}
           </div>
-
-          <button
-            className="secondary-button"
-            disabled={!props.state.selectedInventoryRow}
-            onClick={props.actions.onOpenActivity}
-            type="button"
-          >
-            Recent Activity
-          </button>
-        </div>
+        ) : null}
       </div>
 
-      <div className="inventory-summary-bar">
-        <div className="summary-chip">
-          <span>Collection</span>
-          <strong>{props.state.selectedInventoryRow?.display_name || "No collection"}</strong>
+      {showSummaryBar ? (
+        <div
+          className={
+            showCollectionMetrics
+              ? "inventory-summary-bar"
+              : "inventory-summary-bar inventory-summary-bar-minimal"
+          }
+        >
+          <div className="summary-chip">
+            <span>Collection</span>
+            <strong>{props.state.selectedInventoryRow?.display_name || "No collection"}</strong>
+          </div>
+          {showCollectionMetrics ? (
+            <>
+              <div className="summary-chip">
+                <span>Entries</span>
+                <strong>{totalRows}</strong>
+              </div>
+              <div className="summary-chip">
+                <span>Total cards</span>
+                <strong>{totalCards}</strong>
+              </div>
+              <div className="summary-chip">
+                <span>Estimated value</span>
+                <strong>{formatUsd(totalEstimatedValue)}</strong>
+              </div>
+            </>
+          ) : null}
         </div>
-        <div className="summary-chip">
-          <span>Entries</span>
-          <strong>{totalRows}</strong>
-        </div>
-        <div className="summary-chip">
-          <span>Total cards</span>
-          <strong>{totalCards}</strong>
-        </div>
-        <div className="summary-chip">
-          <span>Estimated value</span>
-          <strong>{formatUsd(totalEstimatedValue)}</strong>
-        </div>
-      </div>
+      ) : null}
 
-      {props.state.selectedInventoryRow ? (
+      {showCollectionSearchRow ? (
         <div className="collection-search-row">
           <div className="collection-display-controls">
             <div className="collection-display-toolbar">
@@ -393,8 +453,15 @@ export function OwnedCollectionPanel(props: {
         </div>
       ) : null}
 
-      {props.state.collection.viewError && props.state.collection.items.length ? (
+      {props.state.collection.viewError && showViewControls ? (
         <p className="panel-error">Could not refresh this collection right now.</p>
+      ) : null}
+
+      {showViewControls && !props.state.selectedInventoryCanWrite ? (
+        <p className="panel-hint">
+          This collection is read-only. You can browse cards, but edits and row removal are
+          disabled.
+        </p>
       ) : null}
 
       <div className="collection-grid">
@@ -407,7 +474,11 @@ export function OwnedCollectionPanel(props: {
           kicker="Collection Entry"
           onClose={props.actions.onCloseItemDetails}
           size="wide"
-          subtitle="Review and edit this card without leaving Browse mode."
+          subtitle={
+            props.state.selectedInventoryCanWrite
+              ? "Review and edit this card without leaving Browse mode."
+              : "Review this card without leaving Browse mode. This collection is read-only."
+          }
           title="Card details"
         >
           <OwnedItemCard
@@ -416,10 +487,14 @@ export function OwnedCollectionPanel(props: {
                 ? props.state.collection.busyItem.action
                 : null
             }
+            editable={props.state.selectedInventoryCanWrite}
             item={detailModalItem}
             onDelete={async (itemId: number, cardName: string) => {
-              await props.actions.onDelete(itemId, cardName);
-              props.actions.onCloseItemDetails();
+              const result = await props.actions.onDelete(itemId, cardName);
+              if (result !== "failed") {
+                props.actions.onCloseItemDetails();
+              }
+              return result;
             }}
             onNotice={props.actions.onNotice}
             onPatch={props.actions.onPatch}

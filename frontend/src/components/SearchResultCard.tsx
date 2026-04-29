@@ -7,7 +7,7 @@ import type {
   FinishValue,
 } from "../types";
 import type { SearchCardGroup } from "../searchResultHelpers";
-import type { AsyncStatus, NoticeTone } from "../uiTypes";
+import type { AsyncStatus, NoticeTone, SearchAddAvailability } from "../uiTypes";
 import {
   formatPrintingOptionLabel,
   summarizeSearchGroup,
@@ -56,7 +56,7 @@ function formatPrintingDetail(printing: CatalogPrintingLookupRow) {
 export function SearchResultCard(props: {
   group: SearchCardGroup;
   busyPrintingId: string | null;
-  canAdd: boolean;
+  addAvailability: SearchAddAvailability;
   defaultLocation: string | null;
   defaultTags: string | null;
   onLoadPrintings: (
@@ -219,16 +219,19 @@ export function SearchResultCard(props: {
         : null,
       trimmedNotes ? "Note ready" : null,
     ].filter(Boolean).join(" · ") || "No optional details yet";
-  const needsPrintingSelection = props.canAdd && !effectivePrinting;
+  const canAdd = props.addAvailability === "writable";
+  const needsPrintingSelection = canAdd && !effectivePrinting;
   const printingsAvailableLabel = `${props.group.printingsCount} printing${
     props.group.printingsCount === 1 ? "" : "s"
   } available`;
+  const addBlockedLabel =
+    props.addAvailability === "read_only" ? "Read-only collection" : "Select collection";
   const addButtonLabel = busy
     ? "Adding..."
     : recentlyAdded
       ? "Added"
-      : !props.canAdd
-        ? "Select collection"
+      : !canAdd
+        ? addBlockedLabel
         : isLoadingInitialPrintings && !effectivePrinting
           ? "Loading printings..."
           : needsPrintingSelection
@@ -265,15 +268,17 @@ export function SearchResultCard(props: {
             ? "Choose a printing below to add this card."
             : "Loading quick-add printings for this card.";
   const addStatusTone =
-    !props.canAdd || !quantityIsValid || printingStatus === "error"
+    !canAdd || !quantityIsValid || printingStatus === "error"
       ? "error"
       : recentlyAdded
         ? "success"
         : busy || isLoadingInitialPrintings || isLoadingAllLanguages
           ? "info"
           : "ready";
-  const addStatusMessage = !props.canAdd
-    ? "Choose a collection before adding cards."
+  const addStatusMessage = !canAdd
+    ? props.addAvailability === "read_only"
+      ? "This collection is read-only. Choose a writable collection before adding cards."
+      : "Choose a collection before adding cards."
     : !quantityIsValid
       ? "Enter a whole-number quantity greater than 0."
       : busy
@@ -372,8 +377,13 @@ export function SearchResultCard(props: {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!props.canAdd) {
-      props.onNotice("Select a collection before adding a card.");
+    if (!canAdd) {
+      props.onNotice(
+        props.addAvailability === "read_only"
+          ? "This collection is read-only. Choose a writable collection before adding a card."
+          : "Select a collection before adding a card.",
+        "error",
+      );
       return;
     }
 
@@ -430,7 +440,7 @@ export function SearchResultCard(props: {
               className="primary-button search-result-add-button"
               disabled={
                 busy ||
-                !props.canAdd ||
+                !canAdd ||
                 !quantityIsValid ||
                 (isLoadingInitialPrintings && !effectivePrinting) ||
                 (hasLoadedPrimaryPrintings && !effectivePrinting)
@@ -484,7 +494,7 @@ export function SearchResultCard(props: {
               <span>Qty</span>
               <input
                 className="text-input"
-                disabled={busy || !props.canAdd}
+                disabled={busy || !canAdd}
                 min="1"
                 onChange={(event) => {
                   setQuantity(event.target.value);
@@ -500,7 +510,7 @@ export function SearchResultCard(props: {
               <select
                 className="text-input"
                 disabled={
-                  busy || !props.canAdd || !effectivePrinting || availableFinishes.length <= 1
+                  busy || !canAdd || !effectivePrinting || availableFinishes.length <= 1
                 }
                 onChange={(event) => {
                   setFinish(event.target.value as FinishValue);
@@ -632,7 +642,7 @@ export function SearchResultCard(props: {
             <span>Location</span>
             <input
               className="text-input"
-              disabled={busy || !props.canAdd}
+              disabled={busy || !canAdd}
               onChange={(event) => {
                 setLocation(event.target.value);
                 setRecentlyAdded(false);
@@ -646,7 +656,7 @@ export function SearchResultCard(props: {
             <span>Tags</span>
             <input
               className="text-input"
-              disabled={busy || !props.canAdd}
+              disabled={busy || !canAdd}
               onChange={(event) => {
                 setTags(event.target.value);
                 setRecentlyAdded(false);
@@ -660,7 +670,7 @@ export function SearchResultCard(props: {
             <span>Notes</span>
             <textarea
               className="text-area"
-              disabled={busy || !props.canAdd}
+              disabled={busy || !canAdd}
               onChange={(event) => {
                 setNotes(event.target.value);
                 setRecentlyAdded(false);

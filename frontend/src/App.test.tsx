@@ -45,6 +45,7 @@ import {
   bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
+  deleteInventoryItem,
   getAccessSummary,
   importCsv,
   importDeckUrl,
@@ -438,7 +439,9 @@ describe("App", () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(buildDecklistImportResponse({ dry_run: true }))
+      .mockResolvedValueOnce(buildDecklistImportResponse({ dry_run: false }));
 
     render(<App />);
 
@@ -450,9 +453,15 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
 
     await waitFor(() => {
-      expect(importDecklist).toHaveBeenCalledWith({
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
         deck_text: "4 Lightning Bolt",
         default_inventory: "personal",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "personal",
+        dry_run: false,
       });
     });
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -474,9 +483,13 @@ describe("App", () => {
 
     mockBaseSearchApp();
     vi.mocked(listInventories).mockResolvedValue([personal, trade]);
-    vi.mocked(importDecklist).mockResolvedValue(
-      buildDecklistImportResponse({ default_inventory: "trade" }),
-    );
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: true }),
+      )
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: false }),
+      );
 
     render(<App />);
 
@@ -489,9 +502,15 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
 
     await waitFor(() => {
-      expect(importDecklist).toHaveBeenCalledWith({
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
         deck_text: "4 Lightning Bolt",
         default_inventory: "trade",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "trade",
+        dry_run: false,
       });
     });
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -500,41 +519,400 @@ describe("App", () => {
     expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
   });
 
+  it("keeps quick add read-only when the selected collection cannot be written to", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(listInventories).mockResolvedValue([viewerInventory]);
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
+        return buildNameSearchResult([buildNameSearchRow()]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(
+      buildPrintingSummary([
+        buildSearchRow({
+          scryfall_id: "bolt-m11",
+          set_code: "m11",
+          set_name: "Magic 2011",
+          collector_number: "146",
+          finishes: ["normal", "foil"],
+          is_default_add_choice: true,
+        }),
+      ]),
+    );
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.type(input, "Lightning");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    expect(
+      await screen.findByText(
+        "Personal Collection is read-only. Switch to a writable collection to add cards, or choose another destination when importing.",
+      ),
+    ).toBeInTheDocument();
+
+    const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltCard).not.toBeNull();
+    const boltCardScope = within(boltCard!);
+    expect(
+      boltCardScope.getByText(
+        "This collection is read-only. Choose a writable collection before adding cards.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      boltCardScope.getByRole("button", { name: "Read-only collection" }),
+    ).toBeDisabled();
+    expect(boltCardScope.getByRole("spinbutton", { name: "Qty" })).toBeDisabled();
+    expect(addInventoryItem).not.toHaveBeenCalled();
+  });
+
+  it("shows only writable collections as existing import targets", async () => {
+    const user = userEvent.setup();
+    const personalViewer = buildInventorySummary({
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+    const tradeEditor = buildInventorySummary({
+      slug: "trade",
+      display_name: "Trade Binder",
+      description: "Cards for trades",
+      item_rows: 3,
+      total_cards: 12,
+      role: "editor",
+      can_write: true,
+    });
+    const archiveViewer = buildInventorySummary({
+      slug: "archive",
+      display_name: "Archive Box",
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+      can_transfer_to: false,
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(listInventories).mockResolvedValue([personalViewer, tradeEditor, archiveViewer]);
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: true }),
+      )
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "trade", dry_run: false }),
+      );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Import Cards" }));
+    await user.click(screen.getByRole("menuitem", { name: /Import as Text/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import As Text" });
+    expect(within(dialog).getByRole("button", { name: /Add to existing/i })).toBeEnabled();
+    expect(
+      within(dialog).queryByRole("button", { name: /Personal Collection/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /Trade Binder/i }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: /Archive Box/i })).not.toBeInTheDocument();
+
+    await user.type(within(dialog).getByRole("textbox", { name: "Card list" }), "4 Lightning Bolt");
+    await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
+
+    await waitFor(() => {
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "trade",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "trade",
+        dry_run: false,
+      });
+    });
+  });
+
+  it("keeps browse rows read-only for viewer access", async () => {
+    const viewerInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockCollectionViewApp({ inventories: [viewerInventory] });
+
+    render(<App />);
+
+    expect(
+      await screen.findByText(
+        "This collection is read-only. You can browse cards, but edits and row removal are disabled.",
+      ),
+    ).toBeInTheDocument();
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+
+    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("combobox", { name: /Location/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("textbox", { name: /Tags/ })).toBeDisabled();
+    expect(boltRowScope.getByRole("button", { name: "Open details" })).toBeEnabled();
+  });
+
+  it("keeps the detail dialog read-only for viewer access", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockCollectionViewApp({ inventories: [viewerInventory] });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+
+    await user.click(within(boltRow!).getByRole("button", { name: "Open details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Card details" });
+    expect(
+      within(dialog).getByText("This collection is read-only. Edits and row removal are disabled."),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("spinbutton", { name: /Quantity/ })).toBeDisabled();
+    expect(within(dialog).getByRole("combobox", { name: /Finish/ })).toBeDisabled();
+    expect(within(dialog).getByRole("textbox", { name: /Location/ })).toBeDisabled();
+    expect(within(dialog).getByRole("textbox", { name: /Tags/ })).toBeDisabled();
+    expect(within(dialog).getByRole("textbox", { name: /Notes/ })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Remove row" })).toBeDisabled();
+    expect(within(dialog).getAllByRole("button", { name: "View only" }).length).toBeGreaterThan(0);
+  });
+
+  it("opens the resolution step for ambiguous URL imports and reuses the preview snapshot token on commit", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(importDeckUrl)
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: true,
+          ready_to_commit: false,
+          source_snapshot_token: "snapshot-42",
+          rows_seen: 3,
+          rows_written: 0,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 2,
+            distinct_printings: 2,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 3,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "ambiguous_printing",
+              source_position: 7,
+              section: "mainboard",
+              requested: {
+                scryfall_id: null,
+                name: "Counterspell",
+                quantity: 1,
+                set_code: "7ED",
+                collector_number: "67",
+                finish: "normal",
+              },
+              options: [
+                {
+                  scryfall_id: "counterspell-7ed-normal",
+                  finish: "normal",
+                  name: "Counterspell",
+                  set_code: "7ed",
+                  set_name: "Seventh Edition",
+                  collector_number: "67",
+                  lang: "en",
+                  image_uri_small: null,
+                  image_uri_normal: null,
+                },
+                {
+                  scryfall_id: "counterspell-7ed-foil",
+                  finish: "foil",
+                  name: "Counterspell",
+                  set_code: "7ed",
+                  set_name: "Seventh Edition",
+                  collector_number: "67",
+                  lang: "en",
+                  image_uri_small: null,
+                  image_uri_normal: null,
+                },
+              ],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: false,
+          ready_to_commit: true,
+          source_snapshot_token: "snapshot-42",
+          rows_seen: 3,
+          rows_written: 3,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 2,
+            distinct_printings: 2,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 3,
+            unresolved_card_quantity: 0,
+          },
+          resolution_issues: [],
+        }),
+      );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Import Cards" }));
+    await user.click(screen.getByRole("menuitem", { name: /Import from URL/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import From URL" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Deck URL" }),
+      "https://www.moxfield.com/decks/demo",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
+
+    expect(
+      await within(dialog).findByText(
+        "Review the preview, resolve the remaining import questions, and continue when every required entry is mapped.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Counterspell", {
+        selector: ".search-import-resolution-heading",
+      }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Continue import" })).toBeDisabled();
+
+    await user.click(within(dialog).getAllByRole("radio")[0]);
+    expect(within(dialog).getByRole("button", { name: "Continue import" })).toBeEnabled();
+    await user.click(within(dialog).getByRole("button", { name: "Continue import" }));
+
+    await waitFor(() => {
+      expect(importDeckUrl).toHaveBeenNthCalledWith(1, {
+        source_url: "https://www.moxfield.com/decks/demo",
+        default_inventory: "personal",
+        dry_run: true,
+      });
+      expect(importDeckUrl).toHaveBeenNthCalledWith(2, {
+        source_url: "https://www.moxfield.com/decks/demo",
+        default_inventory: "personal",
+        dry_run: false,
+        source_snapshot_token: "snapshot-42",
+        resolutions: [
+          {
+            source_position: 7,
+            scryfall_id: "counterspell-7ed-normal",
+            finish: "normal",
+          },
+        ],
+      });
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Imported 3 cards into Personal Collection.",
+    );
+    expect(screen.queryByRole("dialog", { name: "Import From URL" })).not.toBeInTheDocument();
+  });
+
   it("shows the unresolved card name after a partial URL import and closes the dialog", async () => {
     const user = userEvent.setup();
 
     mockBaseSearchApp();
-    vi.mocked(importDeckUrl).mockResolvedValue(
-      buildDeckUrlImportResponse({
-        rows_seen: 2,
-        rows_written: 1,
-        ready_to_commit: true,
-        summary: {
-          total_card_quantity: 3,
-          distinct_card_names: 1,
-          distinct_printings: 1,
-          section_card_quantities: { mainboard: 3 },
-          requested_card_quantity: 4,
-          unresolved_card_quantity: 1,
-        },
-        resolution_issues: [
-          {
-            kind: "unknown_card",
-            source_position: 227,
-            section: "mainboard",
-            requested: {
-              scryfall_id: "stale-wildgrowth-id",
-              name: "Wildgrowth Archaic",
-              quantity: 1,
-              set_code: "TST",
-              collector_number: "168",
-              finish: "normal",
-            },
-            options: [],
+    vi.mocked(importDeckUrl)
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: true,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
           },
-        ],
-      }),
-    );
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: false,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      );
 
     render(<App />);
 
@@ -549,9 +927,16 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
 
     await waitFor(() => {
-      expect(importDeckUrl).toHaveBeenCalledWith({
+      expect(importDeckUrl).toHaveBeenNthCalledWith(1, {
         source_url: "https://archidekt.com/decks/15761099/counters_and_counters",
         default_inventory: "personal",
+        dry_run: true,
+      });
+      expect(importDeckUrl).toHaveBeenNthCalledWith(2, {
+        source_url: "https://archidekt.com/decks/15761099/counters_and_counters",
+        default_inventory: "personal",
+        dry_run: false,
+        source_snapshot_token: null,
       });
     });
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -581,9 +966,13 @@ describe("App", () => {
         description: null,
       })]);
     vi.mocked(createInventory).mockResolvedValue(demoImports);
-    vi.mocked(importDecklist).mockResolvedValue(
-      buildDecklistImportResponse({ default_inventory: "demo-imports" }),
-    );
+    vi.mocked(importDecklist)
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "demo-imports", dry_run: true }),
+      )
+      .mockResolvedValueOnce(
+        buildDecklistImportResponse({ default_inventory: "demo-imports", dry_run: false }),
+      );
 
     render(<App />);
 
@@ -617,9 +1006,15 @@ describe("App", () => {
       });
     });
     await waitFor(() => {
-      expect(importDecklist).toHaveBeenCalledWith({
+      expect(importDecklist).toHaveBeenNthCalledWith(1, {
         deck_text: "4 Lightning Bolt",
         default_inventory: "demo-imports",
+        dry_run: true,
+      });
+      expect(importDecklist).toHaveBeenNthCalledWith(2, {
+        deck_text: "4 Lightning Bolt",
+        default_inventory: "demo-imports",
+        dry_run: false,
       });
     });
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -1893,6 +2288,91 @@ describe("App", () => {
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps empty collection chrome minimal until cards exist", async () => {
+    mockCollectionViewApp({ items: [] });
+
+    render(<App />);
+
+    expect(await screen.findByText("Personal Collection is empty")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Browse entries shown" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Search this collection" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Entries")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total cards")).not.toBeInTheDocument();
+    expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recent Activity" })).toBeInTheDocument();
+  });
+
+  it("clears collection chrome and stale rows while a new collection is loading", async () => {
+    const user = userEvent.setup();
+    const tradeBinderItems = deferred<OwnedInventoryRow[]>();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+      inventories: [
+        buildInventorySummary({
+          item_rows: 1,
+          total_cards: 2,
+        }),
+        buildInventorySummary({
+          slug: "trade-binder",
+          display_name: "Trade Binder",
+          description: "Cards available to trade",
+          item_rows: 1,
+          total_cards: 1,
+        }),
+      ],
+    });
+    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => {
+      if (inventorySlug === "trade-binder") {
+        return tradeBinderItems.promise;
+      }
+
+      return [buildOwnedRow()];
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Personal Collection/i }));
+    await user.click(screen.getByRole("button", { name: /Trade Binder/i }));
+
+    expect(await screen.findByText("Loading collection")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Lightning Bolt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Browse entries shown" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
+
+    tradeBinderItems.resolve([
+      buildOwnedRow({
+        item_id: 101,
+        scryfall_id: "sol-ring-1",
+        oracle_id: "sol-ring-oracle",
+        name: "Sol Ring",
+        set_code: "cmm",
+        set_name: "Commander Masters",
+        collector_number: "396",
+        quantity: 1,
+        location: "Trade Tray",
+        tags: ["trade"],
+        est_value: "1.50",
+        unit_price: "1.50",
+        notes: null,
+      }),
+    ]);
+
+    expect(await screen.findByRole("heading", { name: "Sol Ring" })).toBeInTheDocument();
+  });
+
   it("caps browse and table entries by default and supports pagination in each view", async () => {
     const user = userEvent.setup();
     const items = Array.from({ length: 60 }, (_, index) =>
@@ -2078,6 +2558,125 @@ describe("App", () => {
     expect(boltRow!.querySelector(".compact-row-status")).toBeNull();
   });
 
+  it("does not mark a browse quantity change as saved when the patch fails", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+    vi.mocked(patchInventoryItem).mockRejectedValue(
+      new ApiClientError("Could not save the change.", {
+        code: "validation_error",
+        status: 400,
+      }),
+    );
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
+
+    await user.clear(quantityInput);
+    await user.type(quantityInput, "5");
+    await user.tab();
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, { quantity: 5 });
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not save the change.",
+    );
+    expect(quantityInput).toHaveValue(5);
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    const quantityField = quantityInput.closest("label");
+    expect(quantityField).not.toBeNull();
+    expect(within(quantityField!).queryByText("Saved")).not.toBeInTheDocument();
+  });
+
+  it("treats a successful browse quantity patch with a failed refresh as applied but stale", async () => {
+    const user = userEvent.setup();
+
+    const initialBolt = buildOwnedRow();
+
+    vi.mocked(listInventories).mockResolvedValue([
+      buildInventorySummary({
+        item_rows: 1,
+        total_cards: 2,
+      }),
+    ]);
+    vi.mocked(listInventoryItems)
+      .mockResolvedValueOnce([initialBolt])
+      .mockRejectedValueOnce(
+        new ApiClientError("Collection refresh failed.", {
+          code: "http_error",
+          status: 503,
+        }),
+      );
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
+      inventory: "personal",
+      operation: "add_tags",
+      requested_item_ids: [],
+      updated_item_ids: [],
+      updated_count: 0,
+    });
+    vi.mocked(patchInventoryItem).mockResolvedValue({
+      inventory: "personal",
+      operation: "set_quantity",
+      card_name: "Lightning Bolt",
+      oracle_id: "bolt-oracle",
+      set_code: "lea",
+      set_name: "Limited Edition Alpha",
+      collector_number: "161",
+      scryfall_id: "bolt-1",
+      item_id: 7,
+      quantity: 5,
+      finish: "normal",
+      condition_code: "NM",
+      language_code: "en",
+      location: "Binder",
+      acquisition_price: "1.00",
+      acquisition_currency: "USD",
+      notes: "Main deck",
+      tags: ["burn"],
+      printing_selection_mode: "explicit",
+      old_quantity: 2,
+    });
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
+
+    await user.clear(quantityInput);
+    await user.type(quantityInput, "5");
+    await user.tab();
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, { quantity: 5 });
+    });
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Updated Lightning Bolt to quantity 5 in Personal Collection. The latest view could not refresh automatically.",
+    );
+    expect(quantityInput).toHaveValue(5);
+    const quantityField = quantityInput.closest("label");
+    expect(quantityField).not.toBeNull();
+    expect(within(quantityField!).getByText("Saved")).toBeInTheDocument();
+  });
+
   it("offers existing collection locations as browse suggestions", async () => {
     mockCollectionViewApp({
       items: [
@@ -2218,6 +2817,47 @@ describe("App", () => {
     expect(refreshedBoltScope.getByText("$9.00")).toBeInTheDocument();
   });
 
+  it("reverts a browse finish change when the patch fails", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          allowed_finishes: ["normal", "foil"],
+        }),
+      ],
+    });
+    vi.mocked(patchInventoryItem).mockRejectedValue(
+      new ApiClientError("Could not save the change.", {
+        code: "validation_error",
+        status: 400,
+      }),
+    );
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const finishSelect = boltRowScope.getByRole("combobox", { name: /Finish/ });
+
+    await user.selectOptions(finishSelect, "foil");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, { finish: "foil" });
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not save the change.",
+    );
+    await waitFor(() => {
+      expect(finishSelect).toHaveValue("normal");
+    });
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+  });
+
   it("adds a browse tag on Enter, saves it, clears the input, and keeps focus ready", async () => {
     const user = userEvent.setup();
 
@@ -2302,6 +2942,49 @@ describe("App", () => {
     });
     expect(refreshedBoltScope.getByText("burn")).toBeInTheDocument();
     expect(refreshedBoltScope.getByText("trade")).toBeInTheDocument();
+  });
+
+  it("keeps browse tag draft and chips unchanged when adding a tag fails", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          tags: ["burn"],
+        }),
+      ],
+    });
+    vi.mocked(patchInventoryItem).mockRejectedValue(
+      new ApiClientError("Could not save the change.", {
+        code: "validation_error",
+        status: 400,
+      }),
+    );
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+    const boltRowScope = within(boltRow!);
+    const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
+
+    await user.type(tagsInput, "trade{enter}");
+
+    await waitFor(() => {
+      expect(patchInventoryItem).toHaveBeenCalledWith("personal", 7, {
+        tags: ["burn", "trade"],
+      });
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not save the change.",
+    );
+    expect(tagsInput).toHaveValue("trade");
+    expect(boltRowScope.getByText("burn")).toBeInTheDocument();
+    expect(boltRowScope.queryByText("trade")).not.toBeInTheDocument();
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
   });
 
   it("removes a browse tag once the tags field is active and keeps the tag input focused", async () => {
@@ -2597,6 +3280,42 @@ describe("App", () => {
     });
   });
 
+  it("keeps the detail dialog open when row removal fails", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    mockCollectionViewApp();
+    vi.mocked(deleteInventoryItem).mockRejectedValue(
+      new ApiClientError("Could not remove the card.", {
+        code: "http_error",
+        status: 500,
+      }),
+    );
+
+    render(<App />);
+
+    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltRow).not.toBeNull();
+
+    await user.click(within(boltRow!).getByRole("button", { name: "Open details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Card details" });
+    await user.click(within(dialog).getByRole("button", { name: "Remove row" }));
+
+    await waitFor(() => {
+      expect(deleteInventoryItem).toHaveBeenCalledWith("personal", 7);
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not remove the card.",
+    );
+    expect(screen.getByRole("dialog", { name: "Card details" })).toBeInTheDocument();
+
+    confirmSpy.mockRestore();
+  });
+
   it("filters the current collection from a small in-pane search field", async () => {
     const user = userEvent.setup();
 
@@ -2887,6 +3606,54 @@ describe("App", () => {
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).toBeChecked();
   });
 
+  it("keeps table selection available for viewer access without showing write actions", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      item_rows: 2,
+      total_cards: 3,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+      inventories: [viewerInventory],
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+
+    expect(screen.getByText("2 entries selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Clear selection" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Bulk edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy to collection" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Move to collection" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This collection is read-only. Selection is available, but bulk edit, copy, and move are unavailable.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("can select the entire collection from the table even when not all rows are visible", async () => {
     const user = userEvent.setup();
     const items = Array.from({ length: 60 }, (_, index) =>
@@ -2995,6 +3762,52 @@ describe("App", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Copied 2 entries to Trade Binder.",
     );
+  });
+
+  it("filters non-transferable collections out of the table copy tray", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+      inventories: [
+        buildInventorySummary({
+          item_rows: 1,
+          total_cards: 2,
+        }),
+        buildInventorySummary({
+          slug: "trade",
+          display_name: "Trade Binder",
+          description: "Cards available for swaps",
+          item_rows: 4,
+          total_cards: 6,
+          can_transfer_to: true,
+        }),
+        buildInventorySummary({
+          slug: "archive",
+          display_name: "Archive Box",
+          description: "Long-term storage",
+          item_rows: 10,
+          total_cards: 120,
+          can_transfer_to: false,
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+    await user.click(screen.getByRole("button", { name: "Copy to collection" }));
+
+    const tray = screen.getByRole("region", { name: "Copy to collection tray" });
+    const destinationSelect = within(tray).getByRole("combobox", {
+      name: "Destination collection",
+    });
+
+    expect(within(destinationSelect).getByRole("option", { name: "Trade Binder" })).toBeInTheDocument();
+    expect(
+      within(destinationSelect).queryByRole("option", { name: "Archive Box" }),
+    ).not.toBeInTheDocument();
   });
 
   it("creates a new collection during a move transfer and sends the whole collection when selected", async () => {

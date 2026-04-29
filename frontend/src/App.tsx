@@ -14,6 +14,14 @@ import { useCardSearch } from "./hooks/useCardSearch";
 import { useCollectionViewState } from "./hooks/useCollectionViewState";
 import { useInventoryOverview } from "./hooks/useInventoryOverview";
 import { useInventoryMutations } from "./hooks/useInventoryMutations";
+import {
+  canCopyFromInventory,
+  canMoveFromInventory,
+  getAvailableTransferTargetInventories,
+  getTransferTargetInventories,
+  getWritableInventories,
+  isWritableInventory,
+} from "./inventoryCapabilities";
 import { decimalToNumber, formatUsd } from "./uiHelpers";
 import type { AppShellState } from "./uiTypes";
 import type { AccessSummaryResponse } from "./types";
@@ -128,8 +136,15 @@ export default function App() {
     selectedInventoryRow,
     setSelectedInventory,
     viewError,
+    viewInventorySlug,
     viewStatus,
   } = useInventoryOverview();
+  const isCollectionSwitchPending =
+    selectedInventory !== null && selectedInventory !== viewInventorySlug;
+  const collectionItems = isCollectionSwitchPending ? [] : items;
+  const collectionAuditEvents = isCollectionSwitchPending ? [] : auditEvents;
+  const collectionViewError = isCollectionSwitchPending ? null : viewError;
+  const collectionViewStatus = isCollectionSwitchPending ? "loading" : viewStatus;
   const {
     activeSearchGroupId,
     handleSearchFieldFocus,
@@ -210,25 +225,28 @@ export default function App() {
     visibleCollectionItems,
     visibleTableItems,
   } = useCollectionViewState({
-    items,
+    items: collectionItems,
     selectedInventory,
   });
   const {
     busyAddCardId,
     bulkMutationBusy,
     busyItem,
+    commitCsvImport,
+    commitDeckUrlImport,
+    commitDecklistImport,
     clearNotice,
     createInventoryBusy,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
-    handleImportCsv,
-    handleImportDecklist,
-    handleImportDeckUrl,
     handlePatchItem,
     handleTransferItems,
     notice,
+    previewCsvImport,
+    previewDeckUrlImport,
+    previewDecklistImport,
     reportNotice,
     transferBusy,
   } = useInventoryMutations({
@@ -238,7 +256,7 @@ export default function App() {
     reloadInventorySummaries,
     resetSearchWorkspace,
     selectedInventory,
-    selectedInventoryItemCount: items.length,
+    selectedInventoryItemCount: collectionItems.length,
     selectedItemIds,
   });
 
@@ -246,14 +264,29 @@ export default function App() {
     setActivityOpen(false);
   }, [selectedInventory]);
 
-  const totalEstimatedValue = items.reduce(
+  const totalEstimatedValue = collectionItems.reduce(
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
+  );
+  const selectedInventoryCanWrite = isWritableInventory(selectedInventoryRow);
+  const writableInventories = getWritableInventories(inventories);
+  const availableCopyTargetInventories = getTransferTargetInventories(inventories, {
+    mode: "copy",
+    sourceInventory: selectedInventoryRow,
+  });
+  const availableMoveTargetInventories = getTransferTargetInventories(inventories, {
+    mode: "move",
+    sourceInventory: selectedInventoryRow,
+  });
+  const availableTransferTargetInventories = getAvailableTransferTargetInventories(
+    inventories,
+    selectedInventoryRow,
   );
   const searchPanelState = {
     activeSearchGroupId,
     busyAddCardId,
     inventories,
+    selectedInventoryCanWrite,
     searchResultsVisible,
     searchWorkspaceMode,
     search: {
@@ -273,6 +306,7 @@ export default function App() {
       totalCount: searchTotalCount,
     },
     selectedInventoryRow,
+    writableInventories,
     suggestions: {
       error: suggestionError,
       highlightedIndex: highlightedSuggestionIndex,
@@ -282,13 +316,16 @@ export default function App() {
     },
   };
   const searchPanelActions = {
+    commitCsvImport,
+    commitDeckUrlImport,
+    commitDecklistImport,
     onAdd: handleAddCard,
     onCreateInventory: handleCreateInventory,
-    onImportCsv: handleImportCsv,
-    onImportDeckUrl: handleImportDeckUrl,
-    onImportDecklist: handleImportDecklist,
     onLoadPrintings: loadSearchGroupPrintings,
     onNotice: reportNotice,
+    previewCsvImport,
+    previewDeckUrlImport,
+    previewDecklistImport,
     onSearchFieldFocus: handleSearchFieldFocus,
     onSearchInputKeyDown: handleSearchInputKeyDown,
     onSearchQueryChange: handleSearchQueryChange,
@@ -313,19 +350,23 @@ export default function App() {
       searchQuery: collectionSearchQuery,
       detailModalItemId,
       focusedItemId,
-      items,
+      items: collectionItems,
       visibleItems: visibleCollectionItems,
       view: collectionView,
-      viewError,
-      viewStatus,
+      viewError: collectionViewError,
+      viewStatus: collectionViewStatus,
     },
     selectedInventoryRow,
+    selectedInventoryCanWrite,
     table: {
       allItemsCount: filteredTableItemsCount,
-      availableTargetInventories: inventories.filter(
-        (inventory) => inventory.slug !== selectedInventory,
-      ),
+      availableCopyTargetInventories,
+      availableMoveTargetInventories,
+      availableTargetInventories: availableTransferTargetInventories,
       bulkMutationBusy,
+      canBulkEditSelectedInventory: selectedInventoryCanWrite,
+      canCopyFromSelectedInventory: canCopyFromInventory(selectedInventoryRow),
+      canMoveFromSelectedInventory: canMoveFromInventory(selectedInventoryRow),
       createInventoryBusy,
       filterOptions: tableFilterOptions,
       filters: tableFilters,
@@ -433,7 +474,11 @@ export default function App() {
         </div>
         <div className="hero-metrics">
           <MetricCard accent="Sunrise" label="Collections" value={String(inventories.length)} />
-          <MetricCard accent="Lagoon" label="Entries In View" value={String(items.length)} />
+          <MetricCard
+            accent="Lagoon"
+            label="Entries In View"
+            value={String(collectionItems.length)}
+          />
           <MetricCard
             accent="Paper"
             label="Est. Value"
@@ -504,11 +549,11 @@ export default function App() {
         title="Collection Activity"
       >
         <AuditFeed
-          auditEvents={auditEvents}
+          auditEvents={collectionAuditEvents}
           embedded
           selectedInventoryRow={selectedInventoryRow}
-          viewError={viewError}
-          viewStatus={viewStatus}
+          viewError={collectionViewError}
+          viewStatus={collectionViewStatus}
         />
       </ActivityDrawer>
 
