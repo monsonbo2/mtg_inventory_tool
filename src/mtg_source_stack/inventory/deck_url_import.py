@@ -29,8 +29,8 @@ from .catalog import (
     resolve_card_row,
     resolve_default_card_row_for_name,
 )
-from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
 from .decklist_import import ParsedDecklistEntry, parse_decklist_text
+from .import_engine import InventoryValidator, PendingImportRow, _import_pending_rows
 from .import_resolution import (
     RemoteDeckRequestedCard,
     RemoteDeckResolutionIssue,

@@ -18,7 +18,7 @@ from .catalog import (
 )
 from ..db.connection import connect
 from ..db.schema import SchemaPreparationPolicy, prepare_database
-from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
+from .import_engine import InventoryValidator, PendingImportRow, _import_pending_rows
 from .import_summary import build_resolvable_deck_import_summary
 from .import_resolution import (
     DecklistRequestedCard,
