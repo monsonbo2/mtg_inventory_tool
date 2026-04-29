@@ -4788,7 +4788,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 item_ids = [int(row["id"]) for row in connection.execute("SELECT id FROM inventory_items ORDER BY id").fetchall()]
 
             with patch(
-                "mtg_source_stack.inventory.mutations.write_inventory_audit_event",
+                "mtg_source_stack.inventory.operations.bulk.write_inventory_audit_event",
                 side_effect=RuntimeError("audit write failed"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "audit write failed"):
