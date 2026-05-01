@@ -52,7 +52,7 @@ class DecklistImportTest(unittest.TestCase):
                 return_value=plan,
             ) as resolve_decklist_import_plan,
             patch(
-                "mtg_source_stack.inventory.decklist_import._import_pending_rows",
+                "mtg_source_stack.inventory.decklist_import._import_pending_decklist_rows",
                 return_value=[],
             ) as import_pending_rows,
         ):
@@ -98,7 +98,7 @@ class DecklistImportTest(unittest.TestCase):
                 return_value=plan,
             ),
             patch(
-                "mtg_source_stack.inventory.decklist_import._import_pending_rows",
+                "mtg_source_stack.inventory.decklist_import._import_pending_decklist_rows",
                 return_value=[],
             ),
         ):

@@ -56,20 +56,45 @@ The main modules are:
   remain the stable inventory service surface for future app work.
 - `inventories.py`
   Inventory container creation and listing.
-- `catalog.py`
-  Local catalog search and printing resolution.
-- `mutations.py`
-  Inventory write operations such as add/edit/split/merge/remove.
+- `owned_items.py`
+  Concrete owned-row read, paging, sorting, and table-shaping logic.
+- `reporting.py`
+  Concrete export, health, duplicate-group, and report assembly logic.
+- `valuation.py`
+  Concrete valuation, price-gap, and reconciliation logic.
 - `analysis.py`
-  Inventory reads, valuation, health checks, report assembly, and export prep.
+  Compatibility facade that preserves the older reporting/read import surface
+  while delegating to `owned_items.py`, `reporting.py`, and `valuation.py`.
+- `catalog.py`
+  Compatibility facade for older catalog imports.
+- `catalog_search.py`
+  Concrete local catalog search and grouped-name lookup logic.
+- `catalog_printings.py`
+  Concrete printing list/summary lookup and default-printing ranking logic.
+- `catalog_resolution.py`
+  Concrete default-add and exact-printing resolution logic.
+- `mutations.py`
+  Compatibility facade for older inventory write-operation imports.
+- `operations/`
+  Concrete inventory write-operation modules, including add, bulk, identity,
+  item-update, and row-lifecycle flows.
 - `csv_import.py`
   CSV ingest orchestration for inventory imports.
+- `import_engine.py`
+  Shared pending-row validation and commit engine used across import flows.
 - `csv_formats.py`
   Source-specific CSV adapter detection and normalization before import.
 - `decklist_import.py`
   Pasted decklist parsing plus preview/commit planning for decklist imports.
 - `deck_url_import.py`
-  Remote deck fetch/parsing plus preview/commit planning for URL imports.
+  Public remote deck URL import facade.
+- `remote_deck_sources.py`
+  Remote fetch transport, redirect safety, and snapshot-token helpers.
+- `remote_deck_providers.py`
+  Provider-specific URL parsing and payload/page parsing for remote deck
+  imports.
+- `remote_deck_planning.py`
+  Remote deck preview, resolution, and commit planning logic.
 - `export_profiles.py`
   Profile registry for HTTP and CLI CSV exports.
 - `import_resolution.py`
@@ -107,6 +132,9 @@ The current intended public runtime surface is:
 - importer wrapper module `mvp_importer.py`
 - inventory wrapper module `personal_inventory_cli.py`
 - inventory domain facade `inventory/service.py`
+- compatibility facades `inventory/analysis.py`, `inventory/catalog.py`,
+  `inventory/mutations.py`, and `inventory/deck_url_import.py` for existing
+  callers that still import those modules directly
 
 The concrete `query_*` and `report_*` modules are internal organization
 modules. They are real sources of truth for implementation, but they are not
@@ -176,13 +204,18 @@ Python runtime packages for business logic or direct data access.
 
 ## Legacy / Compatibility Areas
 
-Two modules still exist primarily for compatibility and entrypoint stability:
+The main compatibility seams are now explicit and intentionally thin:
 
 - `mvp_importer.py`
 - `personal_inventory_cli.py`
+- `inventory/analysis.py`
+- `inventory/catalog.py`
+- `inventory/mutations.py`
+- `inventory/deck_url_import.py`
 
-They are thinner than the older pre-split structure, but they still expose more
-legacy surface than an ideal long-term architecture would.
+The preferred service-entry surface is still `inventory/service.py`, but the
+compatibility modules remain in place so existing scripts, notebooks, and
+callers do not need to move all at once.
 
 ## Current Pressure Points
 
@@ -190,9 +223,10 @@ The repo is in a good structural place for the next phase of work, but a few
 files are still the obvious growth pressure points:
 
 - `cli/inventory.py`
-- `inventory/mutations.py`
-- `inventory/analysis.py`
+- `inventory/operations/bulk.py`
+- `inventory/remote_deck_providers.py`
 - `inventory/report_formatters.py`
+- `inventory/transfer.py`
 
 Those modules are not broken, but they are the first ones likely to need
 further decomposition if the web app or reporting surface expands.
