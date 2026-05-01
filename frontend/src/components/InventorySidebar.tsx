@@ -297,9 +297,10 @@ export function InventorySidebar(props: {
     const label = props.createInventoryBusy ? "Creating..." : "Create Collection";
     return (
       <button
+        aria-label={options.placement === "hero" ? label : undefined}
         className={
           options.placement === "hero"
-            ? "primary-button workspace-hero-create-action"
+            ? "utility-button workspace-hero-create-action"
             : "utility-button inventory-sidebar-compact-action"
         }
         disabled={props.createInventoryBusy}
@@ -310,7 +311,16 @@ export function InventorySidebar(props: {
           aria-hidden="true"
           className="inventory-action-icon inventory-action-icon-create"
         />
-        <span className="inventory-sidebar-action-create-label">{label}</span>
+        {options.placement === "hero" ? (
+          <>
+            <span aria-hidden="true" className="hero-action-copy">
+              <span className="hero-action-title">{label}</span>
+              <span className="hero-action-meta">Start a new binder or deck.</span>
+            </span>
+          </>
+        ) : (
+          <span className="inventory-sidebar-action-create-label">{label}</span>
+        )}
       </button>
     );
   }

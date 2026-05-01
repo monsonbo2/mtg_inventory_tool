@@ -972,11 +972,12 @@ export function SearchPanel(props: {
         ref={importMenuRef}
       >
         <button
+          aria-label={options.placement === "hero" ? "Import Cards" : undefined}
           aria-expanded={importMenuOpen}
           aria-haspopup="menu"
           className={
             options.placement === "hero"
-              ? "secondary-button search-import-trigger workspace-hero-import-trigger"
+              ? "utility-button search-import-trigger workspace-hero-import-trigger"
               : "utility-button search-import-trigger"
           }
           disabled={!props.state.inventories.length}
@@ -984,7 +985,20 @@ export function SearchPanel(props: {
           ref={importTriggerRef}
           type="button"
         >
-          Import Cards
+          {options.placement === "hero" ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="inventory-action-icon workspace-action-icon-import"
+              />
+              <span aria-hidden="true" className="hero-action-copy">
+                <span className="hero-action-title">Import Cards</span>
+                <span className="hero-action-meta">Import a list, deck, or CSV.</span>
+              </span>
+            </>
+          ) : (
+            "Import Cards"
+          )}
         </button>
 
         {importMenuOpen ? (

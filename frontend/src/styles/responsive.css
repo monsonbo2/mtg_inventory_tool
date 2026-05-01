@@ -52,7 +52,15 @@
 
   .hero-actions {
     justify-self: stretch;
-    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .hero-actions-shell {
+    padding: 12px;
+  }
+
+  .hero-action-slot {
+    min-width: 0;
   }
 
   .sticky-workspace-controls {

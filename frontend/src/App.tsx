@@ -496,12 +496,22 @@ export default function App() {
         </div>
         {showHeroCreateAction || showHeroImportAction ? (
           <div aria-label="Workspace actions" className="hero-actions">
-            {showHeroCreateAction ? (
-              <div className="hero-action-slot hero-action-slot-create" ref={setWorkspaceCreateActionHost} />
-            ) : null}
-            {showHeroImportAction ? (
-              <div className="hero-action-slot hero-action-slot-import" ref={setWorkspaceImportActionHost} />
-            ) : null}
+            <div className="hero-actions-shell">
+              <div className="hero-actions-list">
+                {showHeroCreateAction ? (
+                  <div
+                    className="hero-action-slot hero-action-slot-create"
+                    ref={setWorkspaceCreateActionHost}
+                  />
+                ) : null}
+                {showHeroImportAction ? (
+                  <div
+                    className="hero-action-slot hero-action-slot-import"
+                    ref={setWorkspaceImportActionHost}
+                  />
+                ) : null}
+              </div>
+            </div>
           </div>
         ) : null}
       </header>
