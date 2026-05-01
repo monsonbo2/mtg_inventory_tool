@@ -9,8 +9,8 @@
   margin-bottom: 16px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
+  gap: 16px;
+  align-items: start;
   position: relative;
   z-index: 8;
 }
@@ -25,8 +25,8 @@
 .hero-actions {
   display: grid;
   justify-self: end;
-  align-content: start;
-  width: min(316px, 100%);
+  align-self: center;
+  width: min(348px, 100%);
 }
 
 .hero-actions-shell {
@@ -35,17 +35,32 @@
   width: 100%;
   position: relative;
   overflow: visible;
-  padding: 2px 0;
+  padding: 6px 0 6px 22px;
 }
 
 .hero-actions-shell::before {
   content: "";
   position: absolute;
-  inset: -12px -10px -14px -18px;
-  border-radius: 30px;
+  left: 4px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  border-radius: 999px;
   background:
-    radial-gradient(circle at 18% 24%, rgba(93, 231, 206, 0.11), transparent 34%),
-    radial-gradient(circle at 82% 76%, rgba(244, 171, 98, 0.1), transparent 36%);
+    linear-gradient(180deg, rgba(93, 231, 206, 0.46), rgba(244, 171, 98, 0.36));
+  box-shadow:
+    0 0 18px rgba(93, 231, 206, 0.18),
+    0 0 26px rgba(244, 171, 98, 0.12);
+  pointer-events: none;
+}
+
+.hero-actions-shell::after {
+  content: "";
+  position: absolute;
+  inset: -18px -16px -18px -24px;
+  background:
+    radial-gradient(circle at 24% 22%, rgba(93, 231, 206, 0.08), transparent 28%),
+    radial-gradient(circle at 82% 74%, rgba(244, 171, 98, 0.08), transparent 30%);
   filter: blur(18px);
   opacity: 0.7;
   pointer-events: none;
@@ -54,7 +69,7 @@
 
 .hero-actions-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .hero-action-slot {
