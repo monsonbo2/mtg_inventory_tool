@@ -18,7 +18,7 @@ from .catalog import (
 )
 from ..db.connection import connect
 from ..db.schema import SchemaPreparationPolicy, prepare_database
-from .csv_import import InventoryValidator, PendingImportRow, _import_pending_rows
+from .import_engine import InventoryValidator, PendingImportRow, import_pending_rows
 from .import_summary import build_resolvable_deck_import_summary
 from .import_resolution import (
     DecklistRequestedCard,
@@ -583,12 +583,11 @@ def import_decklist_text(
             "Unresolved decklist import ambiguities remain.",
             details={"resolution_issues": serialize_response(plan.resolution_issues)},
         )
-    imported_rows = _import_pending_rows(
+    imported_rows = _import_pending_decklist_rows(
         prepared_db_path,
         pending_rows=plan.pending_rows,
         dry_run=dry_run,
         before_write=before_write,
-        allow_inventory_auto_create=False,
         inventory_validator=inventory_validator,
         actor_type=actor_type,
         actor_id=actor_id,
@@ -608,3 +607,27 @@ def import_decklist_text(
         "imported_rows": imported_rows,
         "dry_run": dry_run,
     }
+
+
+def _import_pending_decklist_rows(
+    prepared_db_path: str | Path,
+    *,
+    pending_rows: list[PendingImportRow],
+    dry_run: bool = False,
+    before_write: Callable[[], Any] | None = None,
+    inventory_validator: InventoryValidator | None = None,
+    actor_type: str = "cli",
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> list[dict[str, Any]]:
+    return import_pending_rows(
+        prepared_db_path,
+        pending_rows=pending_rows,
+        dry_run=dry_run,
+        before_write=before_write,
+        allow_inventory_auto_create=False,
+        inventory_validator=inventory_validator,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
