@@ -62,6 +62,7 @@ type SuggestionThumbnail = {
 
 export function useCardSearch(options: UseCardSearchOptions = {}) {
   const [searchScope, setSearchScope] = useState<CatalogScope>("default");
+  const [searchLoadAllLanguages, setSearchLoadAllLanguages] = useState(false);
   const [searchStatus, setSearchStatus] = useState<AsyncStatus>("idle");
   const [suggestionStatus, setSuggestionStatus] = useState<AsyncStatus>("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -297,6 +298,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     setSearchQuery("");
     setSearchResultQuery("");
     setSearchScope("default");
+    setSearchLoadAllLanguages(false);
     searchResultScopeRef.current = "default";
     setSearchResults([]);
     setSearchTotalCount(0);
@@ -575,6 +577,10 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     void runCardSearch(searchQuery, { scope: nextScope });
   }
 
+  function handleSearchLoadAllLanguagesChange(nextValue: boolean) {
+    setSearchLoadAllLanguages(nextValue);
+  }
+
   function moveSearchGroupSelection(direction: 1 | -1) {
     const visibleSearchResults = searchResults.slice(0, searchGroupVisibleLimit);
     if (
@@ -724,6 +730,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     handleSearchInputKeyDown,
     handleSearchQueryChange,
     handleSearchResultsLoadMore,
+    handleSearchLoadAllLanguagesChange,
     handleSearchScopeChange,
     handleSearchSubmit,
     dismissSearchResults,
@@ -746,6 +753,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     searchResultQuery,
     searchResultsStale,
     searchResultsVisible,
+    searchLoadAllLanguages,
     searchScope,
     searchResultScope: searchResultScopeRef.current,
     searchStatus,

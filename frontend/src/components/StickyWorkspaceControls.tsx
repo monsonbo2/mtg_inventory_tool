@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from "react";
 
 import type { InventorySummary } from "../types";
 import { SearchAutocomplete } from "./SearchAutocomplete";
+import { SearchOptionsControl } from "./SearchOptionsControl";
 import type { SearchPanelActions, SearchPanelState } from "./SearchPanel";
 
 function getOtherInventoryCountLabel(availableCount: number) {
@@ -217,9 +218,18 @@ export function StickyWorkspaceControls(props: {
                 />
               </div>
             </label>
-            <button className="primary-button" type="submit">
-              {props.searchState.search.status === "loading" ? "Searching..." : "Search cards"}
-            </button>
+            <div className="sticky-controls-search-actions">
+              <button className="primary-button" type="submit">
+                {props.searchState.search.status === "loading" ? "Searching..." : "Search cards"}
+              </button>
+              <SearchOptionsControl
+                loadAllLanguages={props.searchState.search.loadAllLanguages}
+                onLoadAllLanguagesChange={props.actions.onSearchLoadAllLanguagesChange}
+                onScopeChange={props.actions.onSearchScopeChange}
+                placement="sticky"
+                scope={props.searchState.search.scope}
+              />
+            </div>
           </form>
         </div>
       </div>

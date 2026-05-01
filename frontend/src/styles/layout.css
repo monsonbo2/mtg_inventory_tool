@@ -218,6 +218,8 @@
 }
 
 .workspace-top-grid-controls-aligned {
+  --workspace-top-card-control-height: 72px;
+  --workspace-top-search-control-height: 56px;
   align-items: stretch;
 }
 

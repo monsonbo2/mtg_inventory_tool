@@ -41,6 +41,7 @@ import type {
   SearchAddAvailability,
 } from "../uiTypes";
 import { SearchAutocomplete } from "./SearchAutocomplete";
+import { SearchOptionsControl } from "./SearchOptionsControl";
 import { PanelState } from "./ui/PanelState";
 import { ModalDialog } from "./ui/ModalDialog";
 import { SearchResultCard } from "./SearchResultCard";
@@ -71,6 +72,10 @@ function getSuggestionStatusMessage(state: SearchPanelState) {
   }
 
   return "Card suggestions are hidden.";
+}
+
+function getCatalogScopeLabel(scope: CatalogScope) {
+  return scope === "all" ? "Full catalog" : "Main catalog";
 }
 
 function measureSearchWorkspaceContentHeight(workspaceNode: HTMLDivElement) {
@@ -158,6 +163,7 @@ export type SearchPanelState = {
     error: string | null;
     groups: SearchCardGroup[];
     hiddenResultCount: number;
+    loadAllLanguages: boolean;
     loadedHiddenResultCount: number;
     isLoadingMore: boolean;
     isResultStale: boolean;
@@ -195,6 +201,7 @@ export type SearchPanelActions = {
   onSearchFieldFocus: () => void;
   onSearchInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onSearchGroupSelect: (groupId: string) => void;
+  onSearchLoadAllLanguagesChange: (nextValue: boolean) => void;
   onSearchResultsLoadMore: () => void;
   onSearchScopeChange: (scope: CatalogScope) => void;
   onSearchResultsDismiss: () => void;
@@ -422,10 +429,8 @@ export function SearchPanel(props: {
     showAutocomplete && props.state.suggestions.highlightedIndex >= 0
       ? `${autocompleteListId}-option-${props.state.suggestions.highlightedIndex}`
       : undefined;
-  const searchScopeLabel =
-    props.state.search.resultScope === "all" ? "All catalog" : "Cards";
-  const activeSearchScopeLabel =
-    props.state.search.scope === "all" ? "All catalog" : "Cards";
+  const searchScopeLabel = getCatalogScopeLabel(props.state.search.resultScope);
+  const activeSearchScopeLabel = getCatalogScopeLabel(props.state.search.scope);
   const trimmedDraftQuery = props.state.search.query.trim();
   const searchDraftNote =
     props.state.search.status === "loading"
@@ -1646,74 +1651,52 @@ export function SearchPanel(props: {
         </div>
 
         <form className="search-form" onSubmit={props.actions.onSearchSubmit}>
-          <label className="field search-field" ref={searchFieldRef}>
-            <span className="sr-only">Quick Add and Card Search</span>
-            <div className="search-input-stack">
-              <input
-                aria-activedescendant={activeSuggestionId}
-                aria-autocomplete="list"
-                aria-controls={autocompleteListId}
-                aria-describedby={autocompleteStatusId}
-                aria-expanded={showAutocomplete}
-                aria-haspopup="listbox"
-                className="text-input"
-                onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
-                onClick={props.actions.onSearchFieldFocus}
-                onFocus={props.actions.onSearchFieldFocus}
-                onKeyDown={props.actions.onSearchInputKeyDown}
-                placeholder="e.g. Lightning Bolt"
-                ref={searchInputRef}
-                role="combobox"
-                value={props.state.search.query}
-              />
-              <SearchAutocomplete
-                error={props.state.suggestions.error}
-                highlightedIndex={props.state.suggestions.highlightedIndex}
-                isOpen={showAutocomplete}
-                listboxId={autocompleteListId}
-                onHighlight={props.actions.onSuggestionHighlight}
-                onSelect={props.actions.onSuggestionSelect}
-                optionIdPrefix={autocompleteListId}
-                query={props.state.search.query}
-                results={props.state.suggestions.results}
-                status={props.state.suggestions.status}
-              />
-            </div>
-          </label>
-          <div className="search-form-actions">
-            <div
-              aria-label="Catalog search scope"
-              className="search-scope-toggle"
-              role="group"
-            >
-              <button
-                aria-pressed={props.state.search.scope === "default"}
-                className={
-                  props.state.search.scope === "default"
-                    ? "search-scope-option search-scope-option-active"
-                    : "search-scope-option"
-                }
-                onClick={() => props.actions.onSearchScopeChange("default")}
-                type="button"
-              >
-                Cards
-              </button>
-              <button
-                aria-pressed={props.state.search.scope === "all"}
-                className={
-                  props.state.search.scope === "all"
-                    ? "search-scope-option search-scope-option-active"
-                    : "search-scope-option"
-                }
-                onClick={() => props.actions.onSearchScopeChange("all")}
-                type="button"
-              >
-                All catalog
-              </button>
-            </div>
+          <div className="search-form-primary-row">
+            <label className="field search-field" ref={searchFieldRef}>
+              <span className="sr-only">Quick Add and Card Search</span>
+              <div className="search-input-stack">
+                <input
+                  aria-activedescendant={activeSuggestionId}
+                  aria-autocomplete="list"
+                  aria-controls={autocompleteListId}
+                  aria-describedby={autocompleteStatusId}
+                  aria-expanded={showAutocomplete}
+                  aria-haspopup="listbox"
+                  className="text-input"
+                  onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
+                  onClick={props.actions.onSearchFieldFocus}
+                  onFocus={props.actions.onSearchFieldFocus}
+                  onKeyDown={props.actions.onSearchInputKeyDown}
+                  placeholder="e.g. Lightning Bolt"
+                  ref={searchInputRef}
+                  role="combobox"
+                  value={props.state.search.query}
+                />
+                <SearchAutocomplete
+                  error={props.state.suggestions.error}
+                  highlightedIndex={props.state.suggestions.highlightedIndex}
+                  isOpen={showAutocomplete}
+                  listboxId={autocompleteListId}
+                  onHighlight={props.actions.onSuggestionHighlight}
+                  onSelect={props.actions.onSuggestionSelect}
+                  optionIdPrefix={autocompleteListId}
+                  query={props.state.search.query}
+                  results={props.state.suggestions.results}
+                  status={props.state.suggestions.status}
+                />
+              </div>
+            </label>
             <button className="primary-button search-submit-button" type="submit">
               {props.state.search.status === "loading" ? "Searching..." : "Search cards"}
             </button>
+          </div>
+          <div className="search-form-secondary-row">
+            <SearchOptionsControl
+              loadAllLanguages={props.state.search.loadAllLanguages}
+              onLoadAllLanguagesChange={props.actions.onSearchLoadAllLanguagesChange}
+              onScopeChange={props.actions.onSearchScopeChange}
+              scope={props.state.search.scope}
+            />
           </div>
         </form>
         <p aria-live="polite" className="sr-only" id={autocompleteStatusId}>
@@ -1748,6 +1731,17 @@ export function SearchPanel(props: {
         ) : props.state.search.status === "ready" && !hasSearchResults ? (
           <PanelState
             body="Try a broader card name, a simpler spelling, or fewer extra terms."
+            actions={
+              props.state.search.scope === "default" && trimmedDraftQuery ? (
+                <button
+                  className="secondary-button"
+                  onClick={() => props.actions.onSearchScopeChange("all")}
+                  type="button"
+                >
+                  Search full catalog
+                </button>
+              ) : null
+            }
             eyebrow="Search"
             title="No matching cards"
           />
@@ -1876,6 +1870,7 @@ export function SearchPanel(props: {
               <SearchResultCard
                 busyPrintingId={props.state.busyAddCardId}
                 addAvailability={selectedInventoryAddAvailability}
+                autoLoadAllLanguages={props.state.search.loadAllLanguages}
                 defaultLocation={props.state.selectedInventoryRow?.default_location || null}
                 defaultTags={props.state.selectedInventoryRow?.default_tags || null}
                 group={activeSearchGroup}

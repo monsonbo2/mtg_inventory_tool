@@ -2186,7 +2186,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "Cloud Sprite" })).toBeInTheDocument();
     expect(
-      screen.getByText('Showing cards results for "Cloud". Search to update.'),
+      screen.getByText('Showing main catalog results for "Cloud". Search to update.'),
     ).toBeInTheDocument();
   });
 
@@ -2228,8 +2228,15 @@ describe("App", () => {
     const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
     await user.type(input, "Clue");
 
-    const scopeGroup = screen.getByRole("group", { name: "Catalog search scope" });
-    await user.click(within(scopeGroup).getByRole("button", { name: "All catalog" }));
+    const searchForm = input.closest("form");
+    expect(searchForm).not.toBeNull();
+
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", {
+        name: /Additional search options/i,
+      }),
+    );
+    await user.click(screen.getByRole("checkbox", { name: /Full catalog/i }));
 
     expect(await screen.findByRole("heading", { name: "Clue Token" })).toBeInTheDocument();
     await waitFor(() => {
@@ -2245,7 +2252,7 @@ describe("App", () => {
       });
     });
 
-    await user.click(within(scopeGroup).getByRole("button", { name: "Cards" }));
+    await user.click(screen.getByRole("checkbox", { name: /Full catalog/i }));
 
     expect(await screen.findByRole("heading", { name: "Trail of Evidence" })).toBeInTheDocument();
     await waitFor(() => {
@@ -2253,6 +2260,138 @@ describe("App", () => {
         query: "Clue",
         limit: 18,
         scope: undefined,
+      });
+    });
+  });
+
+  it("can preload all printing languages from additional search options", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "bolt-oracle",
+            name: "Lightning Bolt",
+            printings_count: 3,
+            available_languages: ["en", "ja"],
+          }),
+        ]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(listCardPrintings).mockImplementation(async (oracleId, params) => {
+      if (oracleId === "bolt-oracle" && params?.lang === "all") {
+        return [
+          buildSearchRow({
+            scryfall_id: "bolt-alpha",
+            name: "Lightning Bolt",
+            set_code: "lea",
+            set_name: "Limited Edition Alpha",
+            collector_number: "161",
+            finishes: ["normal"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-m11",
+            name: "Lightning Bolt",
+            set_code: "m11",
+            set_name: "Magic 2011",
+            collector_number: "146",
+            finishes: ["normal", "foil"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-sta-ja",
+            name: "Lightning Bolt",
+            set_code: "sta",
+            set_name: "Strixhaven Mystical Archive",
+            collector_number: "39",
+            lang: "ja",
+            finishes: ["normal"],
+          }),
+        ];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    const searchForm = input.closest("form");
+    expect(searchForm).not.toBeNull();
+
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", {
+        name: /Additional search options/i,
+      }),
+    );
+    await user.click(screen.getByRole("checkbox", { name: /All printing languages/i }));
+
+    await user.type(input, "Lightning");
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", { name: "Search cards" }),
+    );
+
+    const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltCard).not.toBeNull();
+
+    await waitFor(() => {
+      expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
+    });
+    expect(within(boltCard!).queryByRole("button", { name: "Load all languages" })).not.toBeInTheDocument();
+    expect(within(boltCard!).getByRole("combobox", { name: "Language" })).toBeInTheDocument();
+  });
+
+  it("offers a full catalog retry action when default scope returns no matches", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Relic" && params.scope === "all") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "relic-oracle",
+            name: "Relic of Progenitus",
+          }),
+        ]);
+      }
+      if (params.query === "Relic") {
+        return buildNameSearchResult();
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(
+      buildPrintingSummary([
+        buildSearchRow({
+          scryfall_id: "relic-printing",
+          name: "Relic of Progenitus",
+          is_default_add_choice: true,
+        }),
+      ]),
+    );
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    const searchForm = input.closest("form");
+    expect(searchForm).not.toBeNull();
+
+    await user.type(input, "Relic");
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", { name: "Search cards" }),
+    );
+
+    expect(await screen.findByText("No matching cards")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Search full catalog" }));
+
+    expect(await screen.findByRole("heading", { name: "Relic of Progenitus" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(searchCardNames).toHaveBeenLastCalledWith({
+        query: "Relic",
+        limit: 18,
+        scope: "all",
       });
     });
   });

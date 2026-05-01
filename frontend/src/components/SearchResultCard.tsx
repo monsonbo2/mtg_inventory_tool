@@ -56,6 +56,7 @@ export function SearchResultCard(props: {
   group: SearchCardGroup;
   busyPrintingId: string | null;
   addAvailability: SearchAddAvailability;
+  autoLoadAllLanguages?: boolean;
   defaultLocation: string | null;
   defaultTags: string | null;
   onClose: () => void;
@@ -126,8 +127,13 @@ export function SearchResultCard(props: {
       return;
     }
 
-    void loadPrintings("primary");
-  }, [loadedPrintingsMode, printingStatus, props.group.groupId]);
+    void loadPrintings(props.autoLoadAllLanguages ? "all" : "primary");
+  }, [
+    loadedPrintingsMode,
+    printingStatus,
+    props.autoLoadAllLanguages,
+    props.group.groupId,
+  ]);
 
   const activePrinting =
     printings.find((printing) => printing.scryfall_id === selectedPrintingId) || null;
@@ -160,6 +166,25 @@ export function SearchResultCard(props: {
     : hasEnglishPrintings
       ? printings.filter((printing) => printing.lang === "en")
       : printings;
+
+  useEffect(() => {
+    if (!props.autoLoadAllLanguages) {
+      return;
+    }
+    if (loadedPrintingsMode !== "primary" || printingStatus === "loading") {
+      return;
+    }
+    if (!hasAdditionalLanguages) {
+      return;
+    }
+
+    void loadPrintings("all");
+  }, [
+    hasAdditionalLanguages,
+    loadedPrintingsMode,
+    printingStatus,
+    props.autoLoadAllLanguages,
+  ]);
 
   useEffect(() => {
     if (!effectivePrinting) {

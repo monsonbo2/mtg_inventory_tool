@@ -233,8 +233,19 @@
     justify-items: stretch;
   }
 
-  .search-scope-toggle {
-    justify-content: center;
+  .search-options-control,
+  .search-options-control-sticky {
+    justify-self: stretch;
+  }
+
+  .search-options-trigger-sticky {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sticky-controls-search-actions {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
   }
 
   .table-toolbar-actions,
