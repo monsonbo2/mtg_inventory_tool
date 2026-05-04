@@ -7,6 +7,10 @@ HTTP service through `api.ts`; do not import Python runtime code from here.
 
 - `App.tsx`: application shell and top-level state wiring.
 - `api.ts`: browser-facing HTTP client helpers.
+- `downloadHelpers.ts`: browser download helpers for API text responses such
+  as CSV exports.
+- `inventoryCapabilities.ts`: policy-named helpers for readable, writable,
+  transfer, export, and share-management affordances.
 - `types.ts`: TypeScript mirrors of the app-facing API contract.
 - `components/`: presentational and workflow components.
 - `hooks/`: reusable state and API orchestration hooks.
