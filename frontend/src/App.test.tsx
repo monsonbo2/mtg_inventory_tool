@@ -659,7 +659,7 @@ describe("App", () => {
 
     expect(
       await screen.findByText(
-        "This collection is read-only. You can browse cards, but edits and row removal are disabled.",
+        "This collection is read-only. You can browse cards and copy selected table entries, but edits and row removal are disabled.",
       ),
     ).toBeInTheDocument();
 
@@ -4289,6 +4289,7 @@ describe("App", () => {
       role: "viewer",
       can_write: false,
       can_manage_share: false,
+      can_transfer_to: false,
     });
 
     mockCollectionViewApp({
@@ -4309,7 +4310,25 @@ describe("App", () => {
           notes: null,
         }),
       ],
-      inventories: [viewerInventory],
+      inventories: [
+        viewerInventory,
+        buildInventorySummary({
+          slug: "trade",
+          display_name: "Trade Binder",
+          description: "Cards available for swaps",
+          item_rows: 4,
+          total_cards: 6,
+          can_transfer_to: true,
+        }),
+        buildInventorySummary({
+          slug: "archive",
+          display_name: "Archive Box",
+          description: "Long-term storage",
+          item_rows: 10,
+          total_cards: 120,
+          can_transfer_to: false,
+        }),
+      ],
     });
 
     render(<App />);
@@ -4320,12 +4339,22 @@ describe("App", () => {
     expect(screen.getByText("2 entries selected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Clear selection" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Bulk edit" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy to collection" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy to collection" }));
     expect(screen.queryByRole("button", { name: "Move to collection" })).not.toBeInTheDocument();
     expect(
-      screen.queryByText(
-        "This collection is read-only. Selection is available, but bulk edit, copy, and move are unavailable.",
+      screen.getByText(
+        "This collection is read-only. Bulk edit and move are disabled, but copy is available.",
       ),
+    ).toBeInTheDocument();
+
+    const tray = screen.getByRole("region", { name: "Copy to collection tray" });
+    const destinationSelect = within(tray).getByRole("combobox", {
+      name: "Destination collection",
+    });
+
+    expect(within(destinationSelect).getByRole("option", { name: "Trade Binder" })).toBeInTheDocument();
+    expect(
+      within(destinationSelect).queryByRole("option", { name: "Archive Box" }),
     ).not.toBeInTheDocument();
   });
 

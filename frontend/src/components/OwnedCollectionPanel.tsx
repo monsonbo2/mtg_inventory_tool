@@ -467,8 +467,8 @@ export function OwnedCollectionPanel(props: {
 
       {showViewControls && !props.state.selectedInventoryCanWrite ? (
         <p className="panel-hint">
-          This collection is read-only. You can browse cards, but edits and row removal are
-          disabled.
+          This collection is read-only. You can browse cards and copy selected table entries, but
+          edits and row removal are disabled.
         </p>
       ) : null}
 

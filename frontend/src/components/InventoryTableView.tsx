@@ -157,6 +157,14 @@ export function InventoryTableView(props: {
     props.canBulkEditSelectedInventory ||
     props.canCopyFromSelectedInventory ||
     props.canMoveFromSelectedInventory;
+  const selectionCapabilityMessage =
+    props.canCopyFromSelectedInventory &&
+    !props.canBulkEditSelectedInventory &&
+    !props.canMoveFromSelectedInventory
+      ? "This collection is read-only. Bulk edit and move are disabled, but copy is available."
+      : !hasAnySelectionActions
+        ? "Selection is available, but bulk edit, copy, and move are unavailable for this collection."
+        : null;
   const selectedCountLabel =
     totalSelectedCount === 0
       ? "No entries selected"
@@ -1206,16 +1214,15 @@ export function InventoryTableView(props: {
                     Clear selection
                   </button>
                 </div>
-                {!hasAnySelectionActions ? (
+                {selectionCapabilityMessage ? (
                   <span className="table-selection-slot-copy">
-                    This collection is read-only. Selection is available, but bulk edit, copy,
-                    and move are unavailable.
+                    {selectionCapabilityMessage}
                   </span>
                 ) : null}
               </div>
             ) : (
               <span className="table-selection-slot-copy">
-                Select rows for bulk actions.
+                Select rows for available actions.
               </span>
             )}
           </div>
