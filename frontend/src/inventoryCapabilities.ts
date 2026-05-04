@@ -8,16 +8,24 @@ export function isWritableInventory(inventory: InventorySummary | null): boolean
   return Boolean(inventory?.can_write);
 }
 
+export function canManageShareInventory(inventory: InventorySummary | null): boolean {
+  return Boolean(inventory?.can_manage_share);
+}
+
 export function canTransferIntoInventory(inventory: InventorySummary): boolean {
   return inventory.can_transfer_to;
 }
 
 export function canCopyFromInventory(inventory: InventorySummary | null): boolean {
-  return isWritableInventory(inventory);
+  return isReadableInventory(inventory);
 }
 
 export function canMoveFromInventory(inventory: InventorySummary | null): boolean {
   return isWritableInventory(inventory);
+}
+
+export function canExportInventory(inventory: InventorySummary | null): boolean {
+  return isReadableInventory(inventory);
 }
 
 export function getWritableInventories(

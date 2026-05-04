@@ -4281,7 +4281,7 @@ describe("App", () => {
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).toBeChecked();
   });
 
-  it("keeps table selection available for viewer access without showing write actions", async () => {
+  it("keeps table selection copy available for viewer access without showing write actions", async () => {
     const user = userEvent.setup();
     const viewerInventory = buildInventorySummary({
       item_rows: 2,
@@ -4320,13 +4320,13 @@ describe("App", () => {
     expect(screen.getByText("2 entries selected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Clear selection" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Bulk edit" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Copy to collection" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy to collection" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Move to collection" })).not.toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "This collection is read-only. Selection is available, but bulk edit, copy, and move are unavailable.",
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
   });
 
   it("can select the entire collection from the table even when not all rows are visible", async () => {
