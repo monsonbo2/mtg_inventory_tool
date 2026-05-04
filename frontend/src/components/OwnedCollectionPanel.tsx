@@ -30,6 +30,8 @@ import { StatusPill } from "./ui/StatusPill";
 
 type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
+  canExportSelectedInventory: boolean;
+  exportInventoryBusy: boolean;
   selectedInventoryCanWrite: boolean;
   collection: {
     browsePage: number;
@@ -77,6 +79,7 @@ type OwnedCollectionPanelActions = {
     payload: PatchInventoryItemRequest,
   ) => Promise<MutationOutcome>;
   onDelete: (itemId: number, cardName: string) => Promise<MutationOutcome>;
+  onExportCsv: () => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
   onCreateInventory: (
     payload: InventoryCreateRequest,
@@ -179,6 +182,8 @@ export function OwnedCollectionPanel(props: {
     collectionDisplayState === "ready" || collectionDisplayState === "search_empty";
   const showActivityButton =
     collectionDisplayState === "ready" || collectionDisplayState === "search_empty";
+  const showExportButton =
+    props.state.selectedInventoryRow !== null && props.state.canExportSelectedInventory;
   const showCollectionMetrics = showViewControls;
   const showCollectionSearchRow = showViewControls;
   const showSummaryBar = showCollectionMetrics;
@@ -322,7 +327,7 @@ export function OwnedCollectionPanel(props: {
           <StatusPill status={props.state.collection.viewStatus} />
         </div>
 
-        {showViewControls || showActivityButton ? (
+        {showViewControls || showActivityButton || showExportButton ? (
           <div className="collection-header-controls">
             {showViewControls ? (
               <div aria-label="Collection view" className="view-toggle" role="group">
@@ -360,6 +365,19 @@ export function OwnedCollectionPanel(props: {
                 type="button"
               >
                 Recent Activity
+              </button>
+            ) : null}
+
+            {showExportButton ? (
+              <button
+                className="utility-button"
+                disabled={props.state.exportInventoryBusy}
+                onClick={() => void props.actions.onExportCsv()}
+                type="button"
+              >
+                {props.state.exportInventoryBusy
+                  ? "Exporting CSV..."
+                  : "Export collection CSV"}
               </button>
             ) : null}
           </div>

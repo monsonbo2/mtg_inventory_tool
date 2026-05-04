@@ -6,12 +6,14 @@ import {
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
+  exportInventoryCsv,
   importCsv,
   importDecklist,
   importDeckUrl,
   patchInventoryItem,
   transferInventoryItems,
 } from "../api";
+import { downloadApiTextResponse } from "../downloadHelpers";
 import {
   createCsvImportSession,
   createDeckUrlImportSession,
@@ -74,6 +76,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
   const [bulkMutationBusy, setBulkMutationBusy] = useState(false);
   const [createInventoryBusy, setCreateInventoryBusy] = useState(false);
+  const [exportInventoryBusy, setExportInventoryBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [transferBusy, setTransferBusy] = useState<InventoryTransferMode | null>(null);
 
@@ -759,6 +762,35 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
+  async function handleExportInventoryCsv() {
+    const inventorySlug = requireSelectedInventory(
+      "Select a collection before exporting CSV.",
+    );
+    if (!inventorySlug) {
+      return false;
+    }
+
+    setExportInventoryBusy(true);
+    clearNotice();
+
+    try {
+      const response = await exportInventoryCsv(inventorySlug, {
+        profile: "default",
+      });
+      downloadApiTextResponse(response, `${inventorySlug}.csv`);
+      showNotice(
+        `Exported ${options.describeInventory(inventorySlug)} CSV.`,
+        "success",
+      );
+      return true;
+    } catch (error) {
+      showNotice(toUserMessage(error, "Could not export CSV."), "error");
+      return false;
+    } finally {
+      setExportInventoryBusy(false);
+    }
+  }
+
   async function handleTransferItems(request: {
     mode: InventoryTransferMode;
     targetInventorySlug: string | null;
@@ -848,10 +880,12 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     commitCsvImport,
     commitDeckUrlImport,
     commitDecklistImport,
+    exportInventoryBusy,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
+    handleExportInventoryCsv,
     handleImportCsv,
     handleImportDecklist,
     handleImportDeckUrl,

@@ -33,6 +33,7 @@ vi.mock("./api", async () => {
     createInventory: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
+    exportInventoryCsv: vi.fn(),
     importCsv: vi.fn(),
     importDeckUrl: vi.fn(),
     importDecklist: vi.fn(),
@@ -40,12 +41,17 @@ vi.mock("./api", async () => {
   };
 });
 
+vi.mock("./downloadHelpers", () => ({
+  downloadApiTextResponse: vi.fn(),
+}));
+
 import {
   addInventoryItem,
   bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
+  exportInventoryCsv,
   getAccessSummary,
   importCsv,
   importDeckUrl,
@@ -59,6 +65,7 @@ import {
   searchCardNames,
   transferInventoryItems,
 } from "./api";
+import { downloadApiTextResponse } from "./downloadHelpers";
 
 beforeEach(() => {
   vi.mocked(getAccessSummary).mockResolvedValue({
@@ -674,6 +681,68 @@ describe("App", () => {
     expect(boltRowScope.getByRole("combobox", { name: /Location/ })).toBeDisabled();
     expect(boltRowScope.getByRole("textbox", { name: /Tags/ })).toBeDisabled();
     expect(boltRowScope.getByRole("button", { name: "Open details" })).toBeEnabled();
+  });
+
+  it("exports readable viewer collections without requiring write access", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+    const exportResponse = {
+      body: "name,quantity\nLightning Bolt,2\n",
+      contentType: "text/csv; charset=utf-8",
+      filename: "personal-export.csv",
+    };
+
+    mockCollectionViewApp({ inventories: [viewerInventory] });
+    vi.mocked(exportInventoryCsv).mockResolvedValue(exportResponse);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Export collection CSV" }),
+    );
+
+    await waitFor(() => {
+      expect(exportInventoryCsv).toHaveBeenCalledWith("personal", {
+        profile: "default",
+      });
+    });
+    expect(downloadApiTextResponse).toHaveBeenCalledWith(
+      exportResponse,
+      "personal.csv",
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Exported Personal Collection CSV.",
+    );
+    expect(screen.queryByRole("button", { name: "Bulk edit" })).not.toBeInTheDocument();
+  });
+
+  it("shows an error notice when collection CSV export fails", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+    vi.mocked(exportInventoryCsv).mockRejectedValue(
+      new ApiClientError("CSV export is unavailable.", {
+        code: "export_failed",
+        status: 500,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Export collection CSV" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "CSV export is unavailable.",
+    );
+    expect(downloadApiTextResponse).not.toHaveBeenCalled();
   });
 
   it("keeps the detail dialog read-only for viewer access", async () => {

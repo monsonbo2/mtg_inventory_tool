@@ -15,6 +15,7 @@ import { useInventoryOverview } from "./hooks/useInventoryOverview";
 import { useInventoryMutations } from "./hooks/useInventoryMutations";
 import {
   canCopyFromInventory,
+  canExportInventory,
   canMoveFromInventory,
   getAvailableTransferTargetInventories,
   getTransferTargetInventories,
@@ -246,10 +247,12 @@ export default function App() {
     commitDecklistImport,
     clearNotice,
     createInventoryBusy,
+    exportInventoryBusy,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
+    handleExportInventoryCsv,
     handlePatchItem,
     handleTransferItems,
     notice,
@@ -364,6 +367,8 @@ export default function App() {
       viewStatus: collectionViewStatus,
     },
     selectedInventoryRow,
+    canExportSelectedInventory: canExportInventory(selectedInventoryRow),
+    exportInventoryBusy,
     selectedInventoryCanWrite,
     table: {
       allItemsCount: filteredTableItemsCount,
@@ -407,6 +412,7 @@ export default function App() {
         target: "search",
         token: (current?.token ?? 0) + 1,
       })),
+    onExportCsv: handleExportInventoryCsv,
     onNotice: reportNotice,
     onOpenActivity: () => setActivityOpen(true),
     onOpenItemDetails: handleOpenItemDetails,
