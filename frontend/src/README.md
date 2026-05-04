@@ -55,17 +55,16 @@ The paginated owned rows route (`GET /inventories/{inventory_slug}/items/page`)
 is the table-mode source of truth for issue #77. Browse mode can continue using
 the legacy full-array route during that migration.
 
-Current table controls do not all map one-to-one to the server contract:
+Current table controls map to the server contract as follows:
 
 - `nameQuery` maps to the singular `query` parameter.
 - `tags` can remain multi-select because the route supports repeated `tags`
   parameters.
-- `setCodes`, `finishes`, `conditionCodes`, and `languageCodes` are currently
-  multi-select client filters, but the route supports singular `set_code`,
-  `finish`, `condition_code`, and `language_code`; convert these controls to
-  single-select or defer multi-value support.
+- `setCodes`, `finishes`, `conditionCodes`, and `languageCodes` are exposed as
+  single-select table filters because the route supports singular `set_code`,
+  `finish`, `condition_code`, and `language_code`.
 - `locationQuery` maps to the singular fuzzy `location` parameter.
-- `emptyLocationOnly` has no route parameter and should be removed or deferred
-  from table mode until the backend supports it.
+- `emptyLocationOnly` is not exposed in table mode because the route has no
+  matching parameter.
 - Sort maps directly to `sort_key` and `sort_direction`; `item_id` exists as a
   backend sort key but is not exposed as a visible table column today.

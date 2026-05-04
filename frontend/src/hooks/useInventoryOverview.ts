@@ -35,6 +35,7 @@ export function useInventoryOverview() {
   const [viewError, setViewError] = useState<string | null>(null);
   const selectedInventoryRef = useRef<string | null>(null);
   const inventoryViewRequestIdRef = useRef(0);
+  const inventoryAuditRequestIdRef = useRef(0);
 
   useEffect(() => {
     selectedInventoryRef.current = selectedInventory;
@@ -99,6 +100,8 @@ export function useInventoryOverview() {
   }, []);
 
   useEffect(() => {
+    inventoryAuditRequestIdRef.current += 1;
+
     if (!selectedInventory) {
       inventoryViewRequestIdRef.current += 1;
       setItems([]);
@@ -216,6 +219,26 @@ export function useInventoryOverview() {
     }
   }
 
+  async function refreshInventoryAudit(inventorySlug: string) {
+    const requestId = ++inventoryAuditRequestIdRef.current;
+
+    try {
+      const nextAuditEvents = await listInventoryAudit(inventorySlug);
+
+      if (
+        requestId !== inventoryAuditRequestIdRef.current ||
+        selectedInventoryRef.current !== inventorySlug
+      ) {
+        return true;
+      }
+
+      setAuditEvents(nextAuditEvents);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function describeInventory(inventorySlug: string) {
     return (
       inventories.find((inventory) => inventory.slug === inventorySlug)?.display_name ||
@@ -236,6 +259,7 @@ export function useInventoryOverview() {
     inventoryStatus,
     items,
     loadInventoryOverview,
+    refreshInventoryAudit,
     reloadInventorySummaries,
     selectedInventory,
     selectedInventoryRow,

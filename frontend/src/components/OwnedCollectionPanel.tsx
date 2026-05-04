@@ -67,6 +67,8 @@ type OwnedCollectionPanelState = {
     selectedItemIds: number[];
     sort: InventoryTableSortState;
     transferBusy: InventoryTransferMode | null;
+    viewError: string | null;
+    viewStatus: AsyncStatus;
     visibleLimit: number;
     visibleLimitOptions: number[];
   };
@@ -104,7 +106,6 @@ type OwnedCollectionPanelActions = {
     itemId: number,
     options?: { additive?: boolean; range?: boolean },
   ) => void;
-  onSelectAllCollectionItems: () => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisibleItems: () => void;
   onTransferItems: (options: {
@@ -133,12 +134,17 @@ export function OwnedCollectionPanel(props: {
           : props.state.collection.visibleItems.length === 0
             ? "search_empty"
             : "ready";
+  const detailModalItems =
+    props.state.collection.view === "table"
+      ? [props.state.table.items, props.state.collection.items]
+      : [props.state.collection.items, props.state.table.items];
   const detailModalItem =
     props.state.collection.detailModalItemId === null
       ? null
-      : props.state.collection.items.find(
-          (item) => item.item_id === props.state.collection.detailModalItemId,
-        ) ?? null;
+      : detailModalItems
+          .flat()
+          .find((item) => item.item_id === props.state.collection.detailModalItemId) ??
+        null;
   const totalEstimatedValue = props.state.collection.items.reduce(
     (sum, row) => sum + decimalToNumber(row.est_value),
     0,
@@ -274,36 +280,54 @@ export function OwnedCollectionPanel(props: {
     case "ready":
       collectionContent =
         props.state.collection.view === "table" ? (
-          <InventoryTableView
-            allItemsCount={props.state.table.allItemsCount}
-            availableCopyTargetInventories={props.state.table.availableCopyTargetInventories}
-            availableMoveTargetInventories={props.state.table.availableMoveTargetInventories}
-            availableTargetInventories={props.state.table.availableTargetInventories}
-            bulkMutationBusy={props.state.table.bulkMutationBusy}
-            canBulkEditSelectedInventory={props.state.table.canBulkEditSelectedInventory}
-            canCopyFromSelectedInventory={props.state.table.canCopyFromSelectedInventory}
-            canMoveFromSelectedInventory={props.state.table.canMoveFromSelectedInventory}
-            collectionItemCount={props.state.collection.items.length}
-            createInventoryBusy={props.state.table.createInventoryBusy}
-            filterOptions={props.state.table.filterOptions}
-            filters={props.state.table.filters}
-            items={props.state.table.items}
-            onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
-            onClearSelection={props.actions.onClearSelectedItems}
-            onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
-            onCreateInventory={props.actions.onCreateInventory}
-            onFiltersChange={props.actions.onTableFiltersChange}
-            onOpenDetails={props.actions.onOpenItemDetails}
-            onSelectAllCollection={props.actions.onSelectAllCollectionItems}
-            onSelectItem={props.actions.onSelectTableItem}
-            onSelectAllVisible={props.actions.onSelectAllVisibleItems}
-            onSortChange={props.actions.onTableSortChange}
-            onTransferItems={props.actions.onTransferItems}
-            onToggleItemSelection={props.actions.onToggleItemSelection}
-            selectedItemIds={props.state.table.selectedItemIds}
-            sortState={props.state.table.sort}
-            transferBusy={props.state.table.transferBusy}
-          />
+          props.state.table.viewStatus === "error" ? (
+            <PanelState
+              body={
+                props.state.table.viewError ||
+                "The current page of table rows could not be loaded right now."
+              }
+              eyebrow="Table"
+              title="Table rows unavailable"
+              variant="error"
+            />
+          ) : props.state.table.viewStatus === "loading" &&
+            props.state.table.items.length === 0 ? (
+            <PanelState
+              body="Loading the current page of table rows."
+              eyebrow="Table"
+              title="Loading table rows"
+              variant="loading"
+            />
+          ) : (
+            <InventoryTableView
+              allItemsCount={props.state.table.allItemsCount}
+              availableCopyTargetInventories={props.state.table.availableCopyTargetInventories}
+              availableMoveTargetInventories={props.state.table.availableMoveTargetInventories}
+              availableTargetInventories={props.state.table.availableTargetInventories}
+              bulkMutationBusy={props.state.table.bulkMutationBusy}
+              canBulkEditSelectedInventory={props.state.table.canBulkEditSelectedInventory}
+              canCopyFromSelectedInventory={props.state.table.canCopyFromSelectedInventory}
+              canMoveFromSelectedInventory={props.state.table.canMoveFromSelectedInventory}
+              createInventoryBusy={props.state.table.createInventoryBusy}
+              filterOptions={props.state.table.filterOptions}
+              filters={props.state.table.filters}
+              items={props.state.table.items}
+              onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
+              onClearSelection={props.actions.onClearSelectedItems}
+              onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
+              onCreateInventory={props.actions.onCreateInventory}
+              onFiltersChange={props.actions.onTableFiltersChange}
+              onOpenDetails={props.actions.onOpenItemDetails}
+              onSelectItem={props.actions.onSelectTableItem}
+              onSelectAllVisible={props.actions.onSelectAllVisibleItems}
+              onSortChange={props.actions.onTableSortChange}
+              onTransferItems={props.actions.onTransferItems}
+              onToggleItemSelection={props.actions.onToggleItemSelection}
+              selectedItemIds={props.state.table.selectedItemIds}
+              sortState={props.state.table.sort}
+              transferBusy={props.state.table.transferBusy}
+            />
+          )
         ) : (
           <CompactInventoryList
             busyItem={props.state.collection.busyItem}

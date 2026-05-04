@@ -81,7 +81,6 @@ export function InventoryTableView(props: {
   canBulkEditSelectedInventory: boolean;
   canCopyFromSelectedInventory: boolean;
   canMoveFromSelectedInventory: boolean;
-  collectionItemCount: number;
   selectedItemIds: number[];
   bulkMutationBusy: boolean;
   createInventoryBusy: boolean;
@@ -95,7 +94,6 @@ export function InventoryTableView(props: {
   ) => Promise<boolean>;
   onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
   onSelectItem: (itemId: number, options?: { additive?: boolean; range?: boolean }) => void;
-  onSelectAllCollection: () => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisible: () => void;
   onClearVisibleSelection: () => void;
@@ -519,13 +517,17 @@ export function InventoryTableView(props: {
       <div className="table-filter-checklist">
         {options.map((option) => {
           const isChecked = selectedValues.includes(option.value);
+          const multiSelect = activeColumn === "tags";
 
           return (
             <label className="table-filter-option" key={option.value}>
               <input
                 checked={isChecked}
+                name={`table-filter-${activeColumn}`}
                 onChange={() => {
-                  const nextValues = toggleStringValue(selectedValues, option.value);
+                  const nextValues = multiSelect
+                    ? toggleStringValue(selectedValues, option.value)
+                    : [option.value];
                   switch (activeColumn) {
                     case "set":
                       updateFilters({ setCodes: nextValues });
@@ -549,7 +551,7 @@ export function InventoryTableView(props: {
                       break;
                   }
                 }}
-                type="checkbox"
+                type={multiSelect ? "checkbox" : "radio"}
               />
               <span>{option.label}</span>
             </label>
@@ -613,14 +615,6 @@ export function InventoryTableView(props: {
                 type="text"
                 value={props.filters.locationQuery}
               />
-            </label>
-            <label className="table-filter-option">
-              <input
-                checked={props.filters.emptyLocationOnly}
-                onChange={(event) => updateFilters({ emptyLocationOnly: event.target.checked })}
-                type="checkbox"
-              />
-              <span>Only entries without a location</span>
             </label>
           </div>
         );
@@ -1148,14 +1142,6 @@ export function InventoryTableView(props: {
                 type="button"
               >
                 Select all visible
-              </button>
-              <button
-                className="secondary-button"
-                disabled={props.collectionItemCount === 0}
-                onClick={props.onSelectAllCollection}
-                type="button"
-              >
-                Select entire collection
               </button>
             </div>
           </div>

@@ -103,7 +103,7 @@ export function useCollectionViewState(options: {
   const browsePageCount = getPageCount(filteredCollectionItems.length, browseVisibleLimit);
   const tablePageCount = getPageCount(filteredTableItems.length, tableVisibleLimit);
   const activeBrowsePage = Math.min(browsePage, browsePageCount);
-  const activeTablePage = Math.min(tablePage, tablePageCount);
+  const activeTablePage = Math.max(tablePage, 1);
   const visibleCollectionItems = filteredCollectionItems.slice(
     (activeBrowsePage - 1) * browseVisibleLimit,
     activeBrowsePage * browseVisibleLimit,
@@ -117,10 +117,6 @@ export function useCollectionViewState(options: {
   useEffect(() => {
     setBrowsePage((currentPage) => Math.min(currentPage, browsePageCount));
   }, [browsePageCount]);
-
-  useEffect(() => {
-    setTablePage((currentPage) => Math.min(currentPage, tablePageCount));
-  }, [tablePageCount]);
 
   function handleCollectionSearchQueryChange(nextQuery: string) {
     setBrowsePage(1);
@@ -160,7 +156,7 @@ export function useCollectionViewState(options: {
   }
 
   function handleTablePageChange(nextPage: number) {
-    setTablePage(Math.min(Math.max(nextPage, 1), tablePageCount));
+    setTablePage(Math.max(nextPage, 1));
   }
 
   function handleTableFiltersChange(nextFilters: InventoryTableFilters) {
@@ -170,17 +166,20 @@ export function useCollectionViewState(options: {
 
   function handleSelectTableItem(
     itemId: number,
-    options: { additive?: boolean; range?: boolean } = {},
+    selectionOptions: { additive?: boolean; range?: boolean } = {},
+    activeVisibleTableItems: OwnedInventoryRow[] = visibleTableItems,
   ) {
-    const additive = options.additive ?? false;
-    const range = options.range ?? false;
+    const additive = selectionOptions.additive ?? false;
+    const range = selectionOptions.range ?? false;
     const nextAnchorItemId = selectionAnchorItemId ?? itemId;
 
     if (range) {
-      const anchorIndex = visibleTableItems.findIndex(
+      const anchorIndex = activeVisibleTableItems.findIndex(
         (item) => item.item_id === nextAnchorItemId,
       );
-      const targetIndex = visibleTableItems.findIndex((item) => item.item_id === itemId);
+      const targetIndex = activeVisibleTableItems.findIndex(
+        (item) => item.item_id === itemId,
+      );
 
       if (anchorIndex === -1 || targetIndex === -1) {
         setSelectionAnchorItemId(itemId);
@@ -196,7 +195,7 @@ export function useCollectionViewState(options: {
 
       const rangeStart = Math.min(anchorIndex, targetIndex);
       const rangeEnd = Math.max(anchorIndex, targetIndex);
-      const rangeItemIds = visibleTableItems
+      const rangeItemIds = activeVisibleTableItems
         .slice(rangeStart, rangeEnd + 1)
         .map((item) => item.item_id);
 
@@ -225,8 +224,11 @@ export function useCollectionViewState(options: {
     });
   }
 
-  function handleSelectAllVisibleItems() {
-    const visibleItemIds = visibleTableItems.map((item) => item.item_id);
+  function handleSelectAllVisibleItems(
+    activeVisibleTableItems: OwnedInventoryRow[] = visibleTableItems,
+  ) {
+    const visibleItemIds = activeVisibleTableItems.map((item) => item.item_id);
+    setSelectionAnchorItemId(visibleItemIds[0] ?? null);
     setSelectedItemIds((current) => {
       const nextSelectedItemIds = new Set(current);
       for (const itemId of visibleItemIds) {
@@ -236,13 +238,10 @@ export function useCollectionViewState(options: {
     });
   }
 
-  function handleSelectAllCollectionItems() {
-    setSelectionAnchorItemId(visibleTableItems[0]?.item_id ?? options.items[0]?.item_id ?? null);
-    setSelectedItemIds(options.items.map((item) => item.item_id));
-  }
-
-  function handleClearVisibleSelectedItems() {
-    const visibleItemIds = new Set(visibleTableItems.map((item) => item.item_id));
+  function handleClearVisibleSelectedItems(
+    activeVisibleTableItems: OwnedInventoryRow[] = visibleTableItems,
+  ) {
+    const visibleItemIds = new Set(activeVisibleTableItems.map((item) => item.item_id));
     setSelectionAnchorItemId((current) =>
       current !== null && visibleItemIds.has(current) ? null : current,
     );
@@ -276,7 +275,6 @@ export function useCollectionViewState(options: {
     handleOpenItemDetails,
     handleSelectTableItem,
     handleSelectAllVisibleItems,
-    handleSelectAllCollectionItems,
     handleToggleItemSelection,
     handleTableFiltersChange,
     handleTablePageChange,

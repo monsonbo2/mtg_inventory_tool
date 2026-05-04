@@ -59,11 +59,15 @@ const TRANSFER_MUTATION_MAX_ITEMS = 100;
 
 type UseInventoryMutationsOptions = {
   selectedInventory: string | null;
+  activeCollectionView: "browse" | "table";
   describeInventory: (inventorySlug: string) => string;
   loadInventoryOverview: (
     inventorySlug: string,
     options?: { reloadInventories?: boolean; showLoading?: boolean },
   ) => Promise<ViewRefreshOutcome>;
+  refreshInventoryAudit: (inventorySlug: string) => Promise<boolean>;
+  refreshActiveTablePage?: () => void;
+  markCollectionItemsStale?: (inventorySlug: string) => void;
   reloadInventorySummaries: (preferredSlug?: string | null) => Promise<boolean>;
   resetSearchWorkspace: () => void;
   selectedItemIds: number[];
@@ -114,6 +118,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     successMessage: string,
     refreshOptions: { reloadInventories?: boolean; successTone?: NoticeTone } = {},
   ): Promise<MutationOutcome> {
+    if (shouldRefreshActiveTableOnly(inventorySlug)) {
+      return refreshAfterTableMutation(inventorySlug, successMessage, refreshOptions);
+    }
+
     try {
       await options.loadInventoryOverview(inventorySlug, {
         reloadInventories: refreshOptions.reloadInventories ?? true,
@@ -129,6 +137,33 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
+  async function refreshAfterTableMutation(
+    inventorySlug: string,
+    successMessage: string,
+    refreshOptions: { reloadInventories?: boolean; successTone?: NoticeTone } = {},
+  ): Promise<MutationOutcome> {
+    options.markCollectionItemsStale?.(inventorySlug);
+    options.refreshActiveTablePage?.();
+
+    const [summariesRefreshed, auditRefreshed] = await Promise.all([
+      refreshOptions.reloadInventories === false
+        ? Promise.resolve(true)
+        : options.reloadInventorySummaries(inventorySlug),
+      options.refreshInventoryAudit(inventorySlug),
+    ]);
+
+    if (!summariesRefreshed || !auditRefreshed) {
+      showNotice(
+        `${successMessage} The latest view could not refresh automatically.`,
+        "error",
+      );
+      return "applied_view_stale";
+    }
+
+    showNotice(successMessage, refreshOptions.successTone ?? "success");
+    return "applied";
+  }
+
   function showNotice(message: string, tone: NoticeTone = "info") {
     setNotice({ message, tone });
   }
@@ -139,6 +174,14 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
   function clearNotice() {
     setNotice(null);
+  }
+
+  function shouldRefreshActiveTableOnly(inventorySlug: string) {
+    return (
+      options.activeCollectionView === "table" &&
+      options.selectedInventory === inventorySlug &&
+      Boolean(options.refreshActiveTablePage)
+    );
   }
 
   function requireSelectedInventory(message: string) {
@@ -265,12 +308,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
             await options.reloadInventorySummaries(inventorySlug);
           }
 
-          await options.loadInventoryOverview(inventorySlug, {
-            reloadInventories: !importingIntoDifferentCollection,
-          });
-          showNotice(
+          await refreshAfterMutation(
+            inventorySlug,
             `${getImportSuccessMessage(response, inventorySlug, inventoryLabel)} ${issueMessage}`,
-            "error",
+            {
+              reloadInventories: !importingIntoDifferentCollection,
+              successTone: "error",
+            },
           );
         } catch {
           showNotice(

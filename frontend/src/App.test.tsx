@@ -13,6 +13,8 @@ import type {
   InventoryAuditEvent,
   InventoryCreateResponse,
   InventorySummary,
+  OwnedInventoryItemsPageParams,
+  OwnedInventoryItemsPageResponse,
   OwnedInventoryRow,
 } from "./types";
 
@@ -23,6 +25,7 @@ vi.mock("./api", async () => {
     listInventories: vi.fn(),
     getAccessSummary: vi.fn(),
     listInventoryItems: vi.fn(),
+    listInventoryItemsPage: vi.fn(),
     listInventoryAudit: vi.fn(),
     searchCardNames: vi.fn(),
     listCardPrintings: vi.fn(),
@@ -60,6 +63,7 @@ import {
   listCardPrintings,
   listInventories,
   listInventoryItems,
+  listInventoryItemsPage,
   listInventoryAudit,
   patchInventoryItem,
   searchCardNames,
@@ -211,6 +215,128 @@ describe("App", () => {
     };
   }
 
+  function compareText(left: string, right: string) {
+    return left.localeCompare(right, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+
+  function compareKnownOrder(left: string, right: string, order: readonly string[]) {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+
+    if (leftIndex === -1 || rightIndex === -1) {
+      return compareText(left, right);
+    }
+
+    return leftIndex - rightIndex;
+  }
+
+  function compareInventoryPageRows(
+    left: OwnedInventoryRow,
+    right: OwnedInventoryRow,
+    sortKey: NonNullable<OwnedInventoryItemsPageParams["sort_key"]>,
+  ) {
+    switch (sortKey) {
+      case "name":
+        return compareText(left.name, right.name);
+      case "set":
+        return compareText(left.set_name, right.set_name) || compareText(left.set_code, right.set_code);
+      case "quantity":
+        return left.quantity - right.quantity;
+      case "finish":
+        return compareKnownOrder(left.finish, right.finish, ["normal", "foil", "etched"]);
+      case "condition_code":
+        return compareKnownOrder(left.condition_code, right.condition_code, [
+          "M",
+          "NM",
+          "LP",
+          "MP",
+          "HP",
+          "DMG",
+        ]);
+      case "language_code":
+        return compareText(left.language_code, right.language_code);
+      case "location":
+        return compareText(left.location ?? "", right.location ?? "");
+      case "tags":
+        return compareText(left.tags.join(", "), right.tags.join(", "));
+      case "est_value":
+        return Number.parseFloat(left.est_value ?? "0") - Number.parseFloat(right.est_value ?? "0");
+      case "item_id":
+        return left.item_id - right.item_id;
+    }
+  }
+
+  function buildInventoryItemsPageResponse(
+    items: OwnedInventoryRow[],
+    params: OwnedInventoryItemsPageParams = {},
+    inventorySlug = "personal",
+  ): OwnedInventoryItemsPageResponse {
+    const normalizedQuery = params.query?.trim().toLowerCase() ?? "";
+    const normalizedLocation = params.location?.trim().toLowerCase() ?? "";
+    const requestedTags = params.tags ?? [];
+    let matchingItems = items.filter((item) => {
+      if (normalizedQuery && !item.name.toLowerCase().includes(normalizedQuery)) {
+        return false;
+      }
+      if (params.set_code && item.set_code !== params.set_code) {
+        return false;
+      }
+      if (params.rarity && item.rarity !== params.rarity) {
+        return false;
+      }
+      if (params.finish && item.finish !== params.finish) {
+        return false;
+      }
+      if (params.condition_code && item.condition_code !== params.condition_code) {
+        return false;
+      }
+      if (params.language_code && item.language_code !== params.language_code) {
+        return false;
+      }
+      if (
+        normalizedLocation &&
+        !(item.location ?? "").toLowerCase().includes(normalizedLocation)
+      ) {
+        return false;
+      }
+      if (
+        requestedTags.length > 0 &&
+        !requestedTags.some((tag) => item.tags.includes(tag))
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    if (params.sort_key) {
+      const directionMultiplier = params.sort_direction === "desc" ? -1 : 1;
+      matchingItems = [...matchingItems].sort((left, right) => {
+        const result = compareInventoryPageRows(left, right, params.sort_key!);
+        return result === 0
+          ? left.item_id - right.item_id
+          : result * directionMultiplier;
+      });
+    }
+
+    const limit = Math.max(params.limit ?? 50, 1);
+    const offset = Math.max(params.offset ?? 0, 0);
+    const pageItems = matchingItems.slice(offset, offset + limit);
+
+    return {
+      inventory: inventorySlug,
+      items: pageItems,
+      total_count: matchingItems.length,
+      limit,
+      offset,
+      has_more: offset + limit < matchingItems.length,
+      sort_key: params.sort_key ?? "name",
+      sort_direction: params.sort_direction ?? "asc",
+    };
+  }
+
   function buildAccessSummary(
     overrides: Partial<AccessSummaryResponse> = {},
   ): AccessSummaryResponse {
@@ -327,6 +453,9 @@ describe("App", () => {
 
     vi.mocked(listInventories).mockResolvedValue(inventories);
     vi.mocked(listInventoryItems).mockResolvedValue(items);
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(items, params, inventorySlug),
+    );
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
@@ -364,6 +493,9 @@ describe("App", () => {
       buildInventorySummary(),
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryItemsPage).mockResolvedValue(
+      buildInventoryItemsPageResponse([]),
+    );
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
@@ -1012,6 +1144,105 @@ describe("App", () => {
       "Imported 3 cards into Personal Collection. Could not import Wildgrowth Archaic.",
     );
     expect(screen.queryByRole("dialog", { name: "Import From URL" })).not.toBeInTheDocument();
+  });
+
+  it("keeps partial table-mode imports on the paginated refresh path", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+    });
+    vi.mocked(importDeckUrl)
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: true,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: false,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Import Cards" }));
+    await user.click(screen.getByRole("menuitem", { name: /Import from URL/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import From URL" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Deck URL" }),
+      "https://archidekt.com/decks/15761099/counters_and_counters",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Imported 3 cards into Personal Collection. Could not import Wildgrowth Archaic.",
+    );
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenCalledTimes(2);
+    });
+    expect(listInventoryAudit).toHaveBeenCalledTimes(2);
   });
 
   it("creates a new collection from the import dialog and imports into it", async () => {
@@ -2966,14 +3197,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("button", { name: "Detailed" })).not.toBeInTheDocument();
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).not.toHaveBeenCalled();
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Table" }));
 
-    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledWith(
+      "personal",
+      expect.objectContaining({
+        limit: 50,
+        offset: 0,
+      }),
+    );
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Browse" }));
@@ -2992,6 +3232,35 @@ describe("App", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Card details" });
     expect(within(dialog).getByText("Inline edits")).toBeInTheDocument();
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
+    expect(listInventoryAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows table page errors inside table mode without replacing the collection shell", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+    });
+    vi.mocked(listInventoryItemsPage).mockRejectedValueOnce(
+      new ApiClientError("The table page could not be loaded.", {
+        code: "server_error",
+        status: 500,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Table" }));
+
+    expect(await screen.findByText("Table rows unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Personal Collection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
@@ -3186,6 +3455,62 @@ describe("App", () => {
     expect(screen.getByText("Card 060")).toBeInTheDocument();
     expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Detailed" })).not.toBeInTheDocument();
+  });
+
+  it("uses server table page metadata even when the legacy item array undercounts rows", async () => {
+    const user = userEvent.setup();
+    const serverItems = Array.from({ length: 120 }, (_, index) =>
+      buildOwnedRow({
+        item_id: index + 1,
+        scryfall_id: `card-${index + 1}`,
+        oracle_id: `oracle-${index + 1}`,
+        name: `Card ${String(index + 1).padStart(3, "0")}`,
+        set_code: "m11",
+        set_name: "Magic 2011",
+        collector_number: String(index + 1),
+        quantity: 1,
+        location: index % 2 === 0 ? "Binder" : "Box",
+        tags: [],
+        notes: null,
+        est_value: "1.00",
+        unit_price: "1.00",
+      }),
+    );
+    const legacyItems = serverItems.slice(0, 50);
+
+    mockCollectionViewApp({
+      items: legacyItems,
+      inventories: [
+        buildInventorySummary({
+          item_rows: serverItems.length,
+          total_cards: serverItems.length,
+        }),
+      ],
+    });
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(serverItems, params, inventorySlug),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+
+    expect(await screen.findByText("Page 1 of 3")).toBeInTheDocument();
+    expect(screen.queryByText("Card 051")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenLastCalledWith(
+        "personal",
+        expect.objectContaining({
+          limit: 50,
+          offset: 50,
+        }),
+      );
+    });
+    expect(await screen.findByText("Card 051")).toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
   });
 
   it("saves browse edits directly when a field blurs", async () => {
@@ -4230,7 +4555,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
 
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
     const lightningBoltRow = within(table)
       .getAllByRole("row")
       .find((row) => row.textContent?.includes("Lightning Bolt"));
@@ -4309,7 +4634,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
 
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
     const getRow = (cardName: string) =>
       within(table)
         .getAllByRole("row")
@@ -4403,6 +4728,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
 
     expect(screen.getByText("2 entries selected")).toBeInTheDocument();
@@ -4427,7 +4753,7 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("can select the entire collection from the table even when not all rows are visible", async () => {
+  it("selects visible table rows without exposing whole-collection selection", async () => {
     const user = userEvent.setup();
     const items = Array.from({ length: 60 }, (_, index) =>
       buildOwnedRow({
@@ -4452,10 +4778,18 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
-    await user.click(screen.getByRole("button", { name: "Select entire collection" }));
+    await screen.findByRole("table");
 
-    expect(screen.getByText("60 entries selected")).toBeInTheDocument();
-    expect(screen.getByText("10 selected entries not shown in the current view.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Select entire collection" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+
+    expect(screen.getByText("50 entries selected")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/selected entries not shown in the current view/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Card 001" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Card 050" })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Select Card 051" })).not.toBeInTheDocument();
@@ -4516,6 +4850,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Copy to collection" }));
 
@@ -4526,7 +4861,7 @@ describe("App", () => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
         target_inventory_slug: "trade",
         mode: "copy",
-        all_items: true,
+        item_ids: [7, 8],
         on_conflict: "merge",
         keep_acquisition: "source",
       });
@@ -4569,6 +4904,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Copy to collection" }));
 
@@ -4583,7 +4919,7 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("creates a new collection during a move transfer and sends the whole collection when selected", async () => {
+  it("creates a new collection during a move transfer and sends visible table rows", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -4621,8 +4957,8 @@ describe("App", () => {
       target_inventory: "archive-box",
       mode: "move",
       dry_run: false,
-      selection_kind: "all_items",
-      requested_item_ids: null,
+      selection_kind: "items",
+      requested_item_ids: [7, 8],
       requested_count: 2,
       copied_count: 0,
       moved_count: 2,
@@ -4636,6 +4972,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Move to collection" }));
 
@@ -4669,7 +5006,7 @@ describe("App", () => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
         target_inventory_slug: "archive-box",
         mode: "move",
-        all_items: true,
+        item_ids: [7, 8],
         on_conflict: "merge",
         keep_acquisition: "source",
       });
@@ -4690,10 +5027,91 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Open Lightning Bolt details" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Card details" });
     expect(within(dialog).getByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+  });
+
+  it("refreshes the active paginated table page after a table row deletion", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    let currentItems = [
+      buildOwnedRow(),
+      buildOwnedRow({
+        item_id: 8,
+        scryfall_id: "counterspell-1",
+        name: "Counterspell",
+        set_code: "7ed",
+        set_name: "Seventh Edition",
+        collector_number: "67",
+        quantity: 1,
+        location: "Trade Binder",
+        tags: ["control"],
+        est_value: "3.00",
+        unit_price: "3.00",
+        notes: null,
+      }),
+    ];
+
+    try {
+      mockCollectionViewApp({ items: currentItems });
+      vi.mocked(listInventoryItems).mockImplementation(async () => currentItems);
+      vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+        buildInventoryItemsPageResponse(currentItems, params, inventorySlug),
+      );
+      vi.mocked(deleteInventoryItem).mockImplementation(async (inventorySlug, itemId) => {
+        const deletedItem = currentItems.find((item) => item.item_id === itemId);
+        if (!deletedItem) {
+          throw new Error("Missing test item");
+        }
+        currentItems = currentItems.filter((item) => item.item_id !== itemId);
+        return {
+          ...deletedItem,
+          card_name: deletedItem.name,
+          inventory: inventorySlug,
+        };
+      });
+
+      render(<App />);
+
+      await user.click(await screen.findByRole("button", { name: "Table" }));
+      await screen.findByRole("checkbox", { name: "Select Lightning Bolt" });
+      expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByRole("button", { name: "Open Lightning Bolt details" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Card details" });
+      await user.click(within(dialog).getByRole("button", { name: "Remove row" }));
+
+      await waitFor(() => {
+        expect(deleteInventoryItem).toHaveBeenCalledWith("personal", 7);
+      });
+      await waitFor(() => {
+        expect(listInventoryItemsPage).toHaveBeenCalledTimes(2);
+      });
+      expect(listInventoryItems).toHaveBeenCalledTimes(1);
+      await waitFor(() => {
+        expect(
+          screen.queryByRole("checkbox", { name: "Select Lightning Bolt" }),
+        ).not.toBeInTheDocument();
+      });
+      expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeInTheDocument();
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "Removed Lightning Bolt from Personal Collection.",
+      );
+
+      await user.click(screen.getByRole("button", { name: "Browse" }));
+
+      await waitFor(() => {
+        expect(listInventoryItems).toHaveBeenCalledTimes(2);
+      });
+      expect(await screen.findByRole("heading", { name: "Counterspell" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Lightning Bolt" })).not.toBeInTheDocument();
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 
   it("supports header-driven table sorting and filtering while keeping hidden selections visible in the summary", async () => {
@@ -4723,7 +5141,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
 
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
     const getRows = () => within(table).getAllByRole("row").slice(1);
 
     expect(getRows()[0]).toHaveTextContent("Lightning Bolt");
@@ -4732,8 +5150,10 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Qty" }));
     await user.click(screen.getByRole("button", { name: "Lowest quantity first" }));
 
-    expect(getRows()[0]).toHaveTextContent("Counterspell");
-    expect(getRows()[1]).toHaveTextContent("Lightning Bolt");
+    await waitFor(() => {
+      expect(getRows()[0]).toHaveTextContent("Counterspell");
+      expect(getRows()[1]).toHaveTextContent("Lightning Bolt");
+    });
 
     await user.click(screen.getByRole("checkbox", { name: "Select Counterspell" }));
     expect(screen.getByText("1 entry selected")).toBeInTheDocument();
@@ -4741,9 +5161,11 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Set" }));
     await user.click(screen.getByLabelText("LEA · Limited Edition Alpha"));
 
-    expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+      expect(screen.queryByRole("checkbox", { name: "Select Counterspell" })).not.toBeInTheDocument();
+    });
     expect(screen.getByText("1 selected entry not shown in the current view.")).toBeInTheDocument();
-    expect(screen.queryByRole("checkbox", { name: "Select Counterspell" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
@@ -4754,9 +5176,11 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
 
-    expect(screen.getByText("Showing all 2 entries.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Showing all 2 entries.")).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
+    });
     expect(screen.queryByText("1 selected entry not shown in the current view.")).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
   });
 
@@ -4793,6 +5217,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     expect(screen.queryByRole("textbox", { name: "Tag list" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
@@ -4818,7 +5243,8 @@ describe("App", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Added tags to 2 entries in Personal Collection.",
     );
-    expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(2);
     expect(listInventoryAudit).toHaveBeenCalledTimes(2);
   });
 
@@ -4855,6 +5281,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
 
@@ -4909,6 +5336,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
 
@@ -4966,6 +5394,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
     await user.type(screen.getByRole("textbox", { name: "Tag list" }), "burn, staples");
@@ -5000,44 +5429,50 @@ describe("App", () => {
         total_cards: 1,
       }),
     ]);
-    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => {
-      if (inventorySlug === "trade-binder") {
-        return [
-          buildOwnedRow({
-            item_id: 101,
-            scryfall_id: "sol-ring-1",
-            name: "Sol Ring",
-            set_code: "cmm",
-            set_name: "Commander Masters",
-            collector_number: "396",
-            quantity: 1,
-            location: "Trade Tray",
-            tags: ["trade"],
-            est_value: "1.50",
-            unit_price: "1.50",
-            notes: null,
-          }),
-        ];
-      }
+    const personalRows = [
+      buildOwnedRow(),
+      buildOwnedRow({
+        item_id: 8,
+        scryfall_id: "counterspell-1",
+        name: "Counterspell",
+        set_code: "7ed",
+        set_name: "Seventh Edition",
+        collector_number: "67",
+        quantity: 1,
+        location: "Trade Binder",
+        tags: ["control"],
+        est_value: "3.00",
+        unit_price: "3.00",
+        notes: null,
+      }),
+    ];
+    const tradeBinderRows = [
+      buildOwnedRow({
+        item_id: 101,
+        scryfall_id: "sol-ring-1",
+        name: "Sol Ring",
+        set_code: "cmm",
+        set_name: "Commander Masters",
+        collector_number: "396",
+        quantity: 1,
+        location: "Trade Tray",
+        tags: ["trade"],
+        est_value: "1.50",
+        unit_price: "1.50",
+        notes: null,
+      }),
+    ];
 
-      return [
-        buildOwnedRow(),
-        buildOwnedRow({
-          item_id: 8,
-          scryfall_id: "counterspell-1",
-          name: "Counterspell",
-          set_code: "7ed",
-          set_name: "Seventh Edition",
-          collector_number: "67",
-          quantity: 1,
-          location: "Trade Binder",
-          tags: ["control"],
-          est_value: "3.00",
-          unit_price: "3.00",
-          notes: null,
-        }),
-      ];
-    });
+    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) =>
+      inventorySlug === "trade-binder" ? tradeBinderRows : personalRows,
+    );
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(
+        inventorySlug === "trade-binder" ? tradeBinderRows : personalRows,
+        params,
+        inventorySlug,
+      ),
+    );
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
