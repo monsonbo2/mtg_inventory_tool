@@ -1,0 +1,55 @@
+.status-pill,
+.muted-note,
+.tag-chip,
+.rarity-pill,
+.summary-chip span {
+  color: var(--text-muted);
+  font-size: 0.83rem;
+}
+
+.status-pill {
+  border-radius: 999px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  text-transform: capitalize;
+}
+
+.status-loading {
+  color: var(--accent-sunrise);
+}
+
+.status-ready {
+  color: var(--accent-lagoon);
+}
+
+.status-error {
+  color: var(--accent-danger);
+}
+
+.status-idle {
+  color: var(--text-muted);
+}
+
+
+.row-status-label {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.row-status-busy {
+  color: var(--accent-lagoon);
+}
+
+.row-status-dirty {
+  color: var(--accent-sunrise);
+}
+
+.row-status-error {
+  color: var(--accent-danger);
+}
+
+.row-status-ready {
+  color: var(--text-muted);
+}
+
