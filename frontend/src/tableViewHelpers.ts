@@ -3,6 +3,7 @@ import type {
   ConditionCode,
   FinishValue,
   LanguageCode,
+  OwnedInventoryItemsPageParams,
   OwnedInventoryRow,
 } from "./types";
 
@@ -40,6 +41,17 @@ export type InventoryTableFilterOptions = {
   languageCodes: LanguageCode[];
   tags: string[];
 };
+
+export type InventoryTableServerFilterParams = Pick<
+  OwnedInventoryItemsPageParams,
+  | "query"
+  | "set_code"
+  | "finish"
+  | "condition_code"
+  | "language_code"
+  | "location"
+  | "tags"
+>;
 
 const CONDITION_ORDER: ConditionCode[] = ["M", "NM", "LP", "MP", "HP", "DMG"];
 const FINISH_ORDER: FinishValue[] = ["normal", "foil", "etched"];
@@ -184,6 +196,84 @@ export function getInventoryTableFilterOptions(items: OwnedInventoryRow[]) {
   };
 
   return filterOptions;
+}
+
+function getSingleFilterValue<T>(values: T[]) {
+  return values.length === 1 ? values[0] : null;
+}
+
+export function serializeInventoryTableFilters(filters: InventoryTableFilters): {
+  hasActiveServerFilters: boolean;
+  params: InventoryTableServerFilterParams;
+  unsupportedFilters: string[];
+} {
+  const params: InventoryTableServerFilterParams = {};
+  const unsupportedFilters: string[] = [];
+  const normalizedNameQuery = filters.nameQuery.trim();
+  const normalizedLocationQuery = filters.locationQuery.trim();
+
+  if (normalizedNameQuery) {
+    params.query = normalizedNameQuery;
+  }
+  if (normalizedLocationQuery) {
+    params.location = normalizedLocationQuery;
+  }
+  if (filters.tags.length > 0) {
+    params.tags = filters.tags;
+  }
+
+  if (filters.setCodes.length > 1) {
+    unsupportedFilters.push("set");
+  } else {
+    const setCode = getSingleFilterValue(filters.setCodes);
+    if (setCode) {
+      params.set_code = setCode;
+    }
+  }
+
+  if (filters.finishes.length > 1) {
+    unsupportedFilters.push("finish");
+  } else {
+    const finish = getSingleFilterValue(filters.finishes);
+    if (finish) {
+      params.finish = finish;
+    }
+  }
+
+  if (filters.conditionCodes.length > 1) {
+    unsupportedFilters.push("condition");
+  } else {
+    const conditionCode = getSingleFilterValue(filters.conditionCodes);
+    if (conditionCode) {
+      params.condition_code = conditionCode;
+    }
+  }
+
+  if (filters.languageCodes.length > 1) {
+    unsupportedFilters.push("language");
+  } else {
+    const languageCode = getSingleFilterValue(filters.languageCodes);
+    if (languageCode) {
+      params.language_code = languageCode;
+    }
+  }
+
+  if (filters.emptyLocationOnly) {
+    unsupportedFilters.push("empty location");
+  }
+
+  return {
+    hasActiveServerFilters:
+      Boolean(params.query) ||
+      Boolean(params.set_code) ||
+      Boolean(params.finish) ||
+      Boolean(params.condition_code) ||
+      Boolean(params.language_code) ||
+      Boolean(params.location) ||
+      Boolean(params.tags?.length),
+    params,
+    unsupportedFilters,
+  };
 }
 
 export function applyInventoryTableQuery(

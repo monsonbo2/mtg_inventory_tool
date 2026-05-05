@@ -5272,9 +5272,23 @@ describe("App", () => {
     await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Tags" }));
     await user.click(screen.getByLabelText("burn"));
+    await user.click(screen.getByRole("button", { name: "Set" }));
+    await user.click(screen.getByLabelText("LEA · Limited Edition Alpha"));
+    await user.click(screen.getByRole("button", { name: "Location" }));
+    await user.type(screen.getByRole("textbox", { name: "Location contains" }), "Binder");
 
     await waitFor(() => {
       expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenLastCalledWith(
+        "personal",
+        expect.objectContaining({
+          location: "Binder",
+          set_code: "lea",
+          tags: ["burn"],
+        }),
+      );
     });
 
     await user.click(screen.getByRole("button", { name: "Bulk edit filtered" }));
@@ -5284,7 +5298,12 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "add_tags",
-        selection: { kind: "filtered", tags: ["burn"] },
+        selection: {
+          kind: "filtered",
+          location: "Binder",
+          set_code: "lea",
+          tags: ["burn"],
+        },
         tags: ["trade"],
       });
     });

@@ -10,15 +10,12 @@ import type {
   InventoryTableFilters,
   InventoryTableSortState,
 } from "../tableViewHelpers";
+import { serializeInventoryTableFilters } from "../tableViewHelpers";
 import { toUserMessage } from "../uiHelpers";
 import type { AsyncStatus } from "../uiTypes";
 
 function getPageCount(totalItems: number, pageSize: number) {
   return Math.max(1, Math.ceil(totalItems / pageSize));
-}
-
-function getSingleValue<T>(values: T[]) {
-  return values.length === 1 ? values[0] : null;
 }
 
 export function buildInventoryTablePageParams(options: {
@@ -27,9 +24,9 @@ export function buildInventoryTablePageParams(options: {
   sort: InventoryTableSortState;
   visibleLimit: number;
 }): OwnedInventoryItemsPageParams {
-  const normalizedNameQuery = options.filters.nameQuery.trim();
-  const normalizedLocationQuery = options.filters.locationQuery.trim();
+  const { params: filterParams } = serializeInventoryTableFilters(options.filters);
   const params: OwnedInventoryItemsPageParams = {
+    ...filterParams,
     limit: options.visibleLimit,
     offset: (Math.max(options.page, 1) - 1) * options.visibleLimit,
   };
@@ -37,35 +34,6 @@ export function buildInventoryTablePageParams(options: {
   if (options.sort) {
     params.sort_key = options.sort.key;
     params.sort_direction = options.sort.direction;
-  }
-
-  if (normalizedNameQuery) {
-    params.query = normalizedNameQuery;
-  }
-
-  if (normalizedLocationQuery) {
-    params.location = normalizedLocationQuery;
-  }
-
-  const setCode = getSingleValue(options.filters.setCodes);
-  const finish = getSingleValue(options.filters.finishes);
-  const conditionCode = getSingleValue(options.filters.conditionCodes);
-  const languageCode = getSingleValue(options.filters.languageCodes);
-
-  if (setCode) {
-    params.set_code = setCode;
-  }
-  if (finish) {
-    params.finish = finish;
-  }
-  if (conditionCode) {
-    params.condition_code = conditionCode;
-  }
-  if (languageCode) {
-    params.language_code = languageCode;
-  }
-  if (options.filters.tags.length > 0) {
-    params.tags = options.filters.tags;
   }
 
   return params;

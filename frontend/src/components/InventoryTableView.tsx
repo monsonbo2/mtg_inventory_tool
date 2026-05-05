@@ -26,6 +26,7 @@ import {
   getInventoryTableColumnFilterCount,
   getInventoryTableColumnLabel,
   getInventoryTableSortActionLabel,
+  serializeInventoryTableFilters,
 } from "../tableViewHelpers";
 import {
   decimalToNumber,
@@ -71,16 +72,8 @@ function getColumnActionHint(column: InventoryTableColumnKey) {
 
 type BulkEditorMode = "tags" | "location" | "notes";
 type BulkSelectionScope = "selected" | "filtered" | "all_items";
-type FilteredBulkSelectionRequest = Extract<
-  BulkInventorySelectionRequest,
-  { kind: "filtered" }
->;
 type TransferTargetMode = "existing" | "create";
 type ActiveTableTray = "bulk" | InventoryTransferMode | null;
-
-function getSingleFilterValue<T>(values: T[]) {
-  return values.length === 1 ? values[0] : null;
-}
 
 function buildFilteredBulkSelection(
   filters: InventoryTableFilters,
@@ -88,86 +81,31 @@ function buildFilteredBulkSelection(
   reason: string | null;
   selection: BulkInventorySelectionRequest | null;
 } {
-  const unsupportedFilters: string[] = [];
-  const selection: FilteredBulkSelectionRequest = { kind: "filtered" };
-  const normalizedQuery = filters.nameQuery.trim();
-  const normalizedLocation = filters.locationQuery.trim();
+  const serializedFilters = serializeInventoryTableFilters(filters);
 
-  if (normalizedQuery) {
-    selection.query = normalizedQuery;
-  }
-  if (normalizedLocation) {
-    selection.location = normalizedLocation;
-  }
-  if (filters.tags.length > 0) {
-    selection.tags = filters.tags;
-  }
-
-  if (filters.setCodes.length > 1) {
-    unsupportedFilters.push("set");
-  } else {
-    const setCode = getSingleFilterValue(filters.setCodes);
-    if (setCode) {
-      selection.set_code = setCode;
-    }
-  }
-
-  if (filters.finishes.length > 1) {
-    unsupportedFilters.push("finish");
-  } else {
-    const finish = getSingleFilterValue(filters.finishes);
-    if (finish) {
-      selection.finish = finish;
-    }
-  }
-
-  if (filters.conditionCodes.length > 1) {
-    unsupportedFilters.push("condition");
-  } else {
-    const conditionCode = getSingleFilterValue(filters.conditionCodes);
-    if (conditionCode) {
-      selection.condition_code = conditionCode;
-    }
-  }
-
-  if (filters.languageCodes.length > 1) {
-    unsupportedFilters.push("language");
-  } else {
-    const languageCode = getSingleFilterValue(filters.languageCodes);
-    if (languageCode) {
-      selection.language_code = languageCode;
-    }
-  }
-
-  if (filters.emptyLocationOnly) {
-    unsupportedFilters.push("empty location");
-  }
-
-  if (unsupportedFilters.length > 0) {
+  if (serializedFilters.unsupportedFilters.length > 0) {
     return {
-      reason: `Filtered bulk edit cannot use the current ${unsupportedFilters.join(
+      reason: `Filtered bulk edit cannot use the current ${serializedFilters.unsupportedFilters.join(
         "/",
       )} filter state.`,
       selection: null,
     };
   }
 
-  if (
-    !selection.query &&
-    !selection.set_code &&
-    !selection.finish &&
-    !selection.condition_code &&
-    !selection.language_code &&
-    !selection.location &&
-    !selection.tags?.length
-  ) {
+  if (!serializedFilters.hasActiveServerFilters) {
     return {
       reason: "Filtered bulk edit needs at least one active filter.",
       selection: null,
     };
   }
 
-  return { reason: null, selection };
+  return {
+    reason: null,
+    selection: {
+      kind: "filtered",
+      ...serializedFilters.params,
+    },
+  };
 }
 
 export function InventoryTableView(props: {
