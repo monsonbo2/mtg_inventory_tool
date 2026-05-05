@@ -13,6 +13,7 @@ import {
   requestFormData,
   requestJson,
   requestText,
+  listInventoryItemsPage,
   searchCards,
   transferInventoryItems,
 } from "./api";
@@ -445,6 +446,62 @@ describe("api transport", () => {
     expect(requestUrl.searchParams.get("profile")).toBe("default");
     expect(requestUrl.searchParams.get("finish")).toBe("foil");
     expect(requestUrl.searchParams.get("language_code")).toBe("en");
+    expect(requestUrl.searchParams.getAll("tags")).toEqual(["burn", "trade"]);
+  });
+
+  it("serializes paginated inventory table params against the page contract", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          inventory: "personal",
+          items: [],
+          total_count: 2,
+          limit: 50,
+          offset: 50,
+          has_more: false,
+          sort_key: "quantity",
+          sort_direction: "desc",
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        },
+      ),
+    );
+
+    const response = await listInventoryItemsPage("personal", {
+      condition_code: "NM",
+      finish: "foil",
+      language_code: "en",
+      limit: 50,
+      location: "Binder",
+      offset: 50,
+      query: "Lightning Bolt",
+      set_code: "lea",
+      sort_direction: "desc",
+      sort_key: "quantity",
+      tags: ["burn", "trade"],
+    });
+
+    expect(response.total_count).toBe(2);
+    expect(response.sort_key).toBe("quantity");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    const requestUrl = new URL(String(url));
+
+    expect(requestUrl.pathname).toBe("/api/inventories/personal/items/page");
+    expect(requestUrl.searchParams.get("limit")).toBe("50");
+    expect(requestUrl.searchParams.get("offset")).toBe("50");
+    expect(requestUrl.searchParams.get("sort_key")).toBe("quantity");
+    expect(requestUrl.searchParams.get("sort_direction")).toBe("desc");
+    expect(requestUrl.searchParams.get("query")).toBe("Lightning Bolt");
+    expect(requestUrl.searchParams.get("set_code")).toBe("lea");
+    expect(requestUrl.searchParams.get("finish")).toBe("foil");
+    expect(requestUrl.searchParams.get("condition_code")).toBe("NM");
+    expect(requestUrl.searchParams.get("language_code")).toBe("en");
+    expect(requestUrl.searchParams.get("location")).toBe("Binder");
     expect(requestUrl.searchParams.getAll("tags")).toEqual(["burn", "trade"]);
   });
 

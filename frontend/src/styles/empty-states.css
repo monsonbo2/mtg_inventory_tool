@@ -1,0 +1,198 @@
+.empty-state,
+.compact-empty {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 22px;
+  padding: 22px;
+  color: var(--text-muted);
+  background:
+    radial-gradient(circle at top left, rgba(248, 240, 218, 0.12), transparent 40%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.62), rgba(8, 17, 31, 0.88));
+}
+
+.compact-empty {
+  padding: 16px 18px;
+  border-radius: 18px;
+}
+
+.state-block {
+  min-height: 152px;
+  align-items: start;
+}
+
+.compact-empty.state-block {
+  min-height: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+}
+
+.state-block-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.state-block p {
+  margin: 0;
+  line-height: 1.55;
+  max-width: 58ch;
+}
+
+.state-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.state-block-actions .primary-button,
+.state-block-actions .secondary-button,
+.state-block-actions .utility-button {
+  white-space: nowrap;
+}
+
+.state-block-header {
+  display: flex;
+  align-items: center;
+  color: var(--text-main);
+}
+
+.state-block-header strong {
+  font-family: "IBM Plex Sans", "Avenir Next", sans-serif;
+  font-size: 1.08rem;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.compact-empty .state-block-header strong {
+  font-size: 0.98rem;
+}
+
+.state-block-eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.state-block-ornament {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-paper);
+  background: rgba(248, 240, 218, 0.08);
+  border: 1px solid rgba(248, 240, 218, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(248, 240, 218, 0.04);
+}
+
+.compact-empty .state-block-ornament {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+}
+
+.state-block-glyph {
+  position: relative;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+.state-block-glyph::before,
+.state-block-glyph::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.state-idle .state-block-glyph::before {
+  width: 12px;
+  height: 2px;
+}
+
+.state-idle .state-block-glyph::after {
+  width: 2px;
+  height: 12px;
+}
+
+.state-idle .state-block-ornament {
+  color: var(--accent-lagoon);
+  background:
+    radial-gradient(circle at 32% 28%, rgba(93, 231, 206, 0.16), transparent 42%),
+    rgba(93, 231, 206, 0.06);
+  border-color: rgba(93, 231, 206, 0.16);
+}
+
+.state-loading .state-block-header {
+  color: var(--accent-paper);
+}
+
+.state-loading .state-block-ornament {
+  color: var(--accent-sunrise);
+  background:
+    radial-gradient(circle at center, rgba(244, 171, 98, 0.18), transparent 56%),
+    rgba(244, 171, 98, 0.06);
+  border-color: rgba(244, 171, 98, 0.18);
+}
+
+.state-error .state-block-header {
+  color: var(--accent-paper);
+}
+
+.state-error .state-block-ornament {
+  color: var(--accent-danger);
+  background:
+    radial-gradient(circle at center, rgba(255, 137, 116, 0.2), transparent 58%),
+    rgba(255, 137, 116, 0.05);
+  border-color: rgba(255, 137, 116, 0.2);
+}
+
+.state-error .state-block-glyph::before {
+  width: 2px;
+  height: 10px;
+}
+
+.state-error .state-block-glyph::after {
+  width: 2px;
+  height: 2px;
+  top: calc(50% + 7px);
+}
+
+.state-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 0 rgba(244, 171, 98, 0.38);
+  animation: pulse-dot 1.2s ease-out infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(244, 171, 98, 0.45);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 12px rgba(244, 171, 98, 0);
+  }
+
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(244, 171, 98, 0);
+  }
+}
+

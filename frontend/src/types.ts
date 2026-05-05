@@ -716,6 +716,47 @@ export interface InventoryDuplicateResponse {
   transfer: InventoryTransferResponse;
 }
 
+export type OwnedInventoryItemsPageSortKey =
+  | "name"
+  | "set"
+  | "quantity"
+  | "finish"
+  | "condition_code"
+  | "language_code"
+  | "location"
+  | "tags"
+  | "est_value"
+  | "item_id";
+
+export type OwnedInventoryItemsPageSortDirection = "asc" | "desc";
+
+export interface OwnedInventoryItemsPageParams {
+  provider?: string;
+  limit?: number | null;
+  offset?: number | null;
+  sort_key?: OwnedInventoryItemsPageSortKey | null;
+  sort_direction?: OwnedInventoryItemsPageSortDirection | null;
+  query?: string | null;
+  set_code?: string | null;
+  rarity?: string | null;
+  finish?: FinishInput | null;
+  condition_code?: ConditionCode | null;
+  language_code?: LanguageCode | null;
+  location?: string | null;
+  tags?: string[] | null;
+}
+
+export interface OwnedInventoryItemsPageResponse {
+  inventory: string;
+  items: OwnedInventoryRow[];
+  total_count: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  sort_key: OwnedInventoryItemsPageSortKey;
+  sort_direction: OwnedInventoryItemsPageSortDirection;
+}
+
 export interface InventoryExportCsvParams {
   provider?: string;
   profile?: "default";

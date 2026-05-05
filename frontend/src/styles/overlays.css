@@ -1,0 +1,118 @@
+.audit-card {
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.audit-action {
+  letter-spacing: 0.04em;
+  color: var(--accent-lagoon);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.audit-time,
+.audit-meta {
+  color: var(--text-muted);
+}
+
+.audit-meta {
+  margin: 8px 0 0;
+}
+
+.audit-feed-embedded {
+  display: grid;
+  gap: 12px;
+}
+
+.activity-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: flex-end;
+  padding: 20px;
+  background: rgba(2, 8, 23, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.activity-drawer {
+  width: min(480px, 100%);
+  height: 100%;
+  border-radius: 28px;
+  padding: 24px;
+  overflow: auto;
+  backdrop-filter: blur(18px);
+  background: rgba(8, 17, 31, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 28px 60px rgba(2, 8, 23, 0.5);
+}
+
+.activity-drawer:focus-visible {
+  outline: 2px solid rgba(93, 231, 206, 0.68);
+  outline-offset: 2px;
+}
+
+.activity-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.activity-drawer-subtitle {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 8, 23, 0.66);
+  backdrop-filter: blur(10px);
+}
+
+.modal-dialog {
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+  border-radius: 28px;
+  padding: 24px;
+  backdrop-filter: blur(18px);
+  background: rgba(8, 17, 31, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 28px 60px rgba(2, 8, 23, 0.5);
+}
+
+.modal-dialog-wide {
+  width: min(960px, 100%);
+}
+
+.modal-dialog:focus-visible {
+  outline: 2px solid rgba(93, 231, 206, 0.68);
+  outline-offset: 2px;
+}
+
+.modal-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.modal-dialog-subtitle {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.modal-dialog-body {
+  display: grid;
+  gap: 14px;
+}
+

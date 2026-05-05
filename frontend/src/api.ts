@@ -31,6 +31,8 @@ import type {
   InventoryTransferResponse,
   ListCardPrintingsParams,
   OwnedInventoryRow,
+  OwnedInventoryItemsPageParams,
+  OwnedInventoryItemsPageResponse,
   PatchInventoryItemRequest,
   SearchCardNamesParams,
   SearchCardsParams,
@@ -393,6 +395,32 @@ export async function getCardPrintingSummary(
 export async function listInventoryItems(inventorySlug: string) {
   return requestJson<OwnedInventoryRow[]>(
     `/inventories/${encodeURIComponent(inventorySlug)}/items`,
+  );
+}
+
+export async function listInventoryItemsPage(
+  inventorySlug: string,
+  params: OwnedInventoryItemsPageParams = {},
+) {
+  return requestJson<OwnedInventoryItemsPageResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/items/page`,
+    {
+      query: {
+        provider: params.provider,
+        limit: params.limit,
+        offset: params.offset,
+        sort_key: params.sort_key,
+        sort_direction: params.sort_direction,
+        query: params.query,
+        set_code: params.set_code,
+        rarity: params.rarity,
+        finish: params.finish,
+        condition_code: params.condition_code,
+        language_code: params.language_code,
+        location: params.location,
+        tags: params.tags,
+      },
+    },
   );
 }
 

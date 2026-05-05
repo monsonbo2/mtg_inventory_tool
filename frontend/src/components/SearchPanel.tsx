@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   AddInventoryItemRequest,
   CatalogNameSearchRow,
@@ -40,6 +41,7 @@ import type {
   SearchAddAvailability,
 } from "../uiTypes";
 import { SearchAutocomplete } from "./SearchAutocomplete";
+import { SearchOptionsControl } from "./SearchOptionsControl";
 import { PanelState } from "./ui/PanelState";
 import { ModalDialog } from "./ui/ModalDialog";
 import { SearchResultCard } from "./SearchResultCard";
@@ -72,6 +74,10 @@ function getSuggestionStatusMessage(state: SearchPanelState) {
   return "Card suggestions are hidden.";
 }
 
+function getCatalogScopeLabel(scope: CatalogScope) {
+  return scope === "all" ? "Full catalog" : "Main catalog";
+}
+
 function measureSearchWorkspaceContentHeight(workspaceNode: HTMLDivElement) {
   const reserveNode = Array.from(workspaceNode.children).find(
     (child): child is HTMLElement =>
@@ -80,8 +86,67 @@ function measureSearchWorkspaceContentHeight(workspaceNode: HTMLDivElement) {
   );
   const reserveHeight = reserveNode?.getBoundingClientRect().height ?? 0;
   const workspaceHeight = workspaceNode.getBoundingClientRect().height;
+  const workspaceScrollHeight = workspaceNode.scrollHeight;
 
-  return Math.ceil(Math.max(0, workspaceHeight - reserveHeight));
+  return Math.ceil(
+    Math.max(
+      0,
+      Math.max(workspaceHeight, workspaceScrollHeight - reserveHeight),
+    ),
+  );
+}
+
+function getSearchResultPeekHeight(resultNode: HTMLElement | null) {
+  if (!resultNode) {
+    return 40;
+  }
+
+  return Math.min(48, Math.max(40, Math.round(resultNode.offsetHeight * 0.55)));
+}
+
+function scrollSearchResultListForActiveRow(options: {
+  activeNode: HTMLButtonElement;
+  adjacentNode: HTMLButtonElement | null;
+  direction: "down" | "up" | null;
+  listNode: HTMLDivElement;
+}) {
+  const { activeNode, adjacentNode, direction, listNode } = options;
+  const maxScrollTop = Math.max(0, listNode.scrollHeight - listNode.clientHeight);
+  if (maxScrollTop <= 0) {
+    return;
+  }
+
+  const currentScrollTop = listNode.scrollTop;
+  const activeTop = activeNode.offsetTop;
+  const activeBottom = activeTop + activeNode.offsetHeight;
+  const peekHeight = getSearchResultPeekHeight(adjacentNode);
+
+  let nextScrollTop = currentScrollTop;
+  const targetTop = direction === "up" ? Math.max(0, activeTop - peekHeight) : activeTop;
+  const targetBottom =
+    direction === "down"
+      ? Math.min(listNode.scrollHeight, activeBottom + peekHeight)
+      : activeBottom;
+
+  if (targetBottom > currentScrollTop + listNode.clientHeight) {
+    nextScrollTop = targetBottom - listNode.clientHeight;
+  }
+
+  if (targetTop < nextScrollTop) {
+    nextScrollTop = targetTop;
+  }
+
+  nextScrollTop = Math.max(0, Math.min(maxScrollTop, Math.ceil(nextScrollTop)));
+  if (Math.abs(nextScrollTop - currentScrollTop) < 1) {
+    return;
+  }
+
+  if (typeof listNode.scrollTo === "function") {
+    listNode.scrollTo({ top: nextScrollTop, behavior: "smooth" });
+    return;
+  }
+
+  listNode.scrollTop = nextScrollTop;
 }
 
 export type SearchPanelState = {
@@ -98,6 +163,7 @@ export type SearchPanelState = {
     error: string | null;
     groups: SearchCardGroup[];
     hiddenResultCount: number;
+    loadAllLanguages: boolean;
     loadedHiddenResultCount: number;
     isLoadingMore: boolean;
     isResultStale: boolean;
@@ -135,6 +201,7 @@ export type SearchPanelActions = {
   onSearchFieldFocus: () => void;
   onSearchInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onSearchGroupSelect: (groupId: string) => void;
+  onSearchLoadAllLanguagesChange: (nextValue: boolean) => void;
   onSearchResultsLoadMore: () => void;
   onSearchScopeChange: (scope: CatalogScope) => void;
   onSearchResultsDismiss: () => void;
@@ -237,20 +304,29 @@ function getImportSourceSummary(session: InventoryImportSession) {
 
 export function SearchPanel(props: {
   actions: SearchPanelActions;
+  focusRequest?: { target: "search" | "import"; token: number } | null;
+  importActionHost: HTMLElement | null;
+  importActionHostEnabled: boolean;
   state: SearchPanelState;
 }) {
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const searchFieldRef = useRef<HTMLLabelElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const importTriggerRef = useRef<HTMLButtonElement | null>(null);
   const importMenuRef = useRef<HTMLDivElement | null>(null);
   const searchResultRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const searchResultsPanelRef = useRef<HTMLDivElement | null>(null);
+  const searchResultListRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceDetailRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceGridRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceHeaderRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const searchQuickAddSectionRef = useRef<HTMLDivElement | null>(null);
   const searchPanelFlowHeightRef = useRef<number | null>(null);
   const searchWorkspaceOverlayKeyRef = useRef<string | null>(null);
   const searchWorkspaceOverlayWidthRef = useRef<number | null>(null);
+  const searchWorkspaceGuidedSelectionRef = useRef<string | null>(null);
+  const searchResultActiveIndexRef = useRef<number | null>(null);
   const autocompleteListId = useId();
   const autocompleteStatusId = `${autocompleteListId}-status`;
   const [importMenuOpen, setImportMenuOpen] = useState(false);
@@ -353,10 +429,8 @@ export function SearchPanel(props: {
     showAutocomplete && props.state.suggestions.highlightedIndex >= 0
       ? `${autocompleteListId}-option-${props.state.suggestions.highlightedIndex}`
       : undefined;
-  const searchScopeLabel =
-    props.state.search.resultScope === "all" ? "All catalog" : "Cards";
-  const activeSearchScopeLabel =
-    props.state.search.scope === "all" ? "All catalog" : "Cards";
+  const searchScopeLabel = getCatalogScopeLabel(props.state.search.resultScope);
+  const activeSearchScopeLabel = getCatalogScopeLabel(props.state.search.scope);
   const trimmedDraftQuery = props.state.search.query.trim();
   const searchDraftNote =
     props.state.search.status === "loading"
@@ -408,6 +482,25 @@ export function SearchPanel(props: {
   }, [importMenuOpen]);
 
   useEffect(() => {
+    if (!props.focusRequest) {
+      return;
+    }
+
+    const targetNode =
+      props.focusRequest.target === "import"
+        ? importTriggerRef.current
+        : searchInputRef.current;
+    if (!targetNode) {
+      return;
+    }
+
+    if (typeof targetNode.scrollIntoView === "function") {
+      targetNode.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+    targetNode.focus();
+  }, [props.focusRequest]);
+
+  useEffect(() => {
     const defaultInventorySlug = getDefaultImportTargetInventorySlug();
     setImportTargetInventorySlug((current) => {
       if (
@@ -430,23 +523,139 @@ export function SearchPanel(props: {
 
   useEffect(() => {
     if (!showSearchMatches || !activeSearchGroup) {
+      searchResultActiveIndexRef.current = null;
       return;
     }
 
+    const resultListNode = searchResultListRef.current;
     const activeNode = searchResultRefs.current[activeSearchGroup.groupId];
-    if (typeof activeNode?.scrollIntoView === "function") {
-      activeNode.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }
-
     const activeIndex = props.state.search.groups.findIndex(
       (group) => group.groupId === activeSearchGroup.groupId,
     );
-    const nextGroup = props.state.search.groups[activeIndex + 1];
-    const nextNode = nextGroup ? searchResultRefs.current[nextGroup.groupId] : null;
-    if (typeof nextNode?.scrollIntoView === "function") {
-      nextNode.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const previousIndex = searchResultActiveIndexRef.current;
+    const direction =
+      previousIndex === null || previousIndex === activeIndex
+        ? null
+        : activeIndex > previousIndex
+          ? "down"
+          : "up";
+    const adjacentIndex =
+      direction === "up"
+        ? activeIndex - 1
+        : activeIndex + 1 < props.state.search.groups.length
+          ? activeIndex + 1
+          : -1;
+    const adjacentNode =
+      adjacentIndex >= 0
+        ? searchResultRefs.current[props.state.search.groups[adjacentIndex]?.groupId ?? ""]
+        : null;
+
+    if (resultListNode && activeNode) {
+      scrollSearchResultListForActiveRow({
+        activeNode,
+        adjacentNode,
+        direction,
+        listNode: resultListNode,
+      });
     }
+
+    searchResultActiveIndexRef.current = activeIndex;
   }, [activeSearchGroup, props.state.search.groups, showSearchMatches]);
+
+  useEffect(() => {
+    if (!showSearchResults || props.state.searchWorkspaceMode !== "focus") {
+      searchWorkspaceGuidedSelectionRef.current = null;
+    }
+  }, [props.state.searchWorkspaceMode, showSearchResults]);
+
+  useEffect(() => {
+    if (
+      !showSearchResults ||
+      props.state.searchWorkspaceMode !== "focus" ||
+      !activeSearchGroup ||
+      typeof window === "undefined" ||
+      window.innerWidth <= 820
+    ) {
+      return;
+    }
+
+    const guideKey = `${activeSearchGroup.groupId}:${searchWorkspaceOverlayKey}`;
+    if (searchWorkspaceGuidedSelectionRef.current === guideKey) {
+      return;
+    }
+
+    let frameId = 0;
+    let nestedFrameId = 0;
+
+    frameId = window.requestAnimationFrame(() => {
+      nestedFrameId = window.requestAnimationFrame(() => {
+        const workspaceNode = searchWorkspaceRef.current;
+        const quickAddNode = searchQuickAddSectionRef.current;
+        if (!workspaceNode || !quickAddNode) {
+          return;
+        }
+
+        const workspaceRect = workspaceNode.getBoundingClientRect();
+        const quickAddRect = quickAddNode.getBoundingClientRect();
+        if (workspaceRect.height <= 0 || quickAddRect.height <= 0) {
+          return;
+        }
+
+        const desiredQuickAddTop = 36;
+        const desiredQuickAddBottomInset = 32;
+        const desiredPageTop = 32;
+        const desiredPageBottomInset = 32;
+        const visibleTopBoundary = Math.max(
+          workspaceRect.top + desiredQuickAddTop,
+          desiredPageTop,
+        );
+        const visibleBottomBoundary = Math.min(
+          workspaceRect.bottom - desiredQuickAddBottomInset,
+          window.innerHeight - desiredPageBottomInset,
+        );
+        const availableQuickAddViewportHeight = Math.max(
+          0,
+          visibleBottomBoundary - visibleTopBoundary,
+        );
+        const visibleQuickAddTop = Math.max(quickAddRect.top, visibleTopBoundary);
+        const visibleQuickAddBottom = Math.min(quickAddRect.bottom, visibleBottomBoundary);
+        const visibleQuickAddHeight = Math.max(
+          0,
+          visibleQuickAddBottom - visibleQuickAddTop,
+        );
+        const desiredVisibleQuickAddHeight = Math.min(
+          quickAddRect.height,
+          availableQuickAddViewportHeight,
+        );
+
+        if (visibleQuickAddHeight >= desiredVisibleQuickAddHeight - 8) {
+          searchWorkspaceGuidedSelectionRef.current = guideKey;
+          return;
+        }
+
+        if (typeof quickAddNode.scrollIntoView === "function") {
+          quickAddNode.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+            inline: "nearest",
+          });
+        }
+        searchWorkspaceGuidedSelectionRef.current = guideKey;
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.cancelAnimationFrame(nestedFrameId);
+    };
+  }, [
+    activeSearchGroup?.groupId,
+    props.state.searchWorkspaceMode,
+    searchWorkspaceOverlay.headerHeight,
+    searchWorkspaceOverlay.height,
+    searchWorkspaceOverlayKey,
+    showSearchResults,
+  ]);
 
   useLayoutEffect(() => {
     if (showSearchResults) {
@@ -581,7 +790,7 @@ export function SearchPanel(props: {
         const reservedHeight =
           shouldResetOverlayHeight || showSearchMatches || currentOverlay.height <= 0
             ? measuredHeight
-            : currentOverlay.height;
+            : Math.max(currentOverlay.height, measuredHeight);
         const reserveHeight = Math.max(0, reservedHeight - measuredHeight);
         const panelOffsetHeight = Math.max(
           0,
@@ -753,6 +962,83 @@ export function SearchPanel(props: {
     if (importFormError) {
       setImportFormError(null);
     }
+  }
+
+  function renderImportAction(options: {
+    placement: "hero" | "inline";
+  }) {
+    return (
+      <div
+        className={
+          options.placement === "hero"
+            ? "search-import workspace-hero-import"
+            : "search-import"
+        }
+        ref={importMenuRef}
+      >
+        <button
+          aria-label={options.placement === "hero" ? "Import Cards" : undefined}
+          aria-expanded={importMenuOpen}
+          aria-haspopup="menu"
+          className={
+            options.placement === "hero"
+              ? "utility-button search-import-trigger workspace-hero-import-trigger"
+              : "utility-button search-import-trigger"
+          }
+          disabled={!props.state.inventories.length}
+          onClick={toggleImportMenu}
+          ref={importTriggerRef}
+          type="button"
+        >
+          {options.placement === "hero" ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="inventory-action-icon workspace-action-icon-import"
+              />
+              <span aria-hidden="true" className="hero-action-copy">
+                <span className="hero-action-title">Import Cards</span>
+                <span className="hero-action-meta">Import a list, deck, or CSV.</span>
+              </span>
+            </>
+          ) : (
+            "Import Cards"
+          )}
+        </button>
+
+        {importMenuOpen ? (
+          <div aria-label="Import Cards" className="search-import-menu" role="menu">
+            <button
+              className="search-import-menu-option"
+              onClick={() => openImportDialog("url")}
+              role="menuitem"
+              type="button"
+            >
+              <strong>Import from URL</strong>
+              <span>Load a supported public deck link into the collection you choose.</span>
+            </button>
+            <button
+              className="search-import-menu-option"
+              onClick={() => openImportDialog("text")}
+              role="menuitem"
+              type="button"
+            >
+              <strong>Import as Text</strong>
+              <span>Paste a decklist or card list into the collection you choose.</span>
+            </button>
+            <button
+              className="search-import-menu-option"
+              onClick={() => openImportDialog("csv")}
+              role="menuitem"
+              type="button"
+            >
+              <strong>Import from CSV</strong>
+              <span>Upload a collection CSV file into the collection you choose.</span>
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   function handleCreateCollectionSlugChange(value: string) {
@@ -1336,190 +1622,133 @@ export function SearchPanel(props: {
   }
 
   return (
-    <section
-      ref={searchPanelRef}
-      className={
-        showSearchResults
-          ? `panel panel-featured search-panel search-panel-results-open ${
-              showSearchMatches
-                ? "search-panel-results-browse"
-                : "search-panel-results-focus"
-            }`
-          : "panel panel-featured search-panel"
-      }
-      style={searchPanelOpenStyle}
-    >
-      <div className="panel-heading">
-        <div>
-          <p className="section-kicker">Search And Add</p>
-          <h2>Card Search</h2>
-        </div>
-        <span className="muted-note">
-          Current collection: {props.state.selectedInventoryRow?.display_name || "None"}
-        </span>
-      </div>
-
-      <div className="search-panel-toolbar">
-        <div className="search-import" ref={importMenuRef}>
-          <button
-            aria-expanded={importMenuOpen}
-            aria-haspopup="menu"
-            className="secondary-button search-import-trigger"
-            disabled={!props.state.inventories.length}
-            onClick={toggleImportMenu}
-            type="button"
-          >
-            Import Cards
-          </button>
-
-          {importMenuOpen ? (
-            <div aria-label="Import Cards" className="search-import-menu" role="menu">
-              <button
-                className="search-import-menu-option"
-                onClick={() => openImportDialog("url")}
-                role="menuitem"
-                type="button"
-              >
-                <strong>Import from URL</strong>
-                <span>Load a supported public deck link into the collection you choose.</span>
-              </button>
-              <button
-                className="search-import-menu-option"
-                onClick={() => openImportDialog("text")}
-                role="menuitem"
-                type="button"
-              >
-                <strong>Import as Text</strong>
-                <span>Paste a decklist or card list into the collection you choose.</span>
-              </button>
-              <button
-                className="search-import-menu-option"
-                onClick={() => openImportDialog("csv")}
-                role="menuitem"
-                type="button"
-              >
-                <strong>Import from CSV</strong>
-                <span>Upload a collection CSV file into the collection you choose.</span>
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <form className="search-form" onSubmit={props.actions.onSearchSubmit}>
-        <label className="field search-field" ref={searchFieldRef}>
-          <span>Quick Add and Card Search</span>
-          <div className="search-input-stack">
-            <input
-              aria-activedescendant={activeSuggestionId}
-              aria-autocomplete="list"
-              aria-controls={autocompleteListId}
-              aria-describedby={autocompleteStatusId}
-              aria-expanded={showAutocomplete}
-              aria-haspopup="listbox"
-              className="text-input"
-              onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
-              onClick={props.actions.onSearchFieldFocus}
-              onFocus={props.actions.onSearchFieldFocus}
-              onKeyDown={props.actions.onSearchInputKeyDown}
-              placeholder="e.g. Lightning Bolt"
-              role="combobox"
-              value={props.state.search.query}
-            />
-            <SearchAutocomplete
-              error={props.state.suggestions.error}
-              highlightedIndex={props.state.suggestions.highlightedIndex}
-              isOpen={showAutocomplete}
-              listboxId={autocompleteListId}
-              onHighlight={props.actions.onSuggestionHighlight}
-              onSelect={props.actions.onSuggestionSelect}
-              optionIdPrefix={autocompleteListId}
-              query={props.state.search.query}
-              results={props.state.suggestions.results}
-              status={props.state.suggestions.status}
-            />
+    <>
+      {props.importActionHostEnabled && props.importActionHost
+        ? createPortal(
+            renderImportAction({ placement: "hero" }),
+            props.importActionHost,
+          )
+        : null}
+      <section
+        ref={searchPanelRef}
+        className={
+          showSearchResults
+            ? `panel panel-featured search-panel search-panel-results-open ${
+                showSearchMatches
+                  ? "search-panel-results-browse"
+                  : "search-panel-results-focus"
+              }`
+            : "panel panel-featured search-panel"
+        }
+        style={searchPanelOpenStyle}
+      >
+        <div className="panel-heading search-panel-heading">
+          <div className="search-panel-heading-copy">
+            <p className="section-kicker search-panel-kicker">Card Search</p>
+            <h2 className="sr-only">Card Search</h2>
           </div>
-        </label>
-        <div className="search-form-actions">
-          <div
-            aria-label="Catalog search scope"
-            className="search-scope-toggle"
-            role="group"
-          >
-            <button
-              aria-pressed={props.state.search.scope === "default"}
-              className={
-                props.state.search.scope === "default"
-                  ? "search-scope-option search-scope-option-active"
-                  : "search-scope-option"
-              }
-              onClick={() => props.actions.onSearchScopeChange("default")}
-              type="button"
-            >
-              Cards
-            </button>
-            <button
-              aria-pressed={props.state.search.scope === "all"}
-              className={
-                props.state.search.scope === "all"
-                  ? "search-scope-option search-scope-option-active"
-                  : "search-scope-option"
-              }
-              onClick={() => props.actions.onSearchScopeChange("all")}
-              type="button"
-            >
-              All catalog
+          {!props.importActionHostEnabled ? renderImportAction({ placement: "inline" }) : null}
+        </div>
+
+        <form className="search-form" onSubmit={props.actions.onSearchSubmit}>
+          <div className="search-form-primary-row">
+            <label className="field search-field" ref={searchFieldRef}>
+              <span className="sr-only">Quick Add and Card Search</span>
+              <div className="search-input-stack">
+                <input
+                  aria-activedescendant={activeSuggestionId}
+                  aria-autocomplete="list"
+                  aria-controls={autocompleteListId}
+                  aria-describedby={autocompleteStatusId}
+                  aria-expanded={showAutocomplete}
+                  aria-haspopup="listbox"
+                  className="text-input"
+                  onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
+                  onClick={props.actions.onSearchFieldFocus}
+                  onFocus={props.actions.onSearchFieldFocus}
+                  onKeyDown={props.actions.onSearchInputKeyDown}
+                  placeholder="e.g. Lightning Bolt"
+                  ref={searchInputRef}
+                  role="combobox"
+                  value={props.state.search.query}
+                />
+                <SearchAutocomplete
+                  error={props.state.suggestions.error}
+                  highlightedIndex={props.state.suggestions.highlightedIndex}
+                  isOpen={showAutocomplete}
+                  listboxId={autocompleteListId}
+                  onHighlight={props.actions.onSuggestionHighlight}
+                  onSelect={props.actions.onSuggestionSelect}
+                  optionIdPrefix={autocompleteListId}
+                  query={props.state.search.query}
+                  results={props.state.suggestions.results}
+                  status={props.state.suggestions.status}
+                />
+              </div>
+            </label>
+            <button className="primary-button search-submit-button" type="submit">
+              {props.state.search.status === "loading" ? "Searching..." : "Search cards"}
             </button>
           </div>
-          <button className="primary-button search-submit-button" type="submit">
-            {props.state.search.status === "loading" ? "Searching..." : "Search cards"}
-          </button>
-        </div>
-      </form>
-      <p aria-live="polite" className="sr-only" id={autocompleteStatusId}>
-        {getSuggestionStatusMessage(props.state)}
-      </p>
-
-      {!props.state.selectedInventoryRow ? (
-        <p className="panel-hint">
-          Search is available now. Choose a collection to enable add actions.
+          <div className="search-form-secondary-row">
+            <SearchOptionsControl
+              loadAllLanguages={props.state.search.loadAllLanguages}
+              onLoadAllLanguagesChange={props.actions.onSearchLoadAllLanguagesChange}
+              onScopeChange={props.actions.onSearchScopeChange}
+              scope={props.state.search.scope}
+            />
+          </div>
+        </form>
+        <p aria-live="polite" className="sr-only" id={autocompleteStatusId}>
+          {getSuggestionStatusMessage(props.state)}
         </p>
-      ) : selectedInventoryAddAvailability === "read_only" ? (
-        <p className="panel-hint">
-          {props.state.selectedInventoryRow.display_name} is read-only. Switch to a writable
-          collection to add cards, or choose another destination when importing.
-        </p>
-      ) : props.state.selectedInventoryRow.total_cards === 0 ? (
-        <p className="panel-hint panel-hint-success">
-          {props.state.selectedInventoryRow.display_name} is ready for its first cards. Use search
-          results below to get started.
-        </p>
-      ) : null}
 
-      {props.state.search.status === "loading" && !hasSearchResults ? (
-        <PanelState
-          body="Looking through matching cards and printings."
-          eyebrow="Search"
-          title="Searching cards"
-          variant="loading"
-        />
-      ) : props.state.search.status === "error" ? (
-        <PanelState
-          body="Card search is temporarily unavailable. Try again in a moment."
-          eyebrow="Search"
-          title="Search unavailable"
-          variant="error"
-        />
-      ) : props.state.search.status === "ready" && !hasSearchResults ? (
-        <PanelState
-          body="Try a broader card name, a simpler spelling, or fewer extra terms."
-          eyebrow="Search"
-          title="No matching cards"
-        />
-      ) : null}
+        {!props.state.selectedInventoryRow ? (
+          <p className="panel-hint">
+            Search is available now. Choose a collection to enable add actions.
+          </p>
+        ) : selectedInventoryAddAvailability === "read_only" ? (
+          <p className="panel-hint">
+            {props.state.selectedInventoryRow.display_name} is read-only. Switch to a writable
+            collection to add cards, or choose another destination when importing.
+          </p>
+        ) : null}
 
-      {showSearchResults && activeSearchGroup ? (
-        <div className="search-workspace" ref={searchWorkspaceRef}>
+        {props.state.search.status === "loading" && !hasSearchResults ? (
+          <PanelState
+            body="Looking through matching cards and printings."
+            eyebrow="Search"
+            title="Searching cards"
+            variant="loading"
+          />
+        ) : props.state.search.status === "error" ? (
+          <PanelState
+            body="Card search is temporarily unavailable. Try again in a moment."
+            eyebrow="Search"
+            title="Search unavailable"
+            variant="error"
+          />
+        ) : props.state.search.status === "ready" && !hasSearchResults ? (
+          <PanelState
+            body="Try a broader card name, a simpler spelling, or fewer extra terms."
+            actions={
+              props.state.search.scope === "default" && trimmedDraftQuery ? (
+                <button
+                  className="secondary-button"
+                  onClick={() => props.actions.onSearchScopeChange("all")}
+                  type="button"
+                >
+                  Search full catalog
+                </button>
+              ) : null
+            }
+            eyebrow="Search"
+            title="No matching cards"
+          />
+        ) : null}
+
+        {showSearchResults && activeSearchGroup ? (
+          <div className="search-workspace" ref={searchWorkspaceRef}>
           <div className="search-workspace-header" ref={searchWorkspaceHeaderRef}>
             <div className="search-workspace-header-copy">
               <p className="section-kicker">Search Results</p>
@@ -1547,14 +1776,6 @@ export function SearchPanel(props: {
                   <span className="search-workspace-count">{searchResultCountLabel}</span>
                 )
               ) : null}
-              <button
-                aria-label="Close add card pane"
-                className="search-results-close"
-                onClick={props.actions.onSearchResultsDismiss}
-                type="button"
-              >
-                ×
-              </button>
             </div>
           </div>
 
@@ -1586,7 +1807,7 @@ export function SearchPanel(props: {
                   </span>
                 </div>
 
-                <div className="search-workspace-result-list">
+                <div className="search-workspace-result-list" ref={searchResultListRef}>
                   {props.state.search.groups.map((group) => {
                     const isActive = group.groupId === activeSearchGroup.groupId;
 
@@ -1649,12 +1870,15 @@ export function SearchPanel(props: {
               <SearchResultCard
                 busyPrintingId={props.state.busyAddCardId}
                 addAvailability={selectedInventoryAddAvailability}
+                autoLoadAllLanguages={props.state.search.loadAllLanguages}
                 defaultLocation={props.state.selectedInventoryRow?.default_location || null}
                 defaultTags={props.state.selectedInventoryRow?.default_tags || null}
                 group={activeSearchGroup}
                 onAdd={props.actions.onAdd}
+                onClose={props.actions.onSearchResultsDismiss}
                 onLoadPrintings={props.actions.onLoadPrintings}
                 onNotice={props.actions.onNotice}
+                quickAddSectionRef={searchQuickAddSectionRef}
               />
             </div>
           </div>
@@ -1666,17 +1890,17 @@ export function SearchPanel(props: {
               style={{ height: `${searchWorkspaceOverlay.reserveHeight}px` }}
             />
           ) : null}
-        </div>
-      ) : null}
+          </div>
+        ) : null}
 
-      <ModalDialog
-        isOpen={activeImportDialog === "url"}
-        kicker="Import Cards"
-        onClose={closeImportDialog}
-        size={urlImportNeedsResolution ? "wide" : "default"}
-        subtitle={getImportDialogStepSubtitle("url", urlImportNeedsResolution ? "needs_resolution" : null)}
-        title={getImportDialogStepTitle("url")}
-      >
+        <ModalDialog
+          isOpen={activeImportDialog === "url"}
+          kicker="Import Cards"
+          onClose={closeImportDialog}
+          size={urlImportNeedsResolution ? "wide" : "default"}
+          subtitle={getImportDialogStepSubtitle("url", urlImportNeedsResolution ? "needs_resolution" : null)}
+          title={getImportDialogStepTitle("url")}
+        >
         <form className="search-import-form" onSubmit={handleImportUrlSubmit}>
           {urlImportNeedsResolution && activeImportSession ? (
             renderImportResolutionStep(activeImportSession)
@@ -1732,16 +1956,16 @@ export function SearchPanel(props: {
             </button>
           </div>
         </form>
-      </ModalDialog>
+        </ModalDialog>
 
-      <ModalDialog
-        isOpen={activeImportDialog === "text"}
-        kicker="Import Cards"
-        onClose={closeImportDialog}
-        size={textImportNeedsResolution ? "wide" : "default"}
-        subtitle={getImportDialogStepSubtitle("text", textImportNeedsResolution ? "needs_resolution" : null)}
-        title={getImportDialogStepTitle("text")}
-      >
+        <ModalDialog
+          isOpen={activeImportDialog === "text"}
+          kicker="Import Cards"
+          onClose={closeImportDialog}
+          size={textImportNeedsResolution ? "wide" : "default"}
+          subtitle={getImportDialogStepSubtitle("text", textImportNeedsResolution ? "needs_resolution" : null)}
+          title={getImportDialogStepTitle("text")}
+        >
         <form className="search-import-form" onSubmit={handleImportTextSubmit}>
           {textImportNeedsResolution && activeImportSession ? (
             renderImportResolutionStep(activeImportSession)
@@ -1797,16 +2021,16 @@ export function SearchPanel(props: {
             </button>
           </div>
         </form>
-      </ModalDialog>
+        </ModalDialog>
 
-      <ModalDialog
-        isOpen={activeImportDialog === "csv"}
-        kicker="Import Cards"
-        onClose={closeImportDialog}
-        size={csvImportNeedsResolution ? "wide" : "default"}
-        subtitle={getImportDialogStepSubtitle("csv", csvImportNeedsResolution ? "needs_resolution" : null)}
-        title={getImportDialogStepTitle("csv")}
-      >
+        <ModalDialog
+          isOpen={activeImportDialog === "csv"}
+          kicker="Import Cards"
+          onClose={closeImportDialog}
+          size={csvImportNeedsResolution ? "wide" : "default"}
+          subtitle={getImportDialogStepSubtitle("csv", csvImportNeedsResolution ? "needs_resolution" : null)}
+          title={getImportDialogStepTitle("csv")}
+        >
         <form className="search-import-form" onSubmit={handleImportCsvSubmit}>
           {csvImportNeedsResolution && activeImportSession ? (
             renderImportResolutionStep(activeImportSession)
@@ -1862,7 +2086,8 @@ export function SearchPanel(props: {
             </button>
           </div>
         </form>
-      </ModalDialog>
-    </section>
+        </ModalDialog>
+      </section>
+    </>
   );
 }

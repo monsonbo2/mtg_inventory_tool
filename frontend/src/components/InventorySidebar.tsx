@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { InventoryCreateRequest, InventorySummary } from "../types";
 import {
@@ -62,6 +63,8 @@ export function InventorySidebar(props: {
   appShellState: AppShellState;
   collectionMenuInteractionEnabled: boolean;
   collectionMenuOpen: boolean;
+  createActionHost: HTMLElement | null;
+  createActionHostEnabled: boolean;
   createInventoryBusy: boolean;
   inventories: InventorySummary[];
   selectedInventory: string | null;
@@ -288,6 +291,40 @@ export function InventorySidebar(props: {
     props.onSelectInventory(inventorySlug);
   }
 
+  function renderCreateActionButton(options: {
+    placement: "hero" | "sidebar";
+  }) {
+    const label = props.createInventoryBusy ? "Creating..." : "Create Collection";
+    return (
+      <button
+        aria-label={options.placement === "hero" ? label : undefined}
+        className={
+          options.placement === "hero"
+            ? "utility-button workspace-hero-create-action"
+            : "utility-button inventory-sidebar-compact-action"
+        }
+        disabled={props.createInventoryBusy}
+        onClick={openCreateForm}
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          className="inventory-action-icon inventory-action-icon-create"
+        />
+        {options.placement === "hero" ? (
+          <>
+            <span aria-hidden="true" className="hero-action-copy">
+              <span className="hero-action-title">{label}</span>
+              <span className="hero-action-meta">Start a new binder or deck.</span>
+            </span>
+          </>
+        ) : (
+          <span className="inventory-sidebar-action-create-label">{label}</span>
+        )}
+      </button>
+    );
+  }
+
   function renderCreateForm() {
     return (
       <form className="form-section inventory-create-form" onSubmit={handleCreateSubmit}>
@@ -389,174 +426,168 @@ export function InventorySidebar(props: {
           ["--inventory-switcher-overlay-height" as string]: `${inventorySwitcherOverlayHeight}px`,
         }
       : undefined;
+  const heroCreateAction =
+    props.createActionHostEnabled && props.createActionHost
+      ? createPortal(
+          renderCreateActionButton({ placement: "hero" }),
+          props.createActionHost,
+        )
+      : null;
+  const showInlineReadyCreateAction =
+    currentInventory && !props.createActionHostEnabled;
+  const showInlineBootstrapCreateAction =
+    props.appShellState === "bootstrap_available" && !props.createActionHostEnabled;
 
   return (
-    <section
-      className={
-        changeCollectionOpen && props.collectionMenuInteractionEnabled
-          ? "panel inventory-sidebar-panel inventory-sidebar-panel-switcher-open"
-          : "panel inventory-sidebar-panel"
-      }
-      style={inventorySidebarPanelStyle}
-    >
-      {props.inventoryError && props.inventories.length && props.appShellState === "ready" ? (
-        <p className="panel-error">Could not refresh the collection list right now.</p>
-      ) : null}
+    <>
+      {heroCreateAction}
+      <section
+        className={
+          changeCollectionOpen && props.collectionMenuInteractionEnabled
+            ? "panel inventory-sidebar-panel inventory-sidebar-panel-switcher-open"
+            : "panel inventory-sidebar-panel"
+        }
+        style={inventorySidebarPanelStyle}
+      >
+        {props.inventoryError && props.inventories.length && props.appShellState === "ready" ? (
+          <p className="panel-error">Could not refresh the collection list right now.</p>
+        ) : null}
 
-      {props.appShellState === "loading" && props.inventories.length === 0 ? (
-        <PanelState
-          body="Looking for collections on this device."
-          compact
-          eyebrow="Collections"
-          title="Loading collections"
-          variant="loading"
-        />
-      ) : props.appShellState === "error" && props.inventories.length === 0 ? (
-        <PanelState
-          body="Collections could not be loaded right now. Refresh and try again."
-          compact
-          eyebrow="Collections"
-          title="Collections unavailable"
-          variant="error"
-        />
-      ) : currentInventory ? (
-        <>
-          <div className="inventory-sidebar-actions">
-            <button
-              className="primary-button inventory-sidebar-action inventory-sidebar-action-create"
-              onClick={openCreateForm}
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className="inventory-action-icon inventory-action-icon-create"
-              />
-              <span className="inventory-sidebar-action-create-label">Create Collection</span>
-            </button>
-          </div>
+        {props.appShellState === "loading" && props.inventories.length === 0 ? (
+          <PanelState
+            body="Looking for collections on this device."
+            compact
+            eyebrow="Collections"
+            title="Loading collections"
+            variant="loading"
+          />
+        ) : props.appShellState === "error" && props.inventories.length === 0 ? (
+          <PanelState
+            body="Collections could not be loaded right now. Refresh and try again."
+            compact
+            eyebrow="Collections"
+            title="Collections unavailable"
+            variant="error"
+          />
+        ) : currentInventory ? (
+          <div className="inventory-sidebar-ready-shell">
+            {showInlineReadyCreateAction ? (
+              <div className="inventory-sidebar-ready-header">
+                {renderCreateActionButton({ placement: "sidebar" })}
+              </div>
+            ) : null}
 
-          <div className="inventory-focus-block">
-            <p className="section-kicker inventory-focus-kicker">Current Collection</p>
-            <div className="inventory-switcher" ref={inventorySwitcherRef}>
-              {otherInventories.length ? (
-                <button
-                  aria-controls={inventorySwitcherId}
-                  aria-expanded={changeCollectionOpen}
-                  className={
-                    changeCollectionOpen
-                      ? "inventory-button inventory-focus-trigger inventory-button-active"
-                      : "inventory-button inventory-focus-trigger"
-                  }
-                  onClick={toggleChangeCollection}
-                  type="button"
-                >
-                  <span className="inventory-focus-trigger-main">
-                    <span className="inventory-focus-trigger-copygroup">
+            <div className="inventory-focus-block">
+              <p className="section-kicker inventory-focus-kicker">Current Collection</p>
+              <div className="inventory-switcher" ref={inventorySwitcherRef}>
+                {otherInventories.length ? (
+                  <button
+                    aria-controls={inventorySwitcherId}
+                    aria-expanded={changeCollectionOpen}
+                    className={
+                      changeCollectionOpen
+                        ? "inventory-button inventory-focus-trigger inventory-button-active"
+                        : "inventory-button inventory-focus-trigger"
+                    }
+                    onClick={toggleChangeCollection}
+                    type="button"
+                  >
+                    <span className="inventory-focus-trigger-main">
+                      <span className="inventory-focus-trigger-copygroup">
+                        <strong className="inventory-focus-title">
+                          {currentInventory.display_name}
+                        </strong>
+                        <span className="inventory-focus-trigger-summary">
+                          {getOtherInventoryCountLabel(otherInventories.length)}
+                        </span>
+                      </span>
+                      <span aria-hidden="true" className="inventory-focus-trigger-affordance">
+                        <span className="inventory-focus-trigger-label">Switch</span>
+                        <span
+                          className={
+                            changeCollectionOpen
+                              ? "inventory-focus-trigger-indicator inventory-focus-trigger-indicator-open"
+                              : "inventory-focus-trigger-indicator"
+                          }
+                        >
+                          ▾
+                        </span>
+                      </span>
+                    </span>
+                  </button>
+                ) : (
+                  <div className="inventory-focus-card">
+                    <div className="inventory-focus-card-main">
                       <strong className="inventory-focus-title">
                         {currentInventory.display_name}
                       </strong>
                       <span className="inventory-focus-trigger-summary">
                         {getOtherInventoryCountLabel(otherInventories.length)}
                       </span>
-                    </span>
-                    <span aria-hidden="true" className="inventory-focus-trigger-affordance">
-                      <span className="inventory-focus-trigger-label">Switch</span>
-                      <span
-                        className={
-                          changeCollectionOpen
-                            ? "inventory-focus-trigger-indicator inventory-focus-trigger-indicator-open"
-                            : "inventory-focus-trigger-indicator"
-                        }
-                      >
-                        ▾
-                      </span>
-                    </span>
-                  </span>
-                </button>
-              ) : (
-                <div className="inventory-focus-card">
-                  <div className="inventory-focus-card-main">
-                    <strong className="inventory-focus-title">
-                      {currentInventory.display_name}
-                    </strong>
-                    <span className="inventory-focus-trigger-summary">
-                      {getOtherInventoryCountLabel(otherInventories.length)}
-                    </span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {changeCollectionOpen && props.collectionMenuInteractionEnabled ? (
-                <div
-                  className="inventory-switcher-list"
-                  id={inventorySwitcherId}
-                  ref={inventorySwitcherListRef}
-                >
-                  {otherInventories.map((inventory, index) => (
-                    <InventorySwitcherOption
-                      key={inventory.slug}
-                      autoFocus={index === 0}
-                      inventory={inventory}
-                      onSelect={handleSelectInventory}
-                    />
-                  ))}
-                </div>
-              ) : null}
+                {changeCollectionOpen && props.collectionMenuInteractionEnabled ? (
+                  <div
+                    className="inventory-switcher-list"
+                    id={inventorySwitcherId}
+                    ref={inventorySwitcherListRef}
+                  >
+                    {otherInventories.map((inventory, index) => (
+                      <InventorySwitcherOption
+                        key={inventory.slug}
+                        autoFocus={index === 0}
+                        inventory={inventory}
+                        onSelect={handleSelectInventory}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
+        ) : props.appShellState === "bootstrap_available" ? (
+          <>
+            <PanelState
+              body="Create your personal collection to start adding cards, tracking value, and keeping everything organized."
+              compact
+              eyebrow="Collections"
+              title="Start your first collection"
+            />
+            {showInlineBootstrapCreateAction ? (
+              <div className="inventory-sidebar-actions inventory-sidebar-actions-empty">
+                {renderCreateActionButton({ placement: "hero" })}
+              </div>
+            ) : null}
+            <p className="panel-hint inventory-sidebar-note">
+              You can split cards into more collections later.
+            </p>
+          </>
+        ) : (
+          <>
+            <PanelState
+              body="You are signed in, but no collections are shared with this account yet. Ask an owner to grant access."
+              compact
+              eyebrow="Collections"
+              title="Collection access needed"
+            />
+            <p className="panel-hint inventory-sidebar-note">
+              Search and inventory tools unlock once you can read at least one collection.
+            </p>
+          </>
+        )}
 
-        </>
-      ) : props.appShellState === "bootstrap_available" ? (
-        <>
-          <PanelState
-            body="Create your personal collection to start adding cards, tracking value, and keeping everything organized."
-            compact
-            eyebrow="Collections"
-            title="Start your first collection"
-          />
-          <div className="inventory-sidebar-actions inventory-sidebar-actions-empty">
-            <button
-              className="primary-button inventory-sidebar-action inventory-sidebar-action-create"
-              disabled={props.createInventoryBusy}
-              onClick={openCreateForm}
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className="inventory-action-icon inventory-action-icon-create"
-              />
-              <span className="inventory-sidebar-action-create-label">
-                {props.createInventoryBusy ? "Creating..." : "Create Collection"}
-              </span>
-            </button>
-          </div>
-          <p className="panel-hint inventory-sidebar-note">
-            You can split cards into more collections later.
-          </p>
-        </>
-      ) : (
-        <>
-          <PanelState
-            body="You are signed in, but no collections are shared with this account yet. Ask an owner to grant access."
-            compact
-            eyebrow="Collections"
-            title="Collection access needed"
-          />
-          <p className="panel-hint inventory-sidebar-note">
-            Search and inventory tools unlock once you can read at least one collection.
-          </p>
-        </>
-      )}
-
-      <ModalDialog
-        isOpen={createFormOpen}
-        kicker="Collection Setup"
-        onClose={closeCreateForm}
-        subtitle="Give the collection a clear name and add an optional description."
-        title="Create Collection"
-      >
-        {renderCreateForm()}
-      </ModalDialog>
-    </section>
+        <ModalDialog
+          isOpen={createFormOpen}
+          kicker="Collection Setup"
+          onClose={closeCreateForm}
+          subtitle="Give the collection a clear name and add an optional description."
+          title="Create Collection"
+        >
+          {renderCreateForm()}
+        </ModalDialog>
+      </section>
+    </>
   );
 }

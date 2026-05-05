@@ -1,4 +1,22 @@
+/* Global foundation and page shell. */
 @import "./styles/base.css";
 @import "./styles/layout.css";
-@import "./styles/features.css";
+
+/* Shared UI primitives and feedback states. */
+@import "./styles/panels.css";
+@import "./styles/status-feedback.css";
+
+/* Feature surfaces. Keep import order intentional; later files may refine shared primitives. */
+@import "./styles/search.css";
+@import "./styles/import-dialog.css";
+@import "./styles/inventory-sidebar.css";
+@import "./styles/sticky-workspace-controls.css";
+@import "./styles/forms-buttons.css";
+@import "./styles/cards.css";
+@import "./styles/collection-panel.css";
+@import "./styles/inventory-table.css";
+@import "./styles/overlays.css";
+@import "./styles/empty-states.css";
+
+/* Global breakpoint overrides stay last. Feature-local media rules stay with their owner. */
 @import "./styles/responsive.css";

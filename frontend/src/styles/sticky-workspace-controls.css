@@ -1,0 +1,73 @@
+.sticky-workspace-controls {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1440px, calc(100vw - 32px));
+  z-index: 42;
+  pointer-events: none;
+}
+
+.sticky-workspace-controls-shell {
+  padding-top: 0;
+}
+
+.sticky-workspace-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(135deg, rgba(93, 231, 206, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(13, 22, 40, 0.96), rgba(8, 17, 31, 0.98));
+  box-shadow:
+    0 24px 56px rgba(2, 8, 23, 0.42),
+    inset 0 1px 0 rgba(248, 240, 218, 0.05);
+  backdrop-filter: blur(20px);
+  pointer-events: auto;
+}
+
+.sticky-controls-collection {
+  position: relative;
+  z-index: 24;
+}
+
+.sticky-controls-collection .inventory-focus-trigger,
+.sticky-controls-collection-card {
+  min-height: 100%;
+}
+
+.sticky-controls-collection-list {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  padding: 12px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(135deg, rgba(93, 231, 206, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(13, 22, 40, 0.97), rgba(8, 17, 31, 0.99));
+  box-shadow:
+    0 24px 56px rgba(2, 8, 23, 0.42),
+    inset 0 1px 0 rgba(248, 240, 218, 0.05);
+  backdrop-filter: blur(20px);
+}
+
+.sticky-controls-search-form {
+  margin: 0;
+  align-self: center;
+  z-index: 23;
+}
+
+.sticky-controls-search-actions {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px;
+  align-items: end;
+  justify-content: end;
+}
+

@@ -81,7 +81,6 @@ export function InventoryTableView(props: {
   canBulkEditSelectedInventory: boolean;
   canCopyFromSelectedInventory: boolean;
   canMoveFromSelectedInventory: boolean;
-  collectionItemCount: number;
   selectedItemIds: number[];
   bulkMutationBusy: boolean;
   createInventoryBusy: boolean;
@@ -95,7 +94,6 @@ export function InventoryTableView(props: {
   ) => Promise<boolean>;
   onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
   onSelectItem: (itemId: number, options?: { additive?: boolean; range?: boolean }) => void;
-  onSelectAllCollection: () => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisible: () => void;
   onClearVisibleSelection: () => void;
@@ -157,6 +155,14 @@ export function InventoryTableView(props: {
     props.canBulkEditSelectedInventory ||
     props.canCopyFromSelectedInventory ||
     props.canMoveFromSelectedInventory;
+  const selectionCapabilityMessage =
+    props.canCopyFromSelectedInventory &&
+    !props.canBulkEditSelectedInventory &&
+    !props.canMoveFromSelectedInventory
+      ? "This collection is read-only. Bulk edit and move are disabled, but copy is available."
+      : !hasAnySelectionActions
+        ? "Selection is available, but bulk edit, copy, and move are unavailable for this collection."
+        : null;
   const selectedCountLabel =
     totalSelectedCount === 0
       ? "No entries selected"
@@ -511,13 +517,17 @@ export function InventoryTableView(props: {
       <div className="table-filter-checklist">
         {options.map((option) => {
           const isChecked = selectedValues.includes(option.value);
+          const multiSelect = activeColumn === "tags";
 
           return (
             <label className="table-filter-option" key={option.value}>
               <input
                 checked={isChecked}
+                name={`table-filter-${activeColumn}`}
                 onChange={() => {
-                  const nextValues = toggleStringValue(selectedValues, option.value);
+                  const nextValues = multiSelect
+                    ? toggleStringValue(selectedValues, option.value)
+                    : [option.value];
                   switch (activeColumn) {
                     case "set":
                       updateFilters({ setCodes: nextValues });
@@ -541,7 +551,7 @@ export function InventoryTableView(props: {
                       break;
                   }
                 }}
-                type="checkbox"
+                type={multiSelect ? "checkbox" : "radio"}
               />
               <span>{option.label}</span>
             </label>
@@ -605,14 +615,6 @@ export function InventoryTableView(props: {
                 type="text"
                 value={props.filters.locationQuery}
               />
-            </label>
-            <label className="table-filter-option">
-              <input
-                checked={props.filters.emptyLocationOnly}
-                onChange={(event) => updateFilters({ emptyLocationOnly: event.target.checked })}
-                type="checkbox"
-              />
-              <span>Only entries without a location</span>
             </label>
           </div>
         );
@@ -1141,14 +1143,6 @@ export function InventoryTableView(props: {
               >
                 Select all visible
               </button>
-              <button
-                className="secondary-button"
-                disabled={props.collectionItemCount === 0}
-                onClick={props.onSelectAllCollection}
-                type="button"
-              >
-                Select entire collection
-              </button>
             </div>
           </div>
 
@@ -1206,16 +1200,15 @@ export function InventoryTableView(props: {
                     Clear selection
                   </button>
                 </div>
-                {!hasAnySelectionActions ? (
+                {selectionCapabilityMessage ? (
                   <span className="table-selection-slot-copy">
-                    This collection is read-only. Selection is available, but bulk edit, copy,
-                    and move are unavailable.
+                    {selectionCapabilityMessage}
                   </span>
                 ) : null}
               </div>
             ) : (
               <span className="table-selection-slot-copy">
-                Select rows for bulk actions.
+                Select rows for available actions.
               </span>
             )}
           </div>

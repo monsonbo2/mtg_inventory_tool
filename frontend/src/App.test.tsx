@@ -13,6 +13,8 @@ import type {
   InventoryAuditEvent,
   InventoryCreateResponse,
   InventorySummary,
+  OwnedInventoryItemsPageParams,
+  OwnedInventoryItemsPageResponse,
   OwnedInventoryRow,
 } from "./types";
 
@@ -23,6 +25,7 @@ vi.mock("./api", async () => {
     listInventories: vi.fn(),
     getAccessSummary: vi.fn(),
     listInventoryItems: vi.fn(),
+    listInventoryItemsPage: vi.fn(),
     listInventoryAudit: vi.fn(),
     searchCardNames: vi.fn(),
     listCardPrintings: vi.fn(),
@@ -33,6 +36,7 @@ vi.mock("./api", async () => {
     createInventory: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
+    exportInventoryCsv: vi.fn(),
     importCsv: vi.fn(),
     importDeckUrl: vi.fn(),
     importDecklist: vi.fn(),
@@ -40,12 +44,17 @@ vi.mock("./api", async () => {
   };
 });
 
+vi.mock("./downloadHelpers", () => ({
+  downloadApiTextResponse: vi.fn(),
+}));
+
 import {
   addInventoryItem,
   bootstrapDefaultInventory,
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
+  exportInventoryCsv,
   getAccessSummary,
   importCsv,
   importDeckUrl,
@@ -54,11 +63,13 @@ import {
   listCardPrintings,
   listInventories,
   listInventoryItems,
+  listInventoryItemsPage,
   listInventoryAudit,
   patchInventoryItem,
   searchCardNames,
   transferInventoryItems,
 } from "./api";
+import { downloadApiTextResponse } from "./downloadHelpers";
 
 beforeEach(() => {
   vi.mocked(getAccessSummary).mockResolvedValue({
@@ -204,6 +215,128 @@ describe("App", () => {
     };
   }
 
+  function compareText(left: string, right: string) {
+    return left.localeCompare(right, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+
+  function compareKnownOrder(left: string, right: string, order: readonly string[]) {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+
+    if (leftIndex === -1 || rightIndex === -1) {
+      return compareText(left, right);
+    }
+
+    return leftIndex - rightIndex;
+  }
+
+  function compareInventoryPageRows(
+    left: OwnedInventoryRow,
+    right: OwnedInventoryRow,
+    sortKey: NonNullable<OwnedInventoryItemsPageParams["sort_key"]>,
+  ) {
+    switch (sortKey) {
+      case "name":
+        return compareText(left.name, right.name);
+      case "set":
+        return compareText(left.set_name, right.set_name) || compareText(left.set_code, right.set_code);
+      case "quantity":
+        return left.quantity - right.quantity;
+      case "finish":
+        return compareKnownOrder(left.finish, right.finish, ["normal", "foil", "etched"]);
+      case "condition_code":
+        return compareKnownOrder(left.condition_code, right.condition_code, [
+          "M",
+          "NM",
+          "LP",
+          "MP",
+          "HP",
+          "DMG",
+        ]);
+      case "language_code":
+        return compareText(left.language_code, right.language_code);
+      case "location":
+        return compareText(left.location ?? "", right.location ?? "");
+      case "tags":
+        return compareText(left.tags.join(", "), right.tags.join(", "));
+      case "est_value":
+        return Number.parseFloat(left.est_value ?? "0") - Number.parseFloat(right.est_value ?? "0");
+      case "item_id":
+        return left.item_id - right.item_id;
+    }
+  }
+
+  function buildInventoryItemsPageResponse(
+    items: OwnedInventoryRow[],
+    params: OwnedInventoryItemsPageParams = {},
+    inventorySlug = "personal",
+  ): OwnedInventoryItemsPageResponse {
+    const normalizedQuery = params.query?.trim().toLowerCase() ?? "";
+    const normalizedLocation = params.location?.trim().toLowerCase() ?? "";
+    const requestedTags = params.tags ?? [];
+    let matchingItems = items.filter((item) => {
+      if (normalizedQuery && !item.name.toLowerCase().includes(normalizedQuery)) {
+        return false;
+      }
+      if (params.set_code && item.set_code !== params.set_code) {
+        return false;
+      }
+      if (params.rarity && item.rarity !== params.rarity) {
+        return false;
+      }
+      if (params.finish && item.finish !== params.finish) {
+        return false;
+      }
+      if (params.condition_code && item.condition_code !== params.condition_code) {
+        return false;
+      }
+      if (params.language_code && item.language_code !== params.language_code) {
+        return false;
+      }
+      if (
+        normalizedLocation &&
+        !(item.location ?? "").toLowerCase().includes(normalizedLocation)
+      ) {
+        return false;
+      }
+      if (
+        requestedTags.length > 0 &&
+        !requestedTags.some((tag) => item.tags.includes(tag))
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    if (params.sort_key) {
+      const directionMultiplier = params.sort_direction === "desc" ? -1 : 1;
+      matchingItems = [...matchingItems].sort((left, right) => {
+        const result = compareInventoryPageRows(left, right, params.sort_key!);
+        return result === 0
+          ? left.item_id - right.item_id
+          : result * directionMultiplier;
+      });
+    }
+
+    const limit = Math.max(params.limit ?? 50, 1);
+    const offset = Math.max(params.offset ?? 0, 0);
+    const pageItems = matchingItems.slice(offset, offset + limit);
+
+    return {
+      inventory: inventorySlug,
+      items: pageItems,
+      total_count: matchingItems.length,
+      limit,
+      offset,
+      has_more: offset + limit < matchingItems.length,
+      sort_key: params.sort_key ?? "name",
+      sort_direction: params.sort_direction ?? "asc",
+    };
+  }
+
   function buildAccessSummary(
     overrides: Partial<AccessSummaryResponse> = {},
   ): AccessSummaryResponse {
@@ -320,6 +453,9 @@ describe("App", () => {
 
     vi.mocked(listInventories).mockResolvedValue(inventories);
     vi.mocked(listInventoryItems).mockResolvedValue(items);
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(items, params, inventorySlug),
+    );
     vi.mocked(listInventoryAudit).mockResolvedValue(auditEvents);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
@@ -357,6 +493,9 @@ describe("App", () => {
       buildInventorySummary(),
     ]);
     vi.mocked(listInventoryItems).mockResolvedValue([]);
+    vi.mocked(listInventoryItemsPage).mockResolvedValue(
+      buildInventoryItemsPageResponse([]),
+    );
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
@@ -412,7 +551,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Current collection: Personal Collection")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Personal Collection" })).toBeInTheDocument();
     expect(getAccessSummary).toHaveBeenCalledTimes(1);
     expect(listInventories).toHaveBeenCalledTimes(1);
     expect(vi.mocked(getAccessSummary).mock.invocationCallOrder[0]).toBeLessThan(
@@ -516,7 +655,7 @@ describe("App", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Imported 4 cards into Trade Binder.",
     );
-    expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Trade Binder" })).toBeInTheDocument();
   });
 
   it("keeps quick add read-only when the selected collection cannot be written to", async () => {
@@ -659,7 +798,7 @@ describe("App", () => {
 
     expect(
       await screen.findByText(
-        "This collection is read-only. You can browse cards, but edits and row removal are disabled.",
+        "This collection is read-only. You can browse cards and copy selected table entries, but edits and row removal are disabled.",
       ),
     ).toBeInTheDocument();
 
@@ -674,6 +813,68 @@ describe("App", () => {
     expect(boltRowScope.getByRole("combobox", { name: /Location/ })).toBeDisabled();
     expect(boltRowScope.getByRole("textbox", { name: /Tags/ })).toBeDisabled();
     expect(boltRowScope.getByRole("button", { name: "Open details" })).toBeEnabled();
+  });
+
+  it("exports readable viewer collections without requiring write access", async () => {
+    const user = userEvent.setup();
+    const viewerInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+      role: "viewer",
+      can_write: false,
+      can_manage_share: false,
+    });
+    const exportResponse = {
+      body: "name,quantity\nLightning Bolt,2\n",
+      contentType: "text/csv; charset=utf-8",
+      filename: "personal-export.csv",
+    };
+
+    mockCollectionViewApp({ inventories: [viewerInventory] });
+    vi.mocked(exportInventoryCsv).mockResolvedValue(exportResponse);
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Export collection CSV" }),
+    );
+
+    await waitFor(() => {
+      expect(exportInventoryCsv).toHaveBeenCalledWith("personal", {
+        profile: "default",
+      });
+    });
+    expect(downloadApiTextResponse).toHaveBeenCalledWith(
+      exportResponse,
+      "personal.csv",
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Exported Personal Collection CSV.",
+    );
+    expect(screen.queryByRole("button", { name: "Bulk edit" })).not.toBeInTheDocument();
+  });
+
+  it("shows an error notice when collection CSV export fails", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+    vi.mocked(exportInventoryCsv).mockRejectedValue(
+      new ApiClientError("CSV export is unavailable.", {
+        code: "export_failed",
+        status: 500,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Export collection CSV" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "CSV export is unavailable.",
+    );
+    expect(downloadApiTextResponse).not.toHaveBeenCalled();
   });
 
   it("keeps the detail dialog read-only for viewer access", async () => {
@@ -945,6 +1146,105 @@ describe("App", () => {
     expect(screen.queryByRole("dialog", { name: "Import From URL" })).not.toBeInTheDocument();
   });
 
+  it("keeps partial table-mode imports on the paginated refresh path", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+    });
+    vi.mocked(importDeckUrl)
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: true,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildDeckUrlImportResponse({
+          dry_run: false,
+          rows_seen: 2,
+          rows_written: 1,
+          ready_to_commit: true,
+          summary: {
+            total_card_quantity: 3,
+            distinct_card_names: 1,
+            distinct_printings: 1,
+            section_card_quantities: { mainboard: 3 },
+            requested_card_quantity: 4,
+            unresolved_card_quantity: 1,
+          },
+          resolution_issues: [
+            {
+              kind: "unknown_card",
+              source_position: 227,
+              section: "mainboard",
+              requested: {
+                scryfall_id: "stale-wildgrowth-id",
+                name: "Wildgrowth Archaic",
+                quantity: 1,
+                set_code: "TST",
+                collector_number: "168",
+                finish: "normal",
+              },
+              options: [],
+            },
+          ],
+        }),
+      );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Import Cards" }));
+    await user.click(screen.getByRole("menuitem", { name: /Import from URL/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import From URL" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Deck URL" }),
+      "https://archidekt.com/decks/15761099/counters_and_counters",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Import cards" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Imported 3 cards into Personal Collection. Could not import Wildgrowth Archaic.",
+    );
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenCalledTimes(2);
+    });
+    expect(listInventoryAudit).toHaveBeenCalledTimes(2);
+  });
+
   it("creates a new collection from the import dialog and imports into it", async () => {
     const user = userEvent.setup();
     const personal = buildInventorySummary();
@@ -1163,7 +1463,7 @@ describe("App", () => {
     expect(bootstrapDefaultInventory).not.toHaveBeenCalled();
 
     expect(await screen.findByRole("status")).toHaveTextContent("Created Commander Decks.");
-    expect(await screen.findByText("Current collection: Commander Decks")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Commander Decks" })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(listInventoryItems).toHaveBeenCalledWith("commander-decks");
@@ -1315,6 +1615,246 @@ describe("App", () => {
     expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
   });
 
+  it("scrolls autocomplete suggestions far enough to preview the next result", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
+    const originalInnerHeight = window.innerHeight;
+    const scrollToSpy = vi.fn();
+
+    function buildRect(top: number, height: number, left = 0, width = 520): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 820,
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (this.classList.contains("search-autocomplete")) {
+          return buildRect(680, 260);
+        }
+        if (this.classList.contains("search-autocomplete-list")) {
+          return buildRect(680, 120);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy,
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "Fo") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "forest-oracle",
+              name: "Forest",
+              printings_count: 1,
+            }),
+            buildNameSearchRow({
+              oracle_id: "force-oracle",
+              name: "Force of Will",
+              printings_count: 4,
+            }),
+            buildNameSearchRow({
+              oracle_id: "forbidden-orchard-oracle",
+              name: "Forbidden Orchard",
+              printings_count: 2,
+            }),
+            buildNameSearchRow({
+              oracle_id: "forge-oracle",
+              name: "Forge Anew",
+              printings_count: 3,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.clear(input);
+      await user.type(input, "Fo");
+
+      const listbox = await screen.findByRole("listbox", { name: "Card suggestions" });
+      await screen.findByRole("option", { name: /Forge Anew/i });
+      const suggestionList = listbox.querySelector(
+        ".search-autocomplete-list",
+      ) as HTMLDivElement | null;
+      expect(suggestionList).not.toBeNull();
+      await waitFor(() => {
+        expect(suggestionList).toHaveStyle({ maxHeight: "120px" });
+      });
+
+      Object.defineProperty(suggestionList!, "clientHeight", {
+        configurable: true,
+        value: 120,
+      });
+      Object.defineProperty(suggestionList!, "scrollHeight", {
+        configurable: true,
+        value: 304,
+      });
+      Object.defineProperty(suggestionList!, "scrollTop", {
+        configurable: true,
+        value: 0,
+        writable: true,
+      });
+
+      const forestOption = await screen.findByRole("option", { name: /Forest/i });
+      const forceOption = await screen.findByRole("option", { name: /Force of Will/i });
+      const orchardOption = await screen.findByRole("option", { name: /Forbidden Orchard/i });
+      const forgeOption = await screen.findByRole("option", { name: /Forge Anew/i });
+
+      Object.defineProperty(forestOption, "offsetTop", {
+        configurable: true,
+        value: 0,
+      });
+      Object.defineProperty(forestOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(forceOption, "offsetTop", {
+        configurable: true,
+        value: 76,
+      });
+      Object.defineProperty(forceOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(orchardOption, "offsetTop", {
+        configurable: true,
+        value: 152,
+      });
+      Object.defineProperty(orchardOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(forgeOption, "offsetTop", {
+        configurable: true,
+        value: 228,
+      });
+      Object.defineProperty(forgeOption, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+
+      scrollToSpy.mockClear();
+
+      await user.keyboard("{ArrowDown}");
+      await user.keyboard("{ArrowDown}");
+
+      await waitFor(() => {
+        expect(scrollToSpy).toHaveBeenCalledWith({
+          top: 140,
+        });
+      });
+    } finally {
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: originalInnerHeight,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+        configurable: true,
+        value: originalScrollTo,
+      });
+    }
+  });
+
+  it("shows default-printing thumbnails in autocomplete suggestions", async () => {
+    const user = userEvent.setup();
+    const forest = buildNameSearchRow({
+      oracle_id: "forest-oracle",
+      name: "Forest",
+      printings_count: 1,
+      image_uri_small: "https://example.test/cards/forest-suggestion-small.jpg",
+      image_uri_normal: "https://example.test/cards/forest-suggestion-normal.jpg",
+    });
+    const forceOfWill = buildNameSearchRow({
+      oracle_id: "force-oracle",
+      name: "Force of Will",
+      printings_count: 4,
+      available_languages: ["en", "de"],
+      image_uri_small: "https://example.test/cards/force-suggestion-small.jpg",
+      image_uri_normal: "https://example.test/cards/force-suggestion-normal.jpg",
+    });
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Fo") {
+        return buildNameSearchResult([forest, forceOfWill]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(getCardPrintingSummary).mockImplementation(async (oracleId) => {
+      if (oracleId === "forest-oracle") {
+        return buildPrintingSummary([
+          buildSearchRow({
+            scryfall_id: "forest-default",
+            name: "Forest",
+            image_uri_small: "https://example.test/cards/forest-default-small.jpg",
+            image_uri_normal: "https://example.test/cards/forest-default-normal.jpg",
+            is_default_add_choice: true,
+          }),
+        ], { oracle_id: oracleId });
+      }
+
+      if (oracleId === "force-oracle") {
+        return buildPrintingSummary([
+          buildSearchRow({
+            scryfall_id: "force-default",
+            name: "Force of Will",
+            image_uri_small: "https://example.test/cards/force-default-small.jpg",
+            image_uri_normal: "https://example.test/cards/force-default-normal.jpg",
+            is_default_add_choice: true,
+          }),
+        ], { oracle_id: oracleId });
+      }
+
+      return buildPrintingSummary([], { oracle_id: oracleId, default_printing: null });
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.clear(input);
+    await user.type(input, "Fo");
+
+    await screen.findByRole("listbox", { name: "Card suggestions" });
+    const forceOption = await screen.findByRole("option", { name: /Force of Will/i });
+
+    await waitFor(() => {
+      expect(within(forceOption).getByAltText("Force of Will card art")).toHaveAttribute(
+        "src",
+        "https://example.test/cards/force-default-small.jpg",
+      );
+    });
+
+    expect(getCardPrintingSummary).toHaveBeenCalledWith("forest-oracle");
+    expect(getCardPrintingSummary).toHaveBeenCalledWith("force-oracle");
+  });
+
   it("lets arrow-up return keyboard focus to the search input so Enter submits the full search", async () => {
     const user = userEvent.setup();
     const forest = buildNameSearchRow({
@@ -1407,13 +1947,13 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
   });
 
-  it("scrolls matching-card navigation into view as keyboard selection moves", async () => {
+  it("scrolls matching-card navigation far enough to preview the next result", async () => {
     const user = userEvent.setup();
-    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
-    const scrollIntoViewSpy = vi.fn();
-    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
       configurable: true,
-      value: scrollIntoViewSpy,
+      value: scrollToSpy,
     });
 
     try {
@@ -1441,7 +1981,7 @@ describe("App", () => {
         return buildNameSearchResult();
       });
 
-      render(<App />);
+      const { container } = render(<App />);
 
       const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
       await user.type(input, "lightn");
@@ -1451,12 +1991,273 @@ describe("App", () => {
       await user.keyboard("{Enter}");
 
       await screen.findByText("Matching cards");
-      scrollIntoViewSpy.mockClear();
+      const resultList = container.querySelector(
+        ".search-workspace-result-list",
+      ) as HTMLDivElement | null;
+      expect(resultList).not.toBeNull();
+
+      Object.defineProperty(resultList!, "clientHeight", {
+        configurable: true,
+        value: 160,
+      });
+      Object.defineProperty(resultList!, "scrollHeight", {
+        configurable: true,
+        value: 260,
+      });
+      Object.defineProperty(resultList!, "scrollTop", {
+        configurable: true,
+        value: 0,
+        writable: true,
+      });
+
+      const boltResult = screen.getByRole("button", { name: /Lightning Bolt/i });
+      const angelResult = screen.getByRole("button", { name: /Lightning Angel/i });
+      const axeResult = screen.getByRole("button", { name: /Lightning Axe/i });
+
+      Object.defineProperty(boltResult, "offsetTop", {
+        configurable: true,
+        value: 0,
+      });
+      Object.defineProperty(boltResult, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(angelResult, "offsetTop", {
+        configurable: true,
+        value: 110,
+      });
+      Object.defineProperty(angelResult, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+      Object.defineProperty(axeResult, "offsetTop", {
+        configurable: true,
+        value: 188,
+      });
+      Object.defineProperty(axeResult, "offsetHeight", {
+        configurable: true,
+        value: 68,
+      });
+
+      scrollToSpy.mockClear();
 
       await user.keyboard("{ArrowDown}");
 
-      expect(scrollIntoViewSpy).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(scrollToSpy).toHaveBeenCalledWith({
+          behavior: "smooth",
+          top: 58,
+        });
+      });
     } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+        configurable: true,
+        value: originalScrollTo,
+      });
+    }
+  });
+
+  it("guides focus mode toward quick-add fields when the form is only partially visible", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (this.classList.contains("search-workspace")) {
+          return buildRect(520, 420);
+        }
+        if (
+          this.classList.contains("form-section") &&
+          this.querySelector(".search-result-quick-add-grid")
+        ) {
+          return buildRect(584, 280);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+      await screen.findByText("Matching cards");
+      const workspace = container.querySelector(".search-workspace") as HTMLDivElement | null;
+      expect(workspace).not.toBeNull();
+
+      Object.defineProperty(workspace!, "clientHeight", {
+        configurable: true,
+        value: 420,
+      });
+      Object.defineProperty(workspace!, "scrollHeight", {
+        configurable: true,
+        value: 980,
+      });
+      workspace!.scrollTop = 0;
+
+      scrollIntoViewSpy.mockClear();
+
+      await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
+
+      await waitFor(() => {
+        expect(scrollIntoViewSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            behavior: "smooth",
+            block: "start",
+          }),
+        );
+      });
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    }
+  });
+
+  it("expands the focus workspace height to fit the full add-card pane content", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (this.classList.contains("search-workspace")) {
+          return buildRect(520, 420);
+        }
+        if (
+          this.classList.contains("form-section") &&
+          this.querySelector(".search-result-quick-add-grid")
+        ) {
+          return buildRect(584, 280);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+      await screen.findByText("Matching cards");
+      const workspace = container.querySelector(".search-workspace") as HTMLDivElement | null;
+      const searchPanel = container.querySelector(".search-panel") as HTMLElement | null;
+      expect(workspace).not.toBeNull();
+      expect(searchPanel).not.toBeNull();
+
+      Object.defineProperty(workspace!, "clientHeight", {
+        configurable: true,
+        value: 420,
+      });
+      Object.defineProperty(workspace!, "scrollHeight", {
+        configurable: true,
+        value: 680,
+      });
+
+      await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
+
+      await waitFor(() => {
+        expect(searchPanel).toHaveStyle({
+          "--search-workspace-overlay-height": "680px",
+        });
+      });
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
       Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
         configurable: true,
         value: originalScrollIntoView,
@@ -1685,7 +2486,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "Cloud Sprite" })).toBeInTheDocument();
     expect(
-      screen.getByText('Showing cards results for "Cloud". Search to update.'),
+      screen.getByText('Showing main catalog results for "Cloud". Search to update.'),
     ).toBeInTheDocument();
   });
 
@@ -1727,8 +2528,15 @@ describe("App", () => {
     const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
     await user.type(input, "Clue");
 
-    const scopeGroup = screen.getByRole("group", { name: "Catalog search scope" });
-    await user.click(within(scopeGroup).getByRole("button", { name: "All catalog" }));
+    const searchForm = input.closest("form");
+    expect(searchForm).not.toBeNull();
+
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", {
+        name: /Additional search options/i,
+      }),
+    );
+    await user.click(screen.getByRole("checkbox", { name: /Full catalog/i }));
 
     expect(await screen.findByRole("heading", { name: "Clue Token" })).toBeInTheDocument();
     await waitFor(() => {
@@ -1744,7 +2552,7 @@ describe("App", () => {
       });
     });
 
-    await user.click(within(scopeGroup).getByRole("button", { name: "Cards" }));
+    await user.click(screen.getByRole("checkbox", { name: /Full catalog/i }));
 
     expect(await screen.findByRole("heading", { name: "Trail of Evidence" })).toBeInTheDocument();
     await waitFor(() => {
@@ -1752,6 +2560,138 @@ describe("App", () => {
         query: "Clue",
         limit: 18,
         scope: undefined,
+      });
+    });
+  });
+
+  it("can preload all printing languages from additional search options", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Lightning") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "bolt-oracle",
+            name: "Lightning Bolt",
+            printings_count: 3,
+            available_languages: ["en", "ja"],
+          }),
+        ]);
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(listCardPrintings).mockImplementation(async (oracleId, params) => {
+      if (oracleId === "bolt-oracle" && params?.lang === "all") {
+        return [
+          buildSearchRow({
+            scryfall_id: "bolt-alpha",
+            name: "Lightning Bolt",
+            set_code: "lea",
+            set_name: "Limited Edition Alpha",
+            collector_number: "161",
+            finishes: ["normal"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-m11",
+            name: "Lightning Bolt",
+            set_code: "m11",
+            set_name: "Magic 2011",
+            collector_number: "146",
+            finishes: ["normal", "foil"],
+          }),
+          buildSearchRow({
+            scryfall_id: "bolt-sta-ja",
+            name: "Lightning Bolt",
+            set_code: "sta",
+            set_name: "Strixhaven Mystical Archive",
+            collector_number: "39",
+            lang: "ja",
+            finishes: ["normal"],
+          }),
+        ];
+      }
+      return [];
+    });
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    const searchForm = input.closest("form");
+    expect(searchForm).not.toBeNull();
+
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", {
+        name: /Additional search options/i,
+      }),
+    );
+    await user.click(screen.getByRole("checkbox", { name: /All printing languages/i }));
+
+    await user.type(input, "Lightning");
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", { name: "Search cards" }),
+    );
+
+    const boltCard = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
+      "article",
+    );
+    expect(boltCard).not.toBeNull();
+
+    await waitFor(() => {
+      expect(listCardPrintings).toHaveBeenCalledWith("bolt-oracle", { lang: "all" });
+    });
+    expect(within(boltCard!).queryByRole("button", { name: "Load all languages" })).not.toBeInTheDocument();
+    expect(within(boltCard!).getByRole("combobox", { name: "Language" })).toBeInTheDocument();
+  });
+
+  it("offers a full catalog retry action when default scope returns no matches", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockImplementation(async (params) => {
+      if (params.query === "Relic" && params.scope === "all") {
+        return buildNameSearchResult([
+          buildNameSearchRow({
+            oracle_id: "relic-oracle",
+            name: "Relic of Progenitus",
+          }),
+        ]);
+      }
+      if (params.query === "Relic") {
+        return buildNameSearchResult();
+      }
+      return buildNameSearchResult();
+    });
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(
+      buildPrintingSummary([
+        buildSearchRow({
+          scryfall_id: "relic-printing",
+          name: "Relic of Progenitus",
+          is_default_add_choice: true,
+        }),
+      ]),
+    );
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    const searchForm = input.closest("form");
+    expect(searchForm).not.toBeNull();
+
+    await user.type(input, "Relic");
+    await user.click(
+      within(searchForm as HTMLFormElement).getByRole("button", { name: "Search cards" }),
+    );
+
+    expect(await screen.findByText("No matching cards")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Search full catalog" }));
+
+    expect(await screen.findByRole("heading", { name: "Relic of Progenitus" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(searchCardNames).toHaveBeenLastCalledWith({
+        query: "Relic",
+        limit: 18,
+        scope: "all",
       });
     });
   });
@@ -1875,12 +2815,10 @@ describe("App", () => {
         name: /Default choice/i,
       }),
     ).not.toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText(/Using default printing: M11 #146 .* Magic 2011/i),
-    ).toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText("Ready to add the backend default printing."),
-    ).toBeInTheDocument();
+    expect(within(boltCard!).getByText("Using default printing")).toBeInTheDocument();
+    expect(boltCard!.querySelector(".search-result-title-meta")).toHaveTextContent(
+      /M11 #146 .* Magic 2011/i,
+    );
     expect(finishSelect).toBeEnabled();
     const addButton = within(boltCard!).getByRole("button", { name: "Add to collection" });
     expect(addButton).toBeEnabled();
@@ -1955,7 +2893,14 @@ describe("App", () => {
       "article",
     );
     expect(boltCard).not.toBeNull();
-    expect(within(boltCard!).getByText("Location: Trade Binder · 2 tags")).toBeInTheDocument();
+    expect(within(boltCard!).getByRole("textbox", { name: "Location" })).toHaveAttribute(
+      "placeholder",
+      "Trade Binder",
+    );
+    expect(within(boltCard!).getByRole("textbox", { name: "Tags" })).toHaveAttribute(
+      "placeholder",
+      "trade, staples",
+    );
 
     await user.click(within(boltCard!).getByRole("button", { name: "Add to collection" }));
 
@@ -2082,10 +3027,6 @@ describe("App", () => {
     expect(
       within(boltCard!).getByRole("button", { name: "Load all languages" }),
     ).toBeInTheDocument();
-    expect(within(boltCard!).getByText("Other languages")).toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText("Showing add-ready printings first."),
-    ).toBeInTheDocument();
     expect(
       within(printingSelect).queryByRole("option", { name: /STRIXHAVEN MYSTICAL ARCHIVE/i }),
     ).not.toBeInTheDocument();
@@ -2109,12 +3050,10 @@ describe("App", () => {
     await user.selectOptions(languageSelect, "en");
     await user.selectOptions(printingSelect, "bolt-m11");
 
-    expect(
-      within(boltCard!).getByText(/Selected printing: M11 #146 .* Magic 2011/i),
-    ).toBeInTheDocument();
-    expect(
-      within(boltCard!).getByText("Ready to add the selected printing."),
-    ).toBeInTheDocument();
+    expect(within(boltCard!).getByText("Selected printing")).toBeInTheDocument();
+    expect(boltCard!.querySelector(".search-result-title-meta")).toHaveTextContent(
+      /M11 #146 .* Magic 2011/i,
+    );
     expect(finishSelect).toBeEnabled();
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
 
@@ -2258,14 +3197,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("button", { name: "Detailed" })).not.toBeInTheDocument();
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).not.toHaveBeenCalled();
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Table" }));
 
-    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledWith(
+      "personal",
+      expect.objectContaining({
+        limit: 50,
+        offset: 0,
+      }),
+    );
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Browse" }));
@@ -2285,27 +3233,92 @@ describe("App", () => {
     const dialog = await screen.findByRole("dialog", { name: "Card details" });
     expect(within(dialog).getByText("Inline edits")).toBeInTheDocument();
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps empty collection chrome minimal until cards exist", async () => {
-    mockCollectionViewApp({ items: [] });
+  it("shows table page errors inside table mode without replacing the collection shell", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+    });
+    vi.mocked(listInventoryItemsPage).mockRejectedValueOnce(
+      new ApiClientError("The table page could not be loaded.", {
+        code: "server_error",
+        status: 500,
+      }),
+    );
 
     render(<App />);
 
-    expect(await screen.findByText("Personal Collection is empty")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("combobox", { name: "Browse entries shown" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("textbox", { name: "Search this collection" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Entries")).not.toBeInTheDocument();
-    expect(screen.queryByText("Total cards")).not.toBeInTheDocument();
-    expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Recent Activity" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Table" }));
+
+    expect(await screen.findByText("Table rows unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Personal Collection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns an empty collection into a launch point for search and import", async () => {
+    const user = userEvent.setup();
+    const originalScrollIntoView = window.HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewSpy = vi.fn();
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
+
+    try {
+      mockCollectionViewApp({ items: [] });
+
+      render(<App />);
+
+      expect(await screen.findByText("Personal Collection is empty")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Browse" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Table" })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("combobox", { name: "Browse entries shown" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("textbox", { name: "Search this collection" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Entries")).not.toBeInTheDocument();
+      expect(screen.queryByText("Total cards")).not.toBeInTheDocument();
+      expect(screen.queryByText("Estimated value")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Recent Activity" })).not.toBeInTheDocument();
+
+      const searchInput = screen.getByRole("combobox", {
+        name: "Quick Add and Card Search",
+      });
+      const importTrigger = screen.getByRole("button", { name: "Import Cards" });
+
+      await user.click(screen.getByRole("button", { name: "Add first card" }));
+
+      await waitFor(() => {
+        expect(searchInput).toHaveFocus();
+      });
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+
+      scrollIntoViewSpy.mockClear();
+
+      await user.click(screen.getByRole("button", { name: "Import a list" }));
+
+      await waitFor(() => {
+        expect(importTrigger).toHaveFocus();
+      });
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    }
   });
 
   it("clears collection chrome and stale rows while a new collection is loading", async () => {
@@ -2442,6 +3455,62 @@ describe("App", () => {
     expect(screen.getByText("Card 060")).toBeInTheDocument();
     expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Detailed" })).not.toBeInTheDocument();
+  });
+
+  it("uses server table page metadata even when the legacy item array undercounts rows", async () => {
+    const user = userEvent.setup();
+    const serverItems = Array.from({ length: 120 }, (_, index) =>
+      buildOwnedRow({
+        item_id: index + 1,
+        scryfall_id: `card-${index + 1}`,
+        oracle_id: `oracle-${index + 1}`,
+        name: `Card ${String(index + 1).padStart(3, "0")}`,
+        set_code: "m11",
+        set_name: "Magic 2011",
+        collector_number: String(index + 1),
+        quantity: 1,
+        location: index % 2 === 0 ? "Binder" : "Box",
+        tags: [],
+        notes: null,
+        est_value: "1.00",
+        unit_price: "1.00",
+      }),
+    );
+    const legacyItems = serverItems.slice(0, 50);
+
+    mockCollectionViewApp({
+      items: legacyItems,
+      inventories: [
+        buildInventorySummary({
+          item_rows: serverItems.length,
+          total_cards: serverItems.length,
+        }),
+      ],
+    });
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(serverItems, params, inventorySlug),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+
+    expect(await screen.findByText("Page 1 of 3")).toBeInTheDocument();
+    expect(screen.queryByText("Card 051")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenLastCalledWith(
+        "personal",
+        expect.objectContaining({
+          limit: 50,
+          offset: 50,
+        }),
+      );
+    });
+    expect(await screen.findByText("Card 051")).toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
   });
 
   it("saves browse edits directly when a field blurs", async () => {
@@ -3486,7 +4555,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
 
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
     const lightningBoltRow = within(table)
       .getAllByRole("row")
       .find((row) => row.textContent?.includes("Lightning Bolt"));
@@ -3565,7 +4634,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
 
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
     const getRow = (cardName: string) =>
       within(table)
         .getAllByRole("row")
@@ -3606,7 +4675,7 @@ describe("App", () => {
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).toBeChecked();
   });
 
-  it("keeps table selection available for viewer access without showing write actions", async () => {
+  it("keeps table selection copy available for viewer access without showing write actions", async () => {
     const user = userEvent.setup();
     const viewerInventory = buildInventorySummary({
       item_rows: 2,
@@ -3614,6 +4683,7 @@ describe("App", () => {
       role: "viewer",
       can_write: false,
       can_manage_share: false,
+      can_transfer_to: false,
     });
 
     mockCollectionViewApp({
@@ -3634,27 +4704,56 @@ describe("App", () => {
           notes: null,
         }),
       ],
-      inventories: [viewerInventory],
+      inventories: [
+        viewerInventory,
+        buildInventorySummary({
+          slug: "trade",
+          display_name: "Trade Binder",
+          description: "Cards available for swaps",
+          item_rows: 4,
+          total_cards: 6,
+          can_transfer_to: true,
+        }),
+        buildInventorySummary({
+          slug: "archive",
+          display_name: "Archive Box",
+          description: "Long-term storage",
+          item_rows: 10,
+          total_cards: 120,
+          can_transfer_to: false,
+        }),
+      ],
     });
 
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
 
     expect(screen.getByText("2 entries selected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Clear selection" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Bulk edit" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Copy to collection" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy to collection" }));
     expect(screen.queryByRole("button", { name: "Move to collection" })).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "This collection is read-only. Selection is available, but bulk edit, copy, and move are unavailable.",
+        "This collection is read-only. Bulk edit and move are disabled, but copy is available.",
       ),
     ).toBeInTheDocument();
+
+    const tray = screen.getByRole("region", { name: "Copy to collection tray" });
+    const destinationSelect = within(tray).getByRole("combobox", {
+      name: "Destination collection",
+    });
+
+    expect(within(destinationSelect).getByRole("option", { name: "Trade Binder" })).toBeInTheDocument();
+    expect(
+      within(destinationSelect).queryByRole("option", { name: "Archive Box" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("can select the entire collection from the table even when not all rows are visible", async () => {
+  it("selects visible table rows without exposing whole-collection selection", async () => {
     const user = userEvent.setup();
     const items = Array.from({ length: 60 }, (_, index) =>
       buildOwnedRow({
@@ -3679,10 +4778,18 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
-    await user.click(screen.getByRole("button", { name: "Select entire collection" }));
+    await screen.findByRole("table");
 
-    expect(screen.getByText("60 entries selected")).toBeInTheDocument();
-    expect(screen.getByText("10 selected entries not shown in the current view.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Select entire collection" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+
+    expect(screen.getByText("50 entries selected")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/selected entries not shown in the current view/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Card 001" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Card 050" })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Select Card 051" })).not.toBeInTheDocument();
@@ -3743,6 +4850,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Copy to collection" }));
 
@@ -3753,7 +4861,7 @@ describe("App", () => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
         target_inventory_slug: "trade",
         mode: "copy",
-        all_items: true,
+        item_ids: [7, 8],
         on_conflict: "merge",
         keep_acquisition: "source",
       });
@@ -3796,6 +4904,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Copy to collection" }));
 
@@ -3810,7 +4919,7 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("creates a new collection during a move transfer and sends the whole collection when selected", async () => {
+  it("creates a new collection during a move transfer and sends visible table rows", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -3848,8 +4957,8 @@ describe("App", () => {
       target_inventory: "archive-box",
       mode: "move",
       dry_run: false,
-      selection_kind: "all_items",
-      requested_item_ids: null,
+      selection_kind: "items",
+      requested_item_ids: [7, 8],
       requested_count: 2,
       copied_count: 0,
       moved_count: 2,
@@ -3863,6 +4972,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Move to collection" }));
 
@@ -3896,7 +5006,7 @@ describe("App", () => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
         target_inventory_slug: "archive-box",
         mode: "move",
-        all_items: true,
+        item_ids: [7, 8],
         on_conflict: "merge",
         keep_acquisition: "source",
       });
@@ -3917,10 +5027,91 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Open Lightning Bolt details" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Card details" });
     expect(within(dialog).getByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+  });
+
+  it("refreshes the active paginated table page after a table row deletion", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    let currentItems = [
+      buildOwnedRow(),
+      buildOwnedRow({
+        item_id: 8,
+        scryfall_id: "counterspell-1",
+        name: "Counterspell",
+        set_code: "7ed",
+        set_name: "Seventh Edition",
+        collector_number: "67",
+        quantity: 1,
+        location: "Trade Binder",
+        tags: ["control"],
+        est_value: "3.00",
+        unit_price: "3.00",
+        notes: null,
+      }),
+    ];
+
+    try {
+      mockCollectionViewApp({ items: currentItems });
+      vi.mocked(listInventoryItems).mockImplementation(async () => currentItems);
+      vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+        buildInventoryItemsPageResponse(currentItems, params, inventorySlug),
+      );
+      vi.mocked(deleteInventoryItem).mockImplementation(async (inventorySlug, itemId) => {
+        const deletedItem = currentItems.find((item) => item.item_id === itemId);
+        if (!deletedItem) {
+          throw new Error("Missing test item");
+        }
+        currentItems = currentItems.filter((item) => item.item_id !== itemId);
+        return {
+          ...deletedItem,
+          card_name: deletedItem.name,
+          inventory: inventorySlug,
+        };
+      });
+
+      render(<App />);
+
+      await user.click(await screen.findByRole("button", { name: "Table" }));
+      await screen.findByRole("checkbox", { name: "Select Lightning Bolt" });
+      expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByRole("button", { name: "Open Lightning Bolt details" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Card details" });
+      await user.click(within(dialog).getByRole("button", { name: "Remove row" }));
+
+      await waitFor(() => {
+        expect(deleteInventoryItem).toHaveBeenCalledWith("personal", 7);
+      });
+      await waitFor(() => {
+        expect(listInventoryItemsPage).toHaveBeenCalledTimes(2);
+      });
+      expect(listInventoryItems).toHaveBeenCalledTimes(1);
+      await waitFor(() => {
+        expect(
+          screen.queryByRole("checkbox", { name: "Select Lightning Bolt" }),
+        ).not.toBeInTheDocument();
+      });
+      expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeInTheDocument();
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "Removed Lightning Bolt from Personal Collection.",
+      );
+
+      await user.click(screen.getByRole("button", { name: "Browse" }));
+
+      await waitFor(() => {
+        expect(listInventoryItems).toHaveBeenCalledTimes(2);
+      });
+      expect(await screen.findByRole("heading", { name: "Counterspell" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Lightning Bolt" })).not.toBeInTheDocument();
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 
   it("supports header-driven table sorting and filtering while keeping hidden selections visible in the summary", async () => {
@@ -3950,7 +5141,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
 
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
     const getRows = () => within(table).getAllByRole("row").slice(1);
 
     expect(getRows()[0]).toHaveTextContent("Lightning Bolt");
@@ -3959,8 +5150,10 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Qty" }));
     await user.click(screen.getByRole("button", { name: "Lowest quantity first" }));
 
-    expect(getRows()[0]).toHaveTextContent("Counterspell");
-    expect(getRows()[1]).toHaveTextContent("Lightning Bolt");
+    await waitFor(() => {
+      expect(getRows()[0]).toHaveTextContent("Counterspell");
+      expect(getRows()[1]).toHaveTextContent("Lightning Bolt");
+    });
 
     await user.click(screen.getByRole("checkbox", { name: "Select Counterspell" }));
     expect(screen.getByText("1 entry selected")).toBeInTheDocument();
@@ -3968,9 +5161,11 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Set" }));
     await user.click(screen.getByLabelText("LEA · Limited Edition Alpha"));
 
-    expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+      expect(screen.queryByRole("checkbox", { name: "Select Counterspell" })).not.toBeInTheDocument();
+    });
     expect(screen.getByText("1 selected entry not shown in the current view.")).toBeInTheDocument();
-    expect(screen.queryByRole("checkbox", { name: "Select Counterspell" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeChecked();
 
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
@@ -3981,9 +5176,11 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
 
-    expect(screen.getByText("Showing all 2 entries.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Showing all 2 entries.")).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
+    });
     expect(screen.queryByText("1 selected entry not shown in the current view.")).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Select Counterspell" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeChecked();
   });
 
@@ -4020,6 +5217,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     expect(screen.queryByRole("textbox", { name: "Tag list" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
@@ -4045,7 +5243,8 @@ describe("App", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Added tags to 2 entries in Personal Collection.",
     );
-    expect(listInventoryItems).toHaveBeenCalledTimes(2);
+    expect(listInventoryItems).toHaveBeenCalledTimes(1);
+    expect(listInventoryItemsPage).toHaveBeenCalledTimes(2);
     expect(listInventoryAudit).toHaveBeenCalledTimes(2);
   });
 
@@ -4082,6 +5281,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
 
@@ -4136,6 +5336,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
 
@@ -4193,6 +5394,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Select all visible" }));
     await user.click(screen.getByRole("button", { name: "Bulk edit" }));
     await user.type(screen.getByRole("textbox", { name: "Tag list" }), "burn, staples");
@@ -4227,44 +5429,50 @@ describe("App", () => {
         total_cards: 1,
       }),
     ]);
-    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => {
-      if (inventorySlug === "trade-binder") {
-        return [
-          buildOwnedRow({
-            item_id: 101,
-            scryfall_id: "sol-ring-1",
-            name: "Sol Ring",
-            set_code: "cmm",
-            set_name: "Commander Masters",
-            collector_number: "396",
-            quantity: 1,
-            location: "Trade Tray",
-            tags: ["trade"],
-            est_value: "1.50",
-            unit_price: "1.50",
-            notes: null,
-          }),
-        ];
-      }
+    const personalRows = [
+      buildOwnedRow(),
+      buildOwnedRow({
+        item_id: 8,
+        scryfall_id: "counterspell-1",
+        name: "Counterspell",
+        set_code: "7ed",
+        set_name: "Seventh Edition",
+        collector_number: "67",
+        quantity: 1,
+        location: "Trade Binder",
+        tags: ["control"],
+        est_value: "3.00",
+        unit_price: "3.00",
+        notes: null,
+      }),
+    ];
+    const tradeBinderRows = [
+      buildOwnedRow({
+        item_id: 101,
+        scryfall_id: "sol-ring-1",
+        name: "Sol Ring",
+        set_code: "cmm",
+        set_name: "Commander Masters",
+        collector_number: "396",
+        quantity: 1,
+        location: "Trade Tray",
+        tags: ["trade"],
+        est_value: "1.50",
+        unit_price: "1.50",
+        notes: null,
+      }),
+    ];
 
-      return [
-        buildOwnedRow(),
-        buildOwnedRow({
-          item_id: 8,
-          scryfall_id: "counterspell-1",
-          name: "Counterspell",
-          set_code: "7ed",
-          set_name: "Seventh Edition",
-          collector_number: "67",
-          quantity: 1,
-          location: "Trade Binder",
-          tags: ["control"],
-          est_value: "3.00",
-          unit_price: "3.00",
-          notes: null,
-        }),
-      ];
-    });
+    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) =>
+      inventorySlug === "trade-binder" ? tradeBinderRows : personalRows,
+    );
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(
+        inventorySlug === "trade-binder" ? tradeBinderRows : personalRows,
+        params,
+        inventorySlug,
+      ),
+    );
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
@@ -4345,7 +5553,7 @@ describe("App", () => {
     });
 
     expect(await screen.findByRole("status")).toHaveTextContent("Created Trade Binder.");
-    expect(await screen.findByText("Current collection: Trade Binder")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Trade Binder" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Create Collection" })).not.toBeInTheDocument();
 
     await waitFor(() => {

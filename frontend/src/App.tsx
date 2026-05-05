@@ -7,22 +7,23 @@ import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
 import { PanelState } from "./components/ui/PanelState";
 import { SearchPanel } from "./components/SearchPanel";
 import { StickyWorkspaceControls } from "./components/StickyWorkspaceControls";
-import { MetricCard } from "./components/ui/MetricCard";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
 import { NoticeToast } from "./components/ui/NoticeToast";
 import { useCardSearch } from "./hooks/useCardSearch";
 import { useCollectionViewState } from "./hooks/useCollectionViewState";
 import { useInventoryOverview } from "./hooks/useInventoryOverview";
+import { useInventoryTablePage } from "./hooks/useInventoryTablePage";
 import { useInventoryMutations } from "./hooks/useInventoryMutations";
 import {
   canCopyFromInventory,
+  canExportInventory,
   canMoveFromInventory,
   getAvailableTransferTargetInventories,
   getTransferTargetInventories,
   getWritableInventories,
   isWritableInventory,
 } from "./inventoryCapabilities";
-import { decimalToNumber, formatUsd } from "./uiHelpers";
+import { decimalToNumber } from "./uiHelpers";
 import type { AppShellState } from "./uiTypes";
 import type { AccessSummaryResponse } from "./types";
 
@@ -120,7 +121,17 @@ function getShellStatePanelContent(
 export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
+  const [searchFocusRequest, setSearchFocusRequest] = useState<{
+    target: "search" | "import";
+    token: number;
+  } | null>(null);
   const [stickyControlsVisible, setStickyControlsVisible] = useState(false);
+  const [workspaceCreateActionHost, setWorkspaceCreateActionHost] =
+    useState<HTMLDivElement | null>(null);
+  const [workspaceImportActionHost, setWorkspaceImportActionHost] =
+    useState<HTMLDivElement | null>(null);
+  const [staleCollectionItemsInventory, setStaleCollectionItemsInventory] =
+    useState<string | null>(null);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const {
     accessSummary,
@@ -131,6 +142,7 @@ export default function App() {
     inventoryStatus,
     items,
     loadInventoryOverview,
+    refreshInventoryAudit,
     reloadInventorySummaries,
     selectedInventory,
     selectedInventoryRow,
@@ -145,10 +157,13 @@ export default function App() {
   const collectionAuditEvents = isCollectionSwitchPending ? [] : auditEvents;
   const collectionViewError = isCollectionSwitchPending ? null : viewError;
   const collectionViewStatus = isCollectionSwitchPending ? "loading" : viewStatus;
+  const selectedCollectionItemsStale =
+    selectedInventory !== null && staleCollectionItemsInventory === selectedInventory;
   const {
     activeSearchGroupId,
     handleSearchFieldFocus,
     handleSearchInputKeyDown,
+    handleSearchLoadAllLanguagesChange,
     handleSearchQueryChange,
     handleSearchResultsLoadMore,
     handleSearchScopeChange,
@@ -165,6 +180,7 @@ export default function App() {
     searchError,
     searchGroups,
     searchHiddenResultCount,
+    searchLoadAllLanguages,
     searchLoadedHiddenResultCount,
     searchLoadMoreError,
     searchLoadMoreBusy,
@@ -207,7 +223,6 @@ export default function App() {
     handleCollectionSearchQueryChange,
     handleOpenItemDetails,
     handleSelectTableItem,
-    handleSelectAllCollectionItems,
     handleSelectAllVisibleItems,
     handleTableFiltersChange,
     handleTablePageChange,
@@ -228,6 +243,50 @@ export default function App() {
     items: collectionItems,
     selectedInventory,
   });
+  const tablePageState = useInventoryTablePage({
+    enabled:
+      collectionView === "table" &&
+      selectedInventory !== null &&
+      !isCollectionSwitchPending,
+    filters: tableFilters,
+    inventorySlug: selectedInventory,
+    onPageOutOfRange: handleTablePageChange,
+    page: tablePage,
+    sort: tableSort,
+    visibleLimit: tableVisibleLimit,
+  });
+  async function refreshStaleBrowseCollection(inventorySlug: string) {
+    try {
+      const refreshOutcome = await loadInventoryOverview(inventorySlug, {
+        reloadInventories: false,
+      });
+      if (refreshOutcome === "applied") {
+        setStaleCollectionItemsInventory((current) =>
+          current === inventorySlug ? null : current,
+        );
+      }
+    } catch {
+      // The overview hook owns the visible error state for Browse mode.
+    }
+  }
+
+  function handleCollectionViewModeChange(nextView: "browse" | "table") {
+    handleCollectionViewChange(nextView);
+    if (
+      nextView === "browse" &&
+      selectedInventory !== null &&
+      selectedCollectionItemsStale
+    ) {
+      void refreshStaleBrowseCollection(selectedInventory);
+    }
+  }
+
+  function markCollectionItemsStale(inventorySlug: string) {
+    if (inventorySlug === selectedInventory) {
+      setStaleCollectionItemsInventory(inventorySlug);
+    }
+  }
+
   const {
     busyAddCardId,
     bulkMutationBusy,
@@ -237,10 +296,12 @@ export default function App() {
     commitDecklistImport,
     clearNotice,
     createInventoryBusy,
+    exportInventoryBusy,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
+    handleExportInventoryCsv,
     handlePatchItem,
     handleTransferItems,
     notice,
@@ -250,24 +311,26 @@ export default function App() {
     reportNotice,
     transferBusy,
   } = useInventoryMutations({
+    activeCollectionView: collectionView,
     clearSelectedItems: handleClearSelectedItems,
     describeInventory,
     loadInventoryOverview,
+    markCollectionItemsStale,
+    refreshInventoryAudit,
+    refreshActiveTablePage: tablePageState.refreshTablePage,
     reloadInventorySummaries,
     resetSearchWorkspace,
     selectedInventory,
-    selectedInventoryItemCount: collectionItems.length,
+    selectedInventoryItemCount:
+      collectionView === "table" ? 0 : collectionItems.length,
     selectedItemIds,
   });
 
   useEffect(() => {
     setActivityOpen(false);
+    setStaleCollectionItemsInventory(null);
   }, [selectedInventory]);
 
-  const totalEstimatedValue = collectionItems.reduce(
-    (sum, row) => sum + decimalToNumber(row.est_value),
-    0,
-  );
   const selectedInventoryCanWrite = isWritableInventory(selectedInventoryRow);
   const writableInventories = getWritableInventories(inventories);
   const availableCopyTargetInventories = getTransferTargetInventories(inventories, {
@@ -282,6 +345,10 @@ export default function App() {
     inventories,
     selectedInventoryRow,
   );
+  const activeTableItems =
+    collectionView === "table" ? tablePageState.items : visibleTableItems;
+  const shouldHideStaleBrowseItems =
+    collectionView === "browse" && selectedCollectionItemsStale;
   const searchPanelState = {
     activeSearchGroupId,
     busyAddCardId,
@@ -298,6 +365,7 @@ export default function App() {
       isLoadingMore: searchLoadMoreBusy,
       isResultStale: searchResultsStale,
       loadMoreError: searchLoadMoreError,
+      loadAllLanguages: searchLoadAllLanguages,
       query: searchQuery,
       resultQuery: searchResultQuery,
       resultScope: searchResultScope,
@@ -330,6 +398,7 @@ export default function App() {
     onSearchInputKeyDown: handleSearchInputKeyDown,
     onSearchQueryChange: handleSearchQueryChange,
     onSearchGroupSelect: handleSearchGroupSelect,
+    onSearchLoadAllLanguagesChange: handleSearchLoadAllLanguagesChange,
     onSearchResultsLoadMore: handleSearchResultsLoadMore,
     onSearchScopeChange: handleSearchScopeChange,
     onSearchResultsDismiss: dismissSearchResults,
@@ -350,16 +419,23 @@ export default function App() {
       searchQuery: collectionSearchQuery,
       detailModalItemId,
       focusedItemId,
-      items: collectionItems,
-      visibleItems: visibleCollectionItems,
+      items: shouldHideStaleBrowseItems ? [] : collectionItems,
+      visibleItems: shouldHideStaleBrowseItems ? [] : visibleCollectionItems,
       view: collectionView,
-      viewError: collectionViewError,
-      viewStatus: collectionViewStatus,
+      viewError: shouldHideStaleBrowseItems ? null : collectionViewError,
+      viewStatus: shouldHideStaleBrowseItems
+        ? collectionViewStatus === "error"
+          ? "error"
+          : "loading"
+        : collectionViewStatus,
     },
     selectedInventoryRow,
+    canExportSelectedInventory: canExportInventory(selectedInventoryRow),
+    exportInventoryBusy,
     selectedInventoryCanWrite,
     table: {
-      allItemsCount: filteredTableItemsCount,
+      allItemsCount:
+        collectionView === "table" ? tablePageState.totalCount : filteredTableItemsCount,
       availableCopyTargetInventories,
       availableMoveTargetInventories,
       availableTargetInventories: availableTransferTargetInventories,
@@ -370,12 +446,14 @@ export default function App() {
       createInventoryBusy,
       filterOptions: tableFilterOptions,
       filters: tableFilters,
-      items: visibleTableItems,
+      items: collectionView === "table" ? tablePageState.items : visibleTableItems,
       page: tablePage,
-      pageCount: tablePageCount,
+      pageCount: collectionView === "table" ? tablePageState.pageCount : tablePageCount,
       selectedItemIds,
       sort: tableSort,
       transferBusy,
+      viewError: tablePageState.error,
+      viewStatus: tablePageState.status,
       visibleLimit: tableVisibleLimit,
       visibleLimitOptions: tableVisibleLimitOptions,
     },
@@ -385,19 +463,33 @@ export default function App() {
     onBrowseVisibleLimitChange: handleBrowseVisibleLimitChange,
     onBulkMutationSubmit: handleBulkMutation,
     onClearSelectedItems: handleClearSelectedItems,
-    onClearVisibleSelectedItems: handleClearVisibleSelectedItems,
-    onCollectionViewChange: handleCollectionViewChange,
+    onClearVisibleSelectedItems: () => handleClearVisibleSelectedItems(activeTableItems),
+    onCollectionViewChange: handleCollectionViewModeChange,
     onCloseItemDetails: handleCloseItemDetails,
     onCollectionSearchQueryChange: handleCollectionSearchQueryChange,
     onDelete: handleDeleteItem,
+    onFocusImport: () =>
+      setSearchFocusRequest((current) => ({
+        target: "import",
+        token: (current?.token ?? 0) + 1,
+      })),
+    onFocusSearch: () =>
+      setSearchFocusRequest((current) => ({
+        target: "search",
+        token: (current?.token ?? 0) + 1,
+      })),
+    onExportCsv: handleExportInventoryCsv,
     onNotice: reportNotice,
     onOpenActivity: () => setActivityOpen(true),
     onOpenItemDetails: handleOpenItemDetails,
     onPatch: handlePatchItem,
     onCreateInventory: handleCreateInventory,
-    onSelectTableItem: handleSelectTableItem,
-    onSelectAllCollectionItems: handleSelectAllCollectionItems,
-    onSelectAllVisibleItems: handleSelectAllVisibleItems,
+    onSelectTableItem: (
+      itemId: number,
+      options?: { additive?: boolean; range?: boolean },
+    ) =>
+      handleSelectTableItem(itemId, options, activeTableItems),
+    onSelectAllVisibleItems: () => handleSelectAllVisibleItems(activeTableItems),
     onTransferItems: handleTransferItems,
     onTableFiltersChange: handleTableFiltersChange,
     onTablePageChange: handleTablePageChange,
@@ -414,6 +506,15 @@ export default function App() {
   });
   const shellStatePanels =
     appShellState === "ready" ? null : getShellStatePanelContent(appShellState);
+  const showHeroCreateAction =
+    appShellState === "ready" || appShellState === "bootstrap_available";
+  const showHeroImportAction = appShellState === "ready";
+  const workspaceTopGridClassName =
+    appShellState === "ready" &&
+    selectedInventoryCanWrite &&
+    !searchResultsVisible
+      ? "workspace-top-grid workspace-top-grid-controls-aligned"
+      : "workspace-top-grid";
 
   useEffect(() => {
     setCollectionMenuOpen(false);
@@ -465,37 +566,46 @@ export default function App() {
       ) : null}
 
       <header className="hero">
-        <div>
+        <div className="hero-copy-block">
           <p className="eyebrow">Card Collection</p>
           <h1>Stash Counter</h1>
           <p className="hero-copy">
             Search cards, compare printings, and organize your collection in one place.
           </p>
         </div>
-        <div className="hero-metrics">
-          <MetricCard accent="Sunrise" label="Collections" value={String(inventories.length)} />
-          <MetricCard
-            accent="Lagoon"
-            label="Entries In View"
-            value={String(collectionItems.length)}
-          />
-          <MetricCard
-            accent="Paper"
-            label="Est. Value"
-            value={formatUsd(totalEstimatedValue)}
-          />
-        </div>
+        {showHeroCreateAction || showHeroImportAction ? (
+          <div aria-label="Workspace actions" className="hero-actions">
+            <div className="hero-actions-shell">
+              <div className="hero-actions-list">
+                {showHeroCreateAction ? (
+                  <div
+                    className="hero-action-slot hero-action-slot-create"
+                    ref={setWorkspaceCreateActionHost}
+                  />
+                ) : null}
+                {showHeroImportAction ? (
+                  <div
+                    className="hero-action-slot hero-action-slot-import"
+                    ref={setWorkspaceImportActionHost}
+                  />
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </header>
 
       {bannerNotice ? <NoticeBanner notice={bannerNotice} /> : null}
 
       <div className="workspace-grid">
-        <div className="workspace-top-grid" ref={workspaceTopRef}>
+        <div className={workspaceTopGridClassName} ref={workspaceTopRef}>
           <aside className="sidebar-column">
             <InventorySidebar
               appShellState={appShellState}
               collectionMenuInteractionEnabled={!stickyControlsVisible}
               collectionMenuOpen={collectionMenuOpen}
+              createActionHost={workspaceCreateActionHost}
+              createActionHostEnabled={showHeroCreateAction}
               createInventoryBusy={createInventoryBusy}
               inventories={inventories}
               inventoryError={inventoryError}
@@ -509,7 +619,13 @@ export default function App() {
 
           <div className="workspace-search-column">
             {appShellState === "ready" ? (
-              <SearchPanel actions={searchPanelActions} state={searchPanelState} />
+              <SearchPanel
+                actions={searchPanelActions}
+                focusRequest={searchFocusRequest}
+                importActionHost={workspaceImportActionHost}
+                importActionHostEnabled={showHeroImportAction}
+                state={searchPanelState}
+              />
             ) : (
               <PanelState
                 body={shellStatePanels!.search.body}
