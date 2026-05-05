@@ -832,8 +832,22 @@ class WebApiSchemaTest(unittest.TestCase):
                 ],
                 bulk_request_schema["properties"]["operation"]["enum"],
             )
-            self.assertEqual(1, bulk_request_schema["properties"]["item_ids"]["minItems"])
-            self.assertEqual(200, bulk_request_schema["properties"]["item_ids"]["maxItems"])
+            self.assertNotIn("item_ids", bulk_request_schema["properties"])
+            self.assertIn("selection", bulk_request_schema["properties"])
+            self.assertIn("provided filters", bulk_request_schema["properties"]["selection"]["description"])
+            selection_schema = bulk_request_schema["properties"]["selection"]
+            self.assertEqual("kind", selection_schema["discriminator"]["propertyName"])
+            self.assertEqual(
+                {
+                    "BulkAllItemsSelectionRequest",
+                    "BulkFilteredSelectionRequest",
+                    "BulkItemsSelectionRequest",
+                },
+                {
+                    self._schema_name_from_ref(option["$ref"])
+                    for option in selection_schema["oneOf"]
+                },
+            )
             self.assertIn("Used by set_location", bulk_request_schema["properties"]["location"]["description"])
             self.assertIn("Only applies to set_location", bulk_request_schema["properties"]["clear_location"]["description"])
             self.assertIn("Used by set_condition", bulk_request_schema["properties"]["condition_code"]["description"])

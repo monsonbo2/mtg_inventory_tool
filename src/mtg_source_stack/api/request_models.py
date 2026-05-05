@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,7 +93,25 @@ SET_PRINTING_KEEP_ACQUISITION_DESCRIPTION = (
 BULK_ITEM_MUTATION_REQUEST_DESCRIPTION = (
     "Specify exactly one bulk mutation operation per request. "
     "The current runtime supports add_tags, remove_tags, set_tags, clear_tags, "
-    "set_quantity, set_notes, set_acquisition, set_finish, set_location, and set_condition."
+    "set_quantity, set_notes, set_acquisition, set_finish, set_location, and set_condition. "
+    "Use selection.kind=`items` for an explicit list of rows, `filtered` to target the rows "
+    "matching the current inventory-table filters, or `all_items` to target the entire inventory."
+)
+BULK_SELECTION_DESCRIPTION = (
+    "Select explicit inventory rows, all rows matching the provided filters, "
+    "or the entire inventory."
+)
+BULK_SELECTION_ITEM_IDS_DESCRIPTION = (
+    "Used by selection.kind=`items`. Provide 1 to 1000 explicit item ids from the target inventory."
+)
+BULK_SELECTION_QUERY_DESCRIPTION = "Case-insensitive card-name substring filter for selection.kind=`filtered`."
+BULK_SELECTION_SET_CODE_DESCRIPTION = "Set-code filter for selection.kind=`filtered`."
+BULK_SELECTION_RARITY_DESCRIPTION = "Rarity filter for selection.kind=`filtered`."
+BULK_SELECTION_LOCATION_FILTER_DESCRIPTION = (
+    "Case-insensitive location substring filter for selection.kind=`filtered`."
+)
+BULK_SELECTION_TAGS_FILTER_DESCRIPTION = (
+    "Tag filters for selection.kind=`filtered`. Rows must contain every requested tag."
 )
 BULK_TAGS_DESCRIPTION = (
     "Required for add_tags, remove_tags, and set_tags. Omit this field for clear_tags. "
@@ -322,6 +340,33 @@ class SetInventoryItemPrintingRequest(ApiBaseModel):
     )
 
 
+class BulkItemsSelectionRequest(ApiBaseModel):
+    kind: Literal["items"]
+    item_ids: list[int] = Field(min_length=1, max_length=1000, description=BULK_SELECTION_ITEM_IDS_DESCRIPTION)
+
+
+class BulkFilteredSelectionRequest(ApiBaseModel):
+    kind: Literal["filtered"]
+    query: str | None = Field(default=None, description=BULK_SELECTION_QUERY_DESCRIPTION)
+    set_code: str | None = Field(default=None, description=BULK_SELECTION_SET_CODE_DESCRIPTION)
+    rarity: str | None = Field(default=None, description=BULK_SELECTION_RARITY_DESCRIPTION)
+    finish: FinishInput | None = Field(default=None, description=FINISH_INPUT_DESCRIPTION)
+    condition_code: str | None = Field(default=None, description=CONDITION_CODE_DESCRIPTION)
+    language_code: str | None = Field(default=None, description=LANGUAGE_CODE_DESCRIPTION)
+    location: str | None = Field(default=None, description=BULK_SELECTION_LOCATION_FILTER_DESCRIPTION)
+    tags: list[str] | None = Field(default=None, description=BULK_SELECTION_TAGS_FILTER_DESCRIPTION)
+
+
+class BulkAllItemsSelectionRequest(ApiBaseModel):
+    kind: Literal["all_items"]
+
+
+BulkInventorySelectionRequest = Annotated[
+    BulkItemsSelectionRequest | BulkFilteredSelectionRequest | BulkAllItemsSelectionRequest,
+    Field(discriminator="kind"),
+]
+
+
 class BulkInventoryItemMutationRequest(ApiBaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -340,7 +385,7 @@ class BulkInventoryItemMutationRequest(ApiBaseModel):
         "set_location",
         "set_condition",
     ]
-    item_ids: list[int] = Field(min_length=1, max_length=200)
+    selection: BulkInventorySelectionRequest = Field(description=BULK_SELECTION_DESCRIPTION)
     tags: list[str] | None = Field(default=None, description=BULK_TAGS_DESCRIPTION)
     quantity: int | None = Field(default=None, description=BULK_QUANTITY_DESCRIPTION)
     notes: str | None = Field(default=None, description=BULK_NOTES_DESCRIPTION)

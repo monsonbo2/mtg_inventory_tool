@@ -159,9 +159,12 @@ class BulkInventoryItemMutationResponse(ApiBaseModel):
         "set_location",
         "set_condition",
     ]
-    requested_item_ids: list[int]
+    selection_kind: Literal["items", "filtered", "all_items"]
+    matched_count: int
+    unchanged_count: int
     updated_item_ids: list[int]
     updated_count: int
+    updated_item_ids_truncated: bool
 
 
 class InventoryTransferItemResultResponse(ApiBaseModel):

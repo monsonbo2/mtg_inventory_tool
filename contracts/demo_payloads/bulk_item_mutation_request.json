@@ -1,5 +1,8 @@
 {
   "operation": "add_tags",
-  "item_ids": [12, 27, 44],
+  "selection": {
+    "kind": "items",
+    "item_ids": [12, 27, 44]
+  },
   "tags": ["commander", "trade"]
 }
