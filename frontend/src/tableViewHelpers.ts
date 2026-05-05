@@ -254,7 +254,7 @@ function matchesInventoryTableFilters(
 
   if (
     filters.tags.length > 0 &&
-    !filters.tags.some((tag) => item.tags.includes(tag))
+    !filters.tags.every((tag) => item.tags.includes(tag))
   ) {
     return false;
   }

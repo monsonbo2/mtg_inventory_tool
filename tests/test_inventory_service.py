@@ -2989,7 +2989,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="add_tags",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=["trade", "deck"],
                 actor_type="api",
                 actor_id="bulk-user",
@@ -2997,15 +2997,18 @@ class InventoryServiceTest(RepoSmokeTestCase):
             )
             self.assertIsInstance(add_result, BulkInventoryItemMutationResult)
             self.assertEqual("add_tags", add_result.operation)
-            self.assertEqual(item_ids, add_result.requested_item_ids)
+            self.assertEqual("items", add_result.selection_kind)
+            self.assertEqual(2, add_result.matched_count)
+            self.assertEqual(0, add_result.unchanged_count)
             self.assertEqual(item_ids, add_result.updated_item_ids)
             self.assertEqual(2, add_result.updated_count)
+            self.assertFalse(add_result.updated_item_ids_truncated)
 
             remove_result = bulk_mutate_inventory_items(
                 db_path,
                 inventory_slug="personal",
                 operation="remove_tags",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=["deck"],
                 actor_type="api",
                 actor_id="bulk-user",
@@ -3018,7 +3021,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_tags",
-                item_ids=[item_ids[0]],
+                selection={"kind": "items", "item_ids": [item_ids[0]]},
                 tags=["featured"],
                 actor_type="api",
                 actor_id="bulk-user",
@@ -3031,7 +3034,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="clear_tags",
-                item_ids=[item_ids[1]],
+                selection={"kind": "items", "item_ids": [item_ids[1]]},
                 tags=None,
                 actor_type="api",
                 actor_id="bulk-user",
@@ -3070,6 +3073,200 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(1, audit_rows[0].metadata["bulk_count"])
             self.assertEqual("req-bulk-clear", audit_rows[0].request_id)
 
+    def test_bulk_mutate_inventory_items_filtered_selection_tracks_matches_and_noops(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Binder A",
+                notes="featured",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Binder B",
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+                location="Deck Box",
+            )
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_notes",
+                selection={"kind": "filtered", "location": "Binder"},
+                notes="featured",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-filtered-notes",
+            )
+
+            self.assertEqual("filtered", result.selection_kind)
+            self.assertEqual(2, result.matched_count)
+            self.assertEqual(1, result.updated_count)
+            self.assertEqual(1, result.unchanged_count)
+            self.assertEqual(1, len(result.updated_item_ids))
+            self.assertFalse(result.updated_item_ids_truncated)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            notes_by_location = {row.location: row.notes for row in rows}
+            self.assertEqual("featured", notes_by_location["Binder A"])
+            self.assertEqual("featured", notes_by_location["Binder B"])
+            self.assertIsNone(notes_by_location["Deck Box"])
+
+            audit_rows = list_inventory_audit_events(db_path, inventory_slug="personal", limit=5)
+            self.assertEqual("set_notes", audit_rows[0].action)
+            self.assertEqual("filtered", audit_rows[0].metadata["selection_kind"])
+            self.assertEqual(2, audit_rows[0].metadata["bulk_count"])
+            self.assertEqual(1, audit_rows[0].metadata["updated_count"])
+
+    def test_bulk_mutate_inventory_items_filtered_selection_requires_effective_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+
+            with self.assertRaisesRegex(ValidationError, "requires at least one effective filter"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="clear_tags",
+                    selection={"kind": "filtered"},
+                )
+
+    def test_bulk_mutate_inventory_items_requires_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            with self.assertRaisesRegex(ValidationError, "selection is required for bulk item mutations"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="clear_tags",
+                    selection=None,
+                )
+
+    def test_bulk_mutate_inventory_items_rejects_duplicate_selected_item_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            self._insert_inventory_item(
+                db_path,
+                inventory_slug="personal",
+                scryfall_id="race-card-1",
+            )
+            with connect(db_path) as connection:
+                item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+            with self.assertRaisesRegex(ValidationError, "selection.item_ids must not contain duplicates"):
+                bulk_mutate_inventory_items(
+                    db_path,
+                    inventory_slug="personal",
+                    operation="clear_tags",
+                    selection={"kind": "items", "item_ids": [item_id, item_id]},
+                )
+
+    def test_bulk_mutate_inventory_items_all_items_selection_handles_more_than_legacy_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+            self._insert_test_card(db_path)
+            create_inventory(
+                db_path,
+                slug="personal",
+                display_name="Personal Collection",
+                description=None,
+            )
+            for index in range(205):
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="race-card-1",
+                    location=f"Binder {index:03d}",
+                )
+
+            result = bulk_mutate_inventory_items(
+                db_path,
+                inventory_slug="personal",
+                operation="set_notes",
+                selection={"kind": "all_items"},
+                notes="Inventory sweep",
+                actor_type="api",
+                actor_id="bulk-user",
+                request_id="req-bulk-all-items",
+            )
+
+            self.assertEqual("all_items", result.selection_kind)
+            self.assertEqual(205, result.matched_count)
+            self.assertEqual(205, result.updated_count)
+            self.assertEqual(0, result.unchanged_count)
+            self.assertEqual(205, len(result.updated_item_ids))
+            self.assertFalse(result.updated_item_ids_truncated)
+
+            rows = list_owned_filtered(
+                db_path,
+                inventory_slug="personal",
+                provider="tcgplayer",
+                limit=None,
+                query=None,
+                set_code=None,
+                rarity=None,
+                finish=None,
+                condition_code=None,
+                language_code=None,
+                location=None,
+                tags=None,
+            )
+            self.assertEqual(205, len(rows))
+            self.assertTrue(all(row.notes == "Inventory sweep" for row in rows))
+
     def test_bulk_mutate_inventory_items_applies_quantity_notes_and_acquisition_operations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = Path(tmp_dir) / "collection.db"
@@ -3105,7 +3302,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_quantity",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=None,
                 quantity=4,
                 actor_type="api",
@@ -3120,7 +3317,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_notes",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=None,
                 notes="featured",
                 actor_type="api",
@@ -3134,7 +3331,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_notes",
-                item_ids=[item_ids[1]],
+                selection={"kind": "items", "item_ids": [item_ids[1]]},
                 tags=None,
                 clear_notes=True,
                 actor_type="api",
@@ -3147,7 +3344,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_acquisition",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=None,
                 acquisition_price=Decimal("2.50"),
                 acquisition_currency="usd",
@@ -3162,7 +3359,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_acquisition",
-                item_ids=[item_ids[0]],
+                selection={"kind": "items", "item_ids": [item_ids[0]]},
                 tags=None,
                 clear_acquisition=True,
                 actor_type="api",
@@ -3234,7 +3431,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_finish",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=None,
                 finish="foil",
                 actor_type="api",
@@ -3309,7 +3506,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_finish",
-                    item_ids=[item_ids[2], item_ids[0]],
+                    selection={"kind": "items", "item_ids": [item_ids[2], item_ids[0]]},
                     tags=None,
                     finish="foil",
                 )
@@ -3361,7 +3558,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_finish",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=None,
                     finish="foil",
                 )
@@ -3398,7 +3595,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_location",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=None,
                 location="Binder B",
                 actor_type="api",
@@ -3457,7 +3654,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_location",
-                item_ids=[item_id],
+                selection={"kind": "items", "item_ids": [item_id]},
                 tags=None,
                 clear_location=True,
                 actor_type="api",
@@ -3528,7 +3725,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_location",
-                    item_ids=[item_ids[2], item_ids[0]],
+                    selection={"kind": "items", "item_ids": [item_ids[2], item_ids[0]]},
                     tags=None,
                     location="Binder B",
                 )
@@ -3592,7 +3789,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_location",
-                item_ids=[item_ids[0]],
+                selection={"kind": "items", "item_ids": [item_ids[0]]},
                 tags=None,
                 location="Binder B",
                 merge=True,
@@ -3656,7 +3853,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_location",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=None,
                     location="Binder A",
                     clear_location=True,
@@ -3670,7 +3867,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_location",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=None,
                     location="Binder A",
                     keep_acquisition="target",
@@ -3710,7 +3907,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_condition",
-                item_ids=item_ids,
+                selection={"kind": "items", "item_ids": item_ids},
                 tags=None,
                 condition_code="LP",
                 actor_type="api",
@@ -3785,7 +3982,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_condition",
-                    item_ids=[item_ids[2], item_ids[0]],
+                    selection={"kind": "items", "item_ids": [item_ids[2], item_ids[0]]},
                     tags=None,
                     condition_code="LP",
                 )
@@ -3849,7 +4046,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 db_path,
                 inventory_slug="personal",
                 operation="set_condition",
-                item_ids=[item_ids[0]],
+                selection={"kind": "items", "item_ids": [item_ids[0]]},
                 tags=None,
                 condition_code="LP",
                 merge=True,
@@ -3913,7 +4110,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_condition",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=None,
                 )
 
@@ -3925,7 +4122,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_condition",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=None,
                     condition_code="LP",
                     keep_acquisition="target",
@@ -4796,7 +4993,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         db_path,
                         inventory_slug="personal",
                         operation="add_tags",
-                        item_ids=item_ids,
+                        selection={"kind": "items", "item_ids": item_ids},
                         tags=["featured"],
                     )
 
@@ -4849,7 +5046,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="add_tags",
-                    item_ids=[foreign_item_id],
+                    selection={"kind": "items", "item_ids": [foreign_item_id]},
                     tags=["trade"],
                 )
 
@@ -4877,7 +5074,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_quantity",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=None,
                 )
 
@@ -4889,7 +5086,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="set_acquisition",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=None,
                     acquisition_currency="USD",
                 )
@@ -4919,7 +5116,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     db_path,
                     inventory_slug="personal",
                     operation="add_tags",
-                    item_ids=[item_id],
+                    selection={"kind": "items", "item_ids": [item_id]},
                     tags=["trade"],
                     quantity=2,
                 )

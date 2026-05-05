@@ -6,6 +6,7 @@ import App from "./App";
 import { ApiClientError } from "./api";
 import type {
   AccessSummaryResponse,
+  BulkInventoryItemMutationResponse,
   CatalogNameSearchResult,
   CatalogNameSearchRow,
   CatalogPrintingLookupRow,
@@ -192,6 +193,22 @@ describe("App", () => {
     return { promise, reject, resolve };
   }
 
+  function buildBulkMutationResponse(
+    overrides: Partial<BulkInventoryItemMutationResponse> = {},
+  ): BulkInventoryItemMutationResponse {
+    return {
+      inventory: "personal",
+      operation: "add_tags",
+      selection_kind: "items",
+      matched_count: 0,
+      unchanged_count: 0,
+      updated_item_ids: [],
+      updated_count: 0,
+      updated_item_ids_truncated: false,
+      ...overrides,
+    };
+  }
+
   function buildInventorySummary(
     overrides: Partial<InventorySummary> = {},
   ): InventorySummary {
@@ -304,7 +321,7 @@ describe("App", () => {
       }
       if (
         requestedTags.length > 0 &&
-        !requestedTags.some((tag) => item.tags.includes(tag))
+        !requestedTags.every((tag) => item.tags.includes(tag))
       ) {
         return false;
       }
@@ -463,13 +480,9 @@ describe("App", () => {
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(transferInventoryItems).mockResolvedValue({
       source_inventory: "personal",
       target_inventory: inventories[1]?.slug ?? "target",
@@ -503,13 +516,9 @@ describe("App", () => {
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(transferInventoryItems).mockResolvedValue({
       source_inventory: "personal",
       target_inventory: "target",
@@ -3531,13 +3540,9 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_quantity",
@@ -3687,13 +3692,9 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_quantity",
@@ -3827,13 +3828,9 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_finish",
@@ -3949,13 +3946,9 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_tags",
@@ -4078,13 +4071,9 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_tags",
@@ -4166,13 +4155,9 @@ describe("App", () => {
     vi.mocked(listInventoryAudit).mockResolvedValue([]);
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [],
-      updated_item_ids: [],
-      updated_count: 0,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse(),
+    );
     vi.mocked(patchInventoryItem).mockResolvedValue({
       inventory: "personal",
       operation: "set_tags",
@@ -5206,13 +5191,13 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "add_tags",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -5230,7 +5215,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "add_tags",
-        item_ids: [7, 8],
+        selection: { kind: "items", item_ids: [7, 8] },
         tags: ["burn", "staples"],
       });
     });
@@ -5246,6 +5231,182 @@ describe("App", () => {
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryItemsPage).toHaveBeenCalledTimes(2);
     expect(listInventoryAudit).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies bulk tag actions to table entries matching the active filters", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          tags: ["burn"],
+        }),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        selection_kind: "filtered",
+        matched_count: 1,
+        updated_item_ids: [7],
+        updated_count: 1,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Tags" }));
+    await user.click(screen.getByLabelText("burn"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Bulk edit filtered" }));
+    await user.type(screen.getByRole("textbox", { name: "Tag list" }), "trade");
+    await user.click(screen.getByRole("button", { name: "Add tags" }));
+
+    await waitFor(() => {
+      expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
+        operation: "add_tags",
+        selection: { kind: "filtered", tags: ["burn"] },
+        tags: ["trade"],
+      });
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Added tags to 1 entry in Personal Collection.",
+    );
+  });
+
+  it("requires table rows to match every selected tag filter", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow({
+          tags: ["burn", "trade"],
+        }),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control", "trade"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+        buildOwnedRow({
+          item_id: 9,
+          scryfall_id: "monastery-swiftspear-1",
+          name: "Monastery Swiftspear",
+          set_code: "ktk",
+          set_name: "Khans of Tarkir",
+          collector_number: "118",
+          quantity: 4,
+          location: "Deck Box",
+          tags: ["burn"],
+          est_value: "4.00",
+          unit_price: "1.00",
+          notes: null,
+        }),
+      ],
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Tags" }));
+    await user.click(screen.getByLabelText("burn"));
+    await user.click(screen.getByLabelText("trade"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("checkbox", { name: "Select Lightning Bolt" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Select Counterspell" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Select Monastery Swiftspear" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("applies bulk location updates to the entire collection from the table tray", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [
+        buildOwnedRow(),
+        buildOwnedRow({
+          item_id: 8,
+          scryfall_id: "counterspell-1",
+          name: "Counterspell",
+          set_code: "7ed",
+          set_name: "Seventh Edition",
+          collector_number: "67",
+          quantity: 1,
+          location: "Trade Binder",
+          tags: ["control"],
+          est_value: "3.00",
+          unit_price: "3.00",
+          notes: null,
+        }),
+      ],
+    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "set_location",
+        selection_kind: "all_items",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Bulk edit collection" }));
+
+    const tray = screen.getByRole("region", { name: "Bulk edit tray" });
+    await user.click(within(tray).getByRole("button", { name: "Location" }));
+    await user.type(within(tray).getByRole("textbox", { name: "Location" }), "Archive Box");
+    await user.click(within(tray).getByRole("button", { name: "Set location" }));
+
+    await waitFor(() => {
+      expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
+        operation: "set_location",
+        selection: { kind: "all_items" },
+        location: "Archive Box",
+      });
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Updated location on 2 entries in Personal Collection.",
+    );
   });
 
   it("applies bulk location updates from the bulk edit tray", async () => {
@@ -5270,13 +5431,14 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "set_location",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "set_location",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -5293,7 +5455,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "set_location",
-        item_ids: [7, 8],
+        selection: { kind: "items", item_ids: [7, 8] },
         location: "Archive Box",
       });
     });
@@ -5325,13 +5487,14 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "set_notes",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "set_notes",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -5351,7 +5514,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "set_notes",
-        item_ids: [7, 8],
+        selection: { kind: "items", item_ids: [7, 8] },
         notes: "Updated deck notes",
       });
     });
@@ -5383,13 +5546,14 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(bulkMutateInventoryItems).mockResolvedValue({
-      inventory: "personal",
-      operation: "clear_tags",
-      requested_item_ids: [7, 8],
-      updated_item_ids: [7, 8],
-      updated_count: 2,
-    });
+    vi.mocked(bulkMutateInventoryItems).mockResolvedValue(
+      buildBulkMutationResponse({
+        operation: "clear_tags",
+        matched_count: 2,
+        updated_item_ids: [7, 8],
+        updated_count: 2,
+      }),
+    );
 
     render(<App />);
 
@@ -5403,7 +5567,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "clear_tags",
-        item_ids: [7, 8],
+        selection: { kind: "items", item_ids: [7, 8] },
       });
     });
 

@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type {
   BulkInventoryItemMutationRequest,
+  BulkInventorySelectionRequest,
   BulkTagMutationOperation,
   ConditionCode,
   FinishValue,
@@ -69,8 +70,105 @@ function getColumnActionHint(column: InventoryTableColumnKey) {
 }
 
 type BulkEditorMode = "tags" | "location" | "notes";
+type BulkSelectionScope = "selected" | "filtered" | "all_items";
+type FilteredBulkSelectionRequest = Extract<
+  BulkInventorySelectionRequest,
+  { kind: "filtered" }
+>;
 type TransferTargetMode = "existing" | "create";
 type ActiveTableTray = "bulk" | InventoryTransferMode | null;
+
+function getSingleFilterValue<T>(values: T[]) {
+  return values.length === 1 ? values[0] : null;
+}
+
+function buildFilteredBulkSelection(
+  filters: InventoryTableFilters,
+): {
+  reason: string | null;
+  selection: BulkInventorySelectionRequest | null;
+} {
+  const unsupportedFilters: string[] = [];
+  const selection: FilteredBulkSelectionRequest = { kind: "filtered" };
+  const normalizedQuery = filters.nameQuery.trim();
+  const normalizedLocation = filters.locationQuery.trim();
+
+  if (normalizedQuery) {
+    selection.query = normalizedQuery;
+  }
+  if (normalizedLocation) {
+    selection.location = normalizedLocation;
+  }
+  if (filters.tags.length > 0) {
+    selection.tags = filters.tags;
+  }
+
+  if (filters.setCodes.length > 1) {
+    unsupportedFilters.push("set");
+  } else {
+    const setCode = getSingleFilterValue(filters.setCodes);
+    if (setCode) {
+      selection.set_code = setCode;
+    }
+  }
+
+  if (filters.finishes.length > 1) {
+    unsupportedFilters.push("finish");
+  } else {
+    const finish = getSingleFilterValue(filters.finishes);
+    if (finish) {
+      selection.finish = finish;
+    }
+  }
+
+  if (filters.conditionCodes.length > 1) {
+    unsupportedFilters.push("condition");
+  } else {
+    const conditionCode = getSingleFilterValue(filters.conditionCodes);
+    if (conditionCode) {
+      selection.condition_code = conditionCode;
+    }
+  }
+
+  if (filters.languageCodes.length > 1) {
+    unsupportedFilters.push("language");
+  } else {
+    const languageCode = getSingleFilterValue(filters.languageCodes);
+    if (languageCode) {
+      selection.language_code = languageCode;
+    }
+  }
+
+  if (filters.emptyLocationOnly) {
+    unsupportedFilters.push("empty location");
+  }
+
+  if (unsupportedFilters.length > 0) {
+    return {
+      reason: `Filtered bulk edit cannot use the current ${unsupportedFilters.join(
+        "/",
+      )} filter state.`,
+      selection: null,
+    };
+  }
+
+  if (
+    !selection.query &&
+    !selection.set_code &&
+    !selection.finish &&
+    !selection.condition_code &&
+    !selection.language_code &&
+    !selection.location &&
+    !selection.tags?.length
+  ) {
+    return {
+      reason: "Filtered bulk edit needs at least one active filter.",
+      selection: null,
+    };
+  }
+
+  return { reason: null, selection };
+}
 
 export function InventoryTableView(props: {
   items: OwnedInventoryRow[];
@@ -81,6 +179,7 @@ export function InventoryTableView(props: {
   canBulkEditSelectedInventory: boolean;
   canCopyFromSelectedInventory: boolean;
   canMoveFromSelectedInventory: boolean;
+  collectionItemCount: number;
   selectedItemIds: number[];
   bulkMutationBusy: boolean;
   createInventoryBusy: boolean;
@@ -109,6 +208,8 @@ export function InventoryTableView(props: {
   const [activeColumn, setActiveColumn] = useState<InventoryTableColumnKey | null>(null);
   const [activeTray, setActiveTray] = useState<ActiveTableTray>(null);
   const [bulkEditorMode, setBulkEditorMode] = useState<BulkEditorMode>("tags");
+  const [bulkSelectionScope, setBulkSelectionScope] =
+    useState<BulkSelectionScope>("selected");
   const [bulkTagsInput, setBulkTagsInput] = useState("");
   const [bulkLocationInput, setBulkLocationInput] = useState("");
   const [bulkNotesInput, setBulkNotesInput] = useState("");
@@ -138,9 +239,40 @@ export function InventoryTableView(props: {
   const allVisibleSelected = props.items.length > 0 && selectedVisibleCount === props.items.length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
   const activeFilterCount = getActiveInventoryTableFilterCount(props.filters);
+  const filteredBulkSelection = buildFilteredBulkSelection(props.filters);
   const parsedBulkTags = parseTags(bulkTagsInput);
-  const exceedsBulkSelectionLimit = totalSelectedCount > 200;
   const hasSelection = totalSelectedCount > 0;
+  const canUseSelectedBulkScope = hasSelection;
+  const canUseFilteredBulkScope =
+    filteredBulkSelection.selection !== null && props.allItemsCount > 0;
+  const canUseAllItemsBulkScope = props.collectionItemCount > 0;
+  const hasBulkMutationTarget =
+    props.canBulkEditSelectedInventory &&
+    (canUseSelectedBulkScope || canUseFilteredBulkScope || canUseAllItemsBulkScope);
+  const effectiveBulkSelectionScope: BulkSelectionScope | null =
+    bulkSelectionScope === "selected" && canUseSelectedBulkScope
+      ? "selected"
+      : bulkSelectionScope === "filtered" && canUseFilteredBulkScope
+        ? "filtered"
+        : bulkSelectionScope === "all_items" && canUseAllItemsBulkScope
+          ? "all_items"
+          : canUseSelectedBulkScope
+            ? "selected"
+            : canUseFilteredBulkScope
+              ? "filtered"
+              : canUseAllItemsBulkScope
+                ? "all_items"
+                : null;
+  const effectiveBulkSelectionCount =
+    effectiveBulkSelectionScope === "selected"
+      ? totalSelectedCount
+      : effectiveBulkSelectionScope === "filtered"
+        ? props.allItemsCount
+        : effectiveBulkSelectionScope === "all_items"
+          ? props.collectionItemCount
+          : 0;
+  const exceedsBulkSelectionLimit =
+    effectiveBulkSelectionScope === "selected" && totalSelectedCount > 1000;
   const bulkEditorOpen = activeTray === "bulk";
   const activeTransferMode = activeTray === "copy" || activeTray === "move" ? activeTray : null;
   const activeTransferTargetInventories =
@@ -179,14 +311,18 @@ export function InventoryTableView(props: {
   }, [someVisibleSelected]);
 
   useEffect(() => {
-    if (!hasSelection) {
+    if (activeTray === "bulk" && !hasBulkMutationTarget) {
+      setActiveTray(null);
+      return;
+    }
+    if ((activeTray === "copy" || activeTray === "move") && !hasSelection) {
       setActiveTray(null);
     }
-  }, [hasSelection]);
+  }, [activeTray, hasBulkMutationTarget, hasSelection]);
 
   useEffect(() => {
     if (
-      (activeTray === "bulk" && !props.canBulkEditSelectedInventory) ||
+      (activeTray === "bulk" && !hasBulkMutationTarget) ||
       (activeTray === "copy" && !props.canCopyFromSelectedInventory) ||
       (activeTray === "move" && !props.canMoveFromSelectedInventory)
     ) {
@@ -194,7 +330,7 @@ export function InventoryTableView(props: {
     }
   }, [
     activeTray,
-    props.canBulkEditSelectedInventory,
+    hasBulkMutationTarget,
     props.canCopyFromSelectedInventory,
     props.canMoveFromSelectedInventory,
   ]);
@@ -264,9 +400,9 @@ export function InventoryTableView(props: {
 
   function openTray(nextTray: Exclude<ActiveTableTray, null>) {
     if (
-      (nextTray === "bulk" && !props.canBulkEditSelectedInventory) ||
-      (nextTray === "copy" && !props.canCopyFromSelectedInventory) ||
-      (nextTray === "move" && !props.canMoveFromSelectedInventory)
+      (nextTray === "bulk" && !hasBulkMutationTarget) ||
+      (nextTray === "copy" && (!hasSelection || !props.canCopyFromSelectedInventory)) ||
+      (nextTray === "move" && (!hasSelection || !props.canMoveFromSelectedInventory))
     ) {
       return;
     }
@@ -279,6 +415,23 @@ export function InventoryTableView(props: {
     if (nextTray === "move" && !props.availableMoveTargetInventories.length) {
       setTransferTargetMode("create");
     }
+  }
+
+  function openBulkTray(nextScope: BulkSelectionScope = "selected") {
+    if (!hasBulkMutationTarget) {
+      return;
+    }
+
+    if (
+      (nextScope === "selected" && !canUseSelectedBulkScope) ||
+      (nextScope === "filtered" && !canUseFilteredBulkScope) ||
+      (nextScope === "all_items" && !canUseAllItemsBulkScope)
+    ) {
+      return;
+    }
+
+    setBulkSelectionScope(nextScope);
+    openTray("bulk");
   }
 
   function toggleStringValue<T extends string>(values: T[], value: T) {
@@ -301,16 +454,37 @@ export function InventoryTableView(props: {
     });
   }
 
+  function buildBulkSelection(): BulkInventorySelectionRequest | null {
+    if (effectiveBulkSelectionScope === "filtered") {
+      return filteredBulkSelection.selection;
+    }
+    if (effectiveBulkSelectionScope === "all_items") {
+      return { kind: "all_items" };
+    }
+    if (effectiveBulkSelectionScope === "selected") {
+      return {
+        kind: "items",
+        item_ids: props.selectedItemIds,
+      };
+    }
+    return null;
+  }
+
   async function handleBulkTagAction(operation: BulkTagMutationOperation) {
+    const selection = buildBulkSelection();
+    if (!selection) {
+      return;
+    }
+
     const didApply = await props.onBulkMutationSubmit(
       operation === "clear_tags"
         ? {
-            item_ids: props.selectedItemIds,
             operation,
+            selection,
           }
         : {
-            item_ids: props.selectedItemIds,
             operation,
+            selection,
             tags: parsedBulkTags,
           },
     );
@@ -321,17 +495,22 @@ export function InventoryTableView(props: {
   }
 
   async function handleBulkLocationAction(clearLocation = false) {
+    const selection = buildBulkSelection();
+    if (!selection) {
+      return;
+    }
+
     const normalizedLocation = normalizeOptionalText(bulkLocationInput);
     const didApply = await props.onBulkMutationSubmit(
       clearLocation
         ? {
-            item_ids: props.selectedItemIds,
             operation: "set_location",
+            selection,
             clear_location: true,
           }
         : {
-            item_ids: props.selectedItemIds,
             operation: "set_location",
+            selection,
             location: normalizedLocation ?? "",
           },
     );
@@ -343,17 +522,22 @@ export function InventoryTableView(props: {
   }
 
   async function handleBulkNotesAction(clearNotes = false) {
+    const selection = buildBulkSelection();
+    if (!selection) {
+      return;
+    }
+
     const normalizedNotes = normalizeOptionalText(bulkNotesInput);
     const didApply = await props.onBulkMutationSubmit(
       clearNotes
         ? {
-            item_ids: props.selectedItemIds,
             operation: "set_notes",
+            selection,
             clear_notes: true,
           }
         : {
-            item_ids: props.selectedItemIds,
             operation: "set_notes",
+            selection,
             notes: normalizedNotes ?? "",
           },
     );
@@ -636,32 +820,50 @@ export function InventoryTableView(props: {
   }
 
   function renderBulkEditor() {
-    if (!hasSelection || !bulkEditorOpen || !props.canBulkEditSelectedInventory) {
+    if (
+      !bulkEditorOpen ||
+      !props.canBulkEditSelectedInventory ||
+      !effectiveBulkSelectionScope
+    ) {
       return null;
     }
 
     const normalizedLocation = normalizeOptionalText(bulkLocationInput);
     const normalizedNotes = normalizeOptionalText(bulkNotesInput);
+    const bulkScopeLabel =
+      effectiveBulkSelectionScope === "selected"
+        ? `Applies to ${effectiveBulkSelectionCount} selected entr${
+            effectiveBulkSelectionCount === 1 ? "y" : "ies"
+          }.`
+        : effectiveBulkSelectionScope === "filtered"
+          ? `Applies to ${effectiveBulkSelectionCount} matching entr${
+              effectiveBulkSelectionCount === 1 ? "y" : "ies"
+            }.`
+          : `Applies to the entire collection (${effectiveBulkSelectionCount} entr${
+              effectiveBulkSelectionCount === 1 ? "y" : "ies"
+            }).`;
 
     return (
       <section aria-label="Bulk edit tray" className="table-bulk-tray">
         <div className="table-bulk-tray-header">
           <div>
             <strong>Bulk edit</strong>
-            <span>
-              Applies to {totalSelectedCount} selected entr
-              {totalSelectedCount === 1 ? "y" : "ies"}.
-            </span>
-            {hiddenSelectedCount > 0 ? (
+            <span>{bulkScopeLabel}</span>
+            {effectiveBulkSelectionScope === "selected" && hiddenSelectedCount > 0 ? (
               <span className="table-selection-summary-accent">
                 {hiddenSelectedCount} selected entr
                 {hiddenSelectedCount === 1 ? "y" : "ies"} not shown in the current view.
               </span>
-            ) : (
+            ) : effectiveBulkSelectionScope === "selected" ? (
               <span>
                 Bulk edits apply to every selected entry, including any not shown in the current view.
               </span>
-            )}
+            ) : null}
+            {effectiveBulkSelectionScope === "filtered" && activeFilterCount > 0 ? (
+              <span>
+                Uses {activeFilterCount} active filter{activeFilterCount === 1 ? "" : "s"}.
+              </span>
+            ) : null}
           </div>
           <button
             className="secondary-button table-bulk-tray-close"
@@ -671,6 +873,56 @@ export function InventoryTableView(props: {
             Close
           </button>
         </div>
+
+        <div aria-label="Bulk edit target" className="table-bulk-mode-toggle" role="group">
+          <button
+            aria-pressed={effectiveBulkSelectionScope === "selected"}
+            className={
+              effectiveBulkSelectionScope === "selected"
+                ? "secondary-button table-bulk-mode-button table-bulk-mode-button-active"
+                : "secondary-button table-bulk-mode-button"
+            }
+            disabled={!canUseSelectedBulkScope || props.bulkMutationBusy}
+            onClick={() => setBulkSelectionScope("selected")}
+            type="button"
+          >
+            Selected rows
+          </button>
+          <button
+            aria-pressed={effectiveBulkSelectionScope === "filtered"}
+            className={
+              effectiveBulkSelectionScope === "filtered"
+                ? "secondary-button table-bulk-mode-button table-bulk-mode-button-active"
+                : "secondary-button table-bulk-mode-button"
+            }
+            disabled={!canUseFilteredBulkScope || props.bulkMutationBusy}
+            onClick={() => setBulkSelectionScope("filtered")}
+            type="button"
+          >
+            Matching filters
+          </button>
+          <button
+            aria-pressed={effectiveBulkSelectionScope === "all_items"}
+            className={
+              effectiveBulkSelectionScope === "all_items"
+                ? "secondary-button table-bulk-mode-button table-bulk-mode-button-active"
+                : "secondary-button table-bulk-mode-button"
+            }
+            disabled={!canUseAllItemsBulkScope || props.bulkMutationBusy}
+            onClick={() => setBulkSelectionScope("all_items")}
+            type="button"
+          >
+            Entire collection
+          </button>
+        </div>
+
+        {filteredBulkSelection.reason &&
+        activeFilterCount > 0 &&
+        !canUseFilteredBulkScope ? (
+          <span className="table-selection-summary-accent">
+            {filteredBulkSelection.reason}
+          </span>
+        ) : null}
 
         <div aria-label="Bulk edit mode" className="table-bulk-mode-toggle" role="group">
           {([
@@ -709,7 +961,7 @@ export function InventoryTableView(props: {
               />
             </label>
             <span className="field-hint field-hint-info" id={bulkTagsHintId}>
-              Add, remove, replace, or clear tags on every selected entry.
+              Add, remove, replace, or clear tags on every targeted entry.
             </span>
             <div className="table-bulk-action-buttons">
               <button
@@ -774,7 +1026,7 @@ export function InventoryTableView(props: {
               />
             </label>
             <span className="field-hint field-hint-info">
-              Set the selected entries to a new location, or clear their current location.
+              Set the targeted entries to a new location, or clear their current location.
             </span>
             <div className="table-bulk-pane-actions">
               <button
@@ -809,13 +1061,13 @@ export function InventoryTableView(props: {
                 className="text-input textarea-input"
                 disabled={props.bulkMutationBusy}
                 onChange={(event) => setBulkNotesInput(event.target.value)}
-                placeholder="Notes to replace on the selected entries"
+                placeholder="Notes to replace on the targeted entries"
                 rows={4}
                 value={bulkNotesInput}
               />
             </label>
             <span className="field-hint field-hint-info">
-              Replace notes on every selected entry, or clear them entirely.
+              Replace notes on every targeted entry, or clear them entirely.
             </span>
             <div className="table-bulk-pane-actions">
               <button
@@ -844,7 +1096,7 @@ export function InventoryTableView(props: {
 
         {exceedsBulkSelectionLimit ? (
           <span className="table-selection-summary-accent">
-            Bulk edit currently supports up to 200 selected entries per request.
+            Bulk edit currently supports up to 1000 selected entries per request.
           </span>
         ) : null}
       </section>
@@ -1116,7 +1368,7 @@ export function InventoryTableView(props: {
                 ) : null}
                 {exceedsBulkSelectionLimit ? (
                   <span className="table-selection-summary-accent">
-                    Bulk edit limit: 200 entries.
+                    Bulk edit limit: 1000 entries.
                   </span>
                 ) : null}
               </div>
@@ -1157,8 +1409,12 @@ export function InventoryTableView(props: {
                           ? "secondary-button table-selection-action table-selection-action-active"
                           : "secondary-button table-selection-action"
                       }
-                      disabled={exceedsBulkSelectionLimit}
-                      onClick={() => openTray("bulk")}
+                      disabled={
+                        exceedsBulkSelectionLimit &&
+                        !canUseFilteredBulkScope &&
+                        !canUseAllItemsBulkScope
+                      }
+                      onClick={() => openBulkTray("selected")}
                       type="button"
                     >
                       Bulk edit
@@ -1207,9 +1463,50 @@ export function InventoryTableView(props: {
                 ) : null}
               </div>
             ) : (
-              <span className="table-selection-slot-copy">
-                Select rows for available actions.
-              </span>
+              <div>
+                {props.canBulkEditSelectedInventory &&
+                (canUseFilteredBulkScope || canUseAllItemsBulkScope) ? (
+                  <div className="table-selection-actions">
+                    {canUseFilteredBulkScope ? (
+                      <button
+                        className={
+                          bulkEditorOpen && effectiveBulkSelectionScope === "filtered"
+                            ? "secondary-button table-selection-action table-selection-action-active"
+                            : "secondary-button table-selection-action"
+                        }
+                        disabled={props.bulkMutationBusy}
+                        onClick={() => openBulkTray("filtered")}
+                        type="button"
+                      >
+                        Bulk edit filtered
+                      </button>
+                    ) : null}
+                    {canUseAllItemsBulkScope ? (
+                      <button
+                        className={
+                          bulkEditorOpen && effectiveBulkSelectionScope === "all_items"
+                            ? "secondary-button table-selection-action table-selection-action-active"
+                            : "secondary-button table-selection-action"
+                        }
+                        disabled={props.bulkMutationBusy}
+                        onClick={() => openBulkTray("all_items")}
+                        type="button"
+                      >
+                        Bulk edit collection
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="table-selection-slot-copy">
+                    Select rows for available actions.
+                  </span>
+                )}
+                {selectionCapabilityMessage ? (
+                  <span className="table-selection-slot-copy">
+                    {selectionCapabilityMessage}
+                  </span>
+                ) : null}
+              </div>
             )}
           </div>
         </div>

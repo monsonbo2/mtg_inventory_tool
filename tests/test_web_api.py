@@ -3474,16 +3474,19 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-demo"},
                     json={
                         "operation": "add_tags",
-                        "item_ids": item_ids,
+                        "selection": {"kind": "items", "item_ids": item_ids},
                         "tags": ["trade", "deck"],
                     },
                 )
                 self.assertEqual(200, bulk.status_code)
                 self.assertEqual("personal", bulk.json()["inventory"])
                 self.assertEqual("add_tags", bulk.json()["operation"])
-                self.assertEqual(item_ids, bulk.json()["requested_item_ids"])
+                self.assertEqual("items", bulk.json()["selection_kind"])
+                self.assertEqual(2, bulk.json()["matched_count"])
+                self.assertEqual(0, bulk.json()["unchanged_count"])
                 self.assertEqual(item_ids, bulk.json()["updated_item_ids"])
                 self.assertEqual(2, bulk.json()["updated_count"])
+                self.assertFalse(bulk.json()["updated_item_ids_truncated"])
 
                 listed = client.get("/inventories/personal/items")
                 self.assertEqual(200, listed.status_code)
@@ -3497,6 +3500,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("add_tags", audit.json()[1]["action"])
                 self.assertTrue(audit.json()[0]["metadata"]["bulk_operation"])
                 self.assertEqual("add_tags", audit.json()[0]["metadata"]["bulk_kind"])
+                self.assertEqual("items", audit.json()[0]["metadata"]["selection_kind"])
                 self.assertEqual(2, audit.json()[0]["metadata"]["bulk_count"])
                 self.assertEqual(2, audit.json()[0]["metadata"]["updated_count"])
                 self.assertEqual("req-bulk-demo", audit.json()[0]["request_id"])
@@ -3525,13 +3529,93 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "add_tags",
-                        "item_ids": [item_id, item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id, item_id]},
                         "tags": ["trade"],
                     },
                 )
                 self.assertEqual(400, duplicate.status_code)
                 self.assertEqual("validation_error", duplicate.json()["error"]["code"])
                 self.assertIn("must not contain duplicates", duplicate.json()["error"]["message"])
+
+    def test_demo_api_bulk_mutation_rejects_mixed_selection_and_top_level_item_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                self._insert_inventory_item(
+                    db_path,
+                    inventory_slug="personal",
+                    scryfall_id="api-card-1",
+                )
+                with connect(db_path) as connection:
+                    item_id = int(connection.execute("SELECT id FROM inventory_items").fetchone()["id"])
+
+                mixed = client.post(
+                    "/inventories/personal/items/bulk",
+                    json={
+                        "operation": "clear_tags",
+                        "selection": {"kind": "all_items"},
+                        "item_ids": [item_id],
+                    },
+                )
+                self.assertEqual(400, mixed.status_code)
+                self.assertEqual("validation_error", mixed.json()["error"]["code"])
+                self.assertIn("item_ids", mixed.json()["error"]["message"])
+
+    def test_demo_api_bulk_mutation_all_items_can_exceed_legacy_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            with self._client(db_path) as client:
+                self._seed_card(db_path)
+
+                created_inventory = client.post(
+                    "/inventories",
+                    json={"slug": "personal", "display_name": "Personal Collection"},
+                )
+                self.assertEqual(201, created_inventory.status_code)
+
+                for index in range(205):
+                    self._insert_inventory_item(
+                        db_path,
+                        inventory_slug="personal",
+                        scryfall_id="api-card-1",
+                        location=f"Binder {index:03d}",
+                    )
+
+                bulk = client.post(
+                    "/inventories/personal/items/bulk",
+                    headers={"X-Request-Id": "req-bulk-all-items-demo"},
+                    json={
+                        "operation": "set_notes",
+                        "selection": {"kind": "all_items"},
+                        "notes": "Inventory sweep",
+                    },
+                )
+                self.assertEqual(200, bulk.status_code)
+                self.assertEqual("all_items", bulk.json()["selection_kind"])
+                self.assertEqual(205, bulk.json()["matched_count"])
+                self.assertEqual(205, bulk.json()["updated_count"])
+                self.assertEqual(0, bulk.json()["unchanged_count"])
+                self.assertEqual(205, len(bulk.json()["updated_item_ids"]))
+                self.assertFalse(bulk.json()["updated_item_ids_truncated"])
+
+                listed = client.get("/inventories/personal/items")
+                self.assertEqual(200, listed.status_code)
+                self.assertEqual(205, len(listed.json()))
+                self.assertTrue(all(row["notes"] == "Inventory sweep" for row in listed.json()))
+
+                audit = client.get("/inventories/personal/audit")
+                self.assertEqual(200, audit.status_code)
+                self.assertEqual("all_items", audit.json()[0]["metadata"]["selection_kind"])
+                self.assertEqual(205, audit.json()[0]["metadata"]["bulk_count"])
+                self.assertEqual(205, audit.json()[0]["metadata"]["updated_count"])
 
     def test_demo_api_bulk_tag_mutation_rejects_unrelated_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3557,7 +3641,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "add_tags",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                         "tags": ["trade"],
                         "quantity": 2,
                     },
@@ -3603,7 +3687,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-quantity-demo"},
                     json={
                         "operation": "set_quantity",
-                        "item_ids": item_ids,
+                        "selection": {"kind": "items", "item_ids": item_ids},
                         "quantity": 4,
                     },
                 )
@@ -3616,7 +3700,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-notes-demo"},
                     json={
                         "operation": "set_notes",
-                        "item_ids": item_ids,
+                        "selection": {"kind": "items", "item_ids": item_ids},
                         "notes": "featured",
                     },
                 )
@@ -3628,7 +3712,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-clear-notes-demo"},
                     json={
                         "operation": "set_notes",
-                        "item_ids": [item_ids[1]],
+                        "selection": {"kind": "items", "item_ids": [item_ids[1]]},
                         "clear_notes": True,
                     },
                 )
@@ -3640,7 +3724,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-acquisition-demo"},
                     json={
                         "operation": "set_acquisition",
-                        "item_ids": item_ids,
+                        "selection": {"kind": "items", "item_ids": item_ids},
                         "acquisition_price": "2.50",
                         "acquisition_currency": "usd",
                     },
@@ -3653,7 +3737,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-clear-acquisition-demo"},
                     json={
                         "operation": "set_acquisition",
-                        "item_ids": [item_ids[0]],
+                        "selection": {"kind": "items", "item_ids": [item_ids[0]]},
                         "clear_acquisition": True,
                     },
                 )
@@ -3713,7 +3797,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-finish-demo"},
                     json={
                         "operation": "set_finish",
-                        "item_ids": item_ids,
+                        "selection": {"kind": "items", "item_ids": item_ids},
                         "finish": "foil",
                     },
                 )
@@ -3775,7 +3859,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_finish",
-                        "item_ids": [item_ids[2], item_ids[0]],
+                        "selection": {"kind": "items", "item_ids": [item_ids[2], item_ids[0]]},
                         "finish": "foil",
                     },
                 )
@@ -3824,7 +3908,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-location-demo"},
                     json={
                         "operation": "set_location",
-                        "item_ids": item_ids,
+                        "selection": {"kind": "items", "item_ids": item_ids},
                         "location": "Binder B",
                     },
                 )
@@ -3872,7 +3956,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-clear-location-demo"},
                     json={
                         "operation": "set_location",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                         "clear_location": True,
                     },
                 )
@@ -3929,7 +4013,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_location",
-                        "item_ids": [item_ids[2], item_ids[0]],
+                        "selection": {"kind": "items", "item_ids": [item_ids[2], item_ids[0]]},
                         "location": "Binder B",
                     },
                 )
@@ -3984,7 +4068,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-location-merge-demo"},
                     json={
                         "operation": "set_location",
-                        "item_ids": [item_ids[0]],
+                        "selection": {"kind": "items", "item_ids": [item_ids[0]]},
                         "location": "Binder B",
                         "merge": True,
                         "keep_acquisition": "target",
@@ -4032,7 +4116,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_location",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                         "location": "Binder A",
                         "clear_location": True,
                     },
@@ -4048,7 +4132,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_location",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                         "location": "Binder A",
                         "keep_acquisition": "target",
                     },
@@ -4096,7 +4180,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-condition-demo"},
                     json={
                         "operation": "set_condition",
-                        "item_ids": item_ids,
+                        "selection": {"kind": "items", "item_ids": item_ids},
                         "condition_code": "LP",
                     },
                 )
@@ -4158,7 +4242,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_condition",
-                        "item_ids": [item_ids[2], item_ids[0]],
+                        "selection": {"kind": "items", "item_ids": [item_ids[2], item_ids[0]]},
                         "condition_code": "LP",
                     },
                 )
@@ -4215,7 +4299,7 @@ class WebApiTest(unittest.TestCase):
                     headers={"X-Request-Id": "req-bulk-condition-merge-demo"},
                     json={
                         "operation": "set_condition",
-                        "item_ids": [item_ids[0]],
+                        "selection": {"kind": "items", "item_ids": [item_ids[0]]},
                         "condition_code": "LP",
                         "merge": True,
                         "keep_acquisition": "source",
@@ -4263,7 +4347,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_condition",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                     },
                 )
                 self.assertEqual(400, missing_condition.status_code)
@@ -4277,7 +4361,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_condition",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                         "condition_code": "LP",
                         "keep_acquisition": "target",
                     },
@@ -4581,7 +4665,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "set_quantity",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                     },
                 )
                 self.assertEqual(400, invalid.status_code)
@@ -5669,7 +5753,7 @@ class WebApiTest(unittest.TestCase):
                     "/inventories/personal/items/bulk",
                     json={
                         "operation": "add_tags",
-                        "item_ids": [item_id],
+                        "selection": {"kind": "items", "item_ids": [item_id]},
                         "tags": ["trade"],
                     },
                 )
@@ -6045,7 +6129,7 @@ class WebApiTest(unittest.TestCase):
                     headers=viewer_headers,
                     json={
                         "operation": "add_tags",
-                        "item_ids": [editor_item_id],
+                        "selection": {"kind": "items", "item_ids": [editor_item_id]},
                         "tags": ["trade"],
                     },
                 )
@@ -6057,7 +6141,7 @@ class WebApiTest(unittest.TestCase):
                     headers=outsider_headers,
                     json={
                         "operation": "add_tags",
-                        "item_ids": [editor_item_id],
+                        "selection": {"kind": "items", "item_ids": [editor_item_id]},
                         "tags": ["trade"],
                     },
                 )
@@ -6069,7 +6153,7 @@ class WebApiTest(unittest.TestCase):
                     headers=editor_headers,
                     json={
                         "operation": "add_tags",
-                        "item_ids": [editor_item_id],
+                        "selection": {"kind": "items", "item_ids": [editor_item_id]},
                         "tags": ["trade"],
                     },
                 )
@@ -6113,7 +6197,7 @@ class WebApiTest(unittest.TestCase):
                     headers=admin_headers,
                     json={
                         "operation": "add_tags",
-                        "item_ids": [admin_add.json()["item_id"]],
+                        "selection": {"kind": "items", "item_ids": [admin_add.json()["item_id"]]},
                         "tags": ["admin"],
                     },
                 )

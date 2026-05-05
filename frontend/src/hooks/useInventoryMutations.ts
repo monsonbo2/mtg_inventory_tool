@@ -54,7 +54,7 @@ import type {
   ViewRefreshOutcome,
 } from "../uiTypes";
 
-const BULK_MUTATION_MAX_ITEMS = 200;
+const BULK_MUTATION_MAX_ITEMS = 1000;
 const TRANSFER_MUTATION_MAX_ITEMS = 100;
 
 type UseInventoryMutationsOptions = {
@@ -702,12 +702,14 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   }
 
   function getBulkMutationSelectionError(payload: BulkInventoryItemMutationRequest) {
-    if (!payload.item_ids.length) {
-      return "Select at least one entry before making bulk changes.";
-    }
+    if (payload.selection.kind === "items") {
+      if (!payload.selection.item_ids.length) {
+        return "Select at least one entry before making bulk changes.";
+      }
 
-    if (payload.item_ids.length > BULK_MUTATION_MAX_ITEMS) {
-      return `Bulk edit currently supports up to ${BULK_MUTATION_MAX_ITEMS} entries at a time.`;
+      if (payload.selection.item_ids.length > BULK_MUTATION_MAX_ITEMS) {
+        return `Bulk edit currently supports up to ${BULK_MUTATION_MAX_ITEMS} explicitly selected entries at a time.`;
+      }
     }
 
     return null;

@@ -443,6 +443,7 @@ export default function App() {
       canBulkEditSelectedInventory: selectedInventoryCanWrite,
       canCopyFromSelectedInventory: canCopyFromInventory(selectedInventoryRow),
       canMoveFromSelectedInventory: canMoveFromInventory(selectedInventoryRow),
+      collectionItemCount: selectedInventoryRow?.item_rows ?? collectionItems.length,
       createInventoryBusy,
       filterOptions: tableFilterOptions,
       filters: tableFilters,
