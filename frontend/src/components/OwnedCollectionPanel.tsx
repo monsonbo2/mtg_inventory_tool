@@ -58,6 +58,7 @@ type OwnedCollectionPanelState = {
     canBulkEditSelectedInventory: boolean;
     canCopyFromSelectedInventory: boolean;
     canMoveFromSelectedInventory: boolean;
+    collectionItemCount: number;
     createInventoryBusy: boolean;
     filterOptions: InventoryTableFilterOptions;
     filters: InventoryTableFilters;
@@ -308,6 +309,7 @@ export function OwnedCollectionPanel(props: {
               canBulkEditSelectedInventory={props.state.table.canBulkEditSelectedInventory}
               canCopyFromSelectedInventory={props.state.table.canCopyFromSelectedInventory}
               canMoveFromSelectedInventory={props.state.table.canMoveFromSelectedInventory}
+              collectionItemCount={props.state.table.collectionItemCount}
               createInventoryBusy={props.state.table.createInventoryBusy}
               filterOptions={props.state.table.filterOptions}
               filters={props.state.table.filters}

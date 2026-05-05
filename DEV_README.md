@@ -77,6 +77,8 @@ Current authz model:
   - `set_finish`
   - `set_location`
   - `set_condition`
+  - selection scopes: explicit `items`, server-side `filtered`, and
+    full-inventory `all_items`
 - `POST /inventories/{source_inventory_slug}/transfer` now supports atomic
   selected-row and whole-inventory `copy` / `move` operations, `dry_run`
   previews, `on_conflict=fail|merge`, and `keep_acquisition`; in

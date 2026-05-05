@@ -36,6 +36,7 @@ export type InventoryAcquisitionMergePolicy = "target" | "source";
 export type InventoryTransferMode = "copy" | "move";
 export type InventoryTransferConflictPolicy = "fail" | "merge";
 export type InventoryTransferSelectionKind = "items" | "all_items";
+export type BulkInventorySelectionKind = "items" | "filtered" | "all_items";
 export type InventoryCapabilityRole = "viewer" | "editor" | "owner" | "admin";
 export type InventoryTransferItemStatus =
   | "would_copy"
@@ -268,8 +269,28 @@ export type BulkTagMutationOperation = Extract<
 >;
 
 type BulkInventoryItemMutationBase = {
-  item_ids: number[];
+  selection: BulkInventorySelectionRequest;
 };
+
+export type BulkInventorySelectionRequest =
+  | {
+      kind: "items";
+      item_ids: number[];
+    }
+  | {
+      kind: "filtered";
+      query?: string | null;
+      set_code?: string | null;
+      rarity?: string | null;
+      finish?: FinishInput | null;
+      condition_code?: ConditionCode | null;
+      language_code?: LanguageCode | null;
+      location?: string | null;
+      tags?: string[] | null;
+    }
+  | {
+      kind: "all_items";
+    };
 
 type BulkInventoryMutationMergeOptions = {
   keep_acquisition?: InventoryAcquisitionMergePolicy | null;
@@ -432,9 +453,12 @@ export type InventoryItemPatchResponse =
 export interface BulkInventoryItemMutationResponse {
   inventory: string;
   operation: BulkInventoryItemOperation;
-  requested_item_ids: number[];
+  selection_kind: BulkInventorySelectionKind;
+  matched_count: number;
+  unchanged_count: number;
   updated_item_ids: number[];
   updated_count: number;
+  updated_item_ids_truncated: boolean;
 }
 
 export interface SearchCardsParams {

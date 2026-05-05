@@ -22,6 +22,19 @@ operations reuse the same `merge` / `keep_acquisition` semantics as the
 single-item mutation paths, and frontend clients should refetch rows after
 successful merge-capable bulk updates.
 
+The current request envelope uses a `selection` discriminator rather than the
+original explicit-only proposal:
+
+- `{"kind": "items", "item_ids": [...]}` for explicit rows
+- `{"kind": "filtered", ...filters}` for server-side filtered rows
+- `{"kind": "all_items"}` for the entire inventory
+
+Filtered `tags` match rows that contain every requested tag.
+
+The current response envelope reports `selection_kind`, `matched_count`,
+`unchanged_count`, `updated_item_ids`, `updated_count`, and
+`updated_item_ids_truncated`.
+
 ## Frontend Backend Request
 
 Feature / screen:
@@ -72,7 +85,7 @@ Current behavior:
 Requested change:
 
 Add a dedicated bulk mutation endpoint that applies one mutation family to an
-explicit list of `item_ids` in a single request, while keeping the existing
+explicit row selection in a single request, while keeping the existing
 single-item PATCH route unchanged.
 
 Preferred route shape:
@@ -82,7 +95,7 @@ Preferred route shape:
 Preferred request semantics:
 
 - one bulk operation per request
-- explicit `item_ids` array supplied by the client
+- explicit row selection supplied by the client
 - operation-specific payload fields
 - the public route and envelope should be generic from day one
 - the first implemented operation family should cover bulk tag actions for
@@ -98,9 +111,7 @@ Preferred initial bulk operations:
 Preferred response semantics:
 
 - explicit `operation` discriminator
-- `requested_item_ids`
-- `updated_item_ids`
-- `updated_count`
+- updated row ids and summary counts
 - do not require per-item partial-success details in the first shipped version
 
 Frontend preference:
@@ -109,37 +120,15 @@ Frontend preference:
   all-or-nothing, so table-selection UX does not have to reconcile a partially
   applied batch by default
 
-Example request JSON:
-
-```json
-{
-  "operation": "add_tags",
-  "item_ids": [12, 27, 44],
-  "tags": ["commander", "trade"]
-}
-```
-
-Example response JSON:
-
-```json
-{
-  "inventory": "personal",
-  "operation": "add_tags",
-  "requested_item_ids": [12, 27, 44],
-  "updated_item_ids": [12, 27, 44],
-  "updated_count": 3
-}
-```
-
 Expected error cases:
 
 - `400` validation for:
-  - empty `item_ids`
-  - duplicate `item_ids`
+  - empty explicit selection
+  - duplicate explicit row ids
   - unsupported `operation`
   - missing `tags` when the operation requires them
-- `404` when the inventory does not exist or when one or more requested items
-  do not belong to that inventory
+- `404` when the inventory does not exist or when one or more explicitly
+  requested rows do not belong to that inventory
 - `409` if the backend chooses to reject a batch because it conflicts with
   another invariant or concurrent write
 - existing `503` and `500` route behavior should remain consistent with the
@@ -179,82 +168,20 @@ still keeping the first implementation small enough to ship safely.
   - inventory `editor` or `owner`
   - or global `admin`
 
-### Request model
+### Request And Response Models
 
-Suggested API model name:
+The originally proposed model used top-level explicit row ids and tag-only
+operation examples. That shape was superseded before shipping.
 
-- `BulkInventoryItemMutationRequest`
+The current API model is `BulkInventoryItemMutationRequest`, with a
+`selection.kind` discriminator for explicit rows, filtered rows, or the entire
+inventory. The current response model is `BulkInventoryItemMutationResponse`,
+with `selection_kind`, matched/unchanged/updated counts, bounded
+`updated_item_ids`, and `updated_item_ids_truncated`.
 
-Suggested initial schema:
-
-```json
-{
-  "operation": "add_tags",
-  "item_ids": [12, 27, 44],
-  "tags": ["commander", "trade"]
-}
-```
-
-Suggested request fields:
-
-- `operation`
-  - initial supported values:
-    - `add_tags`
-    - `remove_tags`
-    - `set_tags`
-    - `clear_tags`
-- `item_ids`
-  - non-empty array of integer item ids
-  - values must be unique
-  - all ids must belong to the inventory in the route path
-- `tags`
-  - required for `add_tags`, `remove_tags`, and `set_tags`
-  - forbidden for `clear_tags`
-
-Suggested first-pass limits:
-
-- reject empty `item_ids`
-- reject duplicate `item_ids`
-- cap `item_ids` to a reasonable max such as `100` or `200`
-
-Suggested Pydantic shape:
-
-```python
-class BulkInventoryItemMutationRequest(ApiBaseModel):
-    operation: Literal["add_tags", "remove_tags", "set_tags", "clear_tags"]
-    item_ids: list[int]
-    tags: list[str] | None = None
-```
-
-### Response model
-
-Suggested API model name:
-
-- `BulkInventoryItemMutationResponse`
-
-Suggested response shape:
-
-```json
-{
-  "inventory": "personal",
-  "operation": "add_tags",
-  "requested_item_ids": [12, 27, 44],
-  "updated_item_ids": [12, 27, 44],
-  "updated_count": 3
-}
-```
-
-Suggested response fields:
-
-- `inventory`
-- `operation`
-- `requested_item_ids`
-- `updated_item_ids`
-- `updated_count`
-
-Do not include partial-success fields in v1. If partial batch behavior is ever
-added later, it should be introduced explicitly rather than silently changing
-the semantics of the first shipped contract.
+Use `docs/api_v1_contract.md`, `contracts/openapi.json`, and
+`contracts/demo_payloads/bulk_item_mutation_request.json` as the copyable
+contract source.
 
 ### Transaction semantics
 
@@ -268,14 +195,14 @@ Recommended behavior:
 Recommended HTTP behavior:
 
 - `400 validation_error`
-  - empty `item_ids`
-  - duplicate `item_ids`
+  - empty explicit selection
+  - duplicate explicit row ids
   - unsupported `operation`
   - missing `tags` when required
   - `tags` supplied for `clear_tags`
 - `404 not_found`
   - inventory does not exist
-  - one or more `item_ids` do not belong to the inventory
+  - one or more explicit row ids do not belong to the inventory
 - `403 forbidden`
   - authenticated user lacks inventory write access
 - `409 conflict`
@@ -315,7 +242,7 @@ Pieces that should stay stable:
 
 - route: `POST /inventories/{inventory_slug}/items/bulk`
 - auth model
-- `operation` + `item_ids` request envelope
+- `operation` + selection request envelope
 - transaction wrapper
 - response envelope
 - audit grouping strategy
@@ -388,8 +315,8 @@ Service layer:
 - successful `remove_tags`
 - successful `set_tags`
 - successful `clear_tags`
-- duplicate `item_ids` rejected
-- empty `item_ids` rejected
+- duplicate explicit row ids rejected
+- empty explicit selection rejected
 - invalid/missing `tags` rejected
 - unknown item id rejected
 - item from another inventory rejected

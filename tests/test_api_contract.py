@@ -25,6 +25,7 @@ from mtg_source_stack.api_contract import api_error_payload, api_error_status
 from mtg_source_stack.api.request_models import (
     AddInventoryItemRequest,
     BulkInventoryItemMutationRequest,
+    BulkItemsSelectionRequest,
     DecklistImportRequest,
     DeckUrlImportRequest,
     InventoryCreateRequest,
@@ -810,8 +811,24 @@ class ApiContractTest(RepoSmokeTestCase):
             ],
             bulk_properties["operation"]["enum"],
         )
-        self.assertEqual(1, bulk_properties["item_ids"]["minItems"])
-        self.assertEqual(200, bulk_properties["item_ids"]["maxItems"])
+        self.assertIn("provided filters", bulk_properties["selection"]["description"])
+        selection_schema = bulk_properties["selection"]
+        self.assertEqual("kind", selection_schema["discriminator"]["propertyName"])
+        selection_refs = {
+            option["$ref"].rsplit("/", maxsplit=1)[-1]
+            for option in selection_schema["oneOf"]
+        }
+        self.assertEqual(
+            {
+                "BulkAllItemsSelectionRequest",
+                "BulkFilteredSelectionRequest",
+                "BulkItemsSelectionRequest",
+            },
+            selection_refs,
+        )
+        items_selection = BulkItemsSelectionRequest.model_json_schema()
+        self.assertEqual(1, items_selection["properties"]["item_ids"]["minItems"])
+        self.assertEqual(1000, items_selection["properties"]["item_ids"]["maxItems"])
         self.assertIn("Omit this field for non-tag bulk operations", bulk_properties["tags"]["description"])
         self.assertIn("Required for set_quantity", bulk_properties["quantity"]["description"])
         self.assertIn("Used by set_notes", bulk_properties["notes"]["description"])
@@ -833,13 +850,17 @@ class ApiContractTest(RepoSmokeTestCase):
             {
                 "inventory": "personal",
                 "operation": "add_tags",
-                "requested_item_ids": [12, 27, 44],
+                "selection_kind": "filtered",
+                "matched_count": 3,
+                "unchanged_count": 1,
                 "updated_item_ids": [12, 44],
                 "updated_count": 2,
+                "updated_item_ids_truncated": False,
             }
         )
         self.assertEqual("add_tags", bulk_response.operation)
         self.assertEqual([12, 44], bulk_response.updated_item_ids)
+        self.assertEqual(3, bulk_response.matched_count)
 
         transfer_schema = InventoryTransferRequest.model_json_schema()
         transfer_properties = transfer_schema["properties"]

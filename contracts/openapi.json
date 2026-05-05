@@ -448,9 +448,144 @@
         "title": "Body_imports_csv_imports_csv_post",
         "type": "object"
       },
+      "BulkAllItemsSelectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "all_items",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "BulkAllItemsSelectionRequest",
+        "type": "object"
+      },
+      "BulkFilteredSelectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "condition_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical condition codes: M, NM, LP, MP, HP, DMG. Default: NM. Human-readable aliases such as `near mint` and `lightly played` are accepted and normalized.",
+            "title": "Condition Code"
+          },
+          "finish": {
+            "anyOf": [
+              {
+                "enum": [
+                  "normal",
+                  "nonfoil",
+                  "foil",
+                  "etched"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`.",
+            "title": "Finish"
+          },
+          "kind": {
+            "const": "filtered",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical language codes: en, ja, de, fr, it, es, pt, ru, ko, zhs, zht, ph. Default: en. Common language-name aliases such as `english` and `japanese` are accepted and normalized.",
+            "title": "Language Code"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case-insensitive location substring filter for selection.kind=`filtered`.",
+            "title": "Location"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case-insensitive card-name substring filter for selection.kind=`filtered`.",
+            "title": "Query"
+          },
+          "rarity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rarity filter for selection.kind=`filtered`.",
+            "title": "Rarity"
+          },
+          "set_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set-code filter for selection.kind=`filtered`.",
+            "title": "Set Code"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tag filters for selection.kind=`filtered`. Rows must contain every requested tag.",
+            "title": "Tags"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "BulkFilteredSelectionRequest",
+        "type": "object"
+      },
       "BulkInventoryItemMutationRequest": {
         "additionalProperties": false,
-        "description": "Specify exactly one bulk mutation operation per request. The current runtime supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, set_location, and set_condition.",
+        "description": "Specify exactly one bulk mutation operation per request. The current runtime supports add_tags, remove_tags, set_tags, clear_tags, set_quantity, set_notes, set_acquisition, set_finish, set_location, and set_condition. Use selection.kind=`items` for an explicit list of rows, `filtered` to target the rows matching the current inventory-table filters, or `all_items` to target the entire inventory.",
         "properties": {
           "acquisition_currency": {
             "anyOf": [
@@ -523,15 +658,6 @@
             ],
             "description": "Used by set_finish. Accepted input values: normal, nonfoil, foil, etched. Canonical response values: normal, foil, etched. The input alias `nonfoil` is normalized to `normal`. Omit this field for every other bulk operation.",
             "title": "Finish"
-          },
-          "item_ids": {
-            "items": {
-              "type": "integer"
-            },
-            "maxItems": 200,
-            "minItems": 1,
-            "title": "Item Ids",
-            "type": "array"
           },
           "keep_acquisition": {
             "anyOf": [
@@ -607,6 +733,29 @@
             "description": "Required for set_quantity. Omit this field for every other bulk operation.",
             "title": "Quantity"
           },
+          "selection": {
+            "description": "Select explicit inventory rows, all rows matching the provided filters, or the entire inventory.",
+            "discriminator": {
+              "mapping": {
+                "all_items": "#/components/schemas/BulkAllItemsSelectionRequest",
+                "filtered": "#/components/schemas/BulkFilteredSelectionRequest",
+                "items": "#/components/schemas/BulkItemsSelectionRequest"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BulkItemsSelectionRequest"
+              },
+              {
+                "$ref": "#/components/schemas/BulkFilteredSelectionRequest"
+              },
+              {
+                "$ref": "#/components/schemas/BulkAllItemsSelectionRequest"
+              }
+            ],
+            "title": "Selection"
+          },
           "tags": {
             "anyOf": [
               {
@@ -625,7 +774,7 @@
         },
         "required": [
           "operation",
-          "item_ids"
+          "selection"
         ],
         "title": "BulkInventoryItemMutationRequest",
         "type": "object"
@@ -636,6 +785,10 @@
           "inventory": {
             "title": "Inventory",
             "type": "string"
+          },
+          "matched_count": {
+            "title": "Matched Count",
+            "type": "integer"
           },
           "operation": {
             "enum": [
@@ -653,12 +806,18 @@
             "title": "Operation",
             "type": "string"
           },
-          "requested_item_ids": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Requested Item Ids",
-            "type": "array"
+          "selection_kind": {
+            "enum": [
+              "items",
+              "filtered",
+              "all_items"
+            ],
+            "title": "Selection Kind",
+            "type": "string"
+          },
+          "unchanged_count": {
+            "title": "Unchanged Count",
+            "type": "integer"
           },
           "updated_count": {
             "title": "Updated Count",
@@ -670,16 +829,49 @@
             },
             "title": "Updated Item Ids",
             "type": "array"
+          },
+          "updated_item_ids_truncated": {
+            "title": "Updated Item Ids Truncated",
+            "type": "boolean"
           }
         },
         "required": [
           "inventory",
           "operation",
-          "requested_item_ids",
+          "selection_kind",
+          "matched_count",
+          "unchanged_count",
           "updated_item_ids",
-          "updated_count"
+          "updated_count",
+          "updated_item_ids_truncated"
         ],
         "title": "BulkInventoryItemMutationResponse",
+        "type": "object"
+      },
+      "BulkItemsSelectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "item_ids": {
+            "description": "Used by selection.kind=`items`. Provide 1 to 1000 explicit item ids from the target inventory.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Item Ids",
+            "type": "array"
+          },
+          "kind": {
+            "const": "items",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "item_ids"
+        ],
+        "title": "BulkItemsSelectionRequest",
         "type": "object"
       },
       "CatalogNameSearchResponse": {

@@ -58,8 +58,12 @@ preserve for the first API-backed version of the project.
   `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
   `set_notes`, `set_acquisition`, `set_finish`, `set_location`, and
   `set_condition`.
+- Bulk item mutation requests use a `selection` discriminator:
+  `selection.kind="items"` for explicit row IDs, `filtered` for rows matching
+  server-side filters, or `all_items` for the entire inventory.
 - Bulk item mutation responses use a stable envelope with `inventory`,
-  `operation`, `requested_item_ids`, `updated_item_ids`, and `updated_count`.
+  `operation`, `selection_kind`, `matched_count`, `unchanged_count`,
+  `updated_item_ids`, `updated_count`, and `updated_item_ids_truncated`.
 - The current bulk implementation is transactional and all-or-nothing: if
   validation or item lookup fails, no rows in the batch are updated.
 - `POST /imports/csv` returns a stable import-report envelope with
@@ -270,7 +274,17 @@ preserve for the first API-backed version of the project.
     `add_tags`, `remove_tags`, `set_tags`, `clear_tags`, `set_quantity`,
     `set_notes`, `set_acquisition`, `set_finish`, `set_location`,
     `set_condition`
-  - `item_ids` must be non-empty and unique
+  - `selection` is required and uses exactly one of:
+    - `{"kind": "items", "item_ids": [...]}` for explicit rows
+    - `{"kind": "filtered", ...filters}` for rows matching filters
+    - `{"kind": "all_items"}` for every row in the inventory
+  - `selection.kind="items"` requires non-empty, unique `item_ids` and accepts
+    at most 1000 explicit IDs
+  - `selection.kind="filtered"` supports `query`, `set_code`, `rarity`,
+    `finish`, `condition_code`, `language_code`, `location`, and `tags`; it
+    requires at least one effective filter
+  - filtered `tags` match rows that contain every requested tag
+  - `selection.kind="all_items"` does not accept filter or `item_ids` fields
   - `tags` is required for `add_tags`, `remove_tags`, and `set_tags`
   - `tags` must be omitted for `clear_tags`
   - use `clear_tags` instead of sending an empty tag list
@@ -305,6 +319,14 @@ preserve for the first API-backed version of the project.
   - if any requested condition change would collide with an existing inventory
     row, the batch returns `409 conflict` unless `merge=true`; on conflict, no
     rows in the batch are updated
+  - responses include:
+    - `selection_kind` of `items`, `filtered`, or `all_items`
+    - `matched_count`, the number of rows matched by the selection
+    - `updated_count`, the number of rows actually changed
+    - `unchanged_count`, the matched rows skipped because no change was needed
+    - `updated_item_ids`, bounded to 1000 IDs
+    - `updated_item_ids_truncated`, which is true when more than 1000 rows were
+      updated
 - `POST /inventories/{source_inventory_slug}/transfer`
   - transfers selected source inventory rows, or the entire source inventory,
     into `target_inventory_slug`

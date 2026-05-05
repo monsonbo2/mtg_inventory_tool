@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 import sqlite3
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from ...db.connection import connect
 from ...db.schema import require_current_schema
@@ -19,12 +19,15 @@ from ..normalize import (
     normalize_currency_code,
     normalize_finish,
     normalize_inventory_slug,
+    normalize_language_code,
     normalize_tags,
+    parse_tag_filters,
     tags_to_json,
     text_or_none,
     validate_supported_finish,
 )
 from ..query_inventory import (
+    add_owned_filters,
     find_inventory_item_collision,
     get_inventory_item_row,
     get_inventory_row,
@@ -79,6 +82,9 @@ _BULK_ACQUISITION_OPERATIONS = frozenset({"set_acquisition"})
 _BULK_FINISH_OPERATIONS = frozenset({"set_finish"})
 _BULK_LOCATION_OPERATIONS = frozenset({"set_location"})
 _BULK_CONDITION_OPERATIONS = frozenset({"set_condition"})
+_BULK_SELECTION_KINDS = frozenset({"items", "filtered", "all_items"})
+_MAX_BULK_ITEM_IDS = 1000
+_MAX_BULK_UPDATED_ITEM_IDS = 1000
 _SUPPORTED_BULK_ITEM_OPERATIONS = frozenset(
     _BULK_TAG_OPERATIONS
     | _BULK_QUANTITY_OPERATIONS
@@ -91,9 +97,23 @@ _SUPPORTED_BULK_ITEM_OPERATIONS = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
+class _BulkSelectionRequest:
+    kind: str
+    item_ids: list[int] | None = None
+    query: str | None = None
+    set_code: str | None = None
+    rarity: str | None = None
+    finish: str | None = None
+    condition_code: str | None = None
+    language_code: str | None = None
+    location: str | None = None
+    tags: list[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _BulkMutationRequest:
     operation: str
-    item_ids: list[int]
+    selection: _BulkSelectionRequest
     tags: list[str] | None = None
     quantity: int | None = None
     notes: str | None = None
@@ -132,6 +152,11 @@ def _bulk_item_operation_error() -> ValidationError:
 
 def _bulk_item_field_error(*, field_name: str, operation: str) -> ValidationError:
     return ValidationError(f"{field_name} is not valid for {operation}.")
+
+
+def _bulk_selection_error() -> ValidationError:
+    supported_kinds = ", ".join(sorted(_BULK_SELECTION_KINDS))
+    return ValidationError(f"selection.kind must be one of: {supported_kinds}.")
 
 
 def _validate_bulk_fields_omitted(
@@ -179,14 +204,93 @@ def _validate_bulk_fields_omitted(
         raise _bulk_item_field_error(field_name="keep_acquisition", operation=operation)
 
 
-def _normalize_bulk_item_ids(item_ids: list[int]) -> list[int]:
+def _normalize_bulk_item_ids(item_ids: list[int] | None) -> list[int]:
     if not item_ids:
-        raise ValidationError("item_ids must include at least one item id.")
+        raise ValidationError("selection.item_ids must include at least one item id.")
     if len(set(item_ids)) != len(item_ids):
-        raise ValidationError("item_ids must not contain duplicates.")
-    if len(item_ids) > 200:
-        raise ValidationError("item_ids must not contain more than 200 ids.")
+        raise ValidationError("selection.item_ids must not contain duplicates.")
+    if len(item_ids) > _MAX_BULK_ITEM_IDS:
+        raise ValidationError(f"selection.item_ids must not contain more than {_MAX_BULK_ITEM_IDS} ids.")
     return list(item_ids)
+
+
+def _normalize_bulk_selection_request(
+    *,
+    selection: Mapping[str, Any] | None,
+) -> _BulkSelectionRequest:
+    if selection is None:
+        raise ValidationError("selection is required for bulk item mutations.")
+    selection_kind = text_or_none(selection.get("kind"))
+    if selection_kind not in _BULK_SELECTION_KINDS:
+        raise _bulk_selection_error()
+
+    if selection_kind == "items":
+        unexpected_fields = sorted(key for key in selection if key not in {"kind", "item_ids"})
+        if unexpected_fields:
+            fields_text = ", ".join(unexpected_fields)
+            raise ValidationError(f"{fields_text} are not valid for selection.kind='items'.")
+        return _BulkSelectionRequest(
+            kind="items",
+            item_ids=_normalize_bulk_item_ids(selection.get("item_ids")),
+        )
+
+    if selection_kind == "all_items":
+        unexpected_fields = sorted(key for key, value in selection.items() if key != "kind" and value is not None)
+        if unexpected_fields:
+            fields_text = ", ".join(unexpected_fields)
+            raise ValidationError(f"{fields_text} are not valid for selection.kind='all_items'.")
+        return _BulkSelectionRequest(kind="all_items")
+
+    normalized_selection = _BulkSelectionRequest(
+        kind="filtered",
+        query=text_or_none(selection.get("query")),
+        set_code=text_or_none(selection.get("set_code")),
+        rarity=text_or_none(selection.get("rarity")),
+        finish=normalize_finish(selection["finish"]) if selection.get("finish") is not None else None,
+        condition_code=(
+            normalize_condition_code(selection["condition_code"])
+            if selection.get("condition_code") is not None
+            else None
+        ),
+        language_code=(
+            normalize_language_code(selection["language_code"])
+            if selection.get("language_code") is not None
+            else None
+        ),
+        location=text_or_none(selection.get("location")),
+        tags=parse_tag_filters(selection.get("tags")),
+    )
+    if (
+        normalized_selection.query is None
+        and normalized_selection.set_code is None
+        and normalized_selection.rarity is None
+        and normalized_selection.finish is None
+        and normalized_selection.condition_code is None
+        and normalized_selection.language_code is None
+        and normalized_selection.location is None
+        and not normalized_selection.tags
+    ):
+        raise ValidationError("selection.kind='filtered' requires at least one effective filter.")
+    unexpected_fields = sorted(
+        key
+        for key in selection
+        if key
+        not in {
+            "kind",
+            "query",
+            "set_code",
+            "rarity",
+            "finish",
+            "condition_code",
+            "language_code",
+            "location",
+            "tags",
+        }
+    )
+    if unexpected_fields:
+        fields_text = ", ".join(unexpected_fields)
+        raise ValidationError(f"{fields_text} are not valid for selection.kind='filtered'.")
+    return normalized_selection
 
 
 def _normalized_bulk_tags(*, operation: str, tags: list[str] | None) -> list[str]:
@@ -208,7 +312,7 @@ def _normalized_bulk_tags(*, operation: str, tags: list[str] | None) -> list[str
 def _normalize_bulk_mutation_request(
     *,
     operation: str,
-    item_ids: list[int],
+    selection: Mapping[str, Any] | None,
     tags: list[str] | None,
     quantity: int | None,
     notes: str | None,
@@ -223,7 +327,7 @@ def _normalize_bulk_mutation_request(
     merge: bool,
     keep_acquisition: str | None,
 ) -> _BulkMutationRequest:
-    normalized_item_ids = _normalize_bulk_item_ids(item_ids)
+    normalized_selection = _normalize_bulk_selection_request(selection=selection)
     if operation not in _SUPPORTED_BULK_ITEM_OPERATIONS:
         raise _bulk_item_operation_error()
 
@@ -375,7 +479,7 @@ def _normalize_bulk_mutation_request(
 
     return _BulkMutationRequest(
         operation=operation,
-        item_ids=normalized_item_ids,
+        selection=normalized_selection,
         tags=normalized_tags,
         quantity=quantity,
         notes=None if clear_notes else text_or_none(notes),
@@ -392,7 +496,7 @@ def _normalize_bulk_mutation_request(
     )
 
 
-def _load_bulk_inventory_item_rows(
+def _load_bulk_inventory_item_rows_by_ids(
     connection: sqlite3.Connection,
     *,
     inventory_slug: str,
@@ -437,6 +541,80 @@ def _load_bulk_inventory_item_rows(
         )
     rows_by_id = {int(row["item_id"]): row for row in rows}
     return [rows_by_id[item_id] for item_id in item_ids]
+
+
+def _load_bulk_inventory_item_rows_for_selection(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    selection: _BulkSelectionRequest,
+) -> list[sqlite3.Row]:
+    inventory = get_inventory_row(connection, inventory_slug)
+    where_parts = ["ii.inventory_id = ?"]
+    where_params: list[Any] = [inventory["id"]]
+    if selection.kind == "filtered":
+        add_owned_filters(
+            where_parts,
+            where_params,
+            query=selection.query,
+            set_code=selection.set_code,
+            rarity=selection.rarity,
+            finish=selection.finish,
+            condition_code=selection.condition_code,
+            language_code=selection.language_code,
+            location=selection.location,
+            tags=selection.tags,
+        )
+    return connection.execute(
+        f"""
+        SELECT
+            ii.id AS item_id,
+            ii.inventory_id,
+            i.slug AS inventory,
+            ii.scryfall_id,
+            c.oracle_id,
+            c.name AS card_name,
+            c.set_code,
+            c.set_name,
+            c.collector_number,
+            c.finishes_json,
+            ii.quantity,
+            ii.condition_code,
+            ii.finish,
+            ii.language_code,
+            ii.location,
+            ii.acquisition_price,
+            ii.acquisition_currency,
+            ii.notes,
+            COALESCE(ii.tags_json, '[]') AS tags_json,
+            ii.printing_selection_mode
+        FROM inventory_items ii
+        JOIN inventories i ON i.id = ii.inventory_id
+        JOIN mtg_cards c ON c.scryfall_id = ii.scryfall_id
+        WHERE {' AND '.join(where_parts)}
+        ORDER BY ii.id ASC
+        """,
+        where_params,
+    ).fetchall()
+
+
+def _load_bulk_inventory_item_rows(
+    connection: sqlite3.Connection,
+    *,
+    inventory_slug: str,
+    selection: _BulkSelectionRequest,
+) -> list[sqlite3.Row]:
+    if selection.kind == "items":
+        return _load_bulk_inventory_item_rows_by_ids(
+            connection,
+            inventory_slug=inventory_slug,
+            item_ids=list(selection.item_ids or []),
+        )
+    return _load_bulk_inventory_item_rows_for_selection(
+        connection,
+        inventory_slug=inventory_slug,
+        selection=selection,
+    )
 
 
 def _bulk_tags_for_operation(*, operation: str, current_tags: list[str], requested_tags: list[str]) -> list[str]:
@@ -606,12 +784,34 @@ def _plan_bulk_item_updates(
     return planned_updates
 
 
+def _bounded_bulk_updated_item_ids(item_ids: list[int]) -> tuple[list[int], bool]:
+    if len(item_ids) <= _MAX_BULK_UPDATED_ITEM_IDS:
+        return list(item_ids), False
+    return list(item_ids[:_MAX_BULK_UPDATED_ITEM_IDS]), True
+
+
+def _bulk_audit_metadata(
+    *,
+    request: _BulkMutationRequest,
+    matched_count: int,
+    updated_count: int,
+) -> dict[str, Any]:
+    return {
+        "bulk_operation": True,
+        "bulk_kind": request.operation,
+        "bulk_count": matched_count,
+        "selection_kind": request.selection.kind,
+        "updated_count": updated_count,
+    }
+
+
 def _apply_bulk_item_update(
     connection: sqlite3.Connection,
     *,
     inventory_slug: str,
     request: _BulkMutationRequest,
     planned_update: _BulkPlannedItemUpdate,
+    matched_count: int,
     updated_count: int,
     actor_type: str,
     actor_id: str | None,
@@ -640,14 +840,7 @@ def _apply_bulk_item_update(
     item_id = int(planned_update.row["item_id"])
     after_snapshot = load_inventory_item_snapshot(connection, inventory_slug=inventory_slug, item_id=item_id)
     metadata = dict(planned_update.metadata)
-    metadata.update(
-        {
-            "bulk_operation": True,
-            "bulk_kind": request.operation,
-            "bulk_count": len(request.item_ids),
-            "updated_count": updated_count,
-        }
-    )
+    metadata.update(_bulk_audit_metadata(request=request, matched_count=matched_count, updated_count=updated_count))
     write_inventory_audit_event(
         connection,
         inventory_slug=inventory_slug,
@@ -669,6 +862,7 @@ def _write_pending_bulk_audit_events(
     inventory_slug: str,
     request: _BulkMutationRequest,
     pending_events: list[_PendingBulkAuditEvent],
+    matched_count: int,
     updated_count: int,
     actor_type: str,
     actor_id: str | None,
@@ -676,14 +870,7 @@ def _write_pending_bulk_audit_events(
 ) -> None:
     for pending_event in pending_events:
         metadata = dict(pending_event.metadata)
-        metadata.update(
-            {
-                "bulk_operation": True,
-                "bulk_kind": request.operation,
-                "bulk_count": len(request.item_ids),
-                "updated_count": updated_count,
-            }
-        )
+        metadata.update(_bulk_audit_metadata(request=request, matched_count=matched_count, updated_count=updated_count))
         write_inventory_audit_event(
             connection,
             inventory_slug=inventory_slug,
@@ -866,6 +1053,7 @@ def _apply_bulk_location_updates(
         inventory_slug=inventory_slug,
         request=request,
         pending_events=pending_events,
+        matched_count=len(item_rows),
         updated_count=len(updated_item_ids),
         actor_type=actor_type,
         actor_id=actor_id,
@@ -1042,6 +1230,7 @@ def _apply_bulk_condition_updates(
         inventory_slug=inventory_slug,
         request=request,
         pending_events=pending_events,
+        matched_count=len(item_rows),
         updated_count=len(updated_item_ids),
         actor_type=actor_type,
         actor_id=actor_id,
@@ -1055,8 +1244,8 @@ def bulk_mutate_inventory_items(
     *,
     inventory_slug: str,
     operation: str,
-    item_ids: list[int],
-    tags: list[str] | None,
+    selection: Mapping[str, Any] | None,
+    tags: list[str] | None = None,
     quantity: int | None = None,
     notes: str | None = None,
     clear_notes: bool = False,
@@ -1076,7 +1265,7 @@ def bulk_mutate_inventory_items(
     inventory_slug = normalize_inventory_slug(inventory_slug)
     normalized_request = _normalize_bulk_mutation_request(
         operation=operation,
-        item_ids=item_ids,
+        selection=selection,
         tags=tags,
         quantity=quantity,
         notes=notes,
@@ -1097,8 +1286,9 @@ def bulk_mutate_inventory_items(
         item_rows = _load_bulk_inventory_item_rows(
             connection,
             inventory_slug=inventory_slug,
-            item_ids=normalized_request.item_ids,
+            selection=normalized_request.selection,
         )
+        matched_count = len(item_rows)
         if normalized_request.operation in _BULK_LOCATION_OPERATIONS:
             updated_item_ids = _apply_bulk_location_updates(
                 connection,
@@ -1134,6 +1324,7 @@ def bulk_mutate_inventory_items(
                         inventory_slug=inventory_slug,
                         request=normalized_request,
                         planned_update=planned_update,
+                        matched_count=matched_count,
                         updated_count=updated_count,
                         actor_type=actor_type,
                         actor_id=actor_id,
@@ -1143,10 +1334,14 @@ def bulk_mutate_inventory_items(
 
         connection.commit()
 
+    bounded_updated_item_ids, updated_item_ids_truncated = _bounded_bulk_updated_item_ids(updated_item_ids)
     return BulkInventoryItemMutationResult(
         inventory=inventory_slug,
         operation=normalized_request.operation,
-        requested_item_ids=normalized_request.item_ids,
-        updated_item_ids=updated_item_ids,
+        selection_kind=normalized_request.selection.kind,
+        matched_count=matched_count,
+        unchanged_count=matched_count - len(updated_item_ids),
+        updated_item_ids=bounded_updated_item_ids,
         updated_count=len(updated_item_ids),
+        updated_item_ids_truncated=updated_item_ids_truncated,
     )

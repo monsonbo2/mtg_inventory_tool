@@ -143,7 +143,7 @@ Needed:
   - quick add
   - compact browse and table views
   - quick edits
-  - selected-row bulk edits
+  - selected-row, filtered, and whole-collection bulk edits
   - selected-row copy/move as a writable user
   - audit drawer
 - if viewer copy/export is part of the story, finish or re-scope `#70`:
@@ -466,7 +466,7 @@ Recommended demo path:
    - quick add
    - compact browse and table views
    - quick edits
-   - bulk edit on a small selection
+   - bulk edit on a small selection or filtered table view
    - copy/move selected rows
    - audit drawer
 

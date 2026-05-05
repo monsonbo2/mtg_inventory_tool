@@ -115,6 +115,13 @@ Use this as the first-pass UI-to-endpoint map:
   - current operations are `add_tags`, `remove_tags`, `set_tags`,
     `clear_tags`, `set_quantity`, `set_notes`, `set_acquisition`,
     `set_finish`, `set_location`, and `set_condition`
+  - send `selection.kind="items"` with explicit `item_ids`,
+    `selection.kind="filtered"` with table-compatible filters, or
+    `selection.kind="all_items"` for the full inventory
+  - filtered tag selections require rows to contain every requested tag
+  - responses include `selection_kind`, `matched_count`, `unchanged_count`,
+    `updated_count`, bounded `updated_item_ids`, and
+    `updated_item_ids_truncated`
   - `set_location` and `set_condition` can merge rows when `merge=true`, so
     the frontend should refetch the owned rows after successful merge-capable
     bulk mutations instead of assuming all original `item_id`s still exist

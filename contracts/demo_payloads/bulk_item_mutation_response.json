@@ -1,7 +1,10 @@
 {
   "inventory": "personal",
   "operation": "add_tags",
-  "requested_item_ids": [12, 27, 44],
+  "selection_kind": "items",
+  "matched_count": 3,
+  "unchanged_count": 0,
   "updated_item_ids": [12, 27, 44],
-  "updated_count": 3
+  "updated_count": 3,
+  "updated_item_ids_truncated": false
 }
