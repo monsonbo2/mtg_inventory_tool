@@ -2,7 +2,6 @@ import { useEffect, useId, useRef } from "react";
 
 import type { InventorySummary } from "../types";
 import { SearchAutocomplete } from "./SearchAutocomplete";
-import { SearchOptionsControl } from "./SearchOptionsControl";
 import type { SearchPanelActions, SearchPanelState } from "./SearchPanel";
 
 function getOtherInventoryCountLabel(availableCount: number) {
@@ -182,53 +181,46 @@ export function StickyWorkspaceControls(props: {
           </div>
 
           <form className="search-form sticky-controls-search-form" onSubmit={props.actions.onSearchSubmit}>
-            <label className="field search-field" htmlFor={`sticky-search-${autocompleteListId}`}>
-              <span className="sr-only">Quick Add and Card Search</span>
-              <div className="search-input-stack">
-                <input
-                  aria-activedescendant={activeSuggestionId}
-                  aria-autocomplete="list"
-                  aria-controls={autocompleteListId}
-                  aria-expanded={showAutocomplete}
-                  aria-haspopup="listbox"
-                  className="text-input"
-                  id={`sticky-search-${autocompleteListId}`}
-                  onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
-                  onFocus={() => {
-                    if (!props.searchState.searchResultsVisible) {
-                      props.actions.onSearchFieldFocus();
-                    }
-                  }}
-                  onKeyDown={props.actions.onSearchInputKeyDown}
-                  placeholder="Quick Add and Card Search"
-                  role="combobox"
-                  value={props.searchState.search.query}
-                />
-                <SearchAutocomplete
-                  error={props.searchState.suggestions.error}
-                  highlightedIndex={props.searchState.suggestions.highlightedIndex}
-                  isOpen={showAutocomplete}
-                  listboxId={autocompleteListId}
-                  onHighlight={props.actions.onSuggestionHighlight}
-                  onSelect={props.actions.onSuggestionSelect}
-                  optionIdPrefix={autocompleteListId}
-                  query={props.searchState.search.query}
-                  results={props.searchState.suggestions.results}
-                  status={props.searchState.suggestions.status}
-                />
-              </div>
-            </label>
-            <div className="sticky-controls-search-actions">
-              <button className="primary-button" type="submit">
+            <div className="search-form-primary-row sticky-controls-search-primary-row">
+              <label className="field search-field" htmlFor={`sticky-search-${autocompleteListId}`}>
+                <span className="sr-only">Quick Add and Card Search</span>
+                <div className="search-input-stack">
+                  <input
+                    aria-activedescendant={activeSuggestionId}
+                    aria-autocomplete="list"
+                    aria-controls={autocompleteListId}
+                    aria-expanded={showAutocomplete}
+                    aria-haspopup="listbox"
+                    className="text-input"
+                    id={`sticky-search-${autocompleteListId}`}
+                    onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
+                    onFocus={() => {
+                      if (!props.searchState.searchResultsVisible) {
+                        props.actions.onSearchFieldFocus();
+                      }
+                    }}
+                    onKeyDown={props.actions.onSearchInputKeyDown}
+                    placeholder="Quick Add and Card Search"
+                    role="combobox"
+                    value={props.searchState.search.query}
+                  />
+                  <SearchAutocomplete
+                    error={props.searchState.suggestions.error}
+                    highlightedIndex={props.searchState.suggestions.highlightedIndex}
+                    isOpen={showAutocomplete}
+                    listboxId={autocompleteListId}
+                    onHighlight={props.actions.onSuggestionHighlight}
+                    onSelect={props.actions.onSuggestionSelect}
+                    optionIdPrefix={autocompleteListId}
+                    query={props.searchState.search.query}
+                    results={props.searchState.suggestions.results}
+                    status={props.searchState.suggestions.status}
+                  />
+                </div>
+              </label>
+              <button className="primary-button search-submit-button" type="submit">
                 {props.searchState.search.status === "loading" ? "Searching..." : "Search cards"}
               </button>
-              <SearchOptionsControl
-                loadAllLanguages={props.searchState.search.loadAllLanguages}
-                onLoadAllLanguagesChange={props.actions.onSearchLoadAllLanguagesChange}
-                onScopeChange={props.actions.onSearchScopeChange}
-                placement="sticky"
-                scope={props.searchState.search.scope}
-              />
             </div>
           </form>
         </div>

@@ -44,6 +44,14 @@ export function CompactInventoryList(props: {
           ))}
         </datalist>
       ) : null}
+      <div aria-hidden="true" className="compact-list-header">
+        <span className="compact-list-header-card">Card</span>
+        <span>Qty</span>
+        <span>Finish</span>
+        <span>Location</span>
+        <span>Tags</span>
+        <span>Value</span>
+      </div>
       {props.items.map((item) => (
         <CompactInventoryRow
           busyAction={props.busyItem?.itemId === item.item_id ? props.busyItem.action : null}
@@ -325,11 +333,12 @@ function CompactInventoryRow(props: {
               <h3>{props.item.name}</h3>
               <div className="compact-row-actions">
                 <button
-                  className="field-link-button compact-row-detail-button"
+                  aria-label="Open details"
+                  className="field-link-button compact-row-detail-button compact-row-action-button"
                   onClick={() => props.onOpenDetails(props.item.item_id)}
                   type="button"
                 >
-                  Open details
+                  Details
                 </button>
                 {props.editable ? (
                   <button
@@ -339,7 +348,7 @@ function CompactInventoryRow(props: {
                         : `Edit row ${props.item.name}`
                     }
                     aria-pressed={isEditing}
-                    className="field-link-button compact-row-detail-button compact-row-edit-button"
+                    className="field-link-button compact-row-detail-button compact-row-action-button compact-row-edit-button"
                     disabled={isBusy}
                     onClick={() => {
                       if (isEditing) {
@@ -351,7 +360,7 @@ function CompactInventoryRow(props: {
                     }}
                     type="button"
                   >
-                    {isEditing ? "Done" : "Edit row"}
+                    {isEditing ? "Done" : "Edit"}
                   </button>
                 ) : null}
               </div>

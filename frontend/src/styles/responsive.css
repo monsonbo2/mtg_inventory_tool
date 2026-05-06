@@ -18,6 +18,7 @@
   .compact-row-main {
     flex-direction: column;
     gap: 16px;
+    justify-content: flex-start;
   }
 
   .compact-row-left {
@@ -25,12 +26,18 @@
   }
 
   .compact-row-display .compact-row-left {
+    flex-basis: auto;
     max-width: none;
     width: 100%;
   }
 
+  .compact-list-header {
+    display: none;
+  }
+
   .compact-row-display .compact-row-fields,
   .compact-row-editing .compact-row-fields {
+    align-self: stretch;
     flex-basis: auto;
   }
 
@@ -199,6 +206,37 @@
     width: 64px;
   }
 
+  .compact-row-display .compact-row-display-field,
+  .compact-row-display .compact-row-stat {
+    gap: 5px;
+    min-height: 0;
+  }
+
+  .compact-row-display .compact-row-display-label,
+  .compact-row-display .compact-row-stat-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+    border: 0;
+    font-size: 0.66rem;
+    letter-spacing: 0.07em;
+  }
+
+  .compact-row-display .compact-row-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-row-display .compact-row-actions {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: start;
+  }
+
   .compact-row-fields {
     grid-template-columns: 1fr;
     gap: 10px;
@@ -207,6 +245,11 @@
   .compact-row-display .compact-row-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 9px 12px;
+  }
+
+  .compact-row-display .compact-row-display-value,
+  .compact-row-display .compact-row-stat-value {
+    min-height: 0;
   }
 
   .compact-row-display .compact-row-fields .compact-row-stat {
@@ -283,16 +326,6 @@
   .search-options-control,
   .search-options-control-sticky {
     justify-self: stretch;
-  }
-
-  .search-options-trigger-sticky {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .sticky-controls-search-actions {
-    grid-template-columns: 1fr;
-    justify-content: stretch;
   }
 
   .table-toolbar-actions,

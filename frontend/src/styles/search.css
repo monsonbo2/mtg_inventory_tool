@@ -45,7 +45,7 @@
 }
 
 .search-options-control-sticky {
-  justify-self: stretch;
+  justify-self: end;
 }
 
 .search-options-trigger {
@@ -66,26 +66,6 @@
 
 .search-options-trigger-active .search-options-trigger-label {
   color: var(--accent-paper);
-}
-
-.search-options-trigger-sticky {
-  min-width: 168px;
-  padding: 10px 14px;
-  border-radius: 18px;
-}
-
-.search-options-trigger-sticky .search-options-trigger-label {
-  color: var(--text-main);
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.search-options-trigger-sticky.search-options-trigger-active {
-  color: var(--accent-paper);
-  border-color: rgba(248, 240, 218, 0.18);
-  background:
-    linear-gradient(135deg, rgba(248, 240, 218, 0.09), rgba(15, 23, 42, 0.7)),
-    rgba(15, 23, 42, 0.72);
 }
 
 .search-options-panel {
@@ -876,4 +856,3 @@
 .search-printing-state .secondary-button {
   justify-self: start;
 }
-
