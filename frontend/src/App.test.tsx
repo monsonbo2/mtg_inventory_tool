@@ -501,6 +501,20 @@ describe("App", () => {
     });
   }
 
+  async function findBrowseRow(name = "Lightning Bolt") {
+    const row = (await screen.findByRole("heading", { name })).closest("article");
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  }
+
+  async function openBrowseRowEditor(
+    user: ReturnType<typeof userEvent.setup>,
+    row: HTMLElement,
+    name = "Lightning Bolt",
+  ) {
+    await user.click(within(row).getByRole("button", { name: `Edit row ${name}` }));
+  }
+
   function mockBaseSearchApp() {
     vi.mocked(listInventories).mockResolvedValue([
       buildInventorySummary(),
@@ -811,16 +825,18 @@ describe("App", () => {
       ),
     ).toBeInTheDocument();
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
 
-    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toBeDisabled();
-    expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeDisabled();
-    expect(boltRowScope.getByRole("combobox", { name: /Location/ })).toBeDisabled();
-    expect(boltRowScope.getByRole("textbox", { name: /Tags/ })).toBeDisabled();
+    expect(boltRowScope.queryByRole("button", { name: "Edit row Lightning Bolt" })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("spinbutton", { name: /Quantity/ })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("combobox", { name: /Finish/ })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("combobox", { name: /Location/ })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("textbox", { name: /Tags/ })).not.toBeInTheDocument();
+    expect(boltRowScope.getByText("Quantity")).toBeInTheDocument();
+    expect(boltRowScope.getByText("Normal")).toBeInTheDocument();
+    expect(boltRowScope.getByText("Binder")).toBeInTheDocument();
+    expect(boltRowScope.getByText("burn")).toBeInTheDocument();
     expect(boltRowScope.getByRole("button", { name: "Open details" })).toBeEnabled();
   });
 
@@ -3568,11 +3584,13 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    expect(boltRowScope.queryByRole("spinbutton", { name: /Quantity/ })).not.toBeInTheDocument();
+    await openBrowseRowEditor(user, boltRow);
+    expect(
+      boltRowScope.getByRole("button", { name: "Done editing Lightning Bolt" }),
+    ).toBeEnabled();
     expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeEnabled();
     expect(
       boltRowScope.queryByRole("textbox", { name: /Notes/ }),
@@ -3593,11 +3611,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedQuantityInput = refreshedBoltScope.getByRole("spinbutton", {
       name: /Quantity/,
     });
@@ -3614,11 +3629,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
 
     await user.clear(quantityInput);
@@ -3645,11 +3658,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
 
     await user.clear(quantityInput);
@@ -3720,11 +3731,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
 
     await user.clear(quantityInput);
@@ -3748,6 +3757,8 @@ describe("App", () => {
   });
 
   it("offers existing collection locations as browse suggestions", async () => {
+    const user = userEvent.setup();
+
     mockCollectionViewApp({
       items: [
         buildOwnedRow({ location: "Binder" }),
@@ -3784,11 +3795,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const locationInput = within(boltRow!).getByRole("combobox", { name: /Location/ });
+    const boltRow = await findBrowseRow();
+    await openBrowseRowEditor(user, boltRow);
+    const locationInput = within(boltRow).getByRole("combobox", { name: /Location/ });
     const listId = locationInput.getAttribute("list");
     expect(listId).toBeTruthy();
 
@@ -3856,11 +3865,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const finishSelect = boltRowScope.getByRole("combobox", { name: /Finish/ });
     expect(finishSelect).toBeEnabled();
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
@@ -3874,11 +3881,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     expect(refreshedBoltScope.getByRole("combobox", { name: /Finish/ })).toHaveValue("foil");
     expect(refreshedBoltScope.getByText("$9.00")).toBeInTheDocument();
   });
@@ -3902,11 +3906,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const finishSelect = boltRowScope.getByRole("combobox", { name: /Finish/ });
 
     await user.selectOptions(finishSelect, "foil");
@@ -3974,11 +3976,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.type(tagsInput, "trade{enter}");
@@ -3992,11 +3992,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
     expect(refreshedTagsInput).toHaveValue("");
     await waitFor(() => {
@@ -4025,11 +4022,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.type(tagsInput, "trade{enter}");
@@ -4099,11 +4094,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.click(tagsInput);
@@ -4119,11 +4112,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
     await waitFor(() => {
       expect(refreshedTagsInput).toHaveFocus();
@@ -4183,11 +4173,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.click(tagsInput);
@@ -4203,11 +4191,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
     await waitFor(() => {
       expect(refreshedTagsInput).toHaveFocus();
@@ -4216,7 +4201,7 @@ describe("App", () => {
     expect(refreshedBoltScope.queryByText("trade")).not.toBeInTheDocument();
   });
 
-  it("uses the first browse tag click to activate tag removal instead of removing immediately", async () => {
+  it("uses the first browse editor tag click to activate tag removal instead of removing immediately", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -4229,11 +4214,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
 
     await user.click(boltRowScope.getByText("trade"));
 
@@ -4261,11 +4244,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.click(tagsInput);

@@ -80,6 +80,7 @@ function CompactInventoryRow(props: {
   const [removingTag, setRemovingTag] = useState<string | null>(null);
   const [tagFeedback, setTagFeedback] = useState<{ message: string; tone: "info" | "success" } | null>(null);
   const [savedField, setSavedField] = useState<ItemMutationAction | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
   const tagsFieldRef = useRef<HTMLDivElement | null>(null);
   const shouldRestoreTagFocusRef = useRef(false);
@@ -99,6 +100,16 @@ function CompactInventoryRow(props: {
       requestedRemovalTagRef.current = null;
     }
   }, [props.item.finish, props.item.item_id, props.item.location, props.item.quantity, props.item.tags]);
+
+  useEffect(() => {
+    setIsEditing(false);
+  }, [props.item.item_id]);
+
+  useEffect(() => {
+    if (!props.editable) {
+      setIsEditing(false);
+    }
+  }, [props.editable]);
 
   useEffect(() => {
     if (!tagFeedback) {
@@ -248,6 +259,15 @@ function CompactInventoryRow(props: {
     setTags(nextTags);
   }
 
+  function closeRowEditor() {
+    if (quantityHasError) {
+      return;
+    }
+
+    setTagsActive(false);
+    setIsEditing(false);
+  }
+
   const isBusy = props.busyAction !== null;
   const parsedQuantity = Number.parseInt(quantity, 10);
   const quantityIsValid = Number.isInteger(parsedQuantity) && parsedQuantity > 0;
@@ -281,8 +301,16 @@ function CompactInventoryRow(props: {
   }`;
   const tagsFieldHasExtraContent = tags.length > 0 || Boolean(tagHint);
 
+  const rowClassName = [
+    "compact-row",
+    isBusy ? "compact-row-busy" : null,
+    isEditing ? "compact-row-editing" : "compact-row-display",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <article className={isBusy ? "compact-row compact-row-busy" : "compact-row"}>
+    <article className={rowClassName}>
       <div className="compact-row-main">
         <div className="compact-row-left">
           <CardThumbnail
@@ -295,13 +323,38 @@ function CompactInventoryRow(props: {
           <div className="compact-row-copy">
             <div className="compact-row-heading">
               <h3>{props.item.name}</h3>
-              <button
-                className="field-link-button compact-row-detail-button"
-                onClick={() => props.onOpenDetails(props.item.item_id)}
-                type="button"
-              >
-                Open details
-              </button>
+              <div className="compact-row-actions">
+                <button
+                  className="field-link-button compact-row-detail-button"
+                  onClick={() => props.onOpenDetails(props.item.item_id)}
+                  type="button"
+                >
+                  Open details
+                </button>
+                {props.editable ? (
+                  <button
+                    aria-label={
+                      isEditing
+                        ? `Done editing ${props.item.name}`
+                        : `Edit row ${props.item.name}`
+                    }
+                    aria-pressed={isEditing}
+                    className="field-link-button compact-row-detail-button compact-row-edit-button"
+                    disabled={isBusy}
+                    onClick={() => {
+                      if (isEditing) {
+                        closeRowEditor();
+                        return;
+                      }
+
+                      setIsEditing(true);
+                    }}
+                    type="button"
+                  >
+                    {isEditing ? "Done" : "Edit row"}
+                  </button>
+                ) : null}
+              </div>
               <p className="result-card-subtitle">
                 {props.item.set_name} · #{props.item.collector_number}
               </p>
@@ -310,217 +363,232 @@ function CompactInventoryRow(props: {
           </div>
         </div>
 
-        <div className="compact-row-fields">
-          <InlineEditor
-            dirty={quantityDirty}
-            hint={quantityHasError ? "Enter a whole-number quantity greater than 0." : undefined}
-            hintTone={quantityHasError ? "error" : undefined}
-            invalid={quantityHasError}
-            label="Quantity"
-            saved={savedField === "quantity"}
-          >
-            <input
-              className="text-input"
-              disabled={isBusy || !props.editable}
-              min="1"
-              onBlur={() => {
-                if (props.editable && quantityDirty && quantityIsValid) {
-                  void saveQuantity();
-                }
-              }}
-              onChange={(event) => {
-                setSavedField(null);
-                setQuantity(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
-              }}
-              type="number"
-              value={quantity}
-            />
-          </InlineEditor>
+        <div className={isEditing ? "compact-row-fields compact-row-fields-editing" : "compact-row-fields compact-row-fields-display"}>
+          {isEditing ? (
+            <>
+              <InlineEditor
+                dirty={quantityDirty}
+                hint={quantityHasError ? "Enter a whole-number quantity greater than 0." : undefined}
+                hintTone={quantityHasError ? "error" : undefined}
+                invalid={quantityHasError}
+                label="Quantity"
+                saved={savedField === "quantity"}
+              >
+                <input
+                  className="text-input"
+                  disabled={isBusy || !props.editable}
+                  min="1"
+                  onBlur={() => {
+                    if (props.editable && quantityDirty && quantityIsValid) {
+                      void saveQuantity();
+                    }
+                  }}
+                  onChange={(event) => {
+                    setSavedField(null);
+                    setQuantity(event.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  type="number"
+                  value={quantity}
+                />
+              </InlineEditor>
 
-          <InlineEditor dirty={finishDirty} label="Finish" saved={savedField === "finish"}>
-            <select
-              className="text-input"
-              disabled={isBusy || !props.editable || finishEditorLocked}
-              onChange={(event) => {
-                const nextFinish = event.target.value as FinishValue;
-                setSavedField(null);
-                setFinish(nextFinish);
-                const persistedFinish = props.item.finish;
-                if (props.editable && nextFinish !== persistedFinish) {
-                  void (async () => {
-                    const outcome = await props.onPatch(props.item.item_id, "finish", {
-                      finish: nextFinish,
-                    });
-                    if (didMutationApply(outcome)) {
-                      markFieldSaved("finish");
+              <InlineEditor dirty={finishDirty} label="Finish" saved={savedField === "finish"}>
+                <select
+                  className="text-input"
+                  disabled={isBusy || !props.editable || finishEditorLocked}
+                  onChange={(event) => {
+                    const nextFinish = event.target.value as FinishValue;
+                    setSavedField(null);
+                    setFinish(nextFinish);
+                    const persistedFinish = props.item.finish;
+                    if (props.editable && nextFinish !== persistedFinish) {
+                      void (async () => {
+                        const outcome = await props.onPatch(props.item.item_id, "finish", {
+                          finish: nextFinish,
+                        });
+                        if (didMutationApply(outcome)) {
+                          markFieldSaved("finish");
+                          return;
+                        }
+
+                        setFinish(persistedFinish);
+                      })();
+                    }
+                  }}
+                  value={finish}
+                >
+                  {availableFinishes.map((value) => (
+                    <option key={value} value={value}>
+                      {formatFinishLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </InlineEditor>
+
+              <InlineEditor dirty={locationDirty} label="Location" saved={savedField === "location"}>
+                <input
+                  className="text-input"
+                  disabled={isBusy || !props.editable}
+                  list={props.locationSuggestionsId}
+                  onBlur={() => {
+                    if (props.editable && locationDirty) {
+                      void saveLocation();
+                    }
+                  }}
+                  onChange={(event) => {
+                    setSavedField(null);
+                    setLocation(event.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  placeholder="Row location"
+                  value={location}
+                />
+              </InlineEditor>
+
+              <InlineEditor dirty={tagsDirty} label="Tags" saved={savedField === "tags"}>
+                <div
+                  className={[
+                    "compact-row-tags-editor",
+                    tagsActive ? "compact-row-tags-editor-active" : null,
+                    tagsFieldHasExtraContent
+                      ? "compact-row-tags-editor-stacked"
+                      : "compact-row-tags-editor-compact",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onBlur={(event) => {
+                    if (!tagsFieldRef.current?.contains(event.relatedTarget as Node | null)) {
+                      setTagsActive(false);
+                    }
+                  }}
+                  onMouseDown={(event) => {
+                    if (!props.editable) {
+                      return;
+                    }
+                    if (tagsActive) {
                       return;
                     }
 
-                    setFinish(persistedFinish);
-                  })();
-                }
-              }}
-              value={finish}
-            >
-              {availableFinishes.map((value) => (
-                <option key={value} value={value}>
-                  {formatFinishLabel(value)}
-                </option>
-              ))}
-            </select>
-          </InlineEditor>
-
-          <InlineEditor dirty={locationDirty} label="Location" saved={savedField === "location"}>
-            <input
-              className="text-input"
-              disabled={isBusy || !props.editable}
-              list={props.locationSuggestionsId}
-              onBlur={() => {
-                if (props.editable && locationDirty) {
-                  void saveLocation();
-                }
-              }}
-              onChange={(event) => {
-                setSavedField(null);
-                setLocation(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
-              }}
-              placeholder="Row location"
-              value={location}
-            />
-          </InlineEditor>
-
-          <InlineEditor dirty={tagsDirty} label="Tags" saved={savedField === "tags"}>
-            <div
-              className={[
-                "compact-row-tags-editor",
-                tagsActive ? "compact-row-tags-editor-active" : null,
-                tagsFieldHasExtraContent
-                  ? "compact-row-tags-editor-stacked"
-                  : "compact-row-tags-editor-compact",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onBlur={(event) => {
-                if (!tagsFieldRef.current?.contains(event.relatedTarget as Node | null)) {
-                  setTagsActive(false);
-                }
-              }}
-              onMouseDown={(event) => {
-                if (!props.editable) {
-                  return;
-                }
-                if (tagsActive) {
-                  return;
-                }
-
-                if (event.target === tagInputRef.current) {
-                  return;
-                }
-
-                event.preventDefault();
-                setTagsActive(true);
-                window.requestAnimationFrame(() => {
-                  tagInputRef.current?.focus();
-                });
-              }}
-              onFocus={() => {
-                if (props.editable) {
-                  setTagsActive(true);
-                }
-              }}
-              ref={tagsFieldRef}
-            >
-              <input
-                className="text-input"
-                disabled={isBusy || !props.editable}
-                ref={tagInputRef}
-                onChange={(event) => {
-                  setSavedField(null);
-                  setTagDraft(event.target.value);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    if (props.editable) {
-                      void commitPendingTags();
+                    if (event.target === tagInputRef.current) {
+                      return;
                     }
-                    return;
-                  }
 
-                  if (
-                    event.key === "Backspace" &&
-                    !tagDraft &&
-                    tags.length &&
-                    !removingTag &&
-                    !isBusy
-                  ) {
                     event.preventDefault();
-                    void removeTag(tags[tags.length - 1]);
-                    return;
-                  }
-
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    deactivateTagsEditor();
-                  }
-                }}
-                placeholder="Add a tag"
-                value={tagDraft}
-              />
-              {tagHint ? (
-                <p aria-atomic="true" aria-live="polite" className={tagHintClassName}>
-                  {tagHint}
-                </p>
-              ) : null}
-              {tags.length ? (
-                <div className="tag-row compact-row-field-tags">
-                  {tags.map((tag) => (
-                    tagsActive ? (
-                      <button
-                        aria-label={removingTag === tag ? `Removing tag ${tag}` : `Remove tag ${tag}`}
-                        className={
-                          removingTag === tag
-                            ? "tag-chip compact-row-tag-chip compact-row-tag-chip-removable compact-row-tag-chip-busy"
-                            : "tag-chip compact-row-tag-chip compact-row-tag-chip-removable"
+                    setTagsActive(true);
+                    window.requestAnimationFrame(() => {
+                      tagInputRef.current?.focus();
+                    });
+                  }}
+                  onFocus={() => {
+                    if (props.editable) {
+                      setTagsActive(true);
+                    }
+                  }}
+                  ref={tagsFieldRef}
+                >
+                  <input
+                    className="text-input"
+                    disabled={isBusy || !props.editable}
+                    ref={tagInputRef}
+                    onChange={(event) => {
+                      setSavedField(null);
+                      setTagDraft(event.target.value);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        if (props.editable) {
+                          void commitPendingTags();
                         }
-                        disabled={isBusy}
-                        key={tag}
-                        onClick={() => {
-                          if (removingTag) {
-                            return;
-                          }
-                          void removeTag(tag);
-                        }}
-                        style={getTagChipStyle(tag)}
-                        type="button"
-                      >
-                        <span>{tag}</span>
-                        <span aria-hidden="true" className="compact-row-tag-remove-mark">
-                          {removingTag === tag ? "…" : "×"}
-                        </span>
-                      </button>
-                    ) : (
-                      <span className="tag-chip compact-row-tag-chip" key={tag} style={getTagChipStyle(tag)}>
-                        {tag}
-                      </span>
-                    )
-                  ))}
+                        return;
+                      }
+
+                      if (
+                        event.key === "Backspace" &&
+                        !tagDraft &&
+                        tags.length &&
+                        !removingTag &&
+                        !isBusy
+                      ) {
+                        event.preventDefault();
+                        void removeTag(tags[tags.length - 1]);
+                        return;
+                      }
+
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        deactivateTagsEditor();
+                      }
+                    }}
+                    placeholder="Add a tag"
+                    value={tagDraft}
+                  />
+                  {tagHint ? (
+                    <p aria-atomic="true" aria-live="polite" className={tagHintClassName}>
+                      {tagHint}
+                    </p>
+                  ) : null}
+                  {tags.length ? (
+                    <div className="tag-row compact-row-field-tags">
+                      {tags.map((tag) => (
+                        tagsActive ? (
+                          <button
+                            aria-label={removingTag === tag ? `Removing tag ${tag}` : `Remove tag ${tag}`}
+                            className={
+                              removingTag === tag
+                                ? "tag-chip compact-row-tag-chip compact-row-tag-chip-removable compact-row-tag-chip-busy"
+                                : "tag-chip compact-row-tag-chip compact-row-tag-chip-removable"
+                            }
+                            disabled={isBusy}
+                            key={tag}
+                            onClick={() => {
+                              if (removingTag) {
+                                return;
+                              }
+                              void removeTag(tag);
+                            }}
+                            style={getTagChipStyle(tag)}
+                            type="button"
+                          >
+                            <span>{tag}</span>
+                            <span aria-hidden="true" className="compact-row-tag-remove-mark">
+                              {removingTag === tag ? "…" : "×"}
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="tag-chip compact-row-tag-chip" key={tag} style={getTagChipStyle(tag)}>
+                            {tag}
+                          </span>
+                        )
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          </InlineEditor>
+              </InlineEditor>
+            </>
+          ) : (
+            <>
+              <CompactDisplayField label="Quantity" value={String(props.item.quantity)} />
+              <CompactDisplayField label="Finish" value={formatFinishLabel(props.item.finish)} />
+              <CompactDisplayField
+                label="Location"
+                muted={!props.item.location}
+                value={props.item.location || "Not set"}
+              />
+              <CompactDisplayTags tags={props.item.tags} />
+            </>
+          )}
 
           <CompactStat
             label="Value"
@@ -529,6 +597,48 @@ function CompactInventoryRow(props: {
         </div>
       </div>
     </article>
+  );
+}
+
+function CompactDisplayField(props: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="compact-row-display-field">
+      <span className="compact-row-display-label">{props.label}</span>
+      <span
+        className={
+          props.muted
+            ? "compact-row-display-value compact-row-display-muted"
+            : "compact-row-display-value"
+        }
+      >
+        {props.value}
+      </span>
+    </div>
+  );
+}
+
+function CompactDisplayTags(props: { tags: string[] }) {
+  return (
+    <div className="compact-row-display-field compact-row-display-tags">
+      <span className="compact-row-display-label">Tags</span>
+      {props.tags.length ? (
+        <div className="tag-row compact-row-field-tags compact-row-display-tag-row">
+          {props.tags.map((tag) => (
+            <span className="tag-chip compact-row-tag-chip" key={tag} style={getTagChipStyle(tag)}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <span className="compact-row-display-value compact-row-display-muted">
+          No tags
+        </span>
+      )}
+    </div>
   );
 }
 
