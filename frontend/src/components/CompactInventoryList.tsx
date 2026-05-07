@@ -8,8 +8,11 @@ import type {
 } from "../types";
 import type { ItemMutationAction, MutationOutcome } from "../uiTypes";
 import {
+  CURRENT_RETAIL_PRICE_LABEL,
+  CURRENT_RETAIL_VALUE_LABEL,
   decimalToNumber,
   equalStringArrays,
+  formatMaybeCurrency,
   formatFinishLabel,
   formatUsd,
   getAvailableFinishesForOwnedRow,
@@ -322,12 +325,14 @@ function CompactInventoryRow(props: {
       <div className="compact-row-main">
         <div className="compact-row-left">
           <CardThumbnail
+            imageSizes="(min-width: 1180px) 200px, 56px"
             imageUrl={props.item.image_uri_small}
             imageUrlLarge={props.item.image_uri_normal}
             name={props.item.name}
             variant="owned"
           />
 
+          <div className="compact-row-info">
           <div className="compact-row-copy">
             <div className="compact-row-heading">
               <h3>{props.item.name}</h3>
@@ -365,12 +370,11 @@ function CompactInventoryRow(props: {
                 ) : null}
               </div>
               <p className="result-card-subtitle">
-                {props.item.set_name} · #{props.item.collector_number}
+                {props.item.set_name} ({props.item.set_code.toUpperCase()}) · #{props.item.collector_number}
               </p>
             </div>
             {statusMessage ? <p className={statusClassName}>{statusMessage}</p> : null}
           </div>
-        </div>
 
         <div className={isEditing ? "compact-row-fields compact-row-fields-editing" : "compact-row-fields compact-row-fields-display"}>
           {isEditing ? (
@@ -588,9 +592,23 @@ function CompactInventoryRow(props: {
             </>
           ) : (
             <>
-              <CompactDisplayField label="Quantity" value={String(props.item.quantity)} />
-              <CompactDisplayField label="Finish" value={formatFinishLabel(props.item.finish)} />
               <CompactDisplayField
+                className="compact-row-field-quantity"
+                label="Quantity"
+                value={String(props.item.quantity)}
+              />
+              <CompactDisplayField
+                className="compact-row-field-finish"
+                label="Finish"
+                value={formatFinishLabel(props.item.finish)}
+              />
+              <CompactDisplayField
+                className="compact-row-field-condition compact-row-tile-only"
+                label="Condition"
+                value={props.item.condition_code}
+              />
+              <CompactDisplayField
+                className="compact-row-field-location"
                 label="Location"
                 muted={!props.item.location}
                 value={props.item.location || "Not set"}
@@ -600,9 +618,31 @@ function CompactInventoryRow(props: {
           )}
 
           <CompactStat
-            label="Value"
+            className="compact-row-field-value"
+            label={CURRENT_RETAIL_VALUE_LABEL}
             value={formatUsd(decimalToNumber(props.item.est_value))}
           />
+          {!isEditing ? (
+            <>
+              <CompactDisplayField
+                className="compact-row-field-unit-price compact-row-tile-only"
+                label={CURRENT_RETAIL_PRICE_LABEL}
+                muted={!props.item.unit_price}
+                value={formatMaybeCurrency(props.item.unit_price, props.item.currency)}
+              />
+              <CompactDisplayField
+                className="compact-row-field-acquisition-price compact-row-tile-only"
+                label="Acquired"
+                muted={!props.item.acquisition_price}
+                value={formatMaybeCurrency(
+                  props.item.acquisition_price,
+                  props.item.acquisition_currency,
+                )}
+              />
+            </>
+          ) : null}
+        </div>
+          </div>
         </div>
       </div>
     </article>
@@ -610,12 +650,17 @@ function CompactInventoryRow(props: {
 }
 
 function CompactDisplayField(props: {
+  className?: string;
   label: string;
   value: string;
   muted?: boolean;
 }) {
+  const className = ["compact-row-display-field", props.className]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="compact-row-display-field">
+    <div className={className}>
       <span className="compact-row-display-label">{props.label}</span>
       <span
         className={
@@ -701,9 +746,11 @@ function InlineEditor(props: {
   );
 }
 
-function CompactStat(props: { label: string; value: string }) {
+function CompactStat(props: { className?: string; label: string; value: string }) {
+  const className = ["compact-row-stat", props.className].filter(Boolean).join(" ");
+
   return (
-    <div className="compact-row-stat">
+    <div className={className}>
       <div className="compact-row-stat-header">
         <span className="compact-row-stat-label">{props.label}</span>
       </div>

@@ -256,7 +256,7 @@
     grid-column: span 2;
   }
 
-  .compact-row-display .compact-row-fields > :last-child {
+  .compact-row-display .compact-row-field-value {
     padding-left: 0;
   }
 

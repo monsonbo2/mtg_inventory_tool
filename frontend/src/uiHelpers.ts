@@ -16,6 +16,9 @@ export const FINISH_OPTIONS: Array<{ value: FinishValue; label: string }> = [
   { value: "etched", label: "Etched" },
 ];
 
+export const CURRENT_RETAIL_PRICE_LABEL = "TCGplayer retail";
+export const CURRENT_RETAIL_VALUE_LABEL = "TCGplayer value";
+
 const TAG_COLOR_PALETTE = [
   {
     background: "rgba(248, 113, 113, 0.18)",

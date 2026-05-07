@@ -12,6 +12,7 @@ import type {
   NoticeTone,
 } from "../uiTypes";
 import {
+  CURRENT_RETAIL_PRICE_LABEL,
   decimalToNumber,
   equalStringArrays,
   formatFinishLabel,
@@ -232,7 +233,9 @@ export function OwnedItemCard(props: {
             </div>
             <div className="owned-card-pricing">
               <strong>{formatUsd(decimalToNumber(props.item.est_value))}</strong>
-              <span>{props.item.price_date || "No price date"}</span>
+              <span>
+                {CURRENT_RETAIL_PRICE_LABEL} · {props.item.price_date || "No price date"}
+              </span>
             </div>
           </div>
 
@@ -247,7 +250,7 @@ export function OwnedItemCard(props: {
 
       <div className="item-meta-grid">
         <MetaLine
-          label="Unit price"
+          label={CURRENT_RETAIL_PRICE_LABEL}
           value={formatMaybeCurrency(props.item.unit_price, props.item.currency)}
         />
         <MetaLine
