@@ -126,6 +126,7 @@ export default function App() {
     token: number;
   } | null>(null);
   const [stickyControlsVisible, setStickyControlsVisible] = useState(false);
+  const [compactListHeaderDocked, setCompactListHeaderDocked] = useState(false);
   const [workspaceCreateActionHost, setWorkspaceCreateActionHost] =
     useState<HTMLDivElement | null>(null);
   const [workspaceImportActionHost, setWorkspaceImportActionHost] =
@@ -524,6 +525,7 @@ export default function App() {
   useEffect(() => {
     if (appShellState !== "ready") {
       setStickyControlsVisible(false);
+      setCompactListHeaderDocked(false);
       return;
     }
 
@@ -538,6 +540,25 @@ export default function App() {
       setStickyControlsVisible((current) =>
         current === nextVisible ? current : nextVisible,
       );
+
+      const stickyControls = document.querySelector<HTMLElement>(
+        ".sticky-workspace-controls-grid",
+      );
+      const compactListHeader = document.querySelector<HTMLElement>(
+        ".compact-list-header",
+      );
+      const stickyControlsBottom =
+        stickyControls?.getBoundingClientRect().bottom ?? 80;
+      const nextCompactListHeaderDocked =
+        nextVisible &&
+        !!compactListHeader &&
+        compactListHeader.getBoundingClientRect().top <=
+          stickyControlsBottom + 0.5;
+      setCompactListHeaderDocked((current) =>
+        current === nextCompactListHeaderDocked
+          ? current
+          : nextCompactListHeaderDocked,
+      );
     }
 
     updateStickyControlsVisibility();
@@ -551,8 +572,21 @@ export default function App() {
     };
   }, [appShellState]);
 
+  const appShellClassName =
+    [
+      "app-shell",
+      appShellState === "ready" && stickyControlsVisible
+        ? "app-shell-sticky-controls-visible"
+        : null,
+      appShellState === "ready" && compactListHeaderDocked
+        ? "app-shell-compact-list-header-docked"
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
   return (
-    <div className="app-shell">
+    <div className={appShellClassName}>
       {appShellState === "ready" && stickyControlsVisible ? (
         <StickyWorkspaceControls
           actions={searchPanelActions}

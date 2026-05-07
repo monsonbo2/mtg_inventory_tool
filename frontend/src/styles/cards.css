@@ -418,20 +418,29 @@
   top: 80px;
   z-index: 7;
   padding: 8px 14px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 12px;
   background:
-    linear-gradient(180deg, rgba(10, 18, 32, 0.96), rgba(8, 15, 27, 0.94));
+    linear-gradient(180deg, rgba(18, 30, 50, 0.98), rgba(11, 22, 38, 0.98));
   box-shadow:
-    0 10px 24px rgba(3, 9, 20, 0.24),
-    inset 0 1px 0 rgba(248, 240, 218, 0.04);
+    0 10px 22px rgba(3, 9, 20, 0.24),
+    inset 0 1px 0 rgba(148, 163, 184, 0.1),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.12);
   backdrop-filter: blur(14px);
-  color: var(--text-muted);
+  color: var(--text-soft);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.2;
   text-transform: uppercase;
+}
+
+.app-shell-compact-list-header-docked .compact-list-header {
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  box-shadow:
+    0 10px 22px rgba(3, 9, 20, 0.24),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.12);
 }
 
 .compact-list-header-card {
