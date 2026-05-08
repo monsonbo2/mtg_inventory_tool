@@ -41,6 +41,7 @@ function renderCard(overrides: Partial<OwnedInventoryRow> = {}) {
       onDelete={async () => "applied"}
       onNotice={() => {}}
       onPatch={async () => "applied"}
+      priceProvider="tcgplayer"
     />,
   );
 }

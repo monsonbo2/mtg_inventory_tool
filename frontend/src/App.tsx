@@ -23,9 +23,11 @@ import {
   getWritableInventories,
   isWritableInventory,
 } from "./inventoryCapabilities";
-import { decimalToNumber } from "./uiHelpers";
+import { DEFAULT_PRICE_PROVIDER, decimalToNumber } from "./uiHelpers";
 import type { AppShellState } from "./uiTypes";
-import type { AccessSummaryResponse } from "./types";
+import type { AccessSummaryResponse, InventoryPriceProvider } from "./types";
+
+const STICKY_SEARCH_ROW_TOP_OFFSET = 14;
 
 function getAppShellState(options: {
   accessSummary: AccessSummaryResponse | null;
@@ -121,6 +123,8 @@ function getShellStatePanelContent(
 export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
+  const [createCollectionRequestToken, setCreateCollectionRequestToken] =
+    useState(0);
   const [searchFocusRequest, setSearchFocusRequest] = useState<{
     target: "search" | "import";
     token: number;
@@ -133,6 +137,8 @@ export default function App() {
     useState<HTMLDivElement | null>(null);
   const [staleCollectionItemsInventory, setStaleCollectionItemsInventory] =
     useState<string | null>(null);
+  const [selectedPriceProvider, setSelectedPriceProvider] =
+    useState<InventoryPriceProvider>(DEFAULT_PRICE_PROVIDER);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
   const {
     accessSummary,
@@ -151,7 +157,9 @@ export default function App() {
     viewError,
     viewInventorySlug,
     viewStatus,
-  } = useInventoryOverview();
+  } = useInventoryOverview({
+    priceProvider: selectedPriceProvider,
+  });
   const isCollectionSwitchPending =
     selectedInventory !== null && selectedInventory !== viewInventorySlug;
   const collectionItems = isCollectionSwitchPending ? [] : items;
@@ -253,6 +261,7 @@ export default function App() {
     inventorySlug: selectedInventory,
     onPageOutOfRange: handleTablePageChange,
     page: tablePage,
+    priceProvider: selectedPriceProvider,
     sort: tableSort,
     visibleLimit: tableVisibleLimit,
   });
@@ -279,6 +288,24 @@ export default function App() {
       selectedCollectionItemsStale
     ) {
       void refreshStaleBrowseCollection(selectedInventory);
+    }
+  }
+
+  function handlePriceProviderChange(nextProvider: InventoryPriceProvider) {
+    if (nextProvider === selectedPriceProvider) {
+      return;
+    }
+
+    setSelectedPriceProvider(nextProvider);
+    handleBrowsePageChange(1);
+    handleTablePageChange(1);
+    setStaleCollectionItemsInventory(null);
+
+    if (selectedInventory !== null && !isCollectionSwitchPending) {
+      void loadInventoryOverview(selectedInventory, {
+        provider: nextProvider,
+        reloadInventories: false,
+      });
     }
   }
 
@@ -317,6 +344,7 @@ export default function App() {
     describeInventory,
     loadInventoryOverview,
     markCollectionItemsStale,
+    priceProvider: selectedPriceProvider,
     refreshInventoryAudit,
     refreshActiveTablePage: tablePageState.refreshTablePage,
     reloadInventorySummaries,
@@ -430,6 +458,7 @@ export default function App() {
           : "loading"
         : collectionViewStatus,
     },
+    priceProvider: selectedPriceProvider,
     selectedInventoryRow,
     canExportSelectedInventory: canExportInventory(selectedInventoryRow),
     exportInventoryBusy,
@@ -485,6 +514,7 @@ export default function App() {
     onOpenActivity: () => setActivityOpen(true),
     onOpenItemDetails: handleOpenItemDetails,
     onPatch: handlePatchItem,
+    onPriceProviderChange: handlePriceProviderChange,
     onCreateInventory: handleCreateInventory,
     onSelectTableItem: (
       itemId: number,
@@ -522,6 +552,11 @@ export default function App() {
     setCollectionMenuOpen(false);
   }, [appShellState, selectedInventory]);
 
+  function handleCreateCollectionRequest() {
+    setCollectionMenuOpen(false);
+    setCreateCollectionRequestToken((current) => current + 1);
+  }
+
   useEffect(() => {
     if (appShellState !== "ready") {
       setStickyControlsVisible(false);
@@ -535,8 +570,15 @@ export default function App() {
         return;
       }
 
+      const searchRow = topSection.querySelector<HTMLElement>(
+        ".workspace-search-column .search-form-primary-row",
+      );
+      const searchRowTop = searchRow?.getBoundingClientRect().top ?? null;
       const nextVisible =
-        window.scrollY > 0 && topSection.getBoundingClientRect().bottom <= 64;
+        window.scrollY > 0 &&
+        (searchRowTop !== null
+          ? searchRowTop <= STICKY_SEARCH_ROW_TOP_OFFSET
+          : topSection.getBoundingClientRect().bottom <= 64);
       setStickyControlsVisible((current) =>
         current === nextVisible ? current : nextVisible,
       );
@@ -591,8 +633,10 @@ export default function App() {
         <StickyWorkspaceControls
           actions={searchPanelActions}
           collectionMenuOpen={collectionMenuOpen}
+          createInventoryBusy={createInventoryBusy}
           inventories={inventories}
           onCollectionMenuOpenChange={setCollectionMenuOpen}
+          onCreateCollection={handleCreateCollectionRequest}
           onSelectInventory={setSelectedInventory}
           searchState={searchPanelState}
           selectedInventory={selectedInventory}
@@ -641,6 +685,7 @@ export default function App() {
               collectionMenuOpen={collectionMenuOpen}
               createActionHost={workspaceCreateActionHost}
               createActionHostEnabled={showHeroCreateAction}
+              createRequestToken={createCollectionRequestToken}
               createInventoryBusy={createInventoryBusy}
               inventories={inventories}
               inventoryError={inventoryError}
@@ -660,6 +705,9 @@ export default function App() {
                 importActionHost={workspaceImportActionHost}
                 importActionHostEnabled={showHeroImportAction}
                 state={searchPanelState}
+                suppressSearchWorkspace={
+                  stickyControlsVisible && searchWorkspaceMode === "focus"
+                }
               />
             ) : (
               <PanelState

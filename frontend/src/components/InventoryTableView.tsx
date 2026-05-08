@@ -8,6 +8,7 @@ import type {
   ConditionCode,
   FinishValue,
   InventoryCreateRequest,
+  InventoryPriceProvider,
   InventorySummary,
   InventoryTransferMode,
   LanguageCode,
@@ -34,6 +35,7 @@ import {
   formatLanguageCode,
   getTagChipStyle,
   formatUsd,
+  getCurrentRetailValueLabel,
   formatLocationLabel,
   normalizeInventorySlugInput,
   normalizeOptionalText,
@@ -124,6 +126,7 @@ export function InventoryTableView(props: {
   sortState: InventoryTableSortState;
   filters: InventoryTableFilters;
   filterOptions: InventoryTableFilterOptions;
+  priceProvider: InventoryPriceProvider;
   onSortChange: (nextSort: InventoryTableSortState) => void;
   onFiltersChange: (nextFilters: InventoryTableFilters) => void;
   onBulkMutationSubmit: (
@@ -1488,7 +1491,10 @@ export function InventoryTableView(props: {
                 const filterCount = getInventoryTableColumnFilterCount(props.filters, column);
                 const isSorted = props.sortState?.key === column;
                 const isActive = activeColumn === column;
-                const columnLabel = getInventoryTableColumnLabel(column);
+                const columnLabel =
+                  column === "est_value"
+                    ? getCurrentRetailValueLabel(props.priceProvider)
+                    : getInventoryTableColumnLabel(column);
                 const actionHint = getColumnActionHint(column);
 
                 return (

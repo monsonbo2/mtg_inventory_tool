@@ -149,6 +149,12 @@ function scrollSearchResultListForActiveRow(options: {
   listNode.scrollTop = nextScrollTop;
 }
 
+function isSearchSuggestionHostTarget(target: Node) {
+  const targetElement =
+    target instanceof Element ? target : target.parentElement;
+  return Boolean(targetElement?.closest("[data-search-suggestions-host='true']"));
+}
+
 export type SearchPanelState = {
   selectedInventoryRow: InventorySummary | null;
   selectedInventoryCanWrite: boolean;
@@ -308,6 +314,7 @@ export function SearchPanel(props: {
   importActionHost: HTMLElement | null;
   importActionHostEnabled: boolean;
   state: SearchPanelState;
+  suppressSearchWorkspace?: boolean;
 }) {
   const searchPanelRef = useRef<HTMLElement | null>(null);
   const searchFieldRef = useRef<HTMLLabelElement | null>(null);
@@ -391,7 +398,8 @@ export function SearchPanel(props: {
       : props.state.selectedInventoryCanWrite
         ? "writable"
         : "read_only";
-  const showSearchResults = props.state.searchResultsVisible && hasSearchResults;
+  const showSearchResults =
+    props.state.searchResultsVisible && hasSearchResults && !props.suppressSearchWorkspace;
   const showAutocomplete = props.state.suggestions.isOpen;
   const activeSearchGroup =
     props.state.search.groups.find((group) => group.groupId === props.state.activeSearchGroupId) ||
@@ -447,7 +455,10 @@ export function SearchPanel(props: {
       if (!(target instanceof Node)) {
         return;
       }
-      if (searchFieldRef.current?.contains(target)) {
+      if (
+        searchFieldRef.current?.contains(target) ||
+        isSearchSuggestionHostTarget(target)
+      ) {
         return;
       }
       props.actions.onSuggestionRequestClose();
@@ -1652,7 +1663,11 @@ export function SearchPanel(props: {
 
         <form className="search-form" onSubmit={props.actions.onSearchSubmit}>
           <div className="search-form-primary-row">
-            <label className="field search-field" ref={searchFieldRef}>
+            <label
+              className="field search-field"
+              data-search-suggestions-host="true"
+              ref={searchFieldRef}
+            >
               <span className="sr-only">Quick Add and Card Search</span>
               <div className="search-input-stack">
                 <input
@@ -1689,8 +1704,6 @@ export function SearchPanel(props: {
             <button className="primary-button search-submit-button" type="submit">
               {props.state.search.status === "loading" ? "Searching..." : "Search cards"}
             </button>
-          </div>
-          <div className="search-form-secondary-row">
             <SearchOptionsControl
               loadAllLanguages={props.state.search.loadAllLanguages}
               onLoadAllLanguagesChange={props.actions.onSearchLoadAllLanguagesChange}

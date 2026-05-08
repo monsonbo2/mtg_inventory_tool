@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type {
   FinishValue,
+  InventoryPriceProvider,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
@@ -12,7 +13,6 @@ import type {
   NoticeTone,
 } from "../uiTypes";
 import {
-  CURRENT_RETAIL_PRICE_LABEL,
   decimalToNumber,
   equalStringArrays,
   formatFinishLabel,
@@ -22,6 +22,7 @@ import {
   formatUsd,
   getAvailableFinishesForOwnedRow,
   getBusyMessage,
+  getCurrentRetailPriceLabel,
   normalizeOptionalText,
   parseTags,
   summarizeInlineText,
@@ -40,6 +41,7 @@ export function OwnedItemCard(props: {
   ) => Promise<MutationOutcome>;
   onDelete: (itemId: number, cardName: string) => Promise<MutationOutcome>;
   onNotice: (message: string, tone?: NoticeTone) => void;
+  priceProvider: InventoryPriceProvider;
 }) {
   const [quantity, setQuantity] = useState(String(props.item.quantity));
   const [finish, setFinish] = useState<FinishValue>(props.item.finish);
@@ -180,6 +182,7 @@ export function OwnedItemCard(props: {
     availableFinishes.length === 1
       ? `This printing only supports ${formatFinishLabel(availableFinishes[0])}.`
       : `Available: ${availableFinishes.map((value) => formatFinishLabel(value)).join(", ")}.`;
+  const currentRetailPriceLabel = getCurrentRetailPriceLabel(props.priceProvider);
   const statusMessage = busyMessage
     ? busyMessage
     : quantityHasError
@@ -234,7 +237,7 @@ export function OwnedItemCard(props: {
             <div className="owned-card-pricing">
               <strong>{formatUsd(decimalToNumber(props.item.est_value))}</strong>
               <span>
-                {CURRENT_RETAIL_PRICE_LABEL} · {props.item.price_date || "No price date"}
+                {currentRetailPriceLabel} · {props.item.price_date || "No price date"}
               </span>
             </div>
           </div>
@@ -250,7 +253,7 @@ export function OwnedItemCard(props: {
 
       <div className="item-meta-grid">
         <MetaLine
-          label={CURRENT_RETAIL_PRICE_LABEL}
+          label={currentRetailPriceLabel}
           value={formatMaybeCurrency(props.item.unit_price, props.item.currency)}
         />
         <MetaLine

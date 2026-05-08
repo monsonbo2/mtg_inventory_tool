@@ -119,6 +119,10 @@
     grid-template-columns: 1fr;
   }
 
+  .search-form-primary-row {
+    grid-template-columns: 1fr;
+  }
+
   .card-hero {
     grid-template-columns: 1fr;
   }

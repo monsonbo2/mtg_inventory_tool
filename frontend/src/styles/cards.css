@@ -863,22 +863,22 @@
     grid-row: 1;
   }
 
-  .compact-row-display .compact-row-field-condition {
+  .compact-row-display .compact-row-field-unit-price {
     grid-column: 2;
     grid-row: 1;
   }
 
-  .compact-row-display .compact-row-field-finish {
+  .compact-row-display .compact-row-field-value {
     grid-column: 3;
     grid-row: 1;
   }
 
-  .compact-row-display .compact-row-field-value {
+  .compact-row-display .compact-row-field-condition {
     grid-column: 1;
     grid-row: 2;
   }
 
-  .compact-row-display .compact-row-field-unit-price {
+  .compact-row-display .compact-row-field-finish {
     grid-column: 2;
     grid-row: 2;
   }

@@ -392,9 +392,17 @@ export async function getCardPrintingSummary(
   );
 }
 
-export async function listInventoryItems(inventorySlug: string) {
+export async function listInventoryItems(
+  inventorySlug: string,
+  params: { provider?: OwnedInventoryItemsPageParams["provider"] } = {},
+) {
   return requestJson<OwnedInventoryRow[]>(
     `/inventories/${encodeURIComponent(inventorySlug)}/items`,
+    {
+      query: {
+        provider: params.provider,
+      },
+    },
   );
 }
 

@@ -5,13 +5,14 @@ import type {
   OwnedInventoryItemsPageParams,
   OwnedInventoryItemsPageResponse,
   OwnedInventoryRow,
+  InventoryPriceProvider,
 } from "../types";
 import type {
   InventoryTableFilters,
   InventoryTableSortState,
 } from "../tableViewHelpers";
 import { serializeInventoryTableFilters } from "../tableViewHelpers";
-import { toUserMessage } from "../uiHelpers";
+import { DEFAULT_PRICE_PROVIDER, toUserMessage } from "../uiHelpers";
 import type { AsyncStatus } from "../uiTypes";
 
 function getPageCount(totalItems: number, pageSize: number) {
@@ -21,6 +22,7 @@ function getPageCount(totalItems: number, pageSize: number) {
 export function buildInventoryTablePageParams(options: {
   filters: InventoryTableFilters;
   page: number;
+  priceProvider: InventoryPriceProvider;
   sort: InventoryTableSortState;
   visibleLimit: number;
 }): OwnedInventoryItemsPageParams {
@@ -30,6 +32,10 @@ export function buildInventoryTablePageParams(options: {
     limit: options.visibleLimit,
     offset: (Math.max(options.page, 1) - 1) * options.visibleLimit,
   };
+
+  if (options.priceProvider !== DEFAULT_PRICE_PROVIDER) {
+    params.provider = options.priceProvider;
+  }
 
   if (options.sort) {
     params.sort_key = options.sort.key;
@@ -45,6 +51,7 @@ export function useInventoryTablePage(options: {
   inventorySlug: string | null;
   onPageOutOfRange?: (nextPage: number) => void;
   page: number;
+  priceProvider: InventoryPriceProvider;
   sort: InventoryTableSortState;
   visibleLimit: number;
 }) {
@@ -68,10 +75,17 @@ export function useInventoryTablePage(options: {
       buildInventoryTablePageParams({
         filters: options.filters,
         page: options.page,
+        priceProvider: options.priceProvider,
         sort: options.sort,
         visibleLimit: options.visibleLimit,
       }),
-    [options.filters, options.page, options.sort, options.visibleLimit],
+    [
+      options.filters,
+      options.page,
+      options.priceProvider,
+      options.sort,
+      options.visibleLimit,
+    ],
   );
 
   useEffect(() => {

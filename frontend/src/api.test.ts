@@ -13,6 +13,7 @@ import {
   requestFormData,
   requestJson,
   requestText,
+  listInventoryItems,
   listInventoryItemsPage,
   searchCards,
   transferInventoryItems,
@@ -432,6 +433,7 @@ describe("api transport", () => {
     await exportInventoryCsv("personal", {
       finish: "foil",
       language_code: "en",
+      provider: "cardkingdom",
       profile: "default",
       query: "Lightning Bolt",
       tags: ["burn", "trade"],
@@ -443,10 +445,31 @@ describe("api transport", () => {
 
     expect(requestUrl.pathname).toBe("/api/inventories/personal/export.csv");
     expect(requestUrl.searchParams.get("query")).toBe("Lightning Bolt");
+    expect(requestUrl.searchParams.get("provider")).toBe("cardkingdom");
     expect(requestUrl.searchParams.get("profile")).toBe("default");
     expect(requestUrl.searchParams.get("finish")).toBe("foil");
     expect(requestUrl.searchParams.get("language_code")).toBe("en");
     expect(requestUrl.searchParams.getAll("tags")).toEqual(["burn", "trade"]);
+  });
+
+  it("serializes inventory list provider as a query parameter", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        status: 200,
+      }),
+    );
+
+    await listInventoryItems("personal", { provider: "cardkingdom" });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    const requestUrl = new URL(String(url));
+
+    expect(requestUrl.pathname).toBe("/api/inventories/personal/items");
+    expect(requestUrl.searchParams.get("provider")).toBe("cardkingdom");
   });
 
   it("serializes paginated inventory table params against the page contract", async () => {
@@ -478,6 +501,7 @@ describe("api transport", () => {
       limit: 50,
       location: "Binder",
       offset: 50,
+      provider: "cardkingdom",
       query: "Lightning Bolt",
       set_code: "lea",
       sort_direction: "desc",
@@ -494,6 +518,7 @@ describe("api transport", () => {
     expect(requestUrl.pathname).toBe("/api/inventories/personal/items/page");
     expect(requestUrl.searchParams.get("limit")).toBe("50");
     expect(requestUrl.searchParams.get("offset")).toBe("50");
+    expect(requestUrl.searchParams.get("provider")).toBe("cardkingdom");
     expect(requestUrl.searchParams.get("sort_key")).toBe("quantity");
     expect(requestUrl.searchParams.get("sort_direction")).toBe("desc");
     expect(requestUrl.searchParams.get("query")).toBe("Lightning Bolt");

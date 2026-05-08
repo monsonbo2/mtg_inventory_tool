@@ -902,6 +902,87 @@ describe("App", () => {
     expect(downloadApiTextResponse).not.toHaveBeenCalled();
   });
 
+  it("uses the selected price provider for Browse, Table, and CSV export", async () => {
+    const user = userEvent.setup();
+    const tcgplayerRow = buildOwnedRow({
+      est_value: "4.00",
+      price_date: "2026-04-01",
+      unit_price: "2.00",
+    });
+    const cardKingdomRow = buildOwnedRow({
+      est_value: "7.00",
+      price_date: "2026-04-02",
+      unit_price: "3.50",
+    });
+    const exportResponse = {
+      body: "name,quantity\nLightning Bolt,2\n",
+      contentType: "text/csv; charset=utf-8",
+      filename: "personal-export.csv",
+    };
+
+    mockCollectionViewApp({ items: [tcgplayerRow] });
+    vi.mocked(listInventoryItems).mockImplementation(async (_inventorySlug, params = {}) =>
+      params.provider === "cardkingdom" ? [cardKingdomRow] : [tcgplayerRow],
+    );
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(
+        params.provider === "cardkingdom" ? [cardKingdomRow] : [tcgplayerRow],
+        params,
+        inventorySlug,
+      ),
+    );
+    vi.mocked(exportInventoryCsv).mockResolvedValue(exportResponse);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.getAllByText("TCGplayer total").length).toBeGreaterThan(0);
+
+    await user.click(
+      screen.getByRole("button", { name: "Price Source: TCGplayer" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Card Kingdom" }));
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenLastCalledWith("personal", {
+        provider: "cardkingdom",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("Card Kingdom total").length).toBeGreaterThan(0);
+    });
+
+    const browseRow = await findBrowseRow();
+    expect(within(browseRow).getByText("Card Kingdom retail")).toBeInTheDocument();
+    expect(within(browseRow).getByText("$3.50")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Table" }));
+
+    await screen.findByRole("table");
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenLastCalledWith(
+        "personal",
+        expect.objectContaining({
+          limit: 50,
+          offset: 0,
+          provider: "cardkingdom",
+        }),
+      );
+    });
+    expect(
+      screen.getByRole("button", { name: "Card Kingdom total" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Export collection CSV" }));
+
+    await waitFor(() => {
+      expect(exportInventoryCsv).toHaveBeenCalledWith("personal", {
+        provider: "cardkingdom",
+        profile: "default",
+      });
+    });
+  });
+
   it("keeps the detail dialog read-only for viewer access", async () => {
     const user = userEvent.setup();
     const viewerInventory = buildInventorySummary({
@@ -5653,6 +5734,27 @@ describe("App", () => {
     expect(await screen.findByText("No entries selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
+  });
+
+  it("opens create collection from the current collection menu", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Personal Collection/i }));
+    const collectionMenu = await screen.findByRole("group", {
+      name: "Collection options",
+    });
+
+    await user.click(
+      within(collectionMenu).getByRole("button", { name: "Create Collection" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: "Collection name" })).toHaveFocus();
   });
 
   it("creates a new inventory from the sidebar and selects it", async () => {

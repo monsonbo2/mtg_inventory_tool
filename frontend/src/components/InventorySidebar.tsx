@@ -59,6 +59,34 @@ function InventorySwitcherOption(props: {
   );
 }
 
+function InventorySwitcherCreateOption(props: {
+  autoFocus?: boolean;
+  busy: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <button
+      aria-label="Create Collection"
+      autoFocus={props.autoFocus}
+      className="inventory-switcher-option inventory-switcher-create-option"
+      disabled={props.busy}
+      onClick={props.onCreate}
+      type="button"
+    >
+      <span
+        aria-hidden="true"
+        className="inventory-action-icon inventory-action-icon-create"
+      />
+      <span className="inventory-switcher-create-copy">
+        <strong className="inventory-focus-title">
+          {props.busy ? "Creating..." : "Create Collection"}
+        </strong>
+        <span>Start a new binder, deck, or project collection.</span>
+      </span>
+    </button>
+  );
+}
+
 export function InventorySidebar(props: {
   appShellState: AppShellState;
   collectionMenuInteractionEnabled: boolean;
@@ -66,6 +94,7 @@ export function InventorySidebar(props: {
   createActionHost: HTMLElement | null;
   createActionHostEnabled: boolean;
   createInventoryBusy: boolean;
+  createRequestToken: number;
   inventories: InventorySummary[];
   selectedInventory: string | null;
   selectedInventoryRow: InventorySummary | null;
@@ -95,6 +124,8 @@ export function InventorySidebar(props: {
   const otherInventories = currentInventory
     ? props.inventories.filter((inventory) => inventory.slug !== currentInventory.slug)
     : props.inventories;
+  const canCreateCollection = props.appShellState === "ready";
+  const hasCollectionSwitcherMenu = otherInventories.length > 0 || canCreateCollection;
   const changeCollectionOpen = props.collectionMenuOpen;
 
   useEffect(() => {
@@ -108,6 +139,13 @@ export function InventorySidebar(props: {
       resetCreateForm();
     }
   }, [props.appShellState]);
+
+  useEffect(() => {
+    if (props.createRequestToken <= 0 || props.appShellState !== "ready") {
+      return;
+    }
+    openCreateForm();
+  }, [props.createRequestToken]);
 
   useEffect(() => {
     if (!changeCollectionOpen || !props.collectionMenuInteractionEnabled) {
@@ -277,7 +315,7 @@ export function InventorySidebar(props: {
   }
 
   function toggleChangeCollection() {
-    if (!otherInventories.length) {
+    if (!hasCollectionSwitcherMenu) {
       return;
     }
 
@@ -480,7 +518,7 @@ export function InventorySidebar(props: {
             <div className="inventory-focus-block">
               <p className="section-kicker inventory-focus-kicker">Current Collection</p>
               <div className="inventory-switcher" ref={inventorySwitcherRef}>
-                {otherInventories.length ? (
+                {hasCollectionSwitcherMenu ? (
                   <button
                     aria-controls={inventorySwitcherId}
                     aria-expanded={changeCollectionOpen}
@@ -502,7 +540,9 @@ export function InventorySidebar(props: {
                         </span>
                       </span>
                       <span aria-hidden="true" className="inventory-focus-trigger-affordance">
-                        <span className="inventory-focus-trigger-label">Switch</span>
+                        <span className="inventory-focus-trigger-label">
+                          {otherInventories.length ? "Switch" : "New"}
+                        </span>
                         <span
                           className={
                             changeCollectionOpen
@@ -530,9 +570,11 @@ export function InventorySidebar(props: {
 
                 {changeCollectionOpen && props.collectionMenuInteractionEnabled ? (
                   <div
+                    aria-label="Collection options"
                     className="inventory-switcher-list"
                     id={inventorySwitcherId}
                     ref={inventorySwitcherListRef}
+                    role="group"
                   >
                     {otherInventories.map((inventory, index) => (
                       <InventorySwitcherOption
@@ -542,6 +584,13 @@ export function InventorySidebar(props: {
                         onSelect={handleSelectInventory}
                       />
                     ))}
+                    {canCreateCollection ? (
+                      <InventorySwitcherCreateOption
+                        autoFocus={otherInventories.length === 0}
+                        busy={props.createInventoryBusy}
+                        onCreate={openCreateForm}
+                      />
+                    ) : null}
                   </div>
                 ) : null}
               </div>

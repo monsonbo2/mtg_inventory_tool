@@ -31,12 +31,14 @@ import type {
   DecklistImportResolutionRequest,
   DecklistImportResponse,
   InventoryCreateRequest,
+  InventoryPriceProvider,
   InventoryTransferMode,
   PatchInventoryItemRequest,
 } from "../types";
 import {
   getBulkMutationSuccessMessage,
   getPatchSuccessMessage,
+  DEFAULT_PRICE_PROVIDER,
   toUserMessage,
 } from "../uiHelpers";
 import type {
@@ -63,8 +65,13 @@ type UseInventoryMutationsOptions = {
   describeInventory: (inventorySlug: string) => string;
   loadInventoryOverview: (
     inventorySlug: string,
-    options?: { reloadInventories?: boolean; showLoading?: boolean },
+    options?: {
+      provider?: InventoryPriceProvider;
+      reloadInventories?: boolean;
+      showLoading?: boolean;
+    },
   ) => Promise<ViewRefreshOutcome>;
+  priceProvider: InventoryPriceProvider;
   refreshInventoryAudit: (inventorySlug: string) => Promise<boolean>;
   refreshActiveTablePage?: () => void;
   markCollectionItemsStale?: (inventorySlug: string) => void;
@@ -821,6 +828,9 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
 
     try {
       const response = await exportInventoryCsv(inventorySlug, {
+        ...(options.priceProvider === DEFAULT_PRICE_PROVIDER
+          ? {}
+          : { provider: options.priceProvider }),
         profile: "default",
       });
       downloadApiTextResponse(response, `${inventorySlug}.csv`);

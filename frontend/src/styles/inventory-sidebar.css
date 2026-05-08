@@ -547,3 +547,35 @@
   margin-bottom: 0;
 }
 
+.inventory-switcher-create-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-color: rgba(93, 231, 206, 0.24);
+  background:
+    radial-gradient(circle at top left, rgba(93, 231, 206, 0.16), transparent 58%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(9, 15, 29, 0.94));
+}
+
+.inventory-switcher-create-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+  transform: none;
+}
+
+.inventory-switcher-create-option .inventory-action-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.inventory-switcher-create-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.inventory-switcher-create-copy span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}

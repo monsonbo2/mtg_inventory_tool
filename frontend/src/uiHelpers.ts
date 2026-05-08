@@ -1,8 +1,10 @@
 import { ApiClientError } from "./api";
 import type {
   BulkInventoryItemOperation,
+  ConditionCode,
   FinishInput,
   FinishValue,
+  InventoryPriceProvider,
   InventoryAuditEvent,
   InventoryItemPatchResponse,
   InventorySummary,
@@ -16,8 +18,59 @@ export const FINISH_OPTIONS: Array<{ value: FinishValue; label: string }> = [
   { value: "etched", label: "Etched" },
 ];
 
-export const CURRENT_RETAIL_PRICE_LABEL = "TCGplayer retail";
-export const CURRENT_RETAIL_VALUE_LABEL = "TCGplayer value";
+export const DEFAULT_PRICE_PROVIDER: InventoryPriceProvider = "tcgplayer";
+
+export const PRICE_PROVIDER_OPTIONS: Array<{
+  value: InventoryPriceProvider;
+  label: string;
+  retailLabel: string;
+  totalLabel: string;
+}> = [
+  {
+    value: "tcgplayer",
+    label: "TCGplayer",
+    retailLabel: "TCGplayer retail",
+    totalLabel: "TCGplayer total",
+  },
+  {
+    value: "cardkingdom",
+    label: "Card Kingdom",
+    retailLabel: "Card Kingdom retail",
+    totalLabel: "Card Kingdom total",
+  },
+  {
+    value: "cardhoarder",
+    label: "Cardhoarder",
+    retailLabel: "Cardhoarder retail",
+    totalLabel: "Cardhoarder total",
+  },
+  {
+    value: "manapool",
+    label: "Manapool",
+    retailLabel: "Manapool retail",
+    totalLabel: "Manapool total",
+  },
+];
+
+export const CURRENT_RETAIL_PRICE_LABEL =
+  PRICE_PROVIDER_OPTIONS[0].retailLabel;
+export const CURRENT_RETAIL_VALUE_LABEL =
+  PRICE_PROVIDER_OPTIONS[0].totalLabel;
+
+export function getPriceProviderOption(provider: InventoryPriceProvider) {
+  return (
+    PRICE_PROVIDER_OPTIONS.find((option) => option.value === provider) ||
+    PRICE_PROVIDER_OPTIONS[0]
+  );
+}
+
+export function getCurrentRetailPriceLabel(provider: InventoryPriceProvider) {
+  return getPriceProviderOption(provider).retailLabel;
+}
+
+export function getCurrentRetailValueLabel(provider: InventoryPriceProvider) {
+  return getPriceProviderOption(provider).totalLabel;
+}
 
 const TAG_COLOR_PALETTE = [
   {
@@ -274,6 +327,25 @@ export function formatFinishLabel(value: FinishInput | string) {
     return "Normal";
   }
   return FINISH_OPTIONS.find((option) => option.value === value)?.label || value;
+}
+
+export function formatConditionLabel(value: ConditionCode) {
+  switch (value) {
+    case "M":
+      return "Mint";
+    case "NM":
+      return "Near Mint";
+    case "LP":
+      return "Lightly Played";
+    case "MP":
+      return "Moderately Played";
+    case "HP":
+      return "Heavily Played";
+    case "DMG":
+      return "Damaged";
+    default:
+      return value;
+  }
 }
 
 export function formatLanguageCode(value: string) {

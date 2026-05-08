@@ -3,20 +3,22 @@ import type { ReactNode } from "react";
 
 import type {
   FinishValue,
+  InventoryPriceProvider,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
 import type { ItemMutationAction, MutationOutcome } from "../uiTypes";
 import {
-  CURRENT_RETAIL_PRICE_LABEL,
-  CURRENT_RETAIL_VALUE_LABEL,
   decimalToNumber,
   equalStringArrays,
+  formatConditionLabel,
   formatMaybeCurrency,
   formatFinishLabel,
   formatUsd,
   getAvailableFinishesForOwnedRow,
   getBusyMessage,
+  getCurrentRetailPriceLabel,
+  getCurrentRetailValueLabel,
   getInventoryLocationSuggestions,
   getTagChipStyle,
   normalizeOptionalText,
@@ -34,6 +36,7 @@ export function CompactInventoryList(props: {
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
   ) => Promise<MutationOutcome>;
+  priceProvider: InventoryPriceProvider;
 }) {
   const locationSuggestionsId = useId();
   const locationSuggestions = getInventoryLocationSuggestions(props.items);
@@ -64,6 +67,7 @@ export function CompactInventoryList(props: {
           locationSuggestionsId={locationSuggestions.length ? locationSuggestionsId : undefined}
           onOpenDetails={props.onOpenDetails}
           onPatch={props.onPatch}
+          priceProvider={props.priceProvider}
         />
       ))}
     </div>
@@ -81,6 +85,7 @@ function CompactInventoryRow(props: {
     action: ItemMutationAction,
     payload: PatchInventoryItemRequest,
   ) => Promise<MutationOutcome>;
+  priceProvider: InventoryPriceProvider;
 }) {
   const [quantity, setQuantity] = useState(String(props.item.quantity));
   const [finish, setFinish] = useState<FinishValue>(props.item.finish);
@@ -298,6 +303,8 @@ function CompactInventoryRow(props: {
   const finishEditorLocked = availableFinishes.length <= 1;
   const statusMessage = busyMessage;
   const statusClassName = "row-status-label row-status-busy compact-row-status";
+  const currentRetailPriceLabel = getCurrentRetailPriceLabel(props.priceProvider);
+  const currentRetailValueLabel = getCurrentRetailValueLabel(props.priceProvider);
   const tagHint = pendingTagCount
     ? "Press Enter to add the tag."
     : removingTag
@@ -605,7 +612,7 @@ function CompactInventoryRow(props: {
               <CompactDisplayField
                 className="compact-row-field-condition compact-row-tile-only"
                 label="Condition"
-                value={props.item.condition_code}
+                value={formatConditionLabel(props.item.condition_code)}
               />
               <CompactDisplayField
                 className="compact-row-field-location"
@@ -619,14 +626,14 @@ function CompactInventoryRow(props: {
 
           <CompactStat
             className="compact-row-field-value"
-            label={CURRENT_RETAIL_VALUE_LABEL}
+            label={currentRetailValueLabel}
             value={formatUsd(decimalToNumber(props.item.est_value))}
           />
           {!isEditing ? (
             <>
               <CompactDisplayField
                 className="compact-row-field-unit-price compact-row-tile-only"
-                label={CURRENT_RETAIL_PRICE_LABEL}
+                label={currentRetailPriceLabel}
                 muted={!props.item.unit_price}
                 value={formatMaybeCurrency(props.item.unit_price, props.item.currency)}
               />

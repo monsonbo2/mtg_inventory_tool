@@ -4,6 +4,8 @@
   left: 50%;
   transform: translateX(-50%);
   width: min(1400px, calc(100vw - 40px));
+  --workspace-top-card-control-height: 72px;
+  --workspace-top-search-control-height: 56px;
   z-index: 42;
   pointer-events: none;
 }
@@ -18,35 +20,24 @@
   gap: 16px;
   align-items: start;
   padding: 0;
-  border-radius: 24px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background:
-    linear-gradient(135deg, rgba(93, 231, 206, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(13, 22, 40, 0.96), rgba(8, 17, 31, 0.98));
-  box-shadow:
-    0 24px 56px rgba(2, 8, 23, 0.42),
-    inset 0 1px 0 rgba(248, 240, 218, 0.05);
-  backdrop-filter: blur(20px);
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .sticky-controls-collection {
   position: relative;
   z-index: 24;
-  padding: 13px 24px 9px 22px;
+  width: 100%;
+  padding: 22px;
+  pointer-events: auto;
+}
+
+.sticky-controls-collection .inventory-focus-kicker {
+  display: none;
 }
 
 .sticky-controls-collection .inventory-focus-trigger,
 .sticky-controls-collection-card {
-  height: var(--workspace-top-search-control-height, 56px);
   min-height: var(--workspace-top-search-control-height, 56px);
-  padding-top: 8px;
-  padding-bottom: 8px;
-}
-
-.sticky-controls-collection .inventory-focus-trigger-main,
-.sticky-controls-collection .inventory-focus-card-main {
-  height: 100%;
 }
 
 .sticky-controls-collection .inventory-focus-trigger-copygroup,
@@ -62,27 +53,15 @@
 }
 
 .sticky-controls-collection-list {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 22px;
-  right: 24px;
-  padding: 12px;
-  border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background:
-    linear-gradient(135deg, rgba(93, 231, 206, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(13, 22, 40, 0.97), rgba(8, 17, 31, 0.99));
-  box-shadow:
-    0 24px 56px rgba(2, 8, 23, 0.42),
-    inset 0 1px 0 rgba(248, 240, 218, 0.05);
-  backdrop-filter: blur(20px);
+  position: static;
 }
 
 .sticky-controls-search-form {
   margin: 0;
   align-self: start;
   z-index: 23;
-  padding: 13px 22px 9px;
+  padding: 22px;
+  pointer-events: auto;
 }
 
 .sticky-controls-search-primary-row {
@@ -90,6 +69,27 @@
 }
 
 .sticky-controls-search-form .text-input,
+.sticky-controls-search-form .search-options-trigger,
 .sticky-controls-search-form .search-submit-button {
   min-height: var(--workspace-top-search-control-height, 56px);
+}
+
+.sticky-controls-search-result {
+  display: grid;
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  max-height: min(680px, calc(100vh - 88px));
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.sticky-controls-search-result .result-card {
+  margin: 0;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(8, 17, 31, 0.88));
+}
+
+.sticky-controls-search-result .card-thumb-search {
+  width: 78px;
 }
