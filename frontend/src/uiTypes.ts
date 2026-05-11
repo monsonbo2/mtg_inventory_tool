@@ -22,6 +22,7 @@ export type ViewRefreshOutcome = "applied" | "skipped";
 export type MutationOutcome = "applied" | "applied_view_stale" | "failed";
 export type NoticeTone = "info" | "success" | "error";
 export type SearchAddAvailability = "unselected" | "read_only" | "writable";
+export type SearchSurface = "regular" | "sticky";
 export type InventoryImportMode = "csv" | "decklist" | "deck_url";
 export type InventoryImportStep = "ready_to_commit" | "needs_resolution";
 export type ItemMutationAction =

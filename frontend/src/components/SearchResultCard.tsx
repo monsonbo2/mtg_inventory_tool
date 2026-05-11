@@ -628,21 +628,6 @@ export function SearchResultCard(props: {
                 </button>
               ) : null}
 
-              <button
-                className="field-link-button search-result-note-toggle"
-                onClick={() => {
-                  setShowNotesField((current) => {
-                    if (current && trimmedNotes) {
-                      return true;
-                    }
-                    return !current;
-                  });
-                  setRecentlyAdded(false);
-                }}
-                type="button"
-              >
-                {notesVisible ? "Hide note" : "Add note"}
-              </button>
             </div>
           </div>
 
@@ -691,6 +676,24 @@ export function SearchResultCard(props: {
                 />
               </label>
             ) : null}
+          </div>
+
+          <div className="search-result-note-row">
+            <button
+              className="field-link-button search-result-note-toggle"
+              onClick={() => {
+                setShowNotesField((current) => {
+                  if (current && trimmedNotes) {
+                    return true;
+                  }
+                  return !current;
+                });
+                setRecentlyAdded(false);
+              }}
+              type="button"
+            >
+              {notesVisible ? "Hide note" : "Add note"}
+            </button>
           </div>
         </div>
 

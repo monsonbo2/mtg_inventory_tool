@@ -501,6 +501,20 @@ describe("App", () => {
     });
   }
 
+  async function findBrowseRow(name = "Lightning Bolt") {
+    const row = (await screen.findByRole("heading", { name })).closest("article");
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  }
+
+  async function openBrowseRowEditor(
+    user: ReturnType<typeof userEvent.setup>,
+    row: HTMLElement,
+    name = "Lightning Bolt",
+  ) {
+    await user.click(within(row).getByRole("button", { name: `Edit row ${name}` }));
+  }
+
   function mockBaseSearchApp() {
     vi.mocked(listInventories).mockResolvedValue([
       buildInventorySummary(),
@@ -811,16 +825,18 @@ describe("App", () => {
       ),
     ).toBeInTheDocument();
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
 
-    expect(boltRowScope.getByRole("spinbutton", { name: /Quantity/ })).toBeDisabled();
-    expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeDisabled();
-    expect(boltRowScope.getByRole("combobox", { name: /Location/ })).toBeDisabled();
-    expect(boltRowScope.getByRole("textbox", { name: /Tags/ })).toBeDisabled();
+    expect(boltRowScope.queryByRole("button", { name: "Edit row Lightning Bolt" })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("spinbutton", { name: /Quantity/ })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("combobox", { name: /Finish/ })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("combobox", { name: /Location/ })).not.toBeInTheDocument();
+    expect(boltRowScope.queryByRole("textbox", { name: /Tags/ })).not.toBeInTheDocument();
+    expect(boltRowScope.getByText("Quantity")).toBeInTheDocument();
+    expect(boltRowScope.getByText("Normal")).toBeInTheDocument();
+    expect(boltRowScope.getByText("Binder")).toBeInTheDocument();
+    expect(boltRowScope.getByText("burn")).toBeInTheDocument();
     expect(boltRowScope.getByRole("button", { name: "Open details" })).toBeEnabled();
   });
 
@@ -884,6 +900,87 @@ describe("App", () => {
       "CSV export is unavailable.",
     );
     expect(downloadApiTextResponse).not.toHaveBeenCalled();
+  });
+
+  it("uses the selected price provider for Browse, Table, and CSV export", async () => {
+    const user = userEvent.setup();
+    const tcgplayerRow = buildOwnedRow({
+      est_value: "4.00",
+      price_date: "2026-04-01",
+      unit_price: "2.00",
+    });
+    const cardKingdomRow = buildOwnedRow({
+      est_value: "7.00",
+      price_date: "2026-04-02",
+      unit_price: "3.50",
+    });
+    const exportResponse = {
+      body: "name,quantity\nLightning Bolt,2\n",
+      contentType: "text/csv; charset=utf-8",
+      filename: "personal-export.csv",
+    };
+
+    mockCollectionViewApp({ items: [tcgplayerRow] });
+    vi.mocked(listInventoryItems).mockImplementation(async (_inventorySlug, params = {}) =>
+      params.provider === "cardkingdom" ? [cardKingdomRow] : [tcgplayerRow],
+    );
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse(
+        params.provider === "cardkingdom" ? [cardKingdomRow] : [tcgplayerRow],
+        params,
+        inventorySlug,
+      ),
+    );
+    vi.mocked(exportInventoryCsv).mockResolvedValue(exportResponse);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    expect(screen.getAllByText("TCGplayer total").length).toBeGreaterThan(0);
+
+    await user.click(
+      screen.getByRole("button", { name: "Price Source: TCGplayer" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Card Kingdom" }));
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenLastCalledWith("personal", {
+        provider: "cardkingdom",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("Card Kingdom total").length).toBeGreaterThan(0);
+    });
+
+    const browseRow = await findBrowseRow();
+    expect(within(browseRow).getByText("Card Kingdom retail")).toBeInTheDocument();
+    expect(within(browseRow).getByText("$3.50")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Table" }));
+
+    await screen.findByRole("table");
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenLastCalledWith(
+        "personal",
+        expect.objectContaining({
+          limit: 50,
+          offset: 0,
+          provider: "cardkingdom",
+        }),
+      );
+    });
+    expect(
+      screen.getByRole("button", { name: "Card Kingdom total" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Export collection CSV" }));
+
+    await waitFor(() => {
+      expect(exportInventoryCsv).toHaveBeenCalledWith("personal", {
+        provider: "cardkingdom",
+        profile: "default",
+      });
+    });
   });
 
   it("keeps the detail dialog read-only for viewer access", async () => {
@@ -1864,6 +1961,92 @@ describe("App", () => {
     expect(getCardPrintingSummary).toHaveBeenCalledWith("force-oracle");
   });
 
+  it("hosts open autocomplete suggestions in the sticky pane after scrolling", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollYDescriptor = Object.getOwnPropertyDescriptor(window, "scrollY");
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (
+          this.classList.contains("search-form-primary-row") &&
+          this.closest(".workspace-search-column")
+        ) {
+          return buildRect(8, 56);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "Fo") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "forest-oracle",
+              name: "Forest",
+              printings_count: 1,
+            }),
+            buildNameSearchRow({
+              oracle_id: "force-oracle",
+              name: "Force of Will",
+              printings_count: 4,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "Fo");
+      await screen.findByRole("option", { name: /Force of Will/i });
+
+      expect(container.querySelector(".workspace-search-column [role='listbox']")).not.toBeNull();
+      expect(container.querySelector(".sticky-workspace-controls [role='listbox']")).toBeNull();
+
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 220,
+      });
+      window.dispatchEvent(new Event("scroll"));
+
+      await waitFor(() => {
+        expect(container.querySelector(".sticky-workspace-controls")).not.toBeNull();
+      });
+      await waitFor(() => {
+        expect(container.querySelector(".workspace-search-column [role='listbox']")).toBeNull();
+        expect(container.querySelector(".sticky-workspace-controls [role='listbox']")).not.toBeNull();
+      });
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      if (originalScrollYDescriptor) {
+        Object.defineProperty(window, "scrollY", originalScrollYDescriptor);
+      }
+    }
+  });
+
   it("lets arrow-up return keyboard focus to the search input so Enter submits the full search", async () => {
     const user = userEvent.setup();
     const forest = buildNameSearchRow({
@@ -1954,6 +2137,130 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Lightning Angel" })).toBeInTheDocument();
     expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
+  });
+
+  it("keeps the initially active matching card visible when search results open", async () => {
+    const user = userEvent.setup();
+    const originalOffsetTop = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "offsetTop",
+    );
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "offsetHeight",
+    );
+    const originalClientHeight = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "clientHeight",
+    );
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "scrollHeight",
+    );
+    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
+    const scrollToSpy = vi.fn();
+
+    Object.defineProperty(window.HTMLElement.prototype, "offsetTop", {
+      configurable: true,
+      get() {
+        if (this.classList.contains("search-workspace-result-list")) {
+          return 96;
+        }
+        if (this.classList.contains("search-workspace-result")) {
+          if (this.textContent?.includes("Lightning Bolt")) {
+            return 96;
+          }
+          if (this.textContent?.includes("Lightning Angel")) {
+            return 174;
+          }
+          if (this.textContent?.includes("Lightning Axe")) {
+            return 252;
+          }
+        }
+        return 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("search-workspace-result") ? 68 : 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("search-workspace-result-list") ? 160 : 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("search-workspace-result-list") ? 260 : 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy,
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-axe-oracle",
+              name: "Lightning Axe",
+              printings_count: 9,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+
+      await user.keyboard("{ArrowUp}");
+      await user.keyboard("{Enter}");
+
+      await screen.findByText("Matching cards");
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+
+      expect(scrollToSpy).not.toHaveBeenCalled();
+    } finally {
+      if (originalOffsetTop) {
+        Object.defineProperty(window.HTMLElement.prototype, "offsetTop", originalOffsetTop);
+      }
+      if (originalOffsetHeight) {
+        Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
+      }
+      if (originalClientHeight) {
+        Object.defineProperty(window.HTMLElement.prototype, "clientHeight", originalClientHeight);
+      }
+      if (originalScrollHeight) {
+        Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", originalScrollHeight);
+      }
+      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+        configurable: true,
+        value: originalScrollTo,
+      });
+    }
   });
 
   it("scrolls matching-card navigation far enough to preview the next result", async () => {
@@ -2066,7 +2373,7 @@ describe("App", () => {
     }
   });
 
-  it("guides focus mode toward quick-add fields when the form is only partially visible", async () => {
+  it("keeps regular focus mode from scrolling the page when a result is selected", async () => {
     const user = userEvent.setup();
     const originalGetBoundingClientRect =
       window.HTMLElement.prototype.getBoundingClientRect;
@@ -2152,14 +2459,13 @@ describe("App", () => {
 
       await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
 
-      await waitFor(() => {
-        expect(scrollIntoViewSpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            behavior: "smooth",
-            block: "start",
-          }),
-        );
+      await screen.findByText("Selected card ready. Confirm the printing and details below.");
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => resolve());
+        });
       });
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
         configurable: true,
@@ -2169,6 +2475,186 @@ describe("App", () => {
         configurable: true,
         value: originalScrollIntoView,
       });
+    }
+  });
+
+  it("hosts regular search results in the sticky pane after scrolling", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollYDescriptor = Object.getOwnPropertyDescriptor(window, "scrollY");
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (
+          this.classList.contains("search-form-primary-row") &&
+          this.closest(".workspace-search-column")
+        ) {
+          return buildRect(8, 56);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+      await screen.findByText("Matching cards");
+      expect(container.querySelector(".workspace-search-column .search-workspace")).not.toBeNull();
+      expect(container.querySelector(".sticky-workspace-controls .search-workspace")).toBeNull();
+
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 220,
+      });
+      window.dispatchEvent(new Event("scroll"));
+
+      await waitFor(() => {
+        expect(container.querySelector(".sticky-workspace-controls")).not.toBeNull();
+      });
+      await waitFor(() => {
+        expect(container.querySelector(".workspace-search-column .search-workspace")).toBeNull();
+        expect(container.querySelector(".sticky-workspace-controls .search-workspace")).not.toBeNull();
+      });
+      expect(container.querySelectorAll(".search-workspace")).toHaveLength(1);
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      if (originalScrollYDescriptor) {
+        Object.defineProperty(window, "scrollY", originalScrollYDescriptor);
+      }
+    }
+  });
+
+  it("hosts a regular selected search card in the sticky pane after scrolling", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollYDescriptor = Object.getOwnPropertyDescriptor(window, "scrollY");
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (
+          this.classList.contains("search-form-primary-row") &&
+          this.closest(".workspace-search-column")
+        ) {
+          return buildRect(8, 56);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+      await screen.findByText("Matching cards");
+      await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
+      await screen.findByText("Selected card ready. Confirm the printing and details below.");
+
+      expect(container.querySelector(".workspace-search-column .result-card")).not.toBeNull();
+      expect(container.querySelector(".sticky-workspace-controls .result-card")).toBeNull();
+
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 220,
+      });
+      window.dispatchEvent(new Event("scroll"));
+
+      await waitFor(() => {
+        expect(container.querySelector(".sticky-workspace-controls")).not.toBeNull();
+      });
+      await waitFor(() => {
+        expect(container.querySelector(".workspace-search-column .result-card")).toBeNull();
+        expect(container.querySelector(".sticky-workspace-controls .result-card")).not.toBeNull();
+      });
+      expect(container.querySelectorAll(".result-card")).toHaveLength(1);
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      if (originalScrollYDescriptor) {
+        Object.defineProperty(window, "scrollY", originalScrollYDescriptor);
+      }
     }
   });
 
@@ -3568,11 +4054,13 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    expect(boltRowScope.queryByRole("spinbutton", { name: /Quantity/ })).not.toBeInTheDocument();
+    await openBrowseRowEditor(user, boltRow);
+    expect(
+      boltRowScope.getByRole("button", { name: "Done editing Lightning Bolt" }),
+    ).toBeEnabled();
     expect(boltRowScope.getByRole("combobox", { name: /Finish/ })).toBeEnabled();
     expect(
       boltRowScope.queryByRole("textbox", { name: /Notes/ }),
@@ -3593,11 +4081,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedQuantityInput = refreshedBoltScope.getByRole("spinbutton", {
       name: /Quantity/,
     });
@@ -3614,11 +4099,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
 
     await user.clear(quantityInput);
@@ -3645,11 +4128,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
 
     await user.clear(quantityInput);
@@ -3720,11 +4201,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const quantityInput = boltRowScope.getByRole("spinbutton", { name: /Quantity/ });
 
     await user.clear(quantityInput);
@@ -3748,6 +4227,8 @@ describe("App", () => {
   });
 
   it("offers existing collection locations as browse suggestions", async () => {
+    const user = userEvent.setup();
+
     mockCollectionViewApp({
       items: [
         buildOwnedRow({ location: "Binder" }),
@@ -3784,11 +4265,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const locationInput = within(boltRow!).getByRole("combobox", { name: /Location/ });
+    const boltRow = await findBrowseRow();
+    await openBrowseRowEditor(user, boltRow);
+    const locationInput = within(boltRow).getByRole("combobox", { name: /Location/ });
     const listId = locationInput.getAttribute("list");
     expect(listId).toBeTruthy();
 
@@ -3856,11 +4335,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const finishSelect = boltRowScope.getByRole("combobox", { name: /Finish/ });
     expect(finishSelect).toBeEnabled();
     expect(within(finishSelect).getByRole("option", { name: "Foil" })).toBeInTheDocument();
@@ -3874,11 +4351,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     expect(refreshedBoltScope.getByRole("combobox", { name: /Finish/ })).toHaveValue("foil");
     expect(refreshedBoltScope.getByText("$9.00")).toBeInTheDocument();
   });
@@ -3902,11 +4376,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const finishSelect = boltRowScope.getByRole("combobox", { name: /Finish/ });
 
     await user.selectOptions(finishSelect, "foil");
@@ -3974,11 +4446,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.type(tagsInput, "trade{enter}");
@@ -3992,11 +4462,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
     expect(refreshedTagsInput).toHaveValue("");
     await waitFor(() => {
@@ -4025,11 +4492,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.type(tagsInput, "trade{enter}");
@@ -4099,11 +4564,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.click(tagsInput);
@@ -4119,11 +4582,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
     await waitFor(() => {
       expect(refreshedTagsInput).toHaveFocus();
@@ -4183,11 +4643,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.click(tagsInput);
@@ -4203,11 +4661,8 @@ describe("App", () => {
       expect(listInventoryItems).toHaveBeenCalledTimes(2);
     });
 
-    const refreshedBoltRow = (await screen.findByRole("heading", {
-      name: "Lightning Bolt",
-    })).closest("article");
-    expect(refreshedBoltRow).not.toBeNull();
-    const refreshedBoltScope = within(refreshedBoltRow!);
+    const refreshedBoltRow = await findBrowseRow();
+    const refreshedBoltScope = within(refreshedBoltRow);
     const refreshedTagsInput = refreshedBoltScope.getByRole("textbox", { name: /Tags/ });
     await waitFor(() => {
       expect(refreshedTagsInput).toHaveFocus();
@@ -4216,7 +4671,7 @@ describe("App", () => {
     expect(refreshedBoltScope.queryByText("trade")).not.toBeInTheDocument();
   });
 
-  it("uses the first browse tag click to activate tag removal instead of removing immediately", async () => {
+  it("uses the first browse editor tag click to activate tag removal instead of removing immediately", async () => {
     const user = userEvent.setup();
 
     mockCollectionViewApp({
@@ -4229,11 +4684,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
 
     await user.click(boltRowScope.getByText("trade"));
 
@@ -4261,11 +4714,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const boltRow = (await screen.findByRole("heading", { name: "Lightning Bolt" })).closest(
-      "article",
-    );
-    expect(boltRow).not.toBeNull();
-    const boltRowScope = within(boltRow!);
+    const boltRow = await findBrowseRow();
+    const boltRowScope = within(boltRow);
+    await openBrowseRowEditor(user, boltRow);
     const tagsInput = boltRowScope.getByRole("textbox", { name: /Tags/ });
 
     await user.click(tagsInput);
@@ -5272,9 +5723,23 @@ describe("App", () => {
     await screen.findByRole("table");
     await user.click(screen.getByRole("button", { name: "Tags" }));
     await user.click(screen.getByLabelText("burn"));
+    await user.click(screen.getByRole("button", { name: "Set" }));
+    await user.click(screen.getByLabelText("LEA · Limited Edition Alpha"));
+    await user.click(screen.getByRole("button", { name: "Location" }));
+    await user.type(screen.getByRole("textbox", { name: "Location contains" }), "Binder");
 
     await waitFor(() => {
       expect(screen.getByText("Showing all 1 entry.")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(listInventoryItemsPage).toHaveBeenLastCalledWith(
+        "personal",
+        expect.objectContaining({
+          location: "Binder",
+          set_code: "lea",
+          tags: ["burn"],
+        }),
+      );
     });
 
     await user.click(screen.getByRole("button", { name: "Bulk edit filtered" }));
@@ -5284,7 +5749,12 @@ describe("App", () => {
     await waitFor(() => {
       expect(bulkMutateInventoryItems).toHaveBeenCalledWith("personal", {
         operation: "add_tags",
-        selection: { kind: "filtered", tags: ["burn"] },
+        selection: {
+          kind: "filtered",
+          location: "Binder",
+          set_code: "lea",
+          tags: ["burn"],
+        },
         tags: ["trade"],
       });
     });
@@ -5653,6 +6123,27 @@ describe("App", () => {
     expect(await screen.findByText("No entries selected")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Sol Ring" })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Select Lightning Bolt" })).not.toBeInTheDocument();
+  });
+
+  it("opens create collection from the current collection menu", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /Personal Collection/i }));
+    const collectionMenu = await screen.findByRole("group", {
+      name: "Collection options",
+    });
+
+    await user.click(
+      within(collectionMenu).getByRole("button", { name: "Create Collection" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Create Collection" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: "Collection name" })).toHaveFocus();
   });
 
   it("creates a new inventory from the sidebar and selects it", async () => {

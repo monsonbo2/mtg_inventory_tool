@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 import type {
   BulkInventoryItemMutationRequest,
   InventoryCreateRequest,
+  InventoryPriceProvider,
   InventorySummary,
   InventoryTransferMode,
   OwnedInventoryRow,
@@ -15,7 +17,13 @@ import type {
   MutationOutcome,
   NoticeTone,
 } from "../uiTypes";
-import { decimalToNumber, formatUsd } from "../uiHelpers";
+import {
+  PRICE_PROVIDER_OPTIONS,
+  decimalToNumber,
+  formatUsd,
+  getCurrentRetailValueLabel,
+  getPriceProviderOption,
+} from "../uiHelpers";
 import type {
   InventoryTableFilters,
   InventoryTableFilterOptions,
@@ -26,12 +34,12 @@ import { InventoryTableView } from "./InventoryTableView";
 import { OwnedItemCard } from "./OwnedItemCard";
 import { ModalDialog } from "./ui/ModalDialog";
 import { PanelState } from "./ui/PanelState";
-import { StatusPill } from "./ui/StatusPill";
 
 type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
   canExportSelectedInventory: boolean;
   exportInventoryBusy: boolean;
+  priceProvider: InventoryPriceProvider;
   selectedInventoryCanWrite: boolean;
   collection: {
     browsePage: number;
@@ -95,6 +103,7 @@ type OwnedCollectionPanelActions = {
   onCollectionSearchQueryChange: (nextQuery: string) => void;
   onCloseItemDetails: () => void;
   onOpenItemDetails: (itemId: number) => void;
+  onPriceProviderChange: (nextProvider: InventoryPriceProvider) => void;
   onTableSortChange: (nextSort: InventoryTableSortState) => void;
   onTableFiltersChange: (nextFilters: InventoryTableFilters) => void;
   onTablePageChange: (nextPage: number) => void;
@@ -122,6 +131,10 @@ export function OwnedCollectionPanel(props: {
   actions: OwnedCollectionPanelActions;
   state: OwnedCollectionPanelState;
 }) {
+  const [priceProviderMenuOpen, setPriceProviderMenuOpen] = useState(false);
+  const priceProviderMenuRef = useRef<HTMLDivElement | null>(null);
+  const priceProviderTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const priceProviderOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const collectionDisplayState = !props.state.selectedInventoryRow
     ? "unselected"
     : props.state.collection.viewStatus === "loading" &&
@@ -195,7 +208,112 @@ export function OwnedCollectionPanel(props: {
   const showCollectionSearchRow = showViewControls;
   const showSummaryBar = showCollectionMetrics;
   const collectionPanelTitle = props.state.selectedInventoryRow?.display_name || "No collection selected";
+  const selectedPriceProviderOption = getPriceProviderOption(
+    props.state.priceProvider,
+  );
+  const selectedPriceProviderIndex = Math.max(
+    PRICE_PROVIDER_OPTIONS.findIndex(
+      (option) => option.value === props.state.priceProvider,
+    ),
+    0,
+  );
   let collectionContent: ReactNode;
+
+  useEffect(() => {
+    if (!priceProviderMenuOpen) {
+      return;
+    }
+
+    function handleDocumentPointerDown(event: PointerEvent) {
+      if (
+        priceProviderMenuRef.current?.contains(event.target as Node | null)
+      ) {
+        return;
+      }
+      setPriceProviderMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    };
+  }, [priceProviderMenuOpen]);
+
+  useEffect(() => {
+    if (!showViewControls && priceProviderMenuOpen) {
+      setPriceProviderMenuOpen(false);
+    }
+  }, [priceProviderMenuOpen, showViewControls]);
+
+  function focusPriceProviderOption(index: number) {
+    const optionCount = PRICE_PROVIDER_OPTIONS.length;
+    const boundedIndex = ((index % optionCount) + optionCount) % optionCount;
+    window.requestAnimationFrame(() => {
+      priceProviderOptionRefs.current[boundedIndex]?.focus();
+    });
+  }
+
+  function openPriceProviderMenu(focusIndex = selectedPriceProviderIndex) {
+    setPriceProviderMenuOpen(true);
+    focusPriceProviderOption(focusIndex);
+  }
+
+  function closePriceProviderMenu(options: { restoreFocus?: boolean } = {}) {
+    setPriceProviderMenuOpen(false);
+    if (options.restoreFocus) {
+      window.requestAnimationFrame(() => {
+        priceProviderTriggerRef.current?.focus();
+      });
+    }
+  }
+
+  function handlePriceProviderTriggerKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+  ) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      openPriceProviderMenu(selectedPriceProviderIndex);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      openPriceProviderMenu(selectedPriceProviderIndex);
+    }
+  }
+
+  function handlePriceProviderOptionKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    optionIndex: number,
+  ) {
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        focusPriceProviderOption(optionIndex + 1);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        focusPriceProviderOption(optionIndex - 1);
+        break;
+      case "Home":
+        event.preventDefault();
+        focusPriceProviderOption(0);
+        break;
+      case "End":
+        event.preventDefault();
+        focusPriceProviderOption(PRICE_PROVIDER_OPTIONS.length - 1);
+        break;
+      case "Escape":
+        event.preventDefault();
+        closePriceProviderMenu({ restoreFocus: true });
+        break;
+    }
+  }
+
+  function handlePriceProviderSelect(nextProvider: InventoryPriceProvider) {
+    props.actions.onPriceProviderChange(nextProvider);
+    closePriceProviderMenu({ restoreFocus: true });
+  }
 
   switch (collectionDisplayState) {
     case "unselected":
@@ -325,6 +443,7 @@ export function OwnedCollectionPanel(props: {
               onSortChange={props.actions.onTableSortChange}
               onTransferItems={props.actions.onTransferItems}
               onToggleItemSelection={props.actions.onToggleItemSelection}
+              priceProvider={props.state.priceProvider}
               selectedItemIds={props.state.table.selectedItemIds}
               sortState={props.state.table.sort}
               transferBusy={props.state.table.transferBusy}
@@ -337,6 +456,7 @@ export function OwnedCollectionPanel(props: {
             items={props.state.collection.visibleItems}
             onOpenDetails={props.actions.onOpenItemDetails}
             onPatch={props.actions.onPatch}
+            priceProvider={props.state.priceProvider}
           />
         );
       break;
@@ -350,61 +470,130 @@ export function OwnedCollectionPanel(props: {
             <p className="section-kicker">Your Collection</p>
             <h2>{collectionPanelTitle}</h2>
           </div>
-          <StatusPill status={props.state.collection.viewStatus} />
         </div>
 
         {showViewControls || showActivityButton || showExportButton ? (
           <div className="collection-header-controls">
             {showViewControls ? (
-              <div aria-label="Collection view" className="view-toggle" role="group">
-                <button
-                  aria-pressed={props.state.collection.view === "browse"}
-                  className={
-                    props.state.collection.view === "browse"
-                      ? "view-toggle-button view-toggle-button-active"
-                      : "view-toggle-button"
-                  }
-                  onClick={() => props.actions.onCollectionViewChange("browse")}
-                  type="button"
+              <div className="collection-view-controls">
+                <div aria-label="Collection view" className="view-toggle" role="group">
+                  <button
+                    aria-pressed={props.state.collection.view === "browse"}
+                    className={
+                      props.state.collection.view === "browse"
+                        ? "view-toggle-button view-toggle-button-active"
+                        : "view-toggle-button"
+                    }
+                    onClick={() => props.actions.onCollectionViewChange("browse")}
+                    type="button"
+                  >
+                    Browse
+                  </button>
+                  <button
+                    aria-pressed={props.state.collection.view === "table"}
+                    className={
+                      props.state.collection.view === "table"
+                        ? "view-toggle-button view-toggle-button-active"
+                        : "view-toggle-button"
+                    }
+                    onClick={() => props.actions.onCollectionViewChange("table")}
+                    type="button"
+                  >
+                    Table
+                  </button>
+                </div>
+
+                <div
+                  className="collection-price-provider-menu"
+                  ref={priceProviderMenuRef}
                 >
-                  Browse
-                </button>
-                <button
-                  aria-pressed={props.state.collection.view === "table"}
-                  className={
-                    props.state.collection.view === "table"
-                      ? "view-toggle-button view-toggle-button-active"
-                      : "view-toggle-button"
-                  }
-                  onClick={() => props.actions.onCollectionViewChange("table")}
-                  type="button"
-                >
-                  Table
-                </button>
+                  <button
+                    aria-expanded={priceProviderMenuOpen}
+                    aria-haspopup="listbox"
+                    aria-label={`Price Source: ${selectedPriceProviderOption.label}`}
+                    className="collection-price-provider-trigger"
+                    onClick={() => {
+                      if (priceProviderMenuOpen) {
+                        closePriceProviderMenu();
+                        return;
+                      }
+                      openPriceProviderMenu();
+                    }}
+                    onKeyDown={handlePriceProviderTriggerKeyDown}
+                    ref={priceProviderTriggerRef}
+                    type="button"
+                  >
+                    <span className="collection-price-provider-label">
+                      Price Source:
+                    </span>
+                    <span className="collection-price-provider-value">
+                      {selectedPriceProviderOption.label}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="collection-price-provider-chevron"
+                    />
+                  </button>
+
+                  {priceProviderMenuOpen ? (
+                    <div
+                      aria-label="Price Source"
+                      className="collection-price-provider-list"
+                      role="listbox"
+                    >
+                      {PRICE_PROVIDER_OPTIONS.map((option, optionIndex) => (
+                        <button
+                          aria-selected={option.value === props.state.priceProvider}
+                          className={
+                            option.value === props.state.priceProvider
+                              ? "collection-price-provider-option collection-price-provider-option-active"
+                              : "collection-price-provider-option"
+                          }
+                          key={option.value}
+                          onClick={() => handlePriceProviderSelect(option.value)}
+                          onKeyDown={(event) =>
+                            handlePriceProviderOptionKeyDown(event, optionIndex)
+                          }
+                          ref={(node) => {
+                            priceProviderOptionRefs.current[optionIndex] = node;
+                          }}
+                          role="option"
+                          type="button"
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 
-            {showActivityButton ? (
-              <button
-                className="utility-button"
-                onClick={props.actions.onOpenActivity}
-                type="button"
-              >
-                Recent Activity
-              </button>
-            ) : null}
+            {showActivityButton || showExportButton ? (
+              <div className="collection-action-controls">
+                {showActivityButton ? (
+                  <button
+                    className="utility-button"
+                    onClick={props.actions.onOpenActivity}
+                    type="button"
+                  >
+                    Recent Activity
+                  </button>
+                ) : null}
 
-            {showExportButton ? (
-              <button
-                className="utility-button"
-                disabled={props.state.exportInventoryBusy}
-                onClick={() => void props.actions.onExportCsv()}
-                type="button"
-              >
-                {props.state.exportInventoryBusy
-                  ? "Exporting CSV..."
-                  : "Export collection CSV"}
-              </button>
+                {showExportButton ? (
+                  <button
+                    className="utility-button"
+                    disabled={props.state.exportInventoryBusy}
+                    onClick={() => void props.actions.onExportCsv()}
+                    type="button"
+                  >
+                    {props.state.exportInventoryBusy
+                      ? "Exporting CSV..."
+                      : "Export collection CSV"}
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -421,7 +610,7 @@ export function OwnedCollectionPanel(props: {
             <strong>{totalCards}</strong>
           </div>
           <div className="summary-chip">
-            <span>Estimated value</span>
+            <span>{getCurrentRetailValueLabel(props.state.priceProvider)}</span>
             <strong>{formatUsd(totalEstimatedValue)}</strong>
           </div>
         </div>
@@ -550,6 +739,7 @@ export function OwnedCollectionPanel(props: {
             }}
             onNotice={props.actions.onNotice}
             onPatch={props.actions.onPatch}
+            priceProvider={props.state.priceProvider}
           />
         </ModalDialog>
       ) : null}

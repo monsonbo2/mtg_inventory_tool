@@ -217,9 +217,12 @@
   z-index: 6;
 }
 
-.workspace-top-grid-controls-aligned {
+.workspace-top-grid-control-sizing {
   --workspace-top-card-control-height: 72px;
   --workspace-top-search-control-height: 56px;
+}
+
+.workspace-top-grid-controls-aligned {
   align-items: stretch;
 }
 

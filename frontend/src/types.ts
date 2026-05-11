@@ -10,6 +10,11 @@ export type CatalogScope = "default" | "all";
 export type FinishValue = "normal" | "foil" | "etched";
 export type FinishInput = FinishValue | "nonfoil";
 export type PrintingSelectionMode = "explicit" | "defaulted";
+export type InventoryPriceProvider =
+  | "tcgplayer"
+  | "cardkingdom"
+  | "cardhoarder"
+  | "manapool";
 export type ConditionCode =
   | "M"
   | "NM"
@@ -755,7 +760,7 @@ export type OwnedInventoryItemsPageSortKey =
 export type OwnedInventoryItemsPageSortDirection = "asc" | "desc";
 
 export interface OwnedInventoryItemsPageParams {
-  provider?: string;
+  provider?: InventoryPriceProvider;
   limit?: number | null;
   offset?: number | null;
   sort_key?: OwnedInventoryItemsPageSortKey | null;
@@ -782,7 +787,7 @@ export interface OwnedInventoryItemsPageResponse {
 }
 
 export interface InventoryExportCsvParams {
-  provider?: string;
+  provider?: InventoryPriceProvider;
   profile?: "default";
   limit?: number | null;
   query?: string | null;

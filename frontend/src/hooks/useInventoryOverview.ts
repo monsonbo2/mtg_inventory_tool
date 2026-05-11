@@ -10,18 +10,26 @@ import {
 import type {
   AccessSummaryResponse,
   InventoryAuditEvent,
+  InventoryPriceProvider,
   InventorySummary,
   OwnedInventoryRow,
 } from "../types";
-import { resolveSelectedInventorySlug, toUserMessage } from "../uiHelpers";
+import {
+  DEFAULT_PRICE_PROVIDER,
+  resolveSelectedInventorySlug,
+  toUserMessage,
+} from "../uiHelpers";
 import type { AsyncStatus, ViewRefreshOutcome } from "../uiTypes";
 
 type LoadInventoryOverviewOptions = {
+  provider?: InventoryPriceProvider;
   reloadInventories?: boolean;
   showLoading?: boolean;
 };
 
-export function useInventoryOverview() {
+export function useInventoryOverview(hookOptions: {
+  priceProvider: InventoryPriceProvider;
+}) {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
   const [selectedInventory, setSelectedInventory] = useState<string | null>(null);
   const [items, setItems] = useState<OwnedInventoryRow[]>([]);
@@ -179,8 +187,13 @@ export function useInventoryOverview() {
     }
 
     try {
+      const requestPriceProvider = options.provider ?? hookOptions.priceProvider;
       const [nextItems, nextAuditEvents] = await Promise.all([
-        listInventoryItems(inventorySlug),
+        requestPriceProvider === DEFAULT_PRICE_PROVIDER
+          ? listInventoryItems(inventorySlug)
+          : listInventoryItems(inventorySlug, {
+              provider: requestPriceProvider,
+            }),
         listInventoryAudit(inventorySlug),
       ]);
 

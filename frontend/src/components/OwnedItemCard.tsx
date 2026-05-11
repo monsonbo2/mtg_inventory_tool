@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type {
   FinishValue,
+  InventoryPriceProvider,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
@@ -21,6 +22,7 @@ import {
   formatUsd,
   getAvailableFinishesForOwnedRow,
   getBusyMessage,
+  getCurrentRetailPriceLabel,
   normalizeOptionalText,
   parseTags,
   summarizeInlineText,
@@ -39,6 +41,7 @@ export function OwnedItemCard(props: {
   ) => Promise<MutationOutcome>;
   onDelete: (itemId: number, cardName: string) => Promise<MutationOutcome>;
   onNotice: (message: string, tone?: NoticeTone) => void;
+  priceProvider: InventoryPriceProvider;
 }) {
   const [quantity, setQuantity] = useState(String(props.item.quantity));
   const [finish, setFinish] = useState<FinishValue>(props.item.finish);
@@ -179,6 +182,7 @@ export function OwnedItemCard(props: {
     availableFinishes.length === 1
       ? `This printing only supports ${formatFinishLabel(availableFinishes[0])}.`
       : `Available: ${availableFinishes.map((value) => formatFinishLabel(value)).join(", ")}.`;
+  const currentRetailPriceLabel = getCurrentRetailPriceLabel(props.priceProvider);
   const statusMessage = busyMessage
     ? busyMessage
     : quantityHasError
@@ -232,7 +236,9 @@ export function OwnedItemCard(props: {
             </div>
             <div className="owned-card-pricing">
               <strong>{formatUsd(decimalToNumber(props.item.est_value))}</strong>
-              <span>{props.item.price_date || "No price date"}</span>
+              <span>
+                {currentRetailPriceLabel} · {props.item.price_date || "No price date"}
+              </span>
             </div>
           </div>
 
@@ -247,7 +253,7 @@ export function OwnedItemCard(props: {
 
       <div className="item-meta-grid">
         <MetaLine
-          label="Unit price"
+          label={currentRetailPriceLabel}
           value={formatMaybeCurrency(props.item.unit_price, props.item.currency)}
         />
         <MetaLine

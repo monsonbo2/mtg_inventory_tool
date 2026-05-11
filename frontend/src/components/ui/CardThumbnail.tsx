@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 export function CardThumbnail(props: {
+  imageSizes?: string;
   imageUrl: string | null;
   imageUrlLarge: string | null;
   name: string;
@@ -12,12 +13,22 @@ export function CardThumbnail(props: {
     setFailedImageUrls([]);
   }, [props.imageUrl, props.imageUrlLarge]);
 
-  const imageCandidates = [props.imageUrl, props.imageUrlLarge].filter(
-    (imageUrl): imageUrl is string => Boolean(imageUrl),
-  );
+  const imageCandidates = [
+    { url: props.imageUrl, width: 146 },
+    { url: props.imageUrlLarge, width: 488 },
+  ].filter((image): image is { url: string; width: number } => {
+    if (!image.url) {
+      return false;
+    }
+    return !failedImageUrls.includes(image.url);
+  });
   const activeImageUrl =
-    imageCandidates.find((imageUrl) => !failedImageUrls.includes(imageUrl)) || null;
+    imageCandidates.find((image) => !failedImageUrls.includes(image.url))?.url || null;
   const hasImage = Boolean(activeImageUrl);
+  const srcSet =
+    props.imageSizes && imageCandidates.length > 1
+      ? imageCandidates.map((image) => `${image.url} ${image.width}w`).join(", ")
+      : undefined;
   const className = `card-thumb card-thumb-${props.variant}`;
   const fallbackInitials =
     props.name
@@ -38,15 +49,18 @@ export function CardThumbnail(props: {
           className="card-thumb-image"
           decoding="async"
           loading="lazy"
-          onError={() => {
+          onError={(event) => {
             if (!activeImageUrl) {
               return;
             }
+            const failedImageUrl = event.currentTarget.currentSrc || activeImageUrl;
             setFailedImageUrls((current) =>
-              current.includes(activeImageUrl) ? current : [...current, activeImageUrl],
+              current.includes(failedImageUrl) ? current : [...current, failedImageUrl],
             );
           }}
+          sizes={srcSet ? props.imageSizes : undefined}
           src={activeImageUrl || undefined}
+          srcSet={srcSet}
         />
       ) : (
         <div className="card-thumb-fallback" title={props.name}>

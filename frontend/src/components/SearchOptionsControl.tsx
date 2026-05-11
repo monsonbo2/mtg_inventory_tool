@@ -58,20 +58,17 @@ export function SearchOptionsControl(props: {
       <button
         aria-controls={open ? panelId : undefined}
         aria-expanded={open}
+        aria-label="Additional search options"
         className={
-          placement === "sticky"
-            ? hasActiveOptions
-              ? "utility-button search-options-trigger search-options-trigger-sticky search-options-trigger-active"
-              : "utility-button search-options-trigger search-options-trigger-sticky"
-            : hasActiveOptions
-              ? "field-link-button search-options-trigger search-options-trigger-active"
-              : "field-link-button search-options-trigger"
+          hasActiveOptions
+            ? "search-options-trigger search-options-trigger-active"
+            : "search-options-trigger"
         }
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
         <span className="search-options-trigger-label">
-          {placement === "sticky" ? "Search options" : "Additional search options"}
+          Options
         </span>
       </button>
 
