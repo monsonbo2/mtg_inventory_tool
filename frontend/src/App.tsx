@@ -170,6 +170,7 @@ export default function App() {
     selectedInventory !== null && staleCollectionItemsInventory === selectedInventory;
   const {
     activeSearchGroupId,
+    activeSearchSurface,
     handleSearchFieldFocus,
     handleSearchInputKeyDown,
     handleSearchLoadAllLanguagesChange,
@@ -405,6 +406,7 @@ export default function App() {
     selectedInventoryRow,
     writableInventories,
     suggestions: {
+      activeSurface: activeSearchSurface,
       error: suggestionError,
       highlightedIndex: highlightedSuggestionIndex,
       isOpen: suggestionOpen,
@@ -541,12 +543,17 @@ export default function App() {
   const showHeroCreateAction =
     appShellState === "ready" || appShellState === "bootstrap_available";
   const showHeroImportAction = appShellState === "ready";
-  const workspaceTopGridClassName =
-    appShellState === "ready" &&
-    selectedInventoryCanWrite &&
-    !searchResultsVisible
-      ? "workspace-top-grid workspace-top-grid-controls-aligned"
-      : "workspace-top-grid";
+  const workspaceTopGridClassName = [
+    "workspace-top-grid",
+    appShellState === "ready" && selectedInventoryCanWrite
+      ? "workspace-top-grid-control-sizing"
+      : null,
+    appShellState === "ready" && selectedInventoryCanWrite && !searchResultsVisible
+      ? "workspace-top-grid-controls-aligned"
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
     setCollectionMenuOpen(false);
@@ -705,8 +712,9 @@ export default function App() {
                 importActionHost={workspaceImportActionHost}
                 importActionHostEnabled={showHeroImportAction}
                 state={searchPanelState}
+                suppressAutocomplete={stickyControlsVisible}
                 suppressSearchWorkspace={
-                  stickyControlsVisible && searchWorkspaceMode === "focus"
+                  stickyControlsVisible && searchResultsVisible
                 }
               />
             ) : (

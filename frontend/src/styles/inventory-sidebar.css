@@ -120,8 +120,8 @@
     rgba(16, 27, 47, 0.74);
 }
 
-.workspace-top-grid-controls-aligned .inventory-focus-trigger,
-.workspace-top-grid-controls-aligned .inventory-focus-card {
+.workspace-top-grid-control-sizing .inventory-focus-trigger,
+.workspace-top-grid-control-sizing .inventory-focus-card {
   min-height: var(--workspace-top-card-control-height);
 }
 
@@ -309,17 +309,17 @@
     min-height: 100%;
   }
 
-  .workspace-top-grid-controls-aligned .inventory-focus-block {
+  .workspace-top-grid-control-sizing .inventory-focus-block {
     margin-top: 0;
     gap: 10px;
   }
 
-  .workspace-top-grid-controls-aligned .inventory-focus-kicker {
+  .workspace-top-grid-control-sizing .inventory-focus-kicker {
     margin: 0;
     font-size: 0.75rem;
   }
 
-  .workspace-top-grid-controls-aligned .inventory-switcher {
+  .workspace-top-grid-control-sizing .inventory-switcher {
     min-height: var(--workspace-top-card-control-height);
   }
 }

@@ -1961,6 +1961,92 @@ describe("App", () => {
     expect(getCardPrintingSummary).toHaveBeenCalledWith("force-oracle");
   });
 
+  it("hosts open autocomplete suggestions in the sticky pane after scrolling", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollYDescriptor = Object.getOwnPropertyDescriptor(window, "scrollY");
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (
+          this.classList.contains("search-form-primary-row") &&
+          this.closest(".workspace-search-column")
+        ) {
+          return buildRect(8, 56);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "Fo") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "forest-oracle",
+              name: "Forest",
+              printings_count: 1,
+            }),
+            buildNameSearchRow({
+              oracle_id: "force-oracle",
+              name: "Force of Will",
+              printings_count: 4,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "Fo");
+      await screen.findByRole("option", { name: /Force of Will/i });
+
+      expect(container.querySelector(".workspace-search-column [role='listbox']")).not.toBeNull();
+      expect(container.querySelector(".sticky-workspace-controls [role='listbox']")).toBeNull();
+
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 220,
+      });
+      window.dispatchEvent(new Event("scroll"));
+
+      await waitFor(() => {
+        expect(container.querySelector(".sticky-workspace-controls")).not.toBeNull();
+      });
+      await waitFor(() => {
+        expect(container.querySelector(".workspace-search-column [role='listbox']")).toBeNull();
+        expect(container.querySelector(".sticky-workspace-controls [role='listbox']")).not.toBeNull();
+      });
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      if (originalScrollYDescriptor) {
+        Object.defineProperty(window, "scrollY", originalScrollYDescriptor);
+      }
+    }
+  });
+
   it("lets arrow-up return keyboard focus to the search input so Enter submits the full search", async () => {
     const user = userEvent.setup();
     const forest = buildNameSearchRow({
@@ -2051,6 +2137,130 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Lightning Angel" })).toBeInTheDocument();
     expect(screen.queryByText("Matching cards")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to matches" })).toBeInTheDocument();
+  });
+
+  it("keeps the initially active matching card visible when search results open", async () => {
+    const user = userEvent.setup();
+    const originalOffsetTop = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "offsetTop",
+    );
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "offsetHeight",
+    );
+    const originalClientHeight = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "clientHeight",
+    );
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      window.HTMLElement.prototype,
+      "scrollHeight",
+    );
+    const originalScrollTo = window.HTMLElement.prototype.scrollTo;
+    const scrollToSpy = vi.fn();
+
+    Object.defineProperty(window.HTMLElement.prototype, "offsetTop", {
+      configurable: true,
+      get() {
+        if (this.classList.contains("search-workspace-result-list")) {
+          return 96;
+        }
+        if (this.classList.contains("search-workspace-result")) {
+          if (this.textContent?.includes("Lightning Bolt")) {
+            return 96;
+          }
+          if (this.textContent?.includes("Lightning Angel")) {
+            return 174;
+          }
+          if (this.textContent?.includes("Lightning Axe")) {
+            return 252;
+          }
+        }
+        return 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("search-workspace-result") ? 68 : 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("search-workspace-result-list") ? 160 : 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("search-workspace-result-list") ? 260 : 0;
+      },
+    });
+    Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy,
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-axe-oracle",
+              name: "Lightning Axe",
+              printings_count: 9,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+
+      await user.keyboard("{ArrowUp}");
+      await user.keyboard("{Enter}");
+
+      await screen.findByText("Matching cards");
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+
+      expect(scrollToSpy).not.toHaveBeenCalled();
+    } finally {
+      if (originalOffsetTop) {
+        Object.defineProperty(window.HTMLElement.prototype, "offsetTop", originalOffsetTop);
+      }
+      if (originalOffsetHeight) {
+        Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
+      }
+      if (originalClientHeight) {
+        Object.defineProperty(window.HTMLElement.prototype, "clientHeight", originalClientHeight);
+      }
+      if (originalScrollHeight) {
+        Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", originalScrollHeight);
+      }
+      Object.defineProperty(window.HTMLElement.prototype, "scrollTo", {
+        configurable: true,
+        value: originalScrollTo,
+      });
+    }
   });
 
   it("scrolls matching-card navigation far enough to preview the next result", async () => {
@@ -2163,7 +2373,7 @@ describe("App", () => {
     }
   });
 
-  it("guides focus mode toward quick-add fields when the form is only partially visible", async () => {
+  it("keeps regular focus mode from scrolling the page when a result is selected", async () => {
     const user = userEvent.setup();
     const originalGetBoundingClientRect =
       window.HTMLElement.prototype.getBoundingClientRect;
@@ -2249,14 +2459,13 @@ describe("App", () => {
 
       await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
 
-      await waitFor(() => {
-        expect(scrollIntoViewSpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            behavior: "smooth",
-            block: "start",
-          }),
-        );
+      await screen.findByText("Selected card ready. Confirm the printing and details below.");
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => resolve());
+        });
       });
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
         configurable: true,
@@ -2266,6 +2475,186 @@ describe("App", () => {
         configurable: true,
         value: originalScrollIntoView,
       });
+    }
+  });
+
+  it("hosts regular search results in the sticky pane after scrolling", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollYDescriptor = Object.getOwnPropertyDescriptor(window, "scrollY");
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (
+          this.classList.contains("search-form-primary-row") &&
+          this.closest(".workspace-search-column")
+        ) {
+          return buildRect(8, 56);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+      await screen.findByText("Matching cards");
+      expect(container.querySelector(".workspace-search-column .search-workspace")).not.toBeNull();
+      expect(container.querySelector(".sticky-workspace-controls .search-workspace")).toBeNull();
+
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 220,
+      });
+      window.dispatchEvent(new Event("scroll"));
+
+      await waitFor(() => {
+        expect(container.querySelector(".sticky-workspace-controls")).not.toBeNull();
+      });
+      await waitFor(() => {
+        expect(container.querySelector(".workspace-search-column .search-workspace")).toBeNull();
+        expect(container.querySelector(".sticky-workspace-controls .search-workspace")).not.toBeNull();
+      });
+      expect(container.querySelectorAll(".search-workspace")).toHaveLength(1);
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      if (originalScrollYDescriptor) {
+        Object.defineProperty(window, "scrollY", originalScrollYDescriptor);
+      }
+    }
+  });
+
+  it("hosts a regular selected search card in the sticky pane after scrolling", async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect =
+      window.HTMLElement.prototype.getBoundingClientRect;
+    const originalScrollYDescriptor = Object.getOwnPropertyDescriptor(window, "scrollY");
+
+    function buildRect(top: number, height: number, left = 0, width = 900): DOMRect {
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function mockGetBoundingClientRect(this: HTMLElement) {
+        if (
+          this.classList.contains("search-form-primary-row") &&
+          this.closest(".workspace-search-column")
+        ) {
+          return buildRect(8, 56);
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      mockBaseSearchApp();
+      vi.mocked(searchCardNames).mockImplementation(async (params) => {
+        if (params.query === "lightn") {
+          return buildNameSearchResult([
+            buildNameSearchRow({
+              oracle_id: "lightning-bolt-oracle",
+              name: "Lightning Bolt",
+              printings_count: 3,
+            }),
+            buildNameSearchRow({
+              oracle_id: "lightning-angel-oracle",
+              name: "Lightning Angel",
+              printings_count: 5,
+            }),
+          ]);
+        }
+        return buildNameSearchResult();
+      });
+
+      const { container } = render(<App />);
+
+      const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+      await user.type(input, "lightn");
+      await screen.findByRole("option", { name: /Lightning Angel/i });
+      await user.click(screen.getByRole("button", { name: "Search cards" }));
+      await screen.findByText("Matching cards");
+      await user.click(screen.getByRole("button", { name: /Lightning Angel/i }));
+      await screen.findByText("Selected card ready. Confirm the printing and details below.");
+
+      expect(container.querySelector(".workspace-search-column .result-card")).not.toBeNull();
+      expect(container.querySelector(".sticky-workspace-controls .result-card")).toBeNull();
+
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 220,
+      });
+      window.dispatchEvent(new Event("scroll"));
+
+      await waitFor(() => {
+        expect(container.querySelector(".sticky-workspace-controls")).not.toBeNull();
+      });
+      await waitFor(() => {
+        expect(container.querySelector(".workspace-search-column .result-card")).toBeNull();
+        expect(container.querySelector(".sticky-workspace-controls .result-card")).not.toBeNull();
+      });
+      expect(container.querySelectorAll(".result-card")).toHaveLength(1);
+    } finally {
+      Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+      if (originalScrollYDescriptor) {
+        Object.defineProperty(window, "scrollY", originalScrollYDescriptor);
+      }
     }
   });
 

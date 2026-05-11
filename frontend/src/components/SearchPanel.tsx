@@ -18,10 +18,7 @@ import {
   reconcileInventoryImportResolutionSelectionMap,
   type InventoryImportResolutionSelectionMap,
 } from "../importFlowHelpers";
-import {
-  summarizeSearchGroup,
-  type SearchCardGroup,
-} from "../searchResultHelpers";
+import type { SearchCardGroup } from "../searchResultHelpers";
 import {
   normalizeInventorySlugInput,
   normalizeOptionalText,
@@ -39,13 +36,13 @@ import type {
   InventoryImportStep,
   NoticeTone,
   SearchAddAvailability,
+  SearchSurface,
 } from "../uiTypes";
 import { SearchAutocomplete } from "./SearchAutocomplete";
 import { SearchOptionsControl } from "./SearchOptionsControl";
+import { SearchWorkspace } from "./SearchWorkspace";
 import { PanelState } from "./ui/PanelState";
 import { ModalDialog } from "./ui/ModalDialog";
-import { SearchResultCard } from "./SearchResultCard";
-import { CardThumbnail } from "./ui/CardThumbnail";
 
 function getSuggestionStatusMessage(state: SearchPanelState) {
   const trimmedQuery = state.search.query.trim();
@@ -72,10 +69,6 @@ function getSuggestionStatusMessage(state: SearchPanelState) {
   }
 
   return "Card suggestions are hidden.";
-}
-
-function getCatalogScopeLabel(scope: CatalogScope) {
-  return scope === "all" ? "Full catalog" : "Main catalog";
 }
 
 function measureSearchWorkspaceContentHeight(workspaceNode: HTMLDivElement) {
@@ -117,7 +110,7 @@ function scrollSearchResultListForActiveRow(options: {
   }
 
   const currentScrollTop = listNode.scrollTop;
-  const activeTop = activeNode.offsetTop;
+  const activeTop = Math.max(0, activeNode.offsetTop - listNode.offsetTop);
   const activeBottom = activeTop + activeNode.offsetHeight;
   const peekHeight = getSearchResultPeekHeight(adjacentNode);
 
@@ -182,6 +175,7 @@ export type SearchPanelState = {
     totalCount: number;
   };
   suggestions: {
+    activeSurface: SearchSurface;
     error: string | null;
     highlightedIndex: number;
     isOpen: boolean;
@@ -203,16 +197,22 @@ export type SearchPanelActions = {
     session: DecklistImportSession,
     resolutions?: DecklistImportResolutionRequest[],
   ) => Promise<InventoryImportCommitResult>;
-  onSearchQueryChange: (value: string) => void;
-  onSearchFieldFocus: () => void;
-  onSearchInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
-  onSearchGroupSelect: (groupId: string) => void;
+  onSearchQueryChange: (value: string, surface: SearchSurface) => void;
+  onSearchFieldFocus: (surface: SearchSurface) => void;
+  onSearchInputKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement>,
+    surface: SearchSurface,
+  ) => void;
+  onSearchGroupSelect: (groupId: string, surface: SearchSurface) => void;
   onSearchLoadAllLanguagesChange: (nextValue: boolean) => void;
   onSearchResultsLoadMore: () => void;
   onSearchScopeChange: (scope: CatalogScope) => void;
-  onSearchResultsDismiss: () => void;
-  onSearchSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
-  onSearchWorkspaceBrowse: () => void;
+  onSearchResultsDismiss: (surface: SearchSurface) => void;
+  onSearchSubmit: (
+    event: React.FormEvent<HTMLFormElement>,
+    surface: SearchSurface,
+  ) => void;
+  onSearchWorkspaceBrowse: (surface: SearchSurface) => void;
   onCreateInventory: (
     payload: InventoryCreateRequest,
   ) => Promise<InventoryCreateResult>;
@@ -237,7 +237,10 @@ export type SearchPanelActions = {
   ) => Promise<CatalogPrintingLookupRow[]>;
   onSuggestionHighlight: (index: number) => void;
   onSuggestionRequestClose: () => void;
-  onSuggestionSelect: (result: CatalogNameSearchRow) => void;
+  onSuggestionSelect: (
+    result: CatalogNameSearchRow,
+    surface: SearchSurface,
+  ) => void;
   onAdd: (payload: AddInventoryItemRequest) => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
 };
@@ -314,6 +317,7 @@ export function SearchPanel(props: {
   importActionHost: HTMLElement | null;
   importActionHostEnabled: boolean;
   state: SearchPanelState;
+  suppressAutocomplete?: boolean;
   suppressSearchWorkspace?: boolean;
 }) {
   const searchPanelRef = useRef<HTMLElement | null>(null);
@@ -328,11 +332,9 @@ export function SearchPanel(props: {
   const searchWorkspaceGridRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceHeaderRef = useRef<HTMLDivElement | null>(null);
   const searchWorkspaceRef = useRef<HTMLDivElement | null>(null);
-  const searchQuickAddSectionRef = useRef<HTMLDivElement | null>(null);
   const searchPanelFlowHeightRef = useRef<number | null>(null);
   const searchWorkspaceOverlayKeyRef = useRef<string | null>(null);
   const searchWorkspaceOverlayWidthRef = useRef<number | null>(null);
-  const searchWorkspaceGuidedSelectionRef = useRef<string | null>(null);
   const searchResultActiveIndexRef = useRef<number | null>(null);
   const autocompleteListId = useId();
   const autocompleteStatusId = `${autocompleteListId}-status`;
@@ -400,7 +402,10 @@ export function SearchPanel(props: {
         : "read_only";
   const showSearchResults =
     props.state.searchResultsVisible && hasSearchResults && !props.suppressSearchWorkspace;
-  const showAutocomplete = props.state.suggestions.isOpen;
+  const showAutocomplete =
+    !props.suppressAutocomplete &&
+    props.state.suggestions.isOpen &&
+    props.state.suggestions.activeSurface === "regular";
   const activeSearchGroup =
     props.state.search.groups.find((group) => group.groupId === props.state.activeSearchGroupId) ||
     props.state.search.groups[0] ||
@@ -409,12 +414,6 @@ export function SearchPanel(props: {
     showSearchResults &&
     props.state.searchWorkspaceMode === "browse" &&
     props.state.search.groups.length > 1;
-  const searchQueryLabel =
-    props.state.search.resultQuery || activeSearchGroup?.name || "Search";
-  const searchResultCount = props.state.search.totalCount || props.state.search.groups.length;
-  const searchResultCountLabel = `${searchResultCount} matching card${
-    searchResultCount === 1 ? "" : "s"
-  }`;
   const searchWorkspaceOverlayKey =
     props.state.search.resultQuery ||
     [
@@ -422,28 +421,11 @@ export function SearchPanel(props: {
       props.state.search.totalCount,
       props.state.search.groups.map((group) => group.groupId).join("|"),
     ].join(":");
-  const nextSearchMatchCount = Math.min(
-    10,
-    props.state.search.loadedHiddenResultCount > 0
-      ? props.state.search.loadedHiddenResultCount
-      : props.state.search.hiddenResultCount || 10,
-  );
-  const searchResultsLoadMoreLabel = props.state.search.isLoadingMore
-    ? "Loading more matches..."
-    : props.state.search.loadedHiddenResultCount > 0
-      ? `Show ${nextSearchMatchCount} more of ${props.state.search.hiddenResultCount} additional matches`
-      : `Load ${nextSearchMatchCount} more matches`;
   const activeSuggestionId =
     showAutocomplete && props.state.suggestions.highlightedIndex >= 0
       ? `${autocompleteListId}-option-${props.state.suggestions.highlightedIndex}`
       : undefined;
-  const searchScopeLabel = getCatalogScopeLabel(props.state.search.resultScope);
-  const activeSearchScopeLabel = getCatalogScopeLabel(props.state.search.scope);
   const trimmedDraftQuery = props.state.search.query.trim();
-  const searchDraftNote =
-    props.state.search.status === "loading"
-      ? `Updating results for ${trimmedDraftQuery || "this search"} in ${activeSearchScopeLabel}.`
-      : `Showing ${searchScopeLabel.toLowerCase()} results for "${searchQueryLabel}". Search to update.`;
 
   useEffect(() => {
     if (!props.state.suggestions.isOpen) {
@@ -572,101 +554,6 @@ export function SearchPanel(props: {
 
     searchResultActiveIndexRef.current = activeIndex;
   }, [activeSearchGroup, props.state.search.groups, showSearchMatches]);
-
-  useEffect(() => {
-    if (!showSearchResults || props.state.searchWorkspaceMode !== "focus") {
-      searchWorkspaceGuidedSelectionRef.current = null;
-    }
-  }, [props.state.searchWorkspaceMode, showSearchResults]);
-
-  useEffect(() => {
-    if (
-      !showSearchResults ||
-      props.state.searchWorkspaceMode !== "focus" ||
-      !activeSearchGroup ||
-      typeof window === "undefined" ||
-      window.innerWidth <= 820
-    ) {
-      return;
-    }
-
-    const guideKey = `${activeSearchGroup.groupId}:${searchWorkspaceOverlayKey}`;
-    if (searchWorkspaceGuidedSelectionRef.current === guideKey) {
-      return;
-    }
-
-    let frameId = 0;
-    let nestedFrameId = 0;
-
-    frameId = window.requestAnimationFrame(() => {
-      nestedFrameId = window.requestAnimationFrame(() => {
-        const workspaceNode = searchWorkspaceRef.current;
-        const quickAddNode = searchQuickAddSectionRef.current;
-        if (!workspaceNode || !quickAddNode) {
-          return;
-        }
-
-        const workspaceRect = workspaceNode.getBoundingClientRect();
-        const quickAddRect = quickAddNode.getBoundingClientRect();
-        if (workspaceRect.height <= 0 || quickAddRect.height <= 0) {
-          return;
-        }
-
-        const desiredQuickAddTop = 36;
-        const desiredQuickAddBottomInset = 32;
-        const desiredPageTop = 32;
-        const desiredPageBottomInset = 32;
-        const visibleTopBoundary = Math.max(
-          workspaceRect.top + desiredQuickAddTop,
-          desiredPageTop,
-        );
-        const visibleBottomBoundary = Math.min(
-          workspaceRect.bottom - desiredQuickAddBottomInset,
-          window.innerHeight - desiredPageBottomInset,
-        );
-        const availableQuickAddViewportHeight = Math.max(
-          0,
-          visibleBottomBoundary - visibleTopBoundary,
-        );
-        const visibleQuickAddTop = Math.max(quickAddRect.top, visibleTopBoundary);
-        const visibleQuickAddBottom = Math.min(quickAddRect.bottom, visibleBottomBoundary);
-        const visibleQuickAddHeight = Math.max(
-          0,
-          visibleQuickAddBottom - visibleQuickAddTop,
-        );
-        const desiredVisibleQuickAddHeight = Math.min(
-          quickAddRect.height,
-          availableQuickAddViewportHeight,
-        );
-
-        if (visibleQuickAddHeight >= desiredVisibleQuickAddHeight - 8) {
-          searchWorkspaceGuidedSelectionRef.current = guideKey;
-          return;
-        }
-
-        if (typeof quickAddNode.scrollIntoView === "function") {
-          quickAddNode.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-            inline: "nearest",
-          });
-        }
-        searchWorkspaceGuidedSelectionRef.current = guideKey;
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      window.cancelAnimationFrame(nestedFrameId);
-    };
-  }, [
-    activeSearchGroup?.groupId,
-    props.state.searchWorkspaceMode,
-    searchWorkspaceOverlay.headerHeight,
-    searchWorkspaceOverlay.height,
-    searchWorkspaceOverlayKey,
-    showSearchResults,
-  ]);
 
   useLayoutEffect(() => {
     if (showSearchResults) {
@@ -1661,7 +1548,10 @@ export function SearchPanel(props: {
           {!props.importActionHostEnabled ? renderImportAction({ placement: "inline" }) : null}
         </div>
 
-        <form className="search-form" onSubmit={props.actions.onSearchSubmit}>
+        <form
+          className="search-form"
+          onSubmit={(event) => props.actions.onSearchSubmit(event, "regular")}
+        >
           <div className="search-form-primary-row">
             <label
               className="field search-field"
@@ -1678,10 +1568,14 @@ export function SearchPanel(props: {
                   aria-expanded={showAutocomplete}
                   aria-haspopup="listbox"
                   className="text-input"
-                  onChange={(event) => props.actions.onSearchQueryChange(event.target.value)}
-                  onClick={props.actions.onSearchFieldFocus}
-                  onFocus={props.actions.onSearchFieldFocus}
-                  onKeyDown={props.actions.onSearchInputKeyDown}
+                  onChange={(event) =>
+                    props.actions.onSearchQueryChange(event.target.value, "regular")
+                  }
+                  onClick={() => props.actions.onSearchFieldFocus("regular")}
+                  onFocus={() => props.actions.onSearchFieldFocus("regular")}
+                  onKeyDown={(event) =>
+                    props.actions.onSearchInputKeyDown(event, "regular")
+                  }
                   placeholder="e.g. Lightning Bolt"
                   ref={searchInputRef}
                   role="combobox"
@@ -1693,7 +1587,9 @@ export function SearchPanel(props: {
                   isOpen={showAutocomplete}
                   listboxId={autocompleteListId}
                   onHighlight={props.actions.onSuggestionHighlight}
-                  onSelect={props.actions.onSuggestionSelect}
+                  onSelect={(result) =>
+                    props.actions.onSuggestionSelect(result, "regular")
+                  }
                   optionIdPrefix={autocompleteListId}
                   query={props.state.search.query}
                   results={props.state.suggestions.results}
@@ -1761,149 +1657,28 @@ export function SearchPanel(props: {
         ) : null}
 
         {showSearchResults && activeSearchGroup ? (
-          <div className="search-workspace" ref={searchWorkspaceRef}>
-          <div className="search-workspace-header" ref={searchWorkspaceHeaderRef}>
-            <div className="search-workspace-header-copy">
-              <p className="section-kicker">Search Results</p>
-              <p className="search-workspace-title">{searchQueryLabel}</p>
-              <p className="search-workspace-summary">
-                {showSearchMatches
-                  ? `${searchResultCountLabel} in ${searchScopeLabel}. Pick a card on the left, then confirm the printing and details on the right.`
-                  : "Selected card ready. Confirm the printing and details below."}
-              </p>
-              {props.state.search.isResultStale ? (
-                <p className="search-workspace-draft-note">{searchDraftNote}</p>
-              ) : null}
-            </div>
-            <div className="search-workspace-header-actions">
-              {props.state.search.groups.length > 1 ? (
-                props.state.searchWorkspaceMode === "focus" ? (
-                  <button
-                    className="secondary-button search-workspace-toggle"
-                    onClick={props.actions.onSearchWorkspaceBrowse}
-                    type="button"
-                  >
-                    Back to matches
-                  </button>
-                ) : (
-                  <span className="search-workspace-count">{searchResultCountLabel}</span>
-                )
-              ) : null}
-            </div>
-          </div>
-
-          <div
-            className={
-              showSearchMatches
-                ? "search-workspace-grid"
-                : "search-workspace-grid search-workspace-grid-focus"
+          <SearchWorkspace
+            actions={props.actions}
+            activeSearchGroup={activeSearchGroup}
+            addAvailability={selectedInventoryAddAvailability}
+            detailRef={searchWorkspaceDetailRef}
+            gridRef={searchWorkspaceGridRef}
+            headerRef={searchWorkspaceHeaderRef}
+            reserveHeight={searchWorkspaceOverlay.reserveHeight}
+            resultListRef={searchResultListRef}
+            resultsPanelRef={searchResultsPanelRef}
+            resultsPanelStyle={
+              searchResultsPanelHeight
+                ? { height: `${searchResultsPanelHeight}px` }
+                : undefined
             }
-            ref={searchWorkspaceGridRef}
-          >
-            {showSearchMatches ? (
-              <div
-                className="search-workspace-results"
-                ref={searchResultsPanelRef}
-                style={
-                  searchResultsPanelHeight
-                    ? { height: `${searchResultsPanelHeight}px` }
-                    : undefined
-                }
-              >
-                <div className="search-workspace-results-header">
-                  <div>
-                    <strong>Matching cards</strong>
-                    <span>Select a card to review printings.</span>
-                  </div>
-                  <span className="search-workspace-results-count">
-                    Showing {props.state.search.groups.length} of {searchResultCount}
-                  </span>
-                </div>
-
-                <div className="search-workspace-result-list" ref={searchResultListRef}>
-                  {props.state.search.groups.map((group) => {
-                    const isActive = group.groupId === activeSearchGroup.groupId;
-
-                    return (
-                    <button
-                      aria-pressed={isActive}
-                      className={
-                        isActive
-                          ? "search-workspace-result search-workspace-result-active"
-                          : "search-workspace-result"
-                      }
-                      key={group.groupId}
-                      onClick={() => props.actions.onSearchGroupSelect(group.groupId)}
-                      ref={(node) => {
-                        searchResultRefs.current[group.groupId] = node;
-                      }}
-                      type="button"
-                    >
-                        <CardThumbnail
-                          imageUrl={group.image_uri_small}
-                          imageUrlLarge={group.image_uri_normal}
-                          name={group.name}
-                          variant="search"
-                        />
-                        <span className="search-workspace-result-copy">
-                          <strong>{group.name}</strong>
-                          <span className="search-workspace-result-meta">
-                            {group.printingsCount} printing{group.printingsCount === 1 ? "" : "s"}
-                          </span>
-                          <span className="search-workspace-result-summary">
-                            {summarizeSearchGroup(group)}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {props.state.search.canLoadMore ? (
-                  <div className="search-workspace-results-footer">
-                    {props.state.search.loadMoreError ? (
-                      <p className="search-workspace-load-more-error" role="status">
-                        {props.state.search.loadMoreError}
-                      </p>
-                    ) : null}
-                    <button
-                      className="secondary-button search-workspace-load-more"
-                      disabled={props.state.search.isLoadingMore}
-                      onClick={props.actions.onSearchResultsLoadMore}
-                      type="button"
-                    >
-                      {searchResultsLoadMoreLabel}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="search-workspace-detail" ref={searchWorkspaceDetailRef}>
-              <SearchResultCard
-                busyPrintingId={props.state.busyAddCardId}
-                addAvailability={selectedInventoryAddAvailability}
-                autoLoadAllLanguages={props.state.search.loadAllLanguages}
-                defaultLocation={props.state.selectedInventoryRow?.default_location || null}
-                defaultTags={props.state.selectedInventoryRow?.default_tags || null}
-                group={activeSearchGroup}
-                onAdd={props.actions.onAdd}
-                onClose={props.actions.onSearchResultsDismiss}
-                onLoadPrintings={props.actions.onLoadPrintings}
-                onNotice={props.actions.onNotice}
-                quickAddSectionRef={searchQuickAddSectionRef}
-              />
-            </div>
-          </div>
-          {searchWorkspaceOverlay.reserveHeight > 0 ? (
-            <div
-              aria-hidden="true"
-              className="search-workspace-reserve"
-              data-search-workspace-reserve="true"
-              style={{ height: `${searchWorkspaceOverlay.reserveHeight}px` }}
-            />
-          ) : null}
-          </div>
+            setResultRef={(groupId, node) => {
+              searchResultRefs.current[groupId] = node;
+            }}
+            state={props.state}
+            surface="regular"
+            workspaceRef={searchWorkspaceRef}
+          />
         ) : null}
 
         <ModalDialog

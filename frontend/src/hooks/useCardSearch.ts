@@ -19,7 +19,7 @@ import type {
   CatalogScope,
 } from "../types";
 import { toUserMessage } from "../uiHelpers";
-import type { AsyncStatus } from "../uiTypes";
+import type { AsyncStatus, SearchSurface } from "../uiTypes";
 
 const AUTOCOMPLETE_MIN_QUERY_LENGTH = 2;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
@@ -93,6 +93,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     CatalogNameSearchRow[]
   >([]);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
+  const [activeSearchSurface, setActiveSearchSurface] =
+    useState<SearchSurface>("regular");
   const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
   const suggestionLookupRequestIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
@@ -303,6 +305,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     setSearchResults([]);
     setSearchTotalCount(0);
     setActiveSearchGroupId(null);
+    setActiveSearchSurface("regular");
     setSearchResultsVisible(false);
     setSearchWorkspaceMode("browse");
     setSearchStatus("idle");
@@ -314,7 +317,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     closeSuggestionList();
   }
 
-  function openSuggestionList() {
+  function openSuggestionList(surface: SearchSurface) {
+    setActiveSearchSurface(surface);
     if (searchQuery.trim().length < AUTOCOMPLETE_MIN_QUERY_LENGTH) {
       return;
     }
@@ -328,7 +332,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     });
   }
 
-  function moveSuggestionHighlight(direction: 1 | -1) {
+  function moveSuggestionHighlight(direction: 1 | -1, surface: SearchSurface) {
+    setActiveSearchSurface(surface);
     if (searchQuery.trim().length < AUTOCOMPLETE_MIN_QUERY_LENGTH) {
       return;
     }
@@ -359,6 +364,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       loadingMore?: boolean;
       requestLimit?: number;
       scope?: CatalogScope;
+      surface?: SearchSurface;
       visibleLimit?: number;
     } = {},
   ) {
@@ -368,6 +374,9 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     const visibleLimit = runOptions.visibleLimit ?? SEARCH_GROUP_INITIAL_LIMIT;
     const scope = runOptions.scope ?? searchScopeRef.current;
     const requestId = ++searchRequestIdRef.current;
+    if (runOptions.surface) {
+      setActiveSearchSurface(runOptions.surface);
+    }
 
     if (!trimmed) {
       setSearchScope(scope);
@@ -461,12 +470,16 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     }
   }
 
-  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSearchSubmit(
+    event: FormEvent<HTMLFormElement>,
+    surface: SearchSurface,
+  ) {
     event.preventDefault();
-    void runCardSearch(searchQuery);
+    void runCardSearch(searchQuery, { surface });
   }
 
-  function handleSearchQueryChange(value: string) {
+  function handleSearchQueryChange(value: string, surface: SearchSurface) {
+    setActiveSearchSurface(surface);
     searchRequestIdRef.current += 1;
     skipSuggestionFetchQueryRef.current = null;
     setSearchQuery(value);
@@ -492,18 +505,22 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     setHighlightedSuggestionIndex(-1);
   }
 
-  function handleSearchFieldFocus() {
-    openSuggestionList();
+  function handleSearchFieldFocus(surface: SearchSurface) {
+    openSuggestionList(surface);
   }
 
   function handleSuggestionRequestClose() {
     closeSuggestionList();
   }
 
-  function handleSuggestionSelect(result: CatalogNameSearchRow) {
+  function handleSuggestionSelect(
+    result: CatalogNameSearchRow,
+    surface: SearchSurface,
+  ) {
     const query = result.name.trim();
     searchRequestIdRef.current += 1;
     options.onSearchActivity?.();
+    setActiveSearchSurface(surface);
     skipSuggestionFetchQueryRef.current = query.toLowerCase();
     setSearchQuery(query);
     setSearchResultQuery(query);
@@ -523,18 +540,21 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     closeSuggestionList();
   }
 
-  function dismissSearchResults() {
+  function dismissSearchResults(surface: SearchSurface) {
+    setActiveSearchSurface(surface);
     setSearchResultsVisible(false);
     setSearchLoadMoreBusy(false);
   }
 
-  function handleSearchGroupSelect(groupId: string) {
+  function handleSearchGroupSelect(groupId: string, surface: SearchSurface) {
+    setActiveSearchSurface(surface);
     setActiveSearchGroupId(groupId);
     setSearchResultsVisible(true);
     setSearchWorkspaceMode("focus");
   }
 
-  function handleSearchWorkspaceBrowse() {
+  function handleSearchWorkspaceBrowse(surface: SearchSurface) {
+    setActiveSearchSurface(surface);
     setSearchWorkspaceMode("browse");
     setSearchResultsVisible(true);
   }
@@ -610,12 +630,14 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
 
   function handleSearchInputKeyDown(
     event: ReactKeyboardEvent<HTMLInputElement>,
+    surface: SearchSurface,
   ) {
+    setActiveSearchSurface(surface);
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
         if (suggestionOpen) {
-          moveSuggestionHighlight(1);
+          moveSuggestionHighlight(1, surface);
           break;
         }
         moveSearchGroupSelection(1);
@@ -623,7 +645,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       case "ArrowUp":
         event.preventDefault();
         if (suggestionOpen) {
-          moveSuggestionHighlight(-1);
+          moveSuggestionHighlight(-1, surface);
           break;
         }
         moveSearchGroupSelection(-1);
@@ -641,7 +663,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
             : null;
         if (activeSuggestion) {
           event.preventDefault();
-          handleSuggestionSelect(activeSuggestion);
+          handleSuggestionSelect(activeSuggestion, surface);
           break;
         }
 
@@ -652,7 +674,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
           activeSearchGroupId
         ) {
           event.preventDefault();
-          handleSearchGroupSelect(activeSearchGroupId);
+          handleSearchGroupSelect(activeSearchGroupId, surface);
         }
         break;
       }
@@ -739,6 +761,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     handleSuggestionRequestClose,
     handleSuggestionSelect,
     activeSearchGroupId,
+    activeSearchSurface,
     highlightedSuggestionIndex,
     loadSearchGroupPrintings,
     resetSearchWorkspace,
