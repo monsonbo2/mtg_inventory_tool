@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 
 import type {
   BulkInventoryItemMutationRequest,
@@ -76,6 +77,74 @@ type BulkEditorMode = "tags" | "location" | "notes";
 type BulkSelectionScope = "selected" | "filtered" | "all_items";
 type TransferTargetMode = "existing" | "create";
 type ActiveTableTray = "bulk" | InventoryTransferMode | null;
+type TableHeaderSurface = "table" | "floating";
+
+const FLOATING_TABLE_HEADER_OVERLAP = 1;
+
+function getStickyWorkspaceControlsBottom(tableViewNode: HTMLElement) {
+  const appShell = tableViewNode.closest<HTMLElement>(".app-shell");
+  const cssValue = appShell
+    ? Number.parseFloat(
+        window
+          .getComputedStyle(appShell)
+          .getPropertyValue("--sticky-workspace-controls-bottom"),
+      )
+    : Number.NaN;
+
+  if (Number.isFinite(cssValue) && cssValue > 0) {
+    return cssValue;
+  }
+
+  const stickyControls = document.querySelector<HTMLElement>(
+    ".sticky-workspace-controls-grid",
+  );
+  return Math.max(0, stickyControls?.getBoundingClientRect().bottom ?? 0);
+}
+
+function floatingHeaderStateEquals(
+  left: number,
+  top: number,
+  width: number,
+  tableWidth: number,
+  scrollLeft: number,
+  current: FloatingTableHeaderState,
+) {
+  return (
+    current.active &&
+    Math.abs(current.left - left) < 0.5 &&
+    Math.abs(current.top - top) < 0.5 &&
+    Math.abs(current.width - width) < 0.5 &&
+    Math.abs(current.tableWidth - tableWidth) < 0.5 &&
+    Math.abs(current.scrollLeft - scrollLeft) < 0.5
+  );
+}
+
+type FloatingTableHeaderState =
+  | {
+      active: false;
+      left: 0;
+      scrollLeft: 0;
+      tableWidth: 0;
+      top: 0;
+      width: 0;
+    }
+  | {
+      active: true;
+      left: number;
+      scrollLeft: number;
+      tableWidth: number;
+      top: number;
+      width: number;
+    };
+
+const INACTIVE_FLOATING_TABLE_HEADER: FloatingTableHeaderState = {
+  active: false,
+  left: 0,
+  scrollLeft: 0,
+  tableWidth: 0,
+  top: 0,
+  width: 0,
+};
 
 function buildFilteredBulkSelection(
   filters: InventoryTableFilters,
@@ -126,9 +195,15 @@ export function InventoryTableView(props: {
   sortState: InventoryTableSortState;
   filters: InventoryTableFilters;
   filterOptions: InventoryTableFilterOptions;
+  page: number;
+  pageCount: number;
   priceProvider: InventoryPriceProvider;
+  visibleLimit: number;
+  visibleLimitOptions: number[];
   onSortChange: (nextSort: InventoryTableSortState) => void;
   onFiltersChange: (nextFilters: InventoryTableFilters) => void;
+  onPageChange: (nextPage: number) => void;
+  onVisibleLimitChange: (nextLimit: number) => void;
   onBulkMutationSubmit: (
     payload: BulkInventoryItemMutationRequest,
   ) => Promise<boolean>;
@@ -147,6 +222,8 @@ export function InventoryTableView(props: {
   transferBusy: InventoryTransferMode | null;
 }) {
   const [activeColumn, setActiveColumn] = useState<InventoryTableColumnKey | null>(null);
+  const [activeColumnSurface, setActiveColumnSurface] =
+    useState<TableHeaderSurface | null>(null);
   const [activeTray, setActiveTray] = useState<ActiveTableTray>(null);
   const [bulkEditorMode, setBulkEditorMode] = useState<BulkEditorMode>("tags");
   const [bulkSelectionScope, setBulkSelectionScope] =
@@ -168,8 +245,14 @@ export function InventoryTableView(props: {
   const [transferCollectionSlugTouched, setTransferCollectionSlugTouched] = useState(false);
   const [showTransferCollectionSlugField, setShowTransferCollectionSlugField] = useState(false);
   const [transferFormError, setTransferFormError] = useState<string | null>(null);
-  const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const [floatingTableHeader, setFloatingTableHeader] =
+    useState<FloatingTableHeaderState>(INACTIVE_FLOATING_TABLE_HEADER);
+  const headerCheckboxRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const floatingTableHeaderRef = useRef<HTMLDivElement | null>(null);
   const tableViewRef = useRef<HTMLDivElement | null>(null);
+  const tableShellRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const tableHeaderRef = useRef<HTMLTableSectionElement | null>(null);
   const bulkTagsHintId = "table-bulk-tags-hint";
   const selectedItemIdSet = new Set(props.selectedItemIds);
   const selectedVisibleCount = props.items.filter((item) =>
@@ -244,12 +327,142 @@ export function InventoryTableView(props: {
     props.items.length === props.allItemsCount
       ? `Showing all ${props.allItemsCount} entr${props.allItemsCount === 1 ? "y" : "ies"}.`
       : `Showing ${props.items.length} of ${props.allItemsCount} entr${props.allItemsCount === 1 ? "y" : "ies"}.`;
+  const showCollectionBulkScopeActions =
+    !hasSelection &&
+    props.canBulkEditSelectedInventory &&
+    (canUseFilteredBulkScope || canUseAllItemsBulkScope);
 
   useEffect(() => {
-    if (headerCheckboxRef.current) {
-      headerCheckboxRef.current.indeterminate = someVisibleSelected;
-    }
+    headerCheckboxRefs.current.forEach((checkbox) => {
+      if (checkbox) {
+        checkbox.indeterminate = someVisibleSelected;
+      }
+    });
   }, [someVisibleSelected]);
+
+  useEffect(() => {
+    let frameId = 0;
+
+    function updateFloatingTableHeader() {
+      frameId = 0;
+
+      const tableViewNode = tableViewRef.current;
+      const shellNode = tableShellRef.current;
+      const tableNode = tableRef.current;
+      const headerNode = tableHeaderRef.current;
+      if (!tableViewNode || !shellNode || !tableNode || !headerNode) {
+        setFloatingTableHeader(INACTIVE_FLOATING_TABLE_HEADER);
+        return;
+      }
+
+      const shellRect = shellNode.getBoundingClientRect();
+      const tableRect = tableNode.getBoundingClientRect();
+      const headerRect = headerNode.getBoundingClientRect();
+      const stickyControlsBottom = getStickyWorkspaceControlsBottom(tableViewNode);
+      const viewportTop =
+        stickyControlsBottom > 0
+          ? Math.max(0, stickyControlsBottom - FLOATING_TABLE_HEADER_OVERLAP)
+          : 0;
+      const hasHorizontalScroll = shellNode.scrollWidth > shellNode.clientWidth + 1;
+      const nextActive =
+        headerRect.top <= viewportTop &&
+        shellRect.bottom > viewportTop + headerRect.height &&
+        shellRect.width > 0 &&
+        tableRect.width > 0;
+
+      if (!nextActive) {
+        setFloatingTableHeader((current) =>
+          current.active ? INACTIVE_FLOATING_TABLE_HEADER : current,
+        );
+        return;
+      }
+
+      const left = Math.round(shellRect.left);
+      const width = Math.round(shellRect.width);
+      const top = viewportTop;
+      const tableWidth = Math.round(hasHorizontalScroll ? tableNode.offsetWidth : shellRect.width);
+      const scrollLeft = hasHorizontalScroll ? shellNode.scrollLeft : 0;
+
+      setFloatingTableHeader((current) =>
+        floatingHeaderStateEquals(left, top, width, tableWidth, scrollLeft, current)
+          ? current
+          : {
+              active: true,
+              left,
+              scrollLeft,
+              tableWidth,
+              top,
+              width,
+            },
+      );
+    }
+
+    function scheduleFloatingTableHeaderUpdate() {
+      if (frameId) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(updateFloatingTableHeader);
+    }
+
+    scheduleFloatingTableHeaderUpdate();
+    window.addEventListener("scroll", scheduleFloatingTableHeaderUpdate, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleFloatingTableHeaderUpdate);
+    window.addEventListener(
+      "sticky-workspace-controls:measure",
+      scheduleFloatingTableHeaderUpdate,
+    );
+    const shellNode = tableShellRef.current;
+    shellNode?.addEventListener("scroll", scheduleFloatingTableHeaderUpdate, {
+      passive: true,
+    });
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(scheduleFloatingTableHeaderUpdate);
+    if (resizeObserver) {
+      if (tableViewRef.current) {
+        resizeObserver.observe(tableViewRef.current);
+      }
+      if (tableShellRef.current) {
+        resizeObserver.observe(tableShellRef.current);
+      }
+      if (tableRef.current) {
+        resizeObserver.observe(tableRef.current);
+      }
+    }
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("scroll", scheduleFloatingTableHeaderUpdate);
+      window.removeEventListener("resize", scheduleFloatingTableHeaderUpdate);
+      window.removeEventListener(
+        "sticky-workspace-controls:measure",
+        scheduleFloatingTableHeaderUpdate,
+      );
+      shellNode?.removeEventListener("scroll", scheduleFloatingTableHeaderUpdate);
+    };
+  }, [
+    activeColumn,
+    props.filters,
+    props.items.length,
+    props.priceProvider,
+    props.sortState,
+  ]);
+
+  useEffect(() => {
+    if (
+      (floatingTableHeader.active && activeColumnSurface === "table") ||
+      (!floatingTableHeader.active && activeColumnSurface === "floating")
+    ) {
+      closeActiveColumn();
+    }
+  }, [activeColumnSurface, floatingTableHeader.active]);
 
   useEffect(() => {
     if (activeTray === "bulk" && !hasBulkMutationTarget) {
@@ -297,18 +510,20 @@ export function InventoryTableView(props: {
     }
 
     function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
       if (
+        target instanceof Node &&
         tableViewRef.current &&
-        event.target instanceof Node &&
-        !tableViewRef.current.contains(event.target)
+        !tableViewRef.current.contains(target) &&
+        !floatingTableHeaderRef.current?.contains(target)
       ) {
-        setActiveColumn(null);
+        closeActiveColumn();
       }
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setActiveColumn(null);
+        closeActiveColumn();
       }
     }
 
@@ -320,6 +535,11 @@ export function InventoryTableView(props: {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [activeColumn]);
+
+  function closeActiveColumn() {
+    setActiveColumn(null);
+    setActiveColumnSurface(null);
+  }
 
   function updateFilters(nextPartial: Partial<InventoryTableFilters>) {
     props.onFiltersChange({
@@ -381,8 +601,17 @@ export function InventoryTableView(props: {
       : [...values, value];
   }
 
-  function toggleColumn(column: InventoryTableColumnKey) {
-    setActiveColumn((current) => (current === column ? null : column));
+  function toggleColumn(
+    column: InventoryTableColumnKey,
+    surface: TableHeaderSurface,
+  ) {
+    if (activeColumn === column && activeColumnSurface === surface) {
+      closeActiveColumn();
+      return;
+    }
+
+    setActiveColumn(column);
+    setActiveColumnSurface(surface);
   }
 
   function handleRowClick(
@@ -1289,11 +1518,242 @@ export function InventoryTableView(props: {
     );
   }
 
+  function renderTableColGroup() {
+    return (
+      <colgroup>
+        <col className="inventory-table-col-select" />
+        <col className="inventory-table-col-card" />
+        <col className="inventory-table-col-set" />
+        <col className="inventory-table-col-quantity" />
+        <col className="inventory-table-col-finish" />
+        <col className="inventory-table-col-condition" />
+        <col className="inventory-table-col-language" />
+        <col className="inventory-table-col-location" />
+        <col className="inventory-table-col-tags" />
+        <col className="inventory-table-col-value" />
+      </colgroup>
+    );
+  }
+
+  function renderTableHeader(surface: TableHeaderSurface) {
+    const checkboxRefIndex = surface === "table" ? 0 : 1;
+    const offscreenNativeHeaderTabIndex =
+      surface === "table" && floatingTableHeader.active ? -1 : undefined;
+
+    return (
+      <thead ref={surface === "table" ? tableHeaderRef : undefined}>
+        <tr>
+          <th className="inventory-table-checkbox-column" scope="col">
+            <input
+              aria-label="Select all visible entries"
+              checked={allVisibleSelected}
+              onChange={(event) => {
+                if (event.target.checked) {
+                  props.onSelectAllVisible();
+                  return;
+                }
+                props.onClearVisibleSelection();
+              }}
+              ref={(node) => {
+                headerCheckboxRefs.current[checkboxRefIndex] = node;
+              }}
+              tabIndex={offscreenNativeHeaderTabIndex}
+              type="checkbox"
+            />
+          </th>
+          {TABLE_COLUMNS.map((column) => {
+            const filterCount = getInventoryTableColumnFilterCount(props.filters, column);
+            const isSorted = props.sortState?.key === column;
+            const isActive = activeColumn === column && activeColumnSurface === surface;
+            const columnLabel =
+              column === "est_value"
+                ? getCurrentRetailValueLabel(props.priceProvider)
+                : getInventoryTableColumnLabel(column);
+            const actionHint = getColumnActionHint(column);
+
+            return (
+              <th className="inventory-table-header-cell" key={column} scope="col">
+                <div className="inventory-table-header-stack">
+                  <button
+                    aria-expanded={isActive}
+                    aria-label={columnLabel}
+                    className={
+                      isActive
+                        ? "inventory-table-header-button inventory-table-header-button-active"
+                        : "inventory-table-header-button"
+                    }
+                    onClick={() => toggleColumn(column, surface)}
+                    tabIndex={offscreenNativeHeaderTabIndex}
+                    title={`${actionHint} options for ${columnLabel}`}
+                    type="button"
+                  >
+                    <span className="inventory-table-header-copy">
+                      <span className="inventory-table-header-label">{columnLabel}</span>
+                      <span aria-hidden="true" className="inventory-table-header-hint">
+                        {actionHint}
+                      </span>
+                    </span>
+                    <span className="inventory-table-header-meta">
+                      {isSorted ? (
+                        <span className="inventory-table-header-pill">
+                          {props.sortState?.direction === "asc" ? "Asc" : "Desc"}
+                        </span>
+                      ) : null}
+                      {filterCount > 0 ? (
+                        <span className="inventory-table-header-pill inventory-table-header-pill-filter">
+                          {filterCount}
+                        </span>
+                      ) : null}
+                      <span
+                        aria-hidden="true"
+                        className={
+                          isActive
+                            ? "inventory-table-header-chevron inventory-table-header-chevron-active"
+                            : "inventory-table-header-chevron"
+                        }
+                      >
+                        ▾
+                      </span>
+                    </span>
+                  </button>
+
+                  {isActive ? (
+                    <section
+                      aria-label={`${columnLabel} column options`}
+                      className="inventory-table-popover"
+                    >
+                      <div className="inventory-table-popover-header">
+                        <div>
+                          <strong>{columnLabel}</strong>
+                          <span>Sort or filter this column.</span>
+                        </div>
+                        <button
+                          className="secondary-button inventory-table-popover-close"
+                          onClick={closeActiveColumn}
+                          type="button"
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      <div className="inventory-table-popover-actions">
+                        <button
+                          aria-pressed={
+                            props.sortState?.key === column &&
+                            props.sortState.direction === "asc"
+                          }
+                          className={
+                            props.sortState?.key === column &&
+                            props.sortState.direction === "asc"
+                              ? "secondary-button inventory-table-popover-action inventory-table-popover-action-active"
+                              : "secondary-button inventory-table-popover-action"
+                          }
+                          onClick={() =>
+                            props.onSortChange({
+                              key: column,
+                              direction: "asc",
+                            })
+                          }
+                          type="button"
+                        >
+                          {getInventoryTableSortActionLabel(column, "asc")}
+                        </button>
+                        <button
+                          aria-pressed={
+                            props.sortState?.key === column &&
+                            props.sortState.direction === "desc"
+                          }
+                          className={
+                            props.sortState?.key === column &&
+                            props.sortState.direction === "desc"
+                              ? "secondary-button inventory-table-popover-action inventory-table-popover-action-active"
+                              : "secondary-button inventory-table-popover-action"
+                          }
+                          onClick={() =>
+                            props.onSortChange({
+                              key: column,
+                              direction: "desc",
+                            })
+                          }
+                          type="button"
+                        >
+                          {getInventoryTableSortActionLabel(column, "desc")}
+                        </button>
+                        <button
+                          className="secondary-button inventory-table-popover-action"
+                          disabled={props.sortState?.key !== column}
+                          onClick={() => props.onSortChange(null)}
+                          type="button"
+                        >
+                          Clear sort
+                        </button>
+                        <button
+                          className="secondary-button inventory-table-popover-action"
+                          disabled={getInventoryTableColumnFilterCount(props.filters, column) === 0}
+                          onClick={() => clearColumnFilters(column)}
+                          type="button"
+                        >
+                          Clear column filters
+                        </button>
+                      </div>
+
+                      <div className="inventory-table-popover-filter-shell">
+                        {renderActiveColumnFilters()}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+    );
+  }
+
+  function renderFloatingTableHeader() {
+    if (!floatingTableHeader.active || typeof document === "undefined") {
+      return null;
+    }
+
+    return createPortal(
+      <div
+        className="inventory-table-floating-header"
+        ref={floatingTableHeaderRef}
+        style={{
+          left: `${floatingTableHeader.left}px`,
+          top: `${floatingTableHeader.top}px`,
+          width: `${floatingTableHeader.width}px`,
+        }}
+      >
+        <div className="inventory-table-floating-header-frame">
+          <div
+            className="inventory-table-floating-header-track"
+            style={{
+              transform: `translateX(-${floatingTableHeader.scrollLeft}px)`,
+              width: `${floatingTableHeader.tableWidth}px`,
+            }}
+          >
+            <table
+              aria-label="Sticky inventory table column controls"
+              className="inventory-table inventory-table-floating-table"
+            >
+              {renderTableColGroup()}
+              {renderTableHeader("floating")}
+            </table>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
   return (
     <div className="inventory-table-view" ref={tableViewRef}>
+      {renderFloatingTableHeader()}
       <div className="table-toolbar-shell">
         <div className="table-toolbar">
-          <div className="table-toolbar-primary">
+          <div className="table-toolbar-top">
             <div className="table-selection-summary">
               <strong>{selectedCountLabel}</strong>
               <div className="table-selection-summary-meta">
@@ -1315,13 +1775,147 @@ export function InventoryTableView(props: {
               </div>
             </div>
 
+            <div className="table-toolbar-selection-slot">
+              {hasSelection ? (
+                <div>
+                  <div className="table-selection-actions">
+                    {props.canBulkEditSelectedInventory ? (
+                      <button
+                        className={
+                          bulkEditorOpen
+                            ? "secondary-button table-selection-action table-selection-action-active"
+                            : "secondary-button table-selection-action"
+                        }
+                        disabled={
+                          exceedsBulkSelectionLimit &&
+                          !canUseFilteredBulkScope &&
+                          !canUseAllItemsBulkScope
+                        }
+                        onClick={() => openBulkTray("selected")}
+                        type="button"
+                      >
+                        Bulk edit
+                      </button>
+                    ) : null}
+                    {props.canCopyFromSelectedInventory ? (
+                      <button
+                        className={
+                          activeTransferMode === "copy"
+                            ? "secondary-button table-selection-action table-selection-action-active"
+                            : "secondary-button table-selection-action"
+                        }
+                        disabled={props.transferBusy !== null}
+                        onClick={() => openTray("copy")}
+                        type="button"
+                      >
+                        Copy to collection
+                      </button>
+                    ) : null}
+                    {props.canMoveFromSelectedInventory ? (
+                      <button
+                        className={
+                          activeTransferMode === "move"
+                            ? "secondary-button table-selection-action table-selection-action-active"
+                            : "secondary-button table-selection-action"
+                        }
+                        disabled={props.transferBusy !== null}
+                        onClick={() => openTray("move")}
+                        type="button"
+                      >
+                        Move to collection
+                      </button>
+                    ) : null}
+                    <button
+                      className="secondary-button table-selection-action"
+                      onClick={props.onClearSelection}
+                      type="button"
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                  {selectionCapabilityMessage ? (
+                    <span className="table-selection-slot-copy">
+                      {selectionCapabilityMessage}
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <div>
+                  <span className="table-selection-slot-copy">
+                    Select rows for available actions.
+                  </span>
+                  {selectionCapabilityMessage ? (
+                    <span className="table-selection-slot-copy">
+                      {selectionCapabilityMessage}
+                    </span>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="table-controls-row">
+            <label className="field table-limit-field">
+              <span>Table rows shown</span>
+              <select
+                className="text-input"
+                onChange={(event) =>
+                  props.onVisibleLimitChange(Number.parseInt(event.target.value, 10))
+                }
+                value={String(props.visibleLimit)}
+              >
+                {props.visibleLimitOptions.map((limit) => (
+                  <option key={limit} value={limit}>
+                    {limit}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div aria-label="table pagination" className="table-pagination">
+              <button
+                className="secondary-button"
+                disabled={props.page <= 1 || props.allItemsCount === 0}
+                onClick={() => props.onPageChange(props.page - 1)}
+                type="button"
+              >
+                Previous
+              </button>
+              <span className="table-page-indicator">
+                Page {props.page} of {props.pageCount}
+              </span>
+              <button
+                className="secondary-button"
+                disabled={props.page >= props.pageCount || props.allItemsCount === 0}
+                onClick={() => props.onPageChange(props.page + 1)}
+                type="button"
+              >
+                Next
+              </button>
+            </div>
+
+            <label className="field table-search-field">
+              <span>Search this collection</span>
+              <input
+                className="text-input"
+                onChange={(event) =>
+                  updateFilters({
+                    nameQuery: event.target.value,
+                  })
+                }
+                placeholder="e.g. Lightning Bolt"
+                type="text"
+                value={props.filters.nameQuery}
+              />
+            </label>
+
             <div className="table-toolbar-actions">
               {activeFilterCount > 0 ? (
                 <button
                   className="secondary-button"
                   onClick={() => {
                     props.onFiltersChange(createDefaultInventoryTableFilters());
-                    setActiveColumn(null);
+                    closeActiveColumn();
                   }}
                   type="button"
                 >
@@ -1336,119 +1930,35 @@ export function InventoryTableView(props: {
               >
                 Select all visible
               </button>
+              {showCollectionBulkScopeActions && canUseFilteredBulkScope ? (
+                <button
+                  className={
+                    bulkEditorOpen && effectiveBulkSelectionScope === "filtered"
+                      ? "secondary-button table-selection-action table-selection-action-active table-scope-action"
+                      : "secondary-button table-selection-action table-scope-action"
+                  }
+                  disabled={props.bulkMutationBusy}
+                  onClick={() => openBulkTray("filtered")}
+                  type="button"
+                >
+                  Bulk edit filtered
+                </button>
+              ) : null}
+              {showCollectionBulkScopeActions && canUseAllItemsBulkScope ? (
+                <button
+                  className={
+                    bulkEditorOpen && effectiveBulkSelectionScope === "all_items"
+                      ? "secondary-button table-selection-action table-selection-action-active table-scope-action"
+                      : "secondary-button table-selection-action table-scope-action"
+                  }
+                  disabled={props.bulkMutationBusy}
+                  onClick={() => openBulkTray("all_items")}
+                  type="button"
+                >
+                  Bulk edit collection
+                </button>
+              ) : null}
             </div>
-          </div>
-
-          <div className="table-toolbar-selection-slot">
-            {hasSelection ? (
-              <div>
-                <div className="table-selection-actions">
-                  {props.canBulkEditSelectedInventory ? (
-                    <button
-                      className={
-                        bulkEditorOpen
-                          ? "secondary-button table-selection-action table-selection-action-active"
-                          : "secondary-button table-selection-action"
-                      }
-                      disabled={
-                        exceedsBulkSelectionLimit &&
-                        !canUseFilteredBulkScope &&
-                        !canUseAllItemsBulkScope
-                      }
-                      onClick={() => openBulkTray("selected")}
-                      type="button"
-                    >
-                      Bulk edit
-                    </button>
-                  ) : null}
-                  {props.canCopyFromSelectedInventory ? (
-                    <button
-                      className={
-                        activeTransferMode === "copy"
-                          ? "secondary-button table-selection-action table-selection-action-active"
-                          : "secondary-button table-selection-action"
-                      }
-                      disabled={props.transferBusy !== null}
-                      onClick={() => openTray("copy")}
-                      type="button"
-                    >
-                      Copy to collection
-                    </button>
-                  ) : null}
-                  {props.canMoveFromSelectedInventory ? (
-                    <button
-                      className={
-                        activeTransferMode === "move"
-                          ? "secondary-button table-selection-action table-selection-action-active"
-                          : "secondary-button table-selection-action"
-                      }
-                      disabled={props.transferBusy !== null}
-                      onClick={() => openTray("move")}
-                      type="button"
-                    >
-                      Move to collection
-                    </button>
-                  ) : null}
-                  <button
-                    className="secondary-button table-selection-action"
-                    onClick={props.onClearSelection}
-                    type="button"
-                  >
-                    Clear selection
-                  </button>
-                </div>
-                {selectionCapabilityMessage ? (
-                  <span className="table-selection-slot-copy">
-                    {selectionCapabilityMessage}
-                  </span>
-                ) : null}
-              </div>
-            ) : (
-              <div>
-                {props.canBulkEditSelectedInventory &&
-                (canUseFilteredBulkScope || canUseAllItemsBulkScope) ? (
-                  <div className="table-selection-actions">
-                    {canUseFilteredBulkScope ? (
-                      <button
-                        className={
-                          bulkEditorOpen && effectiveBulkSelectionScope === "filtered"
-                            ? "secondary-button table-selection-action table-selection-action-active"
-                            : "secondary-button table-selection-action"
-                        }
-                        disabled={props.bulkMutationBusy}
-                        onClick={() => openBulkTray("filtered")}
-                        type="button"
-                      >
-                        Bulk edit filtered
-                      </button>
-                    ) : null}
-                    {canUseAllItemsBulkScope ? (
-                      <button
-                        className={
-                          bulkEditorOpen && effectiveBulkSelectionScope === "all_items"
-                            ? "secondary-button table-selection-action table-selection-action-active"
-                            : "secondary-button table-selection-action"
-                        }
-                        disabled={props.bulkMutationBusy}
-                        onClick={() => openBulkTray("all_items")}
-                        type="button"
-                      >
-                        Bulk edit collection
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <span className="table-selection-slot-copy">
-                    Select rows for available actions.
-                  </span>
-                )}
-                {selectionCapabilityMessage ? (
-                  <span className="table-selection-slot-copy">
-                    {selectionCapabilityMessage}
-                  </span>
-                ) : null}
-              </div>
-            )}
           </div>
         </div>
 
@@ -1456,183 +1966,10 @@ export function InventoryTableView(props: {
         {renderTransferEditor()}
       </div>
 
-      <div className="inventory-table-shell">
-        <table className="inventory-table">
-          <colgroup>
-            <col className="inventory-table-col-select" />
-            <col className="inventory-table-col-card" />
-            <col className="inventory-table-col-set" />
-            <col className="inventory-table-col-quantity" />
-            <col className="inventory-table-col-finish" />
-            <col className="inventory-table-col-condition" />
-            <col className="inventory-table-col-language" />
-            <col className="inventory-table-col-location" />
-            <col className="inventory-table-col-tags" />
-            <col className="inventory-table-col-value" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th className="inventory-table-checkbox-column" scope="col">
-                <input
-                  aria-label="Select all visible entries"
-                  checked={allVisibleSelected}
-                  onChange={(event) => {
-                    if (event.target.checked) {
-                      props.onSelectAllVisible();
-                      return;
-                    }
-                    props.onClearVisibleSelection();
-                  }}
-                  ref={headerCheckboxRef}
-                  type="checkbox"
-                />
-              </th>
-              {TABLE_COLUMNS.map((column) => {
-                const filterCount = getInventoryTableColumnFilterCount(props.filters, column);
-                const isSorted = props.sortState?.key === column;
-                const isActive = activeColumn === column;
-                const columnLabel =
-                  column === "est_value"
-                    ? getCurrentRetailValueLabel(props.priceProvider)
-                    : getInventoryTableColumnLabel(column);
-                const actionHint = getColumnActionHint(column);
-
-                return (
-                  <th className="inventory-table-header-cell" key={column} scope="col">
-                    <div className="inventory-table-header-stack">
-                      <button
-                        aria-expanded={isActive}
-                        aria-label={columnLabel}
-                        className={
-                          isActive
-                            ? "inventory-table-header-button inventory-table-header-button-active"
-                            : "inventory-table-header-button"
-                        }
-                        onClick={() => toggleColumn(column)}
-                        title={`${actionHint} options for ${columnLabel}`}
-                        type="button"
-                      >
-                        <span className="inventory-table-header-copy">
-                          <span className="inventory-table-header-label">{columnLabel}</span>
-                          <span aria-hidden="true" className="inventory-table-header-hint">
-                            {actionHint}
-                          </span>
-                        </span>
-                        <span className="inventory-table-header-meta">
-                          {isSorted ? (
-                            <span className="inventory-table-header-pill">
-                              {props.sortState?.direction === "asc" ? "Asc" : "Desc"}
-                            </span>
-                          ) : null}
-                          {filterCount > 0 ? (
-                            <span className="inventory-table-header-pill inventory-table-header-pill-filter">
-                              {filterCount}
-                            </span>
-                          ) : null}
-                          <span
-                            aria-hidden="true"
-                            className={
-                              isActive
-                                ? "inventory-table-header-chevron inventory-table-header-chevron-active"
-                                : "inventory-table-header-chevron"
-                            }
-                          >
-                            ▾
-                          </span>
-                        </span>
-                      </button>
-
-                      {isActive ? (
-                        <section
-                          aria-label={`${columnLabel} column options`}
-                          className="inventory-table-popover"
-                        >
-                          <div className="inventory-table-popover-header">
-                            <div>
-                              <strong>{columnLabel}</strong>
-                              <span>Sort or filter this column.</span>
-                            </div>
-                            <button
-                              className="secondary-button inventory-table-popover-close"
-                              onClick={() => setActiveColumn(null)}
-                              type="button"
-                            >
-                              Close
-                            </button>
-                          </div>
-
-                          <div className="inventory-table-popover-actions">
-                            <button
-                              aria-pressed={
-                                props.sortState?.key === column &&
-                                props.sortState.direction === "asc"
-                              }
-                              className={
-                                props.sortState?.key === column &&
-                                props.sortState.direction === "asc"
-                                  ? "secondary-button inventory-table-popover-action inventory-table-popover-action-active"
-                                  : "secondary-button inventory-table-popover-action"
-                              }
-                              onClick={() =>
-                                props.onSortChange({
-                                  key: column,
-                                  direction: "asc",
-                                })
-                              }
-                              type="button"
-                            >
-                              {getInventoryTableSortActionLabel(column, "asc")}
-                            </button>
-                            <button
-                              aria-pressed={
-                                props.sortState?.key === column &&
-                                props.sortState.direction === "desc"
-                              }
-                              className={
-                                props.sortState?.key === column &&
-                                props.sortState.direction === "desc"
-                                  ? "secondary-button inventory-table-popover-action inventory-table-popover-action-active"
-                                  : "secondary-button inventory-table-popover-action"
-                              }
-                              onClick={() =>
-                                props.onSortChange({
-                                  key: column,
-                                  direction: "desc",
-                                })
-                              }
-                              type="button"
-                            >
-                              {getInventoryTableSortActionLabel(column, "desc")}
-                            </button>
-                            <button
-                              className="secondary-button inventory-table-popover-action"
-                              disabled={props.sortState?.key !== column}
-                              onClick={() => props.onSortChange(null)}
-                              type="button"
-                            >
-                              Clear sort
-                            </button>
-                            <button
-                              className="secondary-button inventory-table-popover-action"
-                              disabled={getInventoryTableColumnFilterCount(props.filters, column) === 0}
-                              onClick={() => clearColumnFilters(column)}
-                              type="button"
-                            >
-                              Clear column filters
-                            </button>
-                          </div>
-
-                          <div className="inventory-table-popover-filter-shell">
-                            {renderActiveColumnFilters()}
-                          </div>
-                        </section>
-                      ) : null}
-                    </div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
+      <div className="inventory-table-shell" ref={tableShellRef}>
+        <table className="inventory-table" ref={tableRef}>
+          {renderTableColGroup()}
+          {renderTableHeader("table")}
           <tbody>
             {props.items.length ? (
               props.items.map((item) => {
@@ -1690,13 +2027,19 @@ export function InventoryTableView(props: {
                       </strong>
                       <span className="inventory-table-set-name">{item.set_name}</span>
                     </td>
-                    <td className="inventory-table-number-cell">{item.quantity}</td>
-                    <td className="inventory-table-inline-cell">{formatFinishLabel(item.finish)}</td>
-                    <td className="inventory-table-inline-cell">{item.condition_code}</td>
-                    <td className="inventory-table-inline-cell">
+                    <td className="inventory-table-quantity-cell">
+                      <span className="inventory-table-quantity-value">
+                        {item.quantity}
+                      </span>
+                    </td>
+                    <td className="inventory-table-inline-cell inventory-table-finish-cell">
+                      {formatFinishLabel(item.finish)}
+                    </td>
+                    <td className="inventory-table-code-cell">{item.condition_code}</td>
+                    <td className="inventory-table-code-cell">
                       {formatLanguageCode(item.language_code)}
                     </td>
-                    <td>
+                    <td className="inventory-table-location-cell">
                       {item.location?.trim() ? (
                         <span
                           className="inventory-table-location-pill"
@@ -1710,7 +2053,7 @@ export function InventoryTableView(props: {
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className="inventory-table-tags-cell">
                       {item.tags.length ? (
                         <div className="inventory-table-tag-list">
                           {item.tags.slice(0, 2).map((tag) => (

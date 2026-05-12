@@ -205,7 +205,8 @@ export function OwnedCollectionPanel(props: {
   const showExportButton =
     props.state.selectedInventoryRow !== null && props.state.canExportSelectedInventory;
   const showCollectionMetrics = showViewControls;
-  const showCollectionSearchRow = showViewControls;
+  const showCollectionSearchRow =
+    showViewControls && props.state.collection.view === "browse";
   const showSummaryBar = showCollectionMetrics;
   const collectionPanelTitle = props.state.selectedInventoryRow?.display_name || "No collection selected";
   const selectedPriceProviderOption = getPriceProviderOption(
@@ -438,15 +439,21 @@ export function OwnedCollectionPanel(props: {
               onCreateInventory={props.actions.onCreateInventory}
               onFiltersChange={props.actions.onTableFiltersChange}
               onOpenDetails={props.actions.onOpenItemDetails}
+              onPageChange={props.actions.onTablePageChange}
               onSelectItem={props.actions.onSelectTableItem}
               onSelectAllVisible={props.actions.onSelectAllVisibleItems}
               onSortChange={props.actions.onTableSortChange}
               onTransferItems={props.actions.onTransferItems}
               onToggleItemSelection={props.actions.onToggleItemSelection}
+              onVisibleLimitChange={props.actions.onTableVisibleLimitChange}
+              page={props.state.table.page}
+              pageCount={props.state.table.pageCount}
               priceProvider={props.state.priceProvider}
               selectedItemIds={props.state.table.selectedItemIds}
               sortState={props.state.table.sort}
               transferBusy={props.state.table.transferBusy}
+              visibleLimit={props.state.table.visibleLimit}
+              visibleLimitOptions={props.state.table.visibleLimitOptions}
             />
           )
         ) : (

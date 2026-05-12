@@ -20,7 +20,10 @@ async function openCollectionWithActivity(page: Page) {
   await openMainWorkspace(page);
 
   const activityButton = page.getByRole("button", { name: "Recent Activity" });
-  if (await activityButton.isVisible().catch(() => false)) {
+  if (await activityButton.waitFor({ state: "visible", timeout: 10_000 }).then(
+    () => true,
+    () => false,
+  )) {
     return;
   }
 
@@ -31,20 +34,12 @@ async function openCollectionWithActivity(page: Page) {
   const switcherList = page.locator(".inventory-switcher-list");
   await expect(switcherList).toBeVisible();
 
-  const preferredOptionNames = [/Personal Collection/i, /Helga Deck/i, /Trade Binder/i];
-  let selectedOption = false;
-  for (const optionName of preferredOptionNames) {
-    const option = switcherList.getByRole("button", { name: optionName });
-    if (await option.count()) {
-      await option.first().click();
-      selectedOption = true;
-      break;
-    }
-  }
-
-  if (!selectedOption) {
-    await switcherList.getByRole("button").first().click();
-  }
+  const nonEmptyCollectionOption = switcherList
+    .getByRole("button")
+    .filter({ hasText: /\b[1-9]\d* entr(?:y|ies)\b/i })
+    .first();
+  await expect(nonEmptyCollectionOption).toBeVisible();
+  await nonEmptyCollectionOption.click();
 
   await expect(activityButton).toBeVisible();
 }
