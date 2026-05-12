@@ -1434,6 +1434,7 @@ class DeckUrlImportTest(unittest.TestCase):
             self.assertEqual(1, len(committed["resolution_issues"]))
             issue = committed["resolution_issues"][0]
             self.assertEqual("unknown_card", issue["kind"])
+            self.assertFalse(issue["blocking"])
             self.assertEqual("Wildgrowth Archaic", issue["requested"]["name"])
             self.assertEqual("stale-wildgrowth-id", issue["requested"]["scryfall_id"])
             self.assertEqual([], issue["options"])
@@ -1598,6 +1599,7 @@ class DeckUrlImportTest(unittest.TestCase):
             self.assertEqual(1, len(preview["resolution_issues"]))
             issue = preview["resolution_issues"][0]
             self.assertEqual("ambiguous_card_name", issue["kind"])
+            self.assertTrue(issue["blocking"])
             self.assertEqual(7, issue["source_position"])
             self.assertEqual("mainboard", issue["section"])
             self.assertEqual(

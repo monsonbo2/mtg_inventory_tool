@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping
 from ..db.schema import SchemaPreparationPolicy, prepare_database
 from ..errors import ValidationError
 from .import_engine import InventoryValidator, PendingImportRow
+from .import_resolution import blocking_resolution_issues
 from .import_summary import build_resolvable_deck_import_summary
 from .normalize import text_or_none
 from .remote_deck_planning import (
@@ -159,8 +160,8 @@ def import_deck_url(
         inventory_validator=inventory_validator,
         default_inventory=inventory_slug,
     )
-    blocking_resolution_issues = [issue for issue in plan.resolution_issues if issue.options]
-    if blocking_resolution_issues and not dry_run:
+    blocking_issues = blocking_resolution_issues(plan.resolution_issues)
+    if blocking_issues and not dry_run:
         raise ValidationError(
             "Unresolved remote deck import ambiguities remain.",
             details={
@@ -194,7 +195,7 @@ def import_deck_url(
         "default_inventory": default_inventory,
         "rows_seen": plan.rows_seen,
         "rows_written": len(imported_rows),
-        "ready_to_commit": not blocking_resolution_issues,
+        "ready_to_commit": not blocking_issues,
         "source_snapshot_token": plan.source_snapshot_token,
         "summary": build_resolvable_deck_import_summary(
             imported_rows,

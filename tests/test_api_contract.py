@@ -45,8 +45,11 @@ from mtg_source_stack.api.response_models import (
     CatalogPrintingLookupRowResponse,
     CatalogPrintingSummaryResponse,
     CatalogSearchRowResponse,
+    CsvImportResolutionIssueResponse,
     CsvImportResponse,
+    DecklistImportResolutionIssueResponse,
     DecklistImportResponse,
+    DeckUrlImportResolutionIssueResponse,
     DeckUrlImportResponse,
     DefaultInventoryBootstrapResponse,
     InventoryCreateResponse,
@@ -656,6 +659,16 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertIn("Target inventory slug", deck_url_properties["default_inventory"]["description"])
         self.assertEqual("array", deck_url_properties["resolutions"]["type"])
         self.assertIn("normalized remote deck payload", deck_url_properties["source_snapshot_token"]["description"])
+
+        csv_issue_schema = CsvImportResolutionIssueResponse.model_json_schema()
+        decklist_issue_schema = DecklistImportResolutionIssueResponse.model_json_schema()
+        deck_url_issue_schema = DeckUrlImportResolutionIssueResponse.model_json_schema()
+        self.assertEqual("boolean", csv_issue_schema["properties"]["blocking"]["type"])
+        self.assertIn("blocking", csv_issue_schema["required"])
+        self.assertEqual("boolean", decklist_issue_schema["properties"]["blocking"]["type"])
+        self.assertIn("blocking", decklist_issue_schema["required"])
+        self.assertEqual("boolean", deck_url_issue_schema["properties"]["blocking"]["type"])
+        self.assertIn("blocking", deck_url_issue_schema["required"])
 
         owned_schema = OwnedInventoryRowResponse.model_json_schema()
         owned_properties = owned_schema["properties"]

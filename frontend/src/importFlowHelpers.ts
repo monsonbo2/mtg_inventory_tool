@@ -48,6 +48,7 @@ export type InventoryImportResolutionOptionView = {
 export type InventoryImportResolutionIssueView = {
   key: string;
   kind: ImportResolutionIssueKind;
+  blocking: boolean;
   heading: string;
   prompt: string;
   sourceLabel: string;
@@ -167,6 +168,7 @@ export function getInventoryImportResolutionIssues(
         return {
           key: getCsvIssueKey(issue),
           kind: issue.kind,
+          blocking: issue.blocking,
           heading: issue.requested.name || "Unknown card",
           prompt: formatIssuePrompt(issue.kind, options.length > 0),
           sourceLabel: `Row ${issue.csv_row}`,
@@ -178,7 +180,7 @@ export function getInventoryImportResolutionIssues(
             setCode: issue.requested.set_code,
           }),
           blockedMessage:
-            options.length === 0
+            issue.blocking && options.length === 0
               ? "No selectable resolution options were returned for this row."
               : null,
           options,
@@ -190,6 +192,7 @@ export function getInventoryImportResolutionIssues(
         return {
           key: getDecklistIssueKey(issue),
           kind: issue.kind,
+          blocking: issue.blocking,
           heading: issue.requested.name || "Unknown card",
           prompt: formatIssuePrompt(issue.kind, options.length > 0),
           sourceLabel: `${issue.section} · Line ${issue.decklist_line}`,
@@ -200,7 +203,7 @@ export function getInventoryImportResolutionIssues(
             setCode: issue.requested.set_code,
           }),
           blockedMessage:
-            options.length === 0
+            issue.blocking && options.length === 0
               ? "No selectable resolution options were returned for this line."
               : null,
           options,
@@ -212,6 +215,7 @@ export function getInventoryImportResolutionIssues(
         return {
           key: getDeckUrlIssueKey(issue),
           kind: issue.kind,
+          blocking: issue.blocking,
           heading: issue.requested.name || "Unknown card",
           prompt: formatIssuePrompt(issue.kind, options.length > 0),
           sourceLabel: `${issue.section} · Position ${issue.source_position}`,
@@ -222,7 +226,7 @@ export function getInventoryImportResolutionIssues(
             setCode: issue.requested.set_code,
           }),
           blockedMessage:
-            options.length === 0
+            issue.blocking && options.length === 0
               ? "No selectable resolution options were returned for this source entry."
               : null,
           options,
@@ -236,7 +240,7 @@ export function buildInitialInventoryImportResolutionSelectionMap(
 ): InventoryImportResolutionSelectionMap {
   return Object.fromEntries(
     getInventoryImportResolutionIssues(session)
-      .filter((issue) => issue.options.length === 1)
+      .filter((issue) => issue.blocking && issue.options.length === 1)
       .map((issue) => [issue.key, issue.options[0].key]),
   );
 }
@@ -245,16 +249,18 @@ export function reconcileInventoryImportResolutionSelectionMap(
   session: InventoryImportSession,
   currentSelections: InventoryImportResolutionSelectionMap,
 ): InventoryImportResolutionSelectionMap {
-  const nextEntries = getInventoryImportResolutionIssues(session).map((issue) => {
-    const currentSelection = currentSelections[issue.key];
-    if (currentSelection && issue.options.some((option) => option.key === currentSelection)) {
-      return [issue.key, currentSelection] as const;
-    }
-    if (issue.options.length === 1) {
-      return [issue.key, issue.options[0].key] as const;
-    }
-    return [issue.key, ""] as const;
-  });
+  const nextEntries = getInventoryImportResolutionIssues(session)
+    .filter((issue) => issue.blocking)
+    .map((issue) => {
+      const currentSelection = currentSelections[issue.key];
+      if (currentSelection && issue.options.some((option) => option.key === currentSelection)) {
+        return [issue.key, currentSelection] as const;
+      }
+      if (issue.options.length === 1) {
+        return [issue.key, issue.options[0].key] as const;
+      }
+      return [issue.key, ""] as const;
+    });
 
   return Object.fromEntries(
     nextEntries.filter(([, value]) => value),
@@ -266,10 +272,11 @@ export function getInventoryImportResolutionProgress(
   selections: InventoryImportResolutionSelectionMap,
 ) {
   const issues = getInventoryImportResolutionIssues(session);
-  const blockedCount = issues.filter((issue) => issue.options.length === 0).length;
-  const requiredCount = issues.filter((issue) => issue.options.length > 0).length;
+  const blockedCount = issues.filter((issue) => issue.blocking && issue.options.length === 0).length;
+  const requiredCount = issues.filter((issue) => issue.blocking && issue.options.length > 0).length;
   const selectedCount = issues.filter(
     (issue) =>
+      issue.blocking &&
       issue.options.length > 0 &&
       issue.options.some((option) => option.key === selections[issue.key]),
   ).length;
@@ -297,20 +304,22 @@ export function buildInventoryImportResolutionSelections(
 ): InventoryImportResolutionSelections | null {
   switch (session.mode) {
     case "csv": {
-      const nextResolutions = session.preview.resolution_issues.map((issue) => {
-        const selectedOption = findSelectedOption(
-          issue.options,
-          selections[getCsvIssueKey(issue)],
-        );
-        if (!selectedOption) {
-          return null;
-        }
-        return {
-          csv_row: issue.csv_row,
-          finish: selectedOption.finish,
-          scryfall_id: selectedOption.scryfall_id,
-        };
-      });
+      const nextResolutions = session.preview.resolution_issues
+        .filter((issue) => issue.blocking)
+        .map((issue) => {
+          const selectedOption = findSelectedOption(
+            issue.options,
+            selections[getCsvIssueKey(issue)],
+          );
+          if (!selectedOption) {
+            return null;
+          }
+          return {
+            csv_row: issue.csv_row,
+            finish: selectedOption.finish,
+            scryfall_id: selectedOption.scryfall_id,
+          };
+        });
       if (nextResolutions.some((resolution) => resolution === null)) {
         return null;
       }
@@ -322,20 +331,22 @@ export function buildInventoryImportResolutionSelections(
       };
     }
     case "decklist": {
-      const nextResolutions = session.preview.resolution_issues.map((issue) => {
-        const selectedOption = findSelectedOption(
-          issue.options,
-          selections[getDecklistIssueKey(issue)],
-        );
-        if (!selectedOption) {
-          return null;
-        }
-        return {
-          decklist_line: issue.decklist_line,
-          finish: selectedOption.finish,
-          scryfall_id: selectedOption.scryfall_id,
-        };
-      });
+      const nextResolutions = session.preview.resolution_issues
+        .filter((issue) => issue.blocking)
+        .map((issue) => {
+          const selectedOption = findSelectedOption(
+            issue.options,
+            selections[getDecklistIssueKey(issue)],
+          );
+          if (!selectedOption) {
+            return null;
+          }
+          return {
+            decklist_line: issue.decklist_line,
+            finish: selectedOption.finish,
+            scryfall_id: selectedOption.scryfall_id,
+          };
+        });
       if (nextResolutions.some((resolution) => resolution === null)) {
         return null;
       }
@@ -347,20 +358,22 @@ export function buildInventoryImportResolutionSelections(
       };
     }
     case "deck_url": {
-      const nextResolutions = session.preview.resolution_issues.map((issue) => {
-        const selectedOption = findSelectedOption(
-          issue.options,
-          selections[getDeckUrlIssueKey(issue)],
-        );
-        if (!selectedOption) {
-          return null;
-        }
-        return {
-          finish: selectedOption.finish,
-          scryfall_id: selectedOption.scryfall_id,
-          source_position: issue.source_position,
-        };
-      });
+      const nextResolutions = session.preview.resolution_issues
+        .filter((issue) => issue.blocking)
+        .map((issue) => {
+          const selectedOption = findSelectedOption(
+            issue.options,
+            selections[getDeckUrlIssueKey(issue)],
+          );
+          if (!selectedOption) {
+            return null;
+          }
+          return {
+            finish: selectedOption.finish,
+            scryfall_id: selectedOption.scryfall_id,
+            source_position: issue.source_position,
+          };
+        });
       if (nextResolutions.some((resolution) => resolution === null)) {
         return null;
       }

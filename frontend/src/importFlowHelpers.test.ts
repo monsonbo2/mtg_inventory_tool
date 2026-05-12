@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildInitialInventoryImportResolutionSelectionMap,
+  buildInventoryImportResolutionSelections,
   createDeckUrlImportSession,
+  getInventoryImportResolutionProgress,
   getInventoryImportStep,
   replaceInventoryImportSessionPreview,
 } from "./importFlowHelpers";
@@ -43,6 +46,7 @@ describe("importFlowHelpers", () => {
           resolution_issues: [
             {
               kind: "ambiguous_card_name",
+              blocking: true,
               source_position: 4,
               section: "mainboard",
               requested: {
@@ -69,6 +73,7 @@ describe("importFlowHelpers", () => {
           resolution_issues: [
             {
               kind: "unknown_card",
+              blocking: false,
               source_position: 9,
               section: "mainboard",
               requested: {
@@ -85,6 +90,78 @@ describe("importFlowHelpers", () => {
         }),
       ),
     ).toBe("ready_to_commit");
+  });
+
+  it("does not require manual selections for non-blocking leftover issues", () => {
+    const session = createDeckUrlImportSession({
+      sourceUrl: "https://www.moxfield.com/decks/demo",
+      inventorySlug: "personal",
+      inventoryLabel: "Personal Collection",
+      preview: buildDeckUrlImportResponse({
+        ready_to_commit: false,
+        resolution_issues: [
+          {
+            kind: "ambiguous_printing",
+            blocking: true,
+            source_position: 2,
+            section: "mainboard",
+            requested: {
+              scryfall_id: null,
+              name: "Counterspell",
+              quantity: 1,
+              set_code: "7ED",
+              collector_number: "67",
+              finish: null,
+            },
+            options: [
+              {
+                scryfall_id: "counterspell-7ed",
+                finish: "normal",
+                name: "Counterspell",
+                set_code: "7ed",
+                set_name: "Seventh Edition",
+                collector_number: "67",
+                lang: "en",
+                image_uri_small: null,
+                image_uri_normal: null,
+              },
+            ],
+          },
+          {
+            kind: "unknown_card",
+            blocking: false,
+            source_position: 9,
+            section: "mainboard",
+            requested: {
+              scryfall_id: "stale-id",
+              name: "Unknown Card",
+              quantity: 1,
+              set_code: null,
+              collector_number: null,
+              finish: null,
+            },
+            options: [],
+          },
+        ],
+      }),
+    });
+
+    const selections = buildInitialInventoryImportResolutionSelectionMap(session);
+    const progress = getInventoryImportResolutionProgress(session, selections);
+    const resolutionPayload = buildInventoryImportResolutionSelections(session, selections);
+
+    expect(progress.blockedCount).toBe(0);
+    expect(progress.requiredCount).toBe(1);
+    expect(resolutionPayload).toEqual({
+      mode: "deck_url",
+      resolutions: [
+        {
+          finish: "normal",
+          scryfall_id: "counterspell-7ed",
+          source_position: 2,
+        },
+      ],
+    });
   });
 
   it("preserves the deck URL snapshot token inside the import session", () => {
@@ -107,6 +184,7 @@ describe("importFlowHelpers", () => {
         resolution_issues: [
           {
             kind: "finish_required",
+            blocking: true,
             source_position: 11,
             section: "mainboard",
             requested: {

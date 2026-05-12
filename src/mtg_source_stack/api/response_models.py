@@ -422,6 +422,7 @@ class DecklistImportResolutionIssueResponse(ApiBaseModel):
     section: str
     requested: DecklistImportRequestedCardResponse
     options: list[ImportResolutionOptionResponse]
+    blocking: bool = Field(description="Whether this issue must be resolved before the import can be committed.")
 
 
 class CsvImportRequestedCardResponse(ApiBaseModel):
@@ -442,6 +443,7 @@ class CsvImportResolutionIssueResponse(ApiBaseModel):
     csv_row: int
     requested: CsvImportRequestedCardResponse
     options: list[ImportResolutionOptionResponse]
+    blocking: bool = Field(description="Whether this issue must be resolved before the import can be committed.")
 
 
 class CsvImportResponse(ApiBaseModel):
@@ -489,6 +491,7 @@ class DeckUrlImportResolutionIssueResponse(ApiBaseModel):
     section: str
     requested: DeckUrlImportRequestedCardResponse
     options: list[ImportResolutionOptionResponse]
+    blocking: bool = Field(description="Whether this issue must be resolved before the import can be committed.")
 
 
 class DeckUrlImportResponse(ApiBaseModel):

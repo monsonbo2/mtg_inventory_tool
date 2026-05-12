@@ -21,7 +21,7 @@ Current implemented behavior:
   optional `dry_run`, and optional `resolutions_json`
 - dry-run preview plus commit through the same endpoint
 - structured row-level preview feedback through `resolution_issues`
-- `ready_to_commit` signaling for ambiguous rows
+- `ready_to_commit` signaling for unresolved blocking issues
 - `summary` payload with requested, imported, and unresolved quantity counts
 - backend-side source-format detection via `detected_format`
 
@@ -59,6 +59,8 @@ for:
 - row-number-specific validation failures
 - dry-run behavior with report generation
 - structured ambiguity suggestions instead of frontend-side guessing
+- `resolution_issues` entries include `blocking`; `ready_to_commit=true` means
+  no blocking issues remain, not necessarily that the issue list is empty
 
 Example request JSON:
 

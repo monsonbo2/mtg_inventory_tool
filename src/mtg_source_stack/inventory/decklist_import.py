@@ -24,6 +24,7 @@ from .import_resolution import (
     DecklistRequestedCard,
     DecklistResolutionIssue,
     DecklistResolutionSelection,
+    blocking_resolution_issues,
     build_resolution_options_for_catalog_row,
 )
 from .normalize import DEFAULT_CONDITION_CODE, normalize_finish, text_or_none
@@ -578,7 +579,8 @@ def import_decklist_text(
         resolutions=resolutions,
         inventory_validator=inventory_validator,
     )
-    if plan.resolution_issues and not dry_run:
+    blocking_issues = blocking_resolution_issues(plan.resolution_issues)
+    if blocking_issues and not dry_run:
         raise ValidationError(
             "Unresolved decklist import ambiguities remain.",
             details={"resolution_issues": serialize_response(plan.resolution_issues)},
@@ -598,7 +600,7 @@ def import_decklist_text(
         "default_inventory": default_inventory,
         "rows_seen": plan.rows_seen,
         "rows_written": len(imported_rows),
-        "ready_to_commit": not plan.resolution_issues,
+        "ready_to_commit": not blocking_issues,
         "summary": build_resolvable_deck_import_summary(
             imported_rows,
             requested_card_quantity=plan.requested_card_quantity,

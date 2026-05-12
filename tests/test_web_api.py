@@ -599,6 +599,10 @@ class WebApiSchemaTest(unittest.TestCase):
                     components[import_response_schema_name]["properties"]["resolution_issues"]["items"]["$ref"]
                 ),
             )
+            self.assertEqual(
+                "boolean",
+                components["CsvImportResolutionIssueResponse"]["properties"]["blocking"]["type"],
+            )
             decklist_request_schema = spec["paths"]["/imports/decklist"]["post"]["requestBody"]["content"][
                 "application/json"
             ]["schema"]
@@ -643,6 +647,10 @@ class WebApiSchemaTest(unittest.TestCase):
                     components[decklist_response_schema_name]["properties"]["resolution_issues"]["items"]["$ref"]
                 ),
             )
+            self.assertEqual(
+                "boolean",
+                components["DecklistImportResolutionIssueResponse"]["properties"]["blocking"]["type"],
+            )
             deck_url_request_schema = spec["paths"]["/imports/deck-url"]["post"]["requestBody"]["content"][
                 "application/json"
             ]["schema"]
@@ -682,6 +690,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 self._schema_name_from_ref(
                     components[deck_url_response_schema_name]["properties"]["resolution_issues"]["items"]["$ref"]
                 ),
+            )
+            self.assertEqual(
+                "boolean",
+                components["DeckUrlImportResolutionIssueResponse"]["properties"]["blocking"]["type"],
             )
             self.assertIn(
                 "unknown_card",
@@ -1660,6 +1672,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, len(preview_payload["resolution_issues"]))
                 issue = preview_payload["resolution_issues"][0]
                 self.assertEqual("ambiguous_card_name", issue["kind"])
+                self.assertTrue(issue["blocking"])
                 self.assertEqual(2, issue["csv_row"])
 
                 unresolved_commit = client.post(
@@ -2298,6 +2311,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(4, preview_payload["summary"]["unresolved_card_quantity"])
                 self.assertEqual(1, len(preview_payload["resolution_issues"]))
                 self.assertEqual("ambiguous_card_name", preview_payload["resolution_issues"][0]["kind"])
+                self.assertTrue(preview_payload["resolution_issues"][0]["blocking"])
 
                 unresolved_commit = client.post(
                     "/imports/decklist",
@@ -2491,6 +2505,7 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual(1, committed_payload["rows_written"])
                 self.assertEqual(1, len(committed_payload["resolution_issues"]))
                 self.assertEqual("unknown_card", committed_payload["resolution_issues"][0]["kind"])
+                self.assertFalse(committed_payload["resolution_issues"][0]["blocking"])
                 self.assertEqual(
                     "Wildgrowth Archaic",
                     committed_payload["resolution_issues"][0]["requested"]["name"],
@@ -2616,6 +2631,7 @@ class WebApiTest(unittest.TestCase):
                     self.assertEqual(2, preview_payload["summary"]["unresolved_card_quantity"])
                     self.assertEqual(1, len(preview_payload["resolution_issues"]))
                     self.assertEqual(9, preview_payload["resolution_issues"][0]["source_position"])
+                    self.assertTrue(preview_payload["resolution_issues"][0]["blocking"])
                     self.assertIsInstance(preview_payload["source_snapshot_token"], str)
 
                     unresolved_commit = client.post(

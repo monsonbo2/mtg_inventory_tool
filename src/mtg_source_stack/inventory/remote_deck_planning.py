@@ -176,6 +176,7 @@ def _build_remote_resolution_issue(
     card: RemoteDeckCard,
     *,
     options: list[Any],
+    blocking: bool = True,
 ) -> RemoteDeckResolutionIssue:
     return RemoteDeckResolutionIssue(
         kind=kind,
@@ -183,11 +184,12 @@ def _build_remote_resolution_issue(
         section=card.section,
         requested=_build_remote_requested_card(card),
         options=options,
+        blocking=blocking,
     )
 
 
 def _build_unknown_remote_card_issue(card: RemoteDeckCard) -> RemoteDeckResolutionIssue:
-    return _build_remote_resolution_issue("unknown_card", card, options=[])
+    return _build_remote_resolution_issue("unknown_card", card, options=[], blocking=False)
 
 
 def _remote_card_without_exact_printing(card: RemoteDeckCard) -> RemoteDeckCard:
