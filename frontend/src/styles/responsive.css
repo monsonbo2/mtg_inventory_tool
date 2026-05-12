@@ -285,7 +285,6 @@
   .activity-drawer-header,
   .collection-header-controls,
   .result-card-header,
-  .table-toolbar,
   .table-query-panel-header {
     flex-direction: column;
     align-items: stretch;
@@ -335,11 +334,6 @@
   .table-toolbar-actions,
   .table-query-actions {
     justify-content: stretch;
-  }
-
-  .table-toolbar-controls {
-    justify-items: stretch;
-    width: 100%;
   }
 
   .table-bulk-actions,

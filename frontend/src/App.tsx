@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AuditFeed } from "./components/AuditFeed";
@@ -130,6 +130,7 @@ export default function App() {
     token: number;
   } | null>(null);
   const [stickyControlsVisible, setStickyControlsVisible] = useState(false);
+  const [stickyControlsBottom, setStickyControlsBottom] = useState(0);
   const [compactListHeaderDocked, setCompactListHeaderDocked] = useState(false);
   const [workspaceCreateActionHost, setWorkspaceCreateActionHost] =
     useState<HTMLDivElement | null>(null);
@@ -567,6 +568,7 @@ export default function App() {
   useEffect(() => {
     if (appShellState !== "ready") {
       setStickyControlsVisible(false);
+      setStickyControlsBottom(0);
       setCompactListHeaderDocked(false);
       return;
     }
@@ -621,6 +623,68 @@ export default function App() {
     };
   }, [appShellState]);
 
+  useEffect(() => {
+    if (appShellState !== "ready" || !stickyControlsVisible) {
+      setStickyControlsBottom(0);
+      return;
+    }
+
+    let frameId = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    function measureStickyControls() {
+      frameId = 0;
+      const stickyControls = document.querySelector<HTMLElement>(
+        ".sticky-workspace-controls-grid",
+      );
+      const nextBottom = Math.max(
+        0,
+        stickyControls?.getBoundingClientRect().bottom ?? 0,
+      );
+      setStickyControlsBottom((current) =>
+        current === nextBottom ? current : nextBottom,
+      );
+      window.dispatchEvent(
+        new CustomEvent("sticky-workspace-controls:measure", {
+          detail: { bottom: nextBottom },
+        }),
+      );
+
+      if (stickyControls && typeof ResizeObserver !== "undefined" && !resizeObserver) {
+        resizeObserver = new ResizeObserver(scheduleStickyControlsMeasure);
+        resizeObserver.observe(stickyControls);
+      }
+    }
+
+    function scheduleStickyControlsMeasure() {
+      if (frameId) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(measureStickyControls);
+    }
+
+    scheduleStickyControlsMeasure();
+    window.addEventListener("scroll", scheduleStickyControlsMeasure, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleStickyControlsMeasure);
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("scroll", scheduleStickyControlsMeasure);
+      window.removeEventListener("resize", scheduleStickyControlsMeasure);
+    };
+  }, [
+    appShellState,
+    collectionMenuOpen,
+    searchResultsVisible,
+    searchWorkspaceMode,
+    stickyControlsVisible,
+  ]);
+
   const appShellClassName =
     [
       "app-shell",
@@ -633,9 +697,15 @@ export default function App() {
     ]
       .filter(Boolean)
       .join(" ");
+  const appShellStyle =
+    appShellState === "ready"
+      ? ({
+          "--sticky-workspace-controls-bottom": `${stickyControlsBottom}px`,
+        } as CSSProperties)
+      : undefined;
 
   return (
-    <div className={appShellClassName}>
+    <div className={appShellClassName} style={appShellStyle}>
       {appShellState === "ready" && stickyControlsVisible ? (
         <StickyWorkspaceControls
           actions={searchPanelActions}
