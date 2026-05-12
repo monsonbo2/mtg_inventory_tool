@@ -529,6 +529,7 @@ export interface CsvImportResolutionIssueResponse {
   csv_row: number;
   requested: CsvImportRequestedCardResponse;
   options: ImportResolutionOptionResponse[];
+  blocking: boolean;
 }
 
 export interface CsvImportSummaryResponse {
@@ -583,6 +584,7 @@ export interface DecklistImportResolutionIssueResponse {
   section: string;
   requested: DecklistImportRequestedCardResponse;
   options: ImportResolutionOptionResponse[];
+  blocking: boolean;
 }
 
 export interface DecklistImportSummaryResponse {
@@ -639,6 +641,7 @@ export interface DeckUrlImportResolutionIssueResponse {
   section: string;
   requested: DeckUrlImportRequestedCardResponse;
   options: ImportResolutionOptionResponse[];
+  blocking: boolean;
 }
 
 export interface DeckUrlImportSummaryResponse {

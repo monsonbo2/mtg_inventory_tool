@@ -1040,6 +1040,7 @@ describe("App", () => {
           resolution_issues: [
             {
               kind: "ambiguous_printing",
+              blocking: true,
               source_position: 7,
               section: "mainboard",
               requested: {
@@ -1173,6 +1174,7 @@ describe("App", () => {
           resolution_issues: [
             {
               kind: "unknown_card",
+              blocking: false,
               source_position: 227,
               section: "mainboard",
               requested: {
@@ -1205,6 +1207,7 @@ describe("App", () => {
           resolution_issues: [
             {
               kind: "unknown_card",
+              blocking: false,
               source_position: 227,
               section: "mainboard",
               requested: {
@@ -1276,6 +1279,7 @@ describe("App", () => {
           resolution_issues: [
             {
               kind: "unknown_card",
+              blocking: false,
               source_position: 227,
               section: "mainboard",
               requested: {
@@ -1308,6 +1312,7 @@ describe("App", () => {
           resolution_issues: [
             {
               kind: "unknown_card",
+              blocking: false,
               source_position: 227,
               section: "mainboard",
               requested: {

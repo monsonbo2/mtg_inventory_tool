@@ -407,12 +407,13 @@ preserve for the first API-backed version of the project.
   - response field `detected_format` identifies whether the backend treated the
     upload as a known source CSV or as generic CSV
   - response field `ready_to_commit` is `false` when one or more rows still
-    need explicit resolution
+    have blocking issues that need explicit resolution
   - response field `summary` includes total imported quantity, requested card
     quantity, unresolved card quantity, and distinct card-name and printing
     counts
-  - response field `resolution_issues` carries structured row-specific
-    ambiguity details during preview
+  - response field `resolution_issues` carries structured row-specific issue
+    details during preview; each issue includes `blocking`, and non-blocking
+    leftovers may be present even when `ready_to_commit=true`
   - `dry_run=true` uses the real add-card workflow but rolls the transaction
     back before commit
   - the route reuses the existing CSV normalization, identifier resolution,
@@ -463,12 +464,13 @@ preserve for the first API-backed version of the project.
   - `resolutions` is optional and lets the caller choose one suggested
     `scryfall_id + finish` pair for a specific `decklist_line`
   - response field `ready_to_commit` is `false` when one or more lines still
-    need explicit resolution
+    have blocking issues that need explicit resolution
   - response field `summary` includes total imported quantity, requested card
     quantity, unresolved card quantity, distinct card and printing counts, and
     per-section card quantities
-  - response field `resolution_issues` carries structured row-specific
-    ambiguity details during preview
+  - response field `resolution_issues` carries structured row-specific issue
+    details during preview; each issue includes `blocking`, and non-blocking
+    leftovers may be present even when `ready_to_commit=true`
   - `dry_run=true` uses the real add-card workflow but rolls the transaction
     back before commit
   - supported v1 pasted-list forms include:
@@ -503,7 +505,7 @@ preserve for the first API-backed version of the project.
   - `resolutions` is optional and lets the caller choose one suggested
     `scryfall_id + finish` pair for a specific `source_position`
   - response field `ready_to_commit` is `false` when one or more remote rows
-    still need explicit resolution
+    still have blocking issues that need explicit resolution
   - response field `source_snapshot_token` contains a short-lived signed
     normalized snapshot of the fetched remote deck so preview and commit can
     stay in sync without another provider fetch
@@ -512,8 +514,10 @@ preserve for the first API-backed version of the project.
   - response field `summary` includes total imported quantity, requested card
     quantity, unresolved card quantity, distinct card and printing counts, and
     per-section card quantities
-  - response field `resolution_issues` carries structured row-specific
-    ambiguity details during preview
+  - response field `resolution_issues` carries structured row-specific issue
+    details during preview; each issue includes `blocking`, and non-blocking
+    leftovers such as unknown remote cards may be present even when
+    `ready_to_commit=true`
   - `dry_run=true` uses the real add-card workflow but rolls the transaction
     back before commit
   - v1 currently supports public Archidekt, AetherHub, ManaBox, Moxfield,

@@ -128,8 +128,11 @@ Use this as the first-pass UI-to-endpoint map:
 - CSV import preview/commit -> `POST /imports/csv`
   Request body is `multipart/form-data`.
   - use `dry_run=true` for preview
-  - if `ready_to_commit` is `false`, show `resolution_issues` and resubmit the
-    same file with `resolutions_json`
+  - `ready_to_commit=false` means at least one `resolution_issues` entry has
+    `blocking=true`; non-blocking issues can still be present when
+    `ready_to_commit=true`
+  - if `ready_to_commit` is `false`, show the blocking `resolution_issues` and
+    resubmit the same file with `resolutions_json`
   - current backend CSV adapters are `generic_csv`,
     `tcgplayer_app_collection_csv`, `tcgplayer_legacy_collection_csv`,
     `manabox_collection_csv`, `mtggoldfish_collection_csv`,
@@ -138,10 +141,15 @@ Use this as the first-pass UI-to-endpoint map:
 - Pasted decklist import preview/commit -> `POST /imports/decklist`
   Request body is JSON.
   - use `dry_run=true` for preview
+  - `ready_to_commit=false` means at least one `resolution_issues` entry has
+    `blocking=true`
   - if `ready_to_commit` is `false`, resubmit with `resolutions`
 - Deck URL import preview/commit -> `POST /imports/deck-url`
   Request body is JSON.
   - use `dry_run=true` for preview
+  - `ready_to_commit=false` means at least one `resolution_issues` entry has
+    `blocking=true`; non-blocking `unknown_card` leftovers can be reported
+    after a partial import
   - if `ready_to_commit` is `false`, resubmit with `resolutions`
   - preserve `source_snapshot_token` from preview and send it back on commit so
     the backend reuses the same signed remote deck snapshot instead of

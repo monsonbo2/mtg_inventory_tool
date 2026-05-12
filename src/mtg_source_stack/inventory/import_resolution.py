@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 import sqlite3
 
@@ -50,6 +51,7 @@ class CsvResolutionIssue:
     csv_row: int
     requested: CsvRequestedCard
     options: list[ImportResolutionOption]
+    blocking: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +68,7 @@ class DecklistResolutionIssue:
     section: str
     requested: DecklistRequestedCard
     options: list[ImportResolutionOption]
+    blocking: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,7 @@ class RemoteDeckResolutionIssue:
     section: str
     requested: RemoteDeckRequestedCard
     options: list[ImportResolutionOption]
+    blocking: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +103,13 @@ class RemoteDeckResolutionSelection:
     source_position: int
     scryfall_id: str
     finish: str
+
+
+ImportResolutionIssue = CsvResolutionIssue | DecklistResolutionIssue | RemoteDeckResolutionIssue
+
+
+def blocking_resolution_issues(issues: Iterable[ImportResolutionIssue]) -> list[ImportResolutionIssue]:
+    return [issue for issue in issues if issue.blocking]
 
 
 def build_resolution_options_for_catalog_row(

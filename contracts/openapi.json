@@ -1350,6 +1350,11 @@
       "CsvImportResolutionIssueResponse": {
         "additionalProperties": false,
         "properties": {
+          "blocking": {
+            "description": "Whether this issue must be resolved before the import can be committed.",
+            "title": "Blocking",
+            "type": "boolean"
+          },
           "csv_row": {
             "title": "Csv Row",
             "type": "integer"
@@ -1378,7 +1383,8 @@
           "kind",
           "csv_row",
           "requested",
-          "options"
+          "options",
+          "blocking"
         ],
         "title": "CsvImportResolutionIssueResponse",
         "type": "object"
@@ -1765,6 +1771,11 @@
       "DeckUrlImportResolutionIssueResponse": {
         "additionalProperties": false,
         "properties": {
+          "blocking": {
+            "description": "Whether this issue must be resolved before the import can be committed.",
+            "title": "Blocking",
+            "type": "boolean"
+          },
           "kind": {
             "enum": [
               "ambiguous_card_name",
@@ -1799,7 +1810,8 @@
           "source_position",
           "section",
           "requested",
-          "options"
+          "options",
+          "blocking"
         ],
         "title": "DeckUrlImportResolutionIssueResponse",
         "type": "object"
@@ -2223,6 +2235,11 @@
       "DecklistImportResolutionIssueResponse": {
         "additionalProperties": false,
         "properties": {
+          "blocking": {
+            "description": "Whether this issue must be resolved before the import can be committed.",
+            "title": "Blocking",
+            "type": "boolean"
+          },
           "decklist_line": {
             "title": "Decklist Line",
             "type": "integer"
@@ -2256,7 +2273,8 @@
           "decklist_line",
           "section",
           "requested",
-          "options"
+          "options",
+          "blocking"
         ],
         "title": "DecklistImportResolutionIssueResponse",
         "type": "object"

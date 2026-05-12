@@ -445,6 +445,7 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual(1, len(preview["resolution_issues"]))
             issue = preview["resolution_issues"][0]
             self.assertEqual("ambiguous_card_name", issue["kind"])
+            self.assertTrue(issue["blocking"])
             self.assertEqual(2, issue["csv_row"])
             self.assertEqual("CSV Ambiguous Card", issue["requested"]["name"])
             self.assertEqual(2, len(issue["options"]))
@@ -535,6 +536,7 @@ class InventoryCsvImportTest(RepoSmokeTestCase):
             self.assertEqual(1, len(preview["resolution_issues"]))
             issue = preview["resolution_issues"][0]
             self.assertEqual("finish_required", issue["kind"])
+            self.assertTrue(issue["blocking"])
             self.assertEqual(2, issue["csv_row"])
             self.assertEqual(2, len(issue["options"]))
             self.assertEqual({"normal", "foil"}, {option["finish"] for option in issue["options"]})

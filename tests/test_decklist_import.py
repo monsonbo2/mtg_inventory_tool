@@ -541,6 +541,7 @@ class DecklistImportTest(unittest.TestCase):
             self.assertEqual(1, len(preview["resolution_issues"]))
             issue = preview["resolution_issues"][0]
             self.assertEqual("ambiguous_card_name", issue["kind"])
+            self.assertTrue(issue["blocking"])
             self.assertEqual(1, issue["decklist_line"])
             self.assertEqual("Ambiguous Bolt", issue["requested"]["name"])
             self.assertEqual(
@@ -601,6 +602,7 @@ class DecklistImportTest(unittest.TestCase):
             )
             self.assertFalse(preview["ready_to_commit"])
             self.assertEqual("finish_required", preview["resolution_issues"][0]["kind"])
+            self.assertTrue(preview["resolution_issues"][0]["blocking"])
             self.assertEqual(
                 {("finish-choice-card", "foil"), ("finish-choice-card", "etched")},
                 {
