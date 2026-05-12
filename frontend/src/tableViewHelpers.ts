@@ -80,7 +80,7 @@ export function getInventoryTableColumnLabel(column: InventoryTableColumnKey) {
     case "finish":
       return "Finish";
     case "condition_code":
-      return "Cond.";
+      return "Cond";
     case "language_code":
       return "Lang";
     case "location":

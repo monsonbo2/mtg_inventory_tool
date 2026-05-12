@@ -316,25 +316,25 @@
 
 .inventory-table {
   width: 100%;
-  min-width: 1080px;
+  min-width: 1286px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
 .inventory-table-col-select {
-  width: 42px;
+  width: 48px;
 }
 
 .inventory-table-col-card {
-  width: 250px;
+  width: 300px;
 }
 
 .inventory-table-col-set {
-  width: 180px;
+  width: 210px;
 }
 
 .inventory-table-col-quantity {
-  width: 64px;
+  width: 74px;
 }
 
 .inventory-table-col-finish {
@@ -343,27 +343,38 @@
 
 .inventory-table-col-condition,
 .inventory-table-col-language {
-  width: 72px;
+  width: 82px;
 }
 
 .inventory-table-col-location {
-  width: 118px;
+  width: 145px;
 }
 
 .inventory-table-col-tags {
-  width: 112px;
+  width: 145px;
 }
 
 .inventory-table-col-value {
-  width: 82px;
+  width: 112px;
 }
 
 .inventory-table th,
 .inventory-table td {
-  padding: 8px 10px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   text-align: left;
   vertical-align: middle;
+}
+
+.inventory-table th {
+  padding: 7px 8px;
+}
+
+.inventory-table td {
+  padding: 8px 12px;
+}
+
+.inventory-table tbody td {
+  height: 54px;
 }
 
 .inventory-table th {
@@ -399,9 +410,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
-  padding: 4px 6px;
+  padding: 4px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
@@ -448,8 +459,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.1);
   border: 1px solid rgba(148, 163, 184, 0.14);
@@ -560,6 +571,7 @@
 .inventory-table-row {
   cursor: pointer;
   background: rgba(15, 23, 42, 0.18);
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
 
 .inventory-table-row:nth-child(even) {
@@ -572,10 +584,12 @@
 
 .inventory-table-row-selected {
   background: rgba(93, 231, 206, 0.08);
+  box-shadow: inset 3px 0 0 rgba(93, 231, 206, 0.44);
 }
 
 .inventory-table-row-selected:hover {
   background: rgba(93, 231, 206, 0.12);
+  box-shadow: inset 3px 0 0 rgba(93, 231, 206, 0.58);
 }
 
 .inventory-table-checkbox-column,
@@ -604,6 +618,7 @@
   background: transparent;
   color: var(--text-main);
   font: inherit;
+  font-size: 0.95rem;
   font-weight: 700;
   line-height: 1.25;
   overflow: hidden;
@@ -613,6 +628,10 @@
 }
 
 .inventory-table-card-button:hover {
+  color: var(--accent-paper);
+}
+
+.inventory-table-row:hover .inventory-table-card-button {
   color: var(--accent-paper);
 }
 
@@ -631,10 +650,11 @@
 .inventory-table-card-meta span,
 .inventory-table-set-name,
 .inventory-table-inline-cell,
+.inventory-table-code-cell,
 .inventory-table-empty-value,
 .inventory-table-tag-more {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   line-height: 1.35;
 }
 
@@ -644,6 +664,7 @@
   align-items: baseline;
   min-width: 0;
   color: var(--text-main);
+  font-size: 0.94rem;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -664,15 +685,52 @@
   white-space: nowrap;
 }
 
-.inventory-table-inline-cell {
+.inventory-table-inline-cell,
+.inventory-table-code-cell {
   white-space: nowrap;
 }
 
-.inventory-table-number-cell,
+.inventory-table-quantity-cell,
 .inventory-table-value-cell {
   white-space: nowrap;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.inventory-table-quantity-cell {
+  text-align: center;
+}
+
+.inventory-table-quantity-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(248, 240, 218, 0.14);
+  border-radius: 999px;
+  background: rgba(248, 240, 218, 0.06);
+  color: var(--text-main);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.inventory-table-code-cell {
+  color: var(--text-soft);
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.inventory-table-finish-cell {
+  color: var(--text-soft);
+}
+
+.inventory-table-location-cell,
+.inventory-table-tags-cell {
+  min-width: 0;
 }
 
 .inventory-table-location-pill {

@@ -2027,13 +2027,19 @@ export function InventoryTableView(props: {
                       </strong>
                       <span className="inventory-table-set-name">{item.set_name}</span>
                     </td>
-                    <td className="inventory-table-number-cell">{item.quantity}</td>
-                    <td className="inventory-table-inline-cell">{formatFinishLabel(item.finish)}</td>
-                    <td className="inventory-table-inline-cell">{item.condition_code}</td>
-                    <td className="inventory-table-inline-cell">
+                    <td className="inventory-table-quantity-cell">
+                      <span className="inventory-table-quantity-value">
+                        {item.quantity}
+                      </span>
+                    </td>
+                    <td className="inventory-table-inline-cell inventory-table-finish-cell">
+                      {formatFinishLabel(item.finish)}
+                    </td>
+                    <td className="inventory-table-code-cell">{item.condition_code}</td>
+                    <td className="inventory-table-code-cell">
                       {formatLanguageCode(item.language_code)}
                     </td>
-                    <td>
+                    <td className="inventory-table-location-cell">
                       {item.location?.trim() ? (
                         <span
                           className="inventory-table-location-pill"
@@ -2047,7 +2053,7 @@ export function InventoryTableView(props: {
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className="inventory-table-tags-cell">
                       {item.tags.length ? (
                         <div className="inventory-table-tag-list">
                           {item.tags.slice(0, 2).map((tag) => (
