@@ -209,9 +209,18 @@ describe("InventoryAccessDialog", () => {
     await waitFor(() => {
       expect(createInventoryShareLink).toHaveBeenCalledWith("personal");
     });
+    const firstShareUrl = new URL(
+      "/shared/inventories/v1.1.first.sig",
+      window.location.origin,
+    ).toString();
     expect(
-      await screen.findByText("/shared/inventories/v1.1.first.sig"),
+      await screen.findByText(firstShareUrl),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open link" })).toHaveAttribute(
+      "href",
+      "/shared/inventories/v1.1.first.sig",
+    );
     expect(onNotice).toHaveBeenCalledWith(
       "Created a public read-only share link.",
       "success",
@@ -222,8 +231,12 @@ describe("InventoryAccessDialog", () => {
     await waitFor(() => {
       expect(rotateInventoryShareLink).toHaveBeenCalledWith("personal");
     });
+    const rotatedShareUrl = new URL(
+      "/shared/inventories/v1.1.rotated.sig",
+      window.location.origin,
+    ).toString();
     expect(
-      await screen.findByText("/shared/inventories/v1.1.rotated.sig"),
+      await screen.findByText(rotatedShareUrl),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Revoke link" }));

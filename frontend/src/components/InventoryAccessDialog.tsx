@@ -78,6 +78,10 @@ function formatShareLinkTimestamp(value: string | null) {
   }).format(date);
 }
 
+function getPublicShareUrl(publicPath: string) {
+  return new URL(publicPath, window.location.origin).toString();
+}
+
 export function InventoryAccessDialog(props: {
   canManageShare: boolean;
   inventory: InventorySummary;
@@ -381,9 +385,31 @@ export function InventoryAccessDialog(props: {
     }
   }
 
+  async function handleCopyShareLink(publicPath: string) {
+    const shareUrl = getPublicShareUrl(publicPath);
+    if (!navigator.clipboard?.writeText) {
+      props.onNotice(
+        "Copy is not available in this browser. Select the link text instead.",
+        "error",
+      );
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      props.onNotice("Copied the public share link.", "success");
+    } catch {
+      props.onNotice("Could not copy the public share link.", "error");
+    }
+  }
+
   const formDisabled = busyAction !== null || !props.canManageShare;
   const shareLinkControlsDisabled = shareLinkBusy !== null || !props.canManageShare;
   const activeShareLink = Boolean(shareLink?.active && shareLink.public_path);
+  const publicShareUrl =
+    shareLink?.active && shareLink.public_path
+      ? getPublicShareUrl(shareLink.public_path)
+      : null;
 
   return (
     <ModalDialog
@@ -495,8 +521,8 @@ export function InventoryAccessDialog(props: {
           ) : activeShareLink ? (
             <div className="access-share-link-card">
               <div className="access-share-link-copy">
-                <span>Public path</span>
-                <code>{shareLink?.public_path}</code>
+                <span>Public URL</span>
+                <code>{publicShareUrl}</code>
               </div>
               <div className="mini-grid">
                 <div className="meta-line">
@@ -516,6 +542,30 @@ export function InventoryAccessDialog(props: {
                 <p className="field-hint field-hint-error">{shareLinkError}</p>
               ) : null}
               <div className="table-bulk-pane-actions">
+                {shareLink?.public_path ? (
+                  <>
+                    <button
+                      className="secondary-button"
+                      disabled={shareLinkControlsDisabled}
+                      onClick={() => {
+                        if (shareLink.public_path) {
+                          void handleCopyShareLink(shareLink.public_path);
+                        }
+                      }}
+                      type="button"
+                    >
+                      Copy link
+                    </button>
+                    <a
+                      className="secondary-button access-share-link-action"
+                      href={shareLink.public_path}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      Open link
+                    </a>
+                  </>
+                ) : null}
                 <button
                   className="secondary-button"
                   disabled={shareLinkControlsDisabled}

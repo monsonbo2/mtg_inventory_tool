@@ -5,6 +5,7 @@ import { AuditFeed } from "./components/AuditFeed";
 import { InventorySidebar } from "./components/InventorySidebar";
 import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
 import { PanelState } from "./components/ui/PanelState";
+import { PublicInventorySharePage } from "./components/PublicInventorySharePage";
 import { SearchPanel } from "./components/SearchPanel";
 import { StickyWorkspaceControls } from "./components/StickyWorkspaceControls";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
@@ -29,6 +30,11 @@ import type { AppShellState } from "./uiTypes";
 import type { AccessSummaryResponse, InventoryPriceProvider } from "./types";
 
 const STICKY_SEARCH_ROW_TOP_OFFSET = 14;
+
+function getPublicShareToken(pathname: string) {
+  const match = pathname.match(/^\/shared\/inventories\/([^/]+)\/?$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 function getAppShellState(options: {
   accessSummary: AccessSummaryResponse | null;
@@ -122,6 +128,15 @@ function getShellStatePanelContent(
 }
 
 export default function App() {
+  const publicShareToken = getPublicShareToken(window.location.pathname);
+  if (publicShareToken) {
+    return <PublicInventorySharePage shareToken={publicShareToken} />;
+  }
+
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
   const [createCollectionRequestToken, setCreateCollectionRequestToken] =

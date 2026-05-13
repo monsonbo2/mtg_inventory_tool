@@ -199,3 +199,8 @@
   background: rgba(2, 8, 23, 0.44);
   color: var(--accent-paper);
 }
+
+.access-share-link-action {
+  text-align: center;
+  text-decoration: none;
+}

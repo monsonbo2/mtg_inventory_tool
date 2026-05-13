@@ -1,0 +1,66 @@
+.public-share-shell {
+  display: grid;
+  gap: 20px;
+}
+
+.public-share-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.public-share-header h1 {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Avenir Next", sans-serif;
+  font-size: clamp(2.1rem, 4vw, 4.1rem);
+  line-height: 1;
+}
+
+.public-share-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.public-share-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.public-share-list {
+  display: grid;
+  gap: 12px;
+}
+
+.public-share-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.public-share-row-copy {
+  min-width: 0;
+}
+
+.public-share-row-copy h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 1rem;
+}
+
+.public-share-row-copy p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.public-share-row-copy .tag-row {
+  margin: 10px 0 0;
+}
