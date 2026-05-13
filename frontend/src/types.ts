@@ -43,6 +43,7 @@ export type InventoryTransferConflictPolicy = "fail" | "merge";
 export type InventoryTransferSelectionKind = "items" | "all_items";
 export type BulkInventorySelectionKind = "items" | "filtered" | "all_items";
 export type InventoryCapabilityRole = "viewer" | "editor" | "owner" | "admin";
+export type InventoryMembershipRole = "viewer" | "editor" | "owner";
 export type InventoryTransferItemStatus =
   | "would_copy"
   | "would_move"
@@ -115,6 +116,77 @@ export interface InventoryCreateResponse {
   notes: string | null;
   acquisition_price: string | null;
   acquisition_currency: string | null;
+}
+
+export interface InventoryMembership {
+  inventory: string;
+  actor_id: string;
+  role: InventoryMembershipRole;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventoryMembershipGrantRequest {
+  actor_id: string;
+  role: InventoryMembershipRole;
+}
+
+export interface InventoryMembershipUpdateRequest {
+  role: InventoryMembershipRole;
+}
+
+export interface InventoryMembershipRemovalResponse {
+  inventory: string;
+  actor_id: string;
+  role: InventoryMembershipRole;
+}
+
+export interface InventoryShareLinkStatusResponse {
+  inventory: string;
+  active: boolean;
+  public_path: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface InventoryShareLinkTokenResponse {
+  inventory: string;
+  token: string;
+  public_path: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  revoked_at: string | null;
+}
+
+export interface PublicInventorySummary {
+  display_name: string;
+  description: string | null;
+  item_rows: number;
+  total_cards: number;
+}
+
+export interface PublicInventoryItem {
+  scryfall_id: string;
+  oracle_id: string;
+  name: string;
+  set_code: string;
+  set_name: string;
+  rarity: string | null;
+  collector_number: string;
+  image_uri_small: string | null;
+  image_uri_normal: string | null;
+  quantity: number;
+  condition_code: ConditionCode;
+  finish: FinishValue;
+  allowed_finishes: FinishValue[];
+  language_code: LanguageCode;
+}
+
+export interface PublicInventoryShareResponse {
+  inventory: PublicInventorySummary;
+  items: PublicInventoryItem[];
 }
 
 export interface CatalogSearchRow {

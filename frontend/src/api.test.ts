@@ -3,20 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bootstrapDefaultInventory,
   createInventory,
+  createInventoryShareLink,
   duplicateInventory,
   exportInventoryCsv,
   getAccessSummary,
   getCardPrintingSummary,
+  getInventoryShareLinkStatus,
+  getPublicInventoryShare,
+  grantInventoryMember,
   importCsv,
   importDeckUrl,
   importDecklist,
+  listInventoryMembers,
   requestFormData,
   requestJson,
   requestText,
   listInventoryItems,
   listInventoryItemsPage,
+  removeInventoryMember,
+  revokeInventoryShareLink,
+  rotateInventoryShareLink,
   searchCards,
   transferInventoryItems,
+  updateInventoryMember,
 } from "./api";
 
 describe("api transport", () => {
@@ -346,6 +355,95 @@ describe("api transport", () => {
     );
     expect(transferCall[1]?.method).toBe("POST");
     expect(JSON.parse(String(transferCall[1]?.body))).toEqual(transferPayload);
+  });
+
+  it("calls membership, share-link, and public-share endpoints with encoded path parameters", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        }),
+    );
+
+    const inventorySlug = "personal-main";
+    const actorId = "viewer+pilot@example.com";
+    const grantPayload = {
+      actor_id: actorId,
+      role: "viewer",
+    } as const;
+    const updatePayload = {
+      role: "editor",
+    } as const;
+
+    await listInventoryMembers(inventorySlug);
+    await grantInventoryMember(inventorySlug, grantPayload);
+    await updateInventoryMember(inventorySlug, actorId, updatePayload);
+    await removeInventoryMember(inventorySlug, actorId);
+    await getInventoryShareLinkStatus(inventorySlug);
+    await createInventoryShareLink(inventorySlug);
+    await rotateInventoryShareLink(inventorySlug);
+    await revokeInventoryShareLink(inventorySlug);
+    await getPublicInventoryShare("v1.1.abc_def.sig");
+
+    expect(fetch).toHaveBeenCalledTimes(9);
+
+    const calls = vi.mocked(fetch).mock.calls;
+    expect(String(calls[0][0])).toContain(
+      "/api/inventories/personal-main/members",
+    );
+    expect(calls[0][1]?.method).toBeUndefined();
+    expect(calls[0][1]?.body).toBeUndefined();
+
+    expect(String(calls[1][0])).toContain(
+      "/api/inventories/personal-main/members",
+    );
+    expect(calls[1][1]?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1][1]?.body))).toEqual(grantPayload);
+
+    expect(String(calls[2][0])).toContain(
+      "/api/inventories/personal-main/members/viewer%2Bpilot%40example.com",
+    );
+    expect(calls[2][1]?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[2][1]?.body))).toEqual(updatePayload);
+
+    expect(String(calls[3][0])).toContain(
+      "/api/inventories/personal-main/members/viewer%2Bpilot%40example.com",
+    );
+    expect(calls[3][1]?.method).toBe("DELETE");
+    expect(calls[3][1]?.body).toBeUndefined();
+
+    expect(String(calls[4][0])).toContain(
+      "/api/inventories/personal-main/share-link",
+    );
+    expect(calls[4][1]?.method).toBeUndefined();
+    expect(calls[4][1]?.body).toBeUndefined();
+
+    expect(String(calls[5][0])).toContain(
+      "/api/inventories/personal-main/share-link",
+    );
+    expect(calls[5][1]?.method).toBe("POST");
+    expect(calls[5][1]?.body).toBeUndefined();
+
+    expect(String(calls[6][0])).toContain(
+      "/api/inventories/personal-main/share-link/rotate",
+    );
+    expect(calls[6][1]?.method).toBe("POST");
+    expect(calls[6][1]?.body).toBeUndefined();
+
+    expect(String(calls[7][0])).toContain(
+      "/api/inventories/personal-main/share-link",
+    );
+    expect(calls[7][1]?.method).toBe("DELETE");
+    expect(calls[7][1]?.body).toBeUndefined();
+
+    expect(String(calls[8][0])).toContain(
+      "/api/shared/inventories/v1.1.abc_def.sig",
+    );
+    expect(calls[8][1]?.method).toBeUndefined();
+    expect(calls[8][1]?.body).toBeUndefined();
   });
 
   it("builds CSV import requests with the backend's multipart field names", async () => {
