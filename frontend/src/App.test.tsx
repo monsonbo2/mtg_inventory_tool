@@ -5472,6 +5472,34 @@ describe("App", () => {
     expect(
       within(destinationSelect).queryByRole("option", { name: "Archive Box" }),
     ).not.toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Preview copy" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
+        target_inventory_slug: "trade",
+        mode: "copy",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+        dry_run: true,
+      });
+    });
+    expect(await within(tray).findByText("Preview ready")).toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Confirm copy" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenLastCalledWith("personal", {
+        target_inventory_slug: "trade",
+        mode: "copy",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+      });
+    });
+    expect(patchInventoryItem).not.toHaveBeenCalled();
+    expect(bulkMutateInventoryItems).not.toHaveBeenCalled();
   });
 
   it("selects visible table rows without exposing whole-collection selection", async () => {
