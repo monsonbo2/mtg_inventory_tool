@@ -13,6 +13,7 @@ import type {
   CatalogPrintingSummaryResponse,
   InventoryAuditEvent,
   InventoryCreateResponse,
+  InventoryDuplicateResponse,
   InventorySummary,
   OwnedInventoryItemsPageParams,
   OwnedInventoryItemsPageResponse,
@@ -37,6 +38,7 @@ vi.mock("./api", async () => {
     createInventory: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
+    duplicateInventory: vi.fn(),
     exportInventoryCsv: vi.fn(),
     importCsv: vi.fn(),
     importDeckUrl: vi.fn(),
@@ -55,6 +57,7 @@ import {
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
+  duplicateInventory,
   exportInventoryCsv,
   getAccessSummary,
   importCsv,
@@ -452,6 +455,40 @@ describe("App", () => {
     };
   }
 
+  function buildInventoryDuplicateResponse(
+    overrides: Partial<InventoryDuplicateResponse> = {},
+  ): InventoryDuplicateResponse {
+    const inventory =
+      overrides.inventory ??
+      buildInventoryCreateResponse({
+        display_name: "Personal Collection Copy",
+        inventory_id: 2,
+        slug: "personal-collection-copy",
+      });
+
+    return {
+      inventory,
+      source_inventory: "personal",
+      transfer: {
+        copied_count: 1,
+        dry_run: false,
+        failed_count: 0,
+        merged_count: 0,
+        mode: "copy",
+        moved_count: 0,
+        requested_count: 1,
+        requested_item_ids: null,
+        results: [],
+        results_returned: 0,
+        results_truncated: false,
+        selection_kind: "all_items",
+        source_inventory: "personal",
+        target_inventory: inventory.slug,
+      },
+      ...overrides,
+    };
+  }
+
   function mockCollectionViewApp(options?: {
     items?: OwnedInventoryRow[];
     auditEvents?: InventoryAuditEvent[];
@@ -477,6 +514,9 @@ describe("App", () => {
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse(),
+    );
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
@@ -527,6 +567,9 @@ describe("App", () => {
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse(),
+    );
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
@@ -824,6 +867,7 @@ describe("App", () => {
         "This collection is read-only. You can browse cards and copy selected table entries, but edits and row removal are disabled.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Duplicate" })).toBeDisabled();
 
     const boltRow = await findBrowseRow();
     const boltRowScope = within(boltRow);
@@ -900,6 +944,170 @@ describe("App", () => {
       "CSV export is unavailable.",
     );
     expect(downloadApiTextResponse).not.toHaveBeenCalled();
+  });
+
+  it("duplicates the selected collection and selects the duplicate", async () => {
+    const user = userEvent.setup();
+    const sourceInventory = buildInventorySummary({
+      description: null,
+      item_rows: 1,
+      total_cards: 2,
+    });
+    const duplicatedInventory = buildInventorySummary({
+      description: null,
+      display_name: "Personal Collection Copy",
+      item_rows: 1,
+      slug: "personal-collection-copy",
+      total_cards: 2,
+    });
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([sourceInventory])
+      .mockResolvedValue([sourceInventory, duplicatedInventory]);
+    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => [
+      buildOwnedRow({
+        item_id: inventorySlug === "personal-collection-copy" ? 17 : 7,
+      }),
+    ]);
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse([buildOwnedRow()], params, inventorySlug),
+    );
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse({
+        inventory: buildInventoryCreateResponse({
+          description: null,
+          display_name: "Personal Collection Copy",
+          inventory_id: 2,
+          slug: "personal-collection-copy",
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Duplicate collection",
+    });
+    expect(
+      within(dialog).getByRole("textbox", { name: "Collection name" }),
+    ).toHaveValue("Personal Collection Copy");
+    expect(
+      within(dialog).queryByRole("textbox", { name: /Short name/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    await waitFor(() => {
+      expect(duplicateInventory).toHaveBeenCalledWith("personal", {
+        target_description: null,
+        target_display_name: "Personal Collection Copy",
+        target_slug: "personal-collection-copy",
+      });
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Duplicated Personal Collection as Personal Collection Copy.",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Duplicate collection" }),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledWith("personal-collection-copy");
+      expect(listInventoryAudit).toHaveBeenCalledWith("personal-collection-copy");
+    });
+  });
+
+  it("keeps duplicate dialogs open after slug conflicts so the short name can be edited", async () => {
+    const user = userEvent.setup();
+    const sourceInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+    });
+    const duplicatedInventory = buildInventorySummary({
+      display_name: "Personal Collection Copy",
+      item_rows: 1,
+      slug: "personal-collection-copy-2",
+      total_cards: 2,
+    });
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([sourceInventory])
+      .mockResolvedValue([sourceInventory, duplicatedInventory]);
+    vi.mocked(listInventoryItems).mockResolvedValue([buildOwnedRow()]);
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse([buildOwnedRow()], params, inventorySlug),
+    );
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory)
+      .mockRejectedValueOnce(
+        new ApiClientError("Inventory 'personal-collection-copy' already exists.", {
+          code: "conflict",
+          status: 409,
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildInventoryDuplicateResponse({
+          inventory: buildInventoryCreateResponse({
+            description: "Main demo inventory",
+            display_name: "Personal Collection Copy",
+            inventory_id: 3,
+            slug: "personal-collection-copy-2",
+          }),
+        }),
+      );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Duplicate collection",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    const shortNameField = await within(dialog).findByRole("textbox", {
+      name: /Short name/i,
+    });
+    expect(shortNameField).toHaveValue("personal-collection-copy");
+    expect(
+      within(dialog).getByText(
+        "That collection name needs a different short name. Edit it below and try again.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.clear(shortNameField);
+    await user.type(shortNameField, "personal collection copy 2");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    await waitFor(() => {
+      expect(duplicateInventory).toHaveBeenLastCalledWith("personal", {
+        target_description: "Main demo inventory",
+        target_display_name: "Personal Collection Copy",
+        target_slug: "personal-collection-copy-2",
+      });
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Duplicated Personal Collection as Personal Collection Copy.",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Duplicate collection" }),
+    ).not.toBeInTheDocument();
   });
 
   it("uses the selected price provider for Browse, Table, and CSV export", async () => {

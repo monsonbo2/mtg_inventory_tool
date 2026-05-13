@@ -342,11 +342,13 @@ function AuthenticatedApp() {
     commitDecklistImport,
     clearNotice,
     createInventoryBusy,
+    duplicateInventoryBusy,
     exportInventoryBusy,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
+    handleDuplicateInventory,
     handleExportInventoryCsv,
     handlePatchItem,
     handleTransferItems,
@@ -481,6 +483,7 @@ function AuthenticatedApp() {
     selectedInventoryRow,
     canExportSelectedInventory: canExportInventory(selectedInventoryRow),
     canManageShareSelectedInventory: canManageShareInventory(selectedInventoryRow),
+    duplicateInventoryBusy,
     exportInventoryBusy,
     selectedInventoryCanWrite,
     table: {
@@ -519,6 +522,7 @@ function AuthenticatedApp() {
     onCloseItemDetails: handleCloseItemDetails,
     onCollectionSearchQueryChange: handleCollectionSearchQueryChange,
     onDelete: handleDeleteItem,
+    onDuplicateInventory: handleDuplicateInventory,
     onFocusImport: () =>
       setSearchFocusRequest((current) => ({
         target: "import",

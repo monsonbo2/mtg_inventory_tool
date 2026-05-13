@@ -6,6 +6,7 @@ import {
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
+  duplicateInventory,
   exportInventoryCsv,
   importCsv,
   importDecklist,
@@ -31,6 +32,7 @@ import type {
   DecklistImportResolutionRequest,
   DecklistImportResponse,
   InventoryCreateRequest,
+  InventoryDuplicateRequest,
   InventoryPriceProvider,
   InventoryTransferMode,
   PatchInventoryItemRequest,
@@ -48,6 +50,7 @@ import type {
   InventoryImportCommitResult,
   InventoryImportPreviewResult,
   InventoryCreateResult,
+  InventoryDuplicateResult,
   ItemMutationAction,
   ItemMutationState,
   MutationOutcome,
@@ -87,6 +90,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
   const [busyAddCardId, setBusyAddCardId] = useState<string | null>(null);
   const [bulkMutationBusy, setBulkMutationBusy] = useState(false);
   const [createInventoryBusy, setCreateInventoryBusy] = useState(false);
+  const [duplicateInventoryBusy, setDuplicateInventoryBusy] = useState(false);
   const [exportInventoryBusy, setExportInventoryBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [transferBusy, setTransferBusy] = useState<InventoryTransferMode | null>(null);
@@ -585,6 +589,43 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
+  async function handleDuplicateInventory(
+    sourceInventorySlug: string | null,
+    sourceInventoryLabel: string | null | undefined,
+    payload: InventoryDuplicateRequest,
+  ): Promise<InventoryDuplicateResult> {
+    if (!sourceInventorySlug) {
+      showNotice("Choose a collection before duplicating it.");
+      return { ok: false, reason: "error" };
+    }
+
+    setDuplicateInventoryBusy(true);
+    clearNotice();
+
+    try {
+      const response = await duplicateInventory(sourceInventorySlug, payload);
+      const refreshed = await options.reloadInventorySummaries(response.inventory.slug);
+      const sourceLabel =
+        sourceInventoryLabel || options.describeInventory(sourceInventorySlug);
+
+      showNotice(
+        refreshed
+          ? `Duplicated ${sourceLabel} as ${response.inventory.display_name}.`
+          : `Duplicated ${sourceLabel} as ${response.inventory.display_name}. The collection list could not refresh automatically.`,
+        refreshed ? "success" : "error",
+      );
+      return { ok: true, response };
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 409) {
+        return { ok: false, reason: "conflict" };
+      }
+      showNotice(toUserMessage(error, "Could not duplicate the collection."), "error");
+      return { ok: false, reason: "error" };
+    } finally {
+      setDuplicateInventoryBusy(false);
+    }
+  }
+
   async function handleImportDecklist(
     deckText: string,
     inventorySlug: string | null,
@@ -936,11 +977,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     commitCsvImport,
     commitDeckUrlImport,
     commitDecklistImport,
+    duplicateInventoryBusy,
     exportInventoryBusy,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
     handleDeleteItem,
+    handleDuplicateInventory,
     handleExportInventoryCsv,
     handleImportCsv,
     handleImportDecklist,

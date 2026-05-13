@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 import type {
   BulkInventoryItemMutationRequest,
   InventoryCreateRequest,
+  InventoryDuplicateRequest,
   InventoryPriceProvider,
   InventorySummary,
   InventoryTransferMode,
@@ -13,6 +14,7 @@ import type {
 import type {
   AsyncStatus,
   InventoryCreateResult,
+  InventoryDuplicateResult,
   ItemMutationAction,
   MutationOutcome,
   NoticeTone,
@@ -23,6 +25,7 @@ import {
   formatUsd,
   getCurrentRetailValueLabel,
   getPriceProviderOption,
+  normalizeInventorySlugInput,
 } from "../uiHelpers";
 import type {
   InventoryTableFilters,
@@ -40,6 +43,7 @@ type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
   canExportSelectedInventory: boolean;
   canManageShareSelectedInventory: boolean;
+  duplicateInventoryBusy: boolean;
   exportInventoryBusy: boolean;
   priceProvider: InventoryPriceProvider;
   selectedInventoryCanWrite: boolean;
@@ -92,6 +96,11 @@ type OwnedCollectionPanelActions = {
     payload: PatchInventoryItemRequest,
   ) => Promise<MutationOutcome>;
   onDelete: (itemId: number, cardName: string) => Promise<MutationOutcome>;
+  onDuplicateInventory: (
+    sourceInventorySlug: string | null,
+    sourceInventoryLabel: string | null | undefined,
+    payload: InventoryDuplicateRequest,
+  ) => Promise<InventoryDuplicateResult>;
   onExportCsv: () => Promise<boolean>;
   onNotice: (message: string, tone?: NoticeTone) => void;
   onCreateInventory: (
@@ -130,11 +139,25 @@ type OwnedCollectionPanelActions = {
   onReloadInventorySummaries: (preferredSlug?: string | null) => Promise<boolean>;
 };
 
+function normalizeDuplicateSlugDraft(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-");
+}
+
 export function OwnedCollectionPanel(props: {
   actions: OwnedCollectionPanelActions;
   state: OwnedCollectionPanelState;
 }) {
   const [accessDialogOpen, setAccessDialogOpen] = useState(false);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicateDisplayName, setDuplicateDisplayName] = useState("");
+  const [duplicateSlug, setDuplicateSlug] = useState("");
+  const [duplicateDescription, setDuplicateDescription] = useState("");
+  const [duplicateSlugTouched, setDuplicateSlugTouched] = useState(false);
+  const [showDuplicateSlugField, setShowDuplicateSlugField] = useState(false);
+  const [duplicateFormError, setDuplicateFormError] = useState<string | null>(null);
   const [priceProviderMenuOpen, setPriceProviderMenuOpen] = useState(false);
   const priceProviderMenuRef = useRef<HTMLDivElement | null>(null);
   const priceProviderTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -208,6 +231,8 @@ export function OwnedCollectionPanel(props: {
     collectionDisplayState === "ready" || collectionDisplayState === "search_empty";
   const showExportButton =
     props.state.selectedInventoryRow !== null && props.state.canExportSelectedInventory;
+  const showDuplicateButton =
+    props.state.selectedInventoryRow !== null && showActivityButton;
   const showCollectionMetrics = showViewControls;
   const showCollectionSearchRow =
     showViewControls && props.state.collection.view === "browse";
@@ -249,6 +274,110 @@ export function OwnedCollectionPanel(props: {
       setPriceProviderMenuOpen(false);
     }
   }, [priceProviderMenuOpen, showViewControls]);
+
+  function resetDuplicateDialogState() {
+    setDuplicateDisplayName("");
+    setDuplicateSlug("");
+    setDuplicateDescription("");
+    setDuplicateSlugTouched(false);
+    setShowDuplicateSlugField(false);
+    setDuplicateFormError(null);
+  }
+
+  function openDuplicateDialog() {
+    const sourceInventory = props.state.selectedInventoryRow;
+    if (!sourceInventory || !props.state.selectedInventoryCanWrite) {
+      return;
+    }
+
+    const nextDisplayName = `${sourceInventory.display_name} Copy`;
+    setDuplicateDisplayName(nextDisplayName);
+    setDuplicateSlug(normalizeInventorySlugInput(nextDisplayName));
+    setDuplicateDescription(sourceInventory.description || "");
+    setDuplicateSlugTouched(false);
+    setShowDuplicateSlugField(false);
+    setDuplicateFormError(null);
+    setDuplicateDialogOpen(true);
+  }
+
+  function closeDuplicateDialog() {
+    if (props.state.duplicateInventoryBusy) {
+      return;
+    }
+    setDuplicateDialogOpen(false);
+    resetDuplicateDialogState();
+  }
+
+  function handleDuplicateDisplayNameChange(value: string) {
+    setDuplicateDisplayName(value);
+    if (!duplicateSlugTouched) {
+      setDuplicateSlug(normalizeInventorySlugInput(value));
+    }
+    if (duplicateFormError) {
+      setDuplicateFormError(null);
+    }
+  }
+
+  function handleDuplicateSlugChange(value: string) {
+    setDuplicateSlugTouched(true);
+    setDuplicateSlug(normalizeDuplicateSlugDraft(value));
+    if (duplicateFormError) {
+      setDuplicateFormError(null);
+    }
+  }
+
+  function handleDuplicateDescriptionChange(value: string) {
+    setDuplicateDescription(value);
+    if (duplicateFormError) {
+      setDuplicateFormError(null);
+    }
+  }
+
+  async function handleDuplicateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const sourceInventory = props.state.selectedInventoryRow;
+    if (!sourceInventory || props.state.duplicateInventoryBusy) {
+      return;
+    }
+
+    const nextDisplayName = duplicateDisplayName.trim();
+    const nextSlug = normalizeInventorySlugInput(duplicateSlug);
+    const nextDescription = duplicateDescription.trim();
+
+    if (!nextDisplayName) {
+      setDuplicateFormError("Enter a collection name before duplicating.");
+      return;
+    }
+
+    if (!nextSlug) {
+      setShowDuplicateSlugField(true);
+      setDuplicateFormError("Enter a short name using letters, numbers, or hyphens.");
+      return;
+    }
+
+    const duplicateResult = await props.actions.onDuplicateInventory(
+      sourceInventory.slug,
+      sourceInventory.display_name,
+      {
+        target_description: nextDescription || null,
+        target_display_name: nextDisplayName,
+        target_slug: nextSlug,
+      },
+    );
+
+    if (duplicateResult.ok) {
+      closeDuplicateDialog();
+      return;
+    }
+
+    if (duplicateResult.reason === "conflict") {
+      setShowDuplicateSlugField(true);
+      setDuplicateFormError(
+        "That collection name needs a different short name. Edit it below and try again.",
+      );
+    }
+  }
 
   function focusPriceProviderOption(index: number) {
     const optionCount = PRICE_PROVIDER_OPTIONS.length;
@@ -580,7 +709,7 @@ export function OwnedCollectionPanel(props: {
               </div>
             ) : null}
 
-            {showActivityButton || showExportButton ? (
+            {showActivityButton || showDuplicateButton || showExportButton ? (
               <div className="collection-action-controls">
                 {showActivityButton ? (
                   <button
@@ -589,6 +718,25 @@ export function OwnedCollectionPanel(props: {
                     type="button"
                   >
                     Recent Activity
+                  </button>
+                ) : null}
+
+                {showDuplicateButton ? (
+                  <button
+                    className="utility-button"
+                    disabled={
+                      !props.state.selectedInventoryCanWrite ||
+                      props.state.duplicateInventoryBusy
+                    }
+                    onClick={openDuplicateDialog}
+                    title={
+                      !props.state.selectedInventoryCanWrite
+                        ? "Duplicate requires editor access to the source collection."
+                        : undefined
+                    }
+                    type="button"
+                  >
+                    {props.state.duplicateInventoryBusy ? "Duplicating..." : "Duplicate"}
                   </button>
                 ) : null}
 
@@ -763,6 +911,85 @@ export function OwnedCollectionPanel(props: {
             onPatch={props.actions.onPatch}
             priceProvider={props.state.priceProvider}
           />
+        </ModalDialog>
+      ) : null}
+
+      {duplicateDialogOpen && props.state.selectedInventoryRow ? (
+        <ModalDialog
+          isOpen
+          kicker="Collection Duplicate"
+          onClose={closeDuplicateDialog}
+          subtitle={`Copy every row from ${props.state.selectedInventoryRow.display_name} into a new collection.`}
+          title="Duplicate collection"
+        >
+          <form className="form-section" onSubmit={handleDuplicateSubmit}>
+            <label className="field">
+              <span>Collection name</span>
+              <input
+                className="text-input"
+                data-autofocus
+                disabled={props.state.duplicateInventoryBusy}
+                onChange={(event) =>
+                  handleDuplicateDisplayNameChange(event.target.value)
+                }
+                placeholder="e.g. Personal Collection Copy"
+                value={duplicateDisplayName}
+              />
+            </label>
+
+            {showDuplicateSlugField ? (
+              <label className="field">
+                <span>Short name</span>
+                <input
+                  className="text-input"
+                  disabled={props.state.duplicateInventoryBusy}
+                  onChange={(event) => handleDuplicateSlugChange(event.target.value)}
+                  placeholder="personal-collection-copy"
+                  value={duplicateSlug}
+                />
+                <span className="field-hint field-hint-info">
+                  Used for links and quick references. Keep it short and easy to recognize.
+                </span>
+              </label>
+            ) : null}
+
+            <label className="field">
+              <span>Description (optional)</span>
+              <textarea
+                className="text-area"
+                disabled={props.state.duplicateInventoryBusy}
+                onChange={(event) =>
+                  handleDuplicateDescriptionChange(event.target.value)
+                }
+                placeholder="Add a short description for this duplicate."
+                value={duplicateDescription}
+              />
+            </label>
+
+            {duplicateFormError ? (
+              <p className="field-hint field-hint-error">{duplicateFormError}</p>
+            ) : null}
+
+            <div className="search-import-actions">
+              <button
+                className="primary-button"
+                disabled={props.state.duplicateInventoryBusy}
+                type="submit"
+              >
+                {props.state.duplicateInventoryBusy
+                  ? "Duplicating..."
+                  : "Duplicate collection"}
+              </button>
+              <button
+                className="secondary-button"
+                disabled={props.state.duplicateInventoryBusy}
+                onClick={closeDuplicateDialog}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </ModalDialog>
       ) : null}
 
