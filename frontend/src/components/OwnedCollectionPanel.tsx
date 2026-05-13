@@ -353,6 +353,9 @@ export function OwnedCollectionPanel(props: {
     const nextDisplayName = duplicateDisplayName.trim();
     const nextSlug = normalizeInventorySlugInput(duplicateSlug);
     const nextDescription = duplicateDescription.trim();
+    const sourceDescription = sourceInventory.description?.trim() ?? "";
+    const targetDescription =
+      nextDescription === sourceDescription ? null : nextDescription;
 
     if (!nextDisplayName) {
       setDuplicateFormError("Enter a collection name before duplicating.");
@@ -369,7 +372,7 @@ export function OwnedCollectionPanel(props: {
       sourceInventory.slug,
       sourceInventory.display_name,
       {
-        target_description: nextDescription || null,
+        target_description: targetDescription,
         target_display_name: nextDisplayName,
         target_slug: nextSlug,
       },

@@ -1049,6 +1049,55 @@ describe("App", () => {
     });
   });
 
+  it("sends an empty duplicate description when the source description is cleared", async () => {
+    const user = userEvent.setup();
+    const sourceInventory = buildInventorySummary({
+      description: "Main demo inventory",
+      item_rows: 1,
+      total_cards: 2,
+    });
+
+    mockCollectionViewApp({
+      inventories: [sourceInventory],
+      items: [buildOwnedRow()],
+    });
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse({
+        inventory: buildInventoryCreateResponse({
+          description: "",
+          display_name: "Personal Collection Copy",
+          inventory_id: 2,
+          slug: "personal-collection-copy",
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Duplicate collection",
+    });
+    const descriptionField = within(dialog).getByRole("textbox", {
+      name: "Description (optional)",
+    });
+
+    expect(descriptionField).toHaveValue("Main demo inventory");
+    await user.clear(descriptionField);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    await waitFor(() => {
+      expect(duplicateInventory).toHaveBeenCalledWith("personal", {
+        target_description: "",
+        target_display_name: "Personal Collection Copy",
+        target_slug: "personal-collection-copy",
+      });
+    });
+  });
+
   it("keeps duplicate dialogs open after slug conflicts so the short name can be edited", async () => {
     const user = userEvent.setup();
     const sourceInventory = buildInventorySummary({
@@ -1120,7 +1169,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(duplicateInventory).toHaveBeenLastCalledWith("personal", {
-        target_description: "Main demo inventory",
+        target_description: null,
         target_display_name: "Personal Collection Copy",
         target_slug: "personal-collection-copy-2",
       });
