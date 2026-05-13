@@ -3,14 +3,19 @@ import type { FormEvent } from "react";
 
 import {
   ApiClientError,
+  createInventoryShareLink,
+  getInventoryShareLinkStatus,
   grantInventoryMember,
   listInventoryMembers,
   removeInventoryMember,
+  revokeInventoryShareLink,
+  rotateInventoryShareLink,
   updateInventoryMember,
 } from "../api";
 import type {
   InventoryMembership,
   InventoryMembershipRole,
+  InventoryShareLinkStatusResponse,
   InventorySummary,
 } from "../types";
 import type { NoticeTone } from "../uiTypes";
@@ -29,6 +34,7 @@ type MemberAction =
   | `remove:${string}`
   | `role:${string}`
   | null;
+type ShareLinkAction = "create" | "rotate" | "revoke" | null;
 
 function sortMembers(members: InventoryMembership[]) {
   return [...members].sort((left, right) =>
@@ -56,6 +62,22 @@ function formatRoleLabel(role: InventoryMembershipRole) {
   return MEMBERSHIP_ROLES.find((option) => option.value === role)?.label ?? role;
 }
 
+function formatShareLinkTimestamp(value: string | null) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export function InventoryAccessDialog(props: {
   canManageShare: boolean;
   inventory: InventorySummary;
@@ -71,6 +93,12 @@ export function InventoryAccessDialog(props: {
   const [membersStatus, setMembersStatus] =
     useState<"loading" | "ready" | "error">("loading");
   const [role, setRole] = useState<InventoryMembershipRole>("viewer");
+  const [shareLink, setShareLink] =
+    useState<InventoryShareLinkStatusResponse | null>(null);
+  const [shareLinkBusy, setShareLinkBusy] = useState<ShareLinkAction>(null);
+  const [shareLinkError, setShareLinkError] = useState<string | null>(null);
+  const [shareLinkStatus, setShareLinkStatus] =
+    useState<"loading" | "ready" | "error">("loading");
 
   async function refreshPermissionsAfterForbidden(error: unknown) {
     if (!(error instanceof ApiClientError) || error.status !== 403) {
@@ -115,6 +143,46 @@ export function InventoryAccessDialog(props: {
     }
 
     void loadMembers();
+
+    return () => {
+      canceled = true;
+    };
+  }, [props.canManageShare, props.inventory.slug]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function loadShareLinkStatus() {
+      if (!props.canManageShare) {
+        setShareLinkStatus("ready");
+        return;
+      }
+
+      setShareLinkStatus("loading");
+      setShareLinkError(null);
+      try {
+        const response = await getInventoryShareLinkStatus(props.inventory.slug);
+        if (canceled) {
+          return;
+        }
+        setShareLink(response);
+        setShareLinkStatus("ready");
+      } catch (error) {
+        await refreshPermissionsAfterForbidden(error);
+        if (canceled) {
+          return;
+        }
+        const message = toUserMessage(
+          error,
+          "Could not load public share link status.",
+        );
+        setShareLinkError(message);
+        props.onNotice(message, "error");
+        setShareLinkStatus("error");
+      }
+    }
+
+    void loadShareLinkStatus();
 
     return () => {
       canceled = true;
@@ -233,7 +301,89 @@ export function InventoryAccessDialog(props: {
     }
   }
 
+  async function handleCreateShareLink() {
+    if (!props.canManageShare) {
+      return;
+    }
+
+    setShareLinkBusy("create");
+    setShareLinkError(null);
+    try {
+      const response = await createInventoryShareLink(props.inventory.slug);
+      setShareLink(response);
+      props.onNotice("Created a public read-only share link.", "success");
+      await props.onPermissionsChanged(props.inventory.slug);
+    } catch (error) {
+      await refreshPermissionsAfterForbidden(error);
+      const message = toUserMessage(error, "Could not create the public share link.");
+      setShareLinkError(message);
+      props.onNotice(message, "error");
+    } finally {
+      setShareLinkBusy(null);
+    }
+  }
+
+  async function handleRotateShareLink() {
+    if (!props.canManageShare) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Rotate the public share link for ${props.inventory.display_name}? Existing public links will stop working.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setShareLinkBusy("rotate");
+    setShareLinkError(null);
+    try {
+      const response = await rotateInventoryShareLink(props.inventory.slug);
+      setShareLink(response);
+      props.onNotice("Rotated the public share link.", "success");
+      await props.onPermissionsChanged(props.inventory.slug);
+    } catch (error) {
+      await refreshPermissionsAfterForbidden(error);
+      const message = toUserMessage(error, "Could not rotate the public share link.");
+      setShareLinkError(message);
+      props.onNotice(message, "error");
+    } finally {
+      setShareLinkBusy(null);
+    }
+  }
+
+  async function handleRevokeShareLink() {
+    if (!props.canManageShare) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Revoke the public share link for ${props.inventory.display_name}? Public read-only access will stop immediately.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setShareLinkBusy("revoke");
+    setShareLinkError(null);
+    try {
+      const response = await revokeInventoryShareLink(props.inventory.slug);
+      setShareLink(response);
+      props.onNotice("Revoked the public share link.", "success");
+      await props.onPermissionsChanged(props.inventory.slug);
+    } catch (error) {
+      await refreshPermissionsAfterForbidden(error);
+      const message = toUserMessage(error, "Could not revoke the public share link.");
+      setShareLinkError(message);
+      props.onNotice(message, "error");
+    } finally {
+      setShareLinkBusy(null);
+    }
+  }
+
   const formDisabled = busyAction !== null || !props.canManageShare;
+  const shareLinkControlsDisabled = shareLinkBusy !== null || !props.canManageShare;
+  const activeShareLink = Boolean(shareLink?.active && shareLink.public_path);
 
   return (
     <ModalDialog
@@ -320,6 +470,92 @@ export function InventoryAccessDialog(props: {
           <p className="panel-hint">No explicit members are assigned yet.</p>
         )}
       </section>
+
+      {props.canManageShare ? (
+        <section className="form-section form-section-muted access-dialog-section">
+          <div className="form-section-header">
+            <strong>Public link</strong>
+            <span>Public links are read-only and can be rotated or revoked by owners.</span>
+          </div>
+
+          {shareLinkStatus === "loading" ? (
+            <PanelState
+              body="Checking whether this collection already has a public link."
+              eyebrow="Public link"
+              title="Loading share link"
+              variant="loading"
+            />
+          ) : shareLinkStatus === "error" ? (
+            <PanelState
+              body={shareLinkError || "Could not load public share link status."}
+              eyebrow="Public link"
+              title="Share link unavailable"
+              variant="error"
+            />
+          ) : activeShareLink ? (
+            <div className="access-share-link-card">
+              <div className="access-share-link-copy">
+                <span>Public path</span>
+                <code>{shareLink?.public_path}</code>
+              </div>
+              <div className="mini-grid">
+                <div className="meta-line">
+                  <span>Created</span>
+                  <strong>
+                    {formatShareLinkTimestamp(shareLink?.created_at ?? null)}
+                  </strong>
+                </div>
+                <div className="meta-line">
+                  <span>Updated</span>
+                  <strong>
+                    {formatShareLinkTimestamp(shareLink?.updated_at ?? null)}
+                  </strong>
+                </div>
+              </div>
+              {shareLinkError ? (
+                <p className="field-hint field-hint-error">{shareLinkError}</p>
+              ) : null}
+              <div className="table-bulk-pane-actions">
+                <button
+                  className="secondary-button"
+                  disabled={shareLinkControlsDisabled}
+                  onClick={() => void handleRotateShareLink()}
+                  type="button"
+                >
+                  {shareLinkBusy === "rotate" ? "Rotating..." : "Rotate link"}
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={shareLinkControlsDisabled}
+                  onClick={() => void handleRevokeShareLink()}
+                  type="button"
+                >
+                  {shareLinkBusy === "revoke" ? "Revoking..." : "Revoke link"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="access-share-link-card">
+              <p className="panel-hint">
+                No active public link. Create one when you want read-only access outside the member list.
+              </p>
+              {shareLinkError ? (
+                <p className="field-hint field-hint-error">{shareLinkError}</p>
+              ) : null}
+              <div className="table-bulk-pane-actions">
+                <button
+                  className="primary-button"
+                  disabled={shareLinkControlsDisabled}
+                  onClick={() => void handleCreateShareLink()}
+                  type="button"
+                >
+                  {shareLinkBusy === "create" ? "Creating..." : "Create share link"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {props.canManageShare ? (
         <form className="form-section access-grant-form" onSubmit={handleGrantSubmit}>

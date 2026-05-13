@@ -170,3 +170,32 @@
   gap: 12px;
   align-items: end;
 }
+
+.access-share-link-card {
+  display: grid;
+  gap: 12px;
+}
+
+.access-share-link-card .panel-hint {
+  margin-bottom: 0;
+}
+
+.access-share-link-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.access-share-link-copy span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.access-share-link-copy code {
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(2, 8, 23, 0.44);
+  color: var(--accent-paper);
+}

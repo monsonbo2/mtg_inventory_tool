@@ -3,14 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ApiClientError,
+  createInventoryShareLink,
+  getInventoryShareLinkStatus,
   grantInventoryMember,
   listInventoryMembers,
   removeInventoryMember,
+  revokeInventoryShareLink,
+  rotateInventoryShareLink,
   updateInventoryMember,
 } from "../api";
 import type {
   InventoryMembership,
   InventoryMembershipRole,
+  InventoryShareLinkStatusResponse,
+  InventoryShareLinkTokenResponse,
   InventorySummary,
 } from "../types";
 import type { NoticeTone } from "../uiTypes";
@@ -20,9 +27,13 @@ vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
   return {
     ...actual,
+    createInventoryShareLink: vi.fn(),
+    getInventoryShareLinkStatus: vi.fn(),
     grantInventoryMember: vi.fn(),
     listInventoryMembers: vi.fn(),
     removeInventoryMember: vi.fn(),
+    revokeInventoryShareLink: vi.fn(),
+    rotateInventoryShareLink: vi.fn(),
     updateInventoryMember: vi.fn(),
   };
 });
@@ -61,6 +72,35 @@ function buildMember(
   };
 }
 
+function buildShareLinkStatus(
+  overrides: Partial<InventoryShareLinkStatusResponse> = {},
+): InventoryShareLinkStatusResponse {
+  return {
+    active: false,
+    created_at: null,
+    inventory: "personal",
+    public_path: null,
+    revoked_at: null,
+    updated_at: null,
+    ...overrides,
+  };
+}
+
+function buildShareLinkToken(
+  overrides: Partial<InventoryShareLinkTokenResponse> = {},
+): InventoryShareLinkTokenResponse {
+  return {
+    active: true,
+    created_at: "2026-05-01T00:00:00Z",
+    inventory: "personal",
+    public_path: "/shared/inventories/v1.1.abc_def.sig",
+    revoked_at: null,
+    token: "v1.1.abc_def.sig",
+    updated_at: "2026-05-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderDialog(
   options: {
     canManageShare?: boolean;
@@ -89,10 +129,17 @@ function renderDialog(
 
 describe("InventoryAccessDialog", () => {
   beforeEach(() => {
+    vi.mocked(createInventoryShareLink).mockReset();
+    vi.mocked(getInventoryShareLinkStatus).mockReset();
     vi.mocked(grantInventoryMember).mockReset();
     vi.mocked(listInventoryMembers).mockReset();
     vi.mocked(removeInventoryMember).mockReset();
+    vi.mocked(revokeInventoryShareLink).mockReset();
+    vi.mocked(rotateInventoryShareLink).mockReset();
     vi.mocked(updateInventoryMember).mockReset();
+    vi.mocked(getInventoryShareLinkStatus).mockResolvedValue(
+      buildShareLinkStatus(),
+    );
   });
 
   afterEach(() => {
@@ -126,6 +173,88 @@ describe("InventoryAccessDialog", () => {
     expect(onNotice).toHaveBeenCalledWith(
       "Granted Viewer access to new-viewer@example.com.",
       "success",
+    );
+    expect(onPermissionsChanged).toHaveBeenCalledWith("personal");
+  });
+
+  it("creates, rotates, and revokes a public share link", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listInventoryMembers).mockResolvedValue([]);
+    vi.mocked(createInventoryShareLink).mockResolvedValue(
+      buildShareLinkToken({
+        public_path: "/shared/inventories/v1.1.first.sig",
+        token: "v1.1.first.sig",
+      }),
+    );
+    vi.mocked(rotateInventoryShareLink).mockResolvedValue(
+      buildShareLinkToken({
+        public_path: "/shared/inventories/v1.1.rotated.sig",
+        token: "v1.1.rotated.sig",
+        updated_at: "2026-05-02T00:00:00Z",
+      }),
+    );
+    vi.mocked(revokeInventoryShareLink).mockResolvedValue(
+      buildShareLinkStatus({
+        revoked_at: "2026-05-03T00:00:00Z",
+      }),
+    );
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { onNotice, onPermissionsChanged } = renderDialog();
+
+    expect(await screen.findByText(/No active public link/i)).toBeInTheDocument();
+    expect(getInventoryShareLinkStatus).toHaveBeenCalledWith("personal");
+
+    await user.click(screen.getByRole("button", { name: "Create share link" }));
+
+    await waitFor(() => {
+      expect(createInventoryShareLink).toHaveBeenCalledWith("personal");
+    });
+    expect(
+      await screen.findByText("/shared/inventories/v1.1.first.sig"),
+    ).toBeInTheDocument();
+    expect(onNotice).toHaveBeenCalledWith(
+      "Created a public read-only share link.",
+      "success",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Rotate link" }));
+
+    await waitFor(() => {
+      expect(rotateInventoryShareLink).toHaveBeenCalledWith("personal");
+    });
+    expect(
+      await screen.findByText("/shared/inventories/v1.1.rotated.sig"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Revoke link" }));
+
+    await waitFor(() => {
+      expect(revokeInventoryShareLink).toHaveBeenCalledWith("personal");
+    });
+    expect(await screen.findByText(/No active public link/i)).toBeInTheDocument();
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Rotate the public share link for Personal? Existing public links will stop working.",
+    );
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Revoke the public share link for Personal? Public read-only access will stop immediately.",
+    );
+    expect(onPermissionsChanged).toHaveBeenCalledTimes(3);
+  });
+
+  it("refreshes permissions when share-link status is rejected as forbidden", async () => {
+    vi.mocked(listInventoryMembers).mockResolvedValue([]);
+    vi.mocked(getInventoryShareLinkStatus).mockRejectedValue(
+      new ApiClientError("Owner access is required to manage share links.", {
+        code: "forbidden",
+        status: 403,
+      }),
+    );
+    const { onNotice, onPermissionsChanged } = renderDialog();
+
+    expect(await screen.findByText("Share link unavailable")).toBeInTheDocument();
+    expect(onNotice).toHaveBeenCalledWith(
+      "Owner access is required to manage share links.",
+      "error",
     );
     expect(onPermissionsChanged).toHaveBeenCalledWith("personal");
   });
@@ -184,5 +313,6 @@ describe("InventoryAccessDialog", () => {
     expect(screen.getByText("Management unavailable")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Grant access" })).not.toBeInTheDocument();
     expect(listInventoryMembers).not.toHaveBeenCalled();
+    expect(getInventoryShareLinkStatus).not.toHaveBeenCalled();
   });
 });
