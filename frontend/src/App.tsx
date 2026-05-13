@@ -17,6 +17,7 @@ import { useInventoryMutations } from "./hooks/useInventoryMutations";
 import {
   canCopyFromInventory,
   canExportInventory,
+  canManageShareInventory,
   canMoveFromInventory,
   getAvailableTransferTargetInventories,
   getTransferTargetInventories,
@@ -464,6 +465,7 @@ export default function App() {
     priceProvider: selectedPriceProvider,
     selectedInventoryRow,
     canExportSelectedInventory: canExportInventory(selectedInventoryRow),
+    canManageShareSelectedInventory: canManageShareInventory(selectedInventoryRow),
     exportInventoryBusy,
     selectedInventoryCanWrite,
     table: {
@@ -519,6 +521,7 @@ export default function App() {
     onPatch: handlePatchItem,
     onPriceProviderChange: handlePriceProviderChange,
     onCreateInventory: handleCreateInventory,
+    onReloadInventorySummaries: reloadInventorySummaries,
     onSelectTableItem: (
       itemId: number,
       options?: { additive?: boolean; range?: boolean },

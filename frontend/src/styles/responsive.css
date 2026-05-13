@@ -283,10 +283,18 @@
   .compact-row-footer,
   .compact-row-titlebar,
   .activity-drawer-header,
+  .access-member-row,
+  .access-grant-grid,
   .collection-header-controls,
   .result-card-header,
   .table-query-panel-header {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .access-member-row,
+  .access-grant-grid {
+    grid-template-columns: 1fr;
     align-items: stretch;
   }
 

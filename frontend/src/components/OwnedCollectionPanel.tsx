@@ -30,6 +30,7 @@ import type {
   InventoryTableSortState,
 } from "../tableViewHelpers";
 import { CompactInventoryList } from "./CompactInventoryList";
+import { InventoryAccessDialog } from "./InventoryAccessDialog";
 import { InventoryTableView } from "./InventoryTableView";
 import { OwnedItemCard } from "./OwnedItemCard";
 import { ModalDialog } from "./ui/ModalDialog";
@@ -38,6 +39,7 @@ import { PanelState } from "./ui/PanelState";
 type OwnedCollectionPanelState = {
   selectedInventoryRow: InventorySummary | null;
   canExportSelectedInventory: boolean;
+  canManageShareSelectedInventory: boolean;
   exportInventoryBusy: boolean;
   priceProvider: InventoryPriceProvider;
   selectedInventoryCanWrite: boolean;
@@ -125,12 +127,14 @@ type OwnedCollectionPanelActions = {
   }) => Promise<boolean>;
   onClearVisibleSelectedItems: () => void;
   onClearSelectedItems: () => void;
+  onReloadInventorySummaries: (preferredSlug?: string | null) => Promise<boolean>;
 };
 
 export function OwnedCollectionPanel(props: {
   actions: OwnedCollectionPanelActions;
   state: OwnedCollectionPanelState;
 }) {
+  const [accessDialogOpen, setAccessDialogOpen] = useState(false);
   const [priceProviderMenuOpen, setPriceProviderMenuOpen] = useState(false);
   const priceProviderMenuRef = useRef<HTMLDivElement | null>(null);
   const priceProviderTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -588,6 +592,17 @@ export function OwnedCollectionPanel(props: {
                   </button>
                 ) : null}
 
+                {props.state.selectedInventoryRow &&
+                props.state.canManageShareSelectedInventory ? (
+                  <button
+                    className="utility-button"
+                    onClick={() => setAccessDialogOpen(true)}
+                    type="button"
+                  >
+                    Manage access
+                  </button>
+                ) : null}
+
                 {showExportButton ? (
                   <button
                     className="utility-button"
@@ -749,6 +764,16 @@ export function OwnedCollectionPanel(props: {
             priceProvider={props.state.priceProvider}
           />
         </ModalDialog>
+      ) : null}
+
+      {accessDialogOpen && props.state.selectedInventoryRow ? (
+        <InventoryAccessDialog
+          canManageShare={props.state.canManageShareSelectedInventory}
+          inventory={props.state.selectedInventoryRow}
+          onClose={() => setAccessDialogOpen(false)}
+          onNotice={props.actions.onNotice}
+          onPermissionsChanged={props.actions.onReloadInventorySummaries}
+        />
       ) : null}
     </section>
   );

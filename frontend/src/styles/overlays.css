@@ -116,3 +116,57 @@
   gap: 14px;
 }
 
+.access-dialog-section {
+  align-content: start;
+}
+
+.access-member-list {
+  display: grid;
+  gap: 10px;
+}
+
+.access-member-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) auto;
+  gap: 12px;
+  align-items: end;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.access-member-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.access-member-copy strong {
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+}
+
+.access-member-copy span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.access-member-role-field {
+  gap: 6px;
+}
+
+.access-member-role-field > span {
+  font-size: 0.72rem;
+}
+
+.access-grant-form {
+  align-content: start;
+}
+
+.access-grant-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
+  gap: 12px;
+  align-items: end;
+}
