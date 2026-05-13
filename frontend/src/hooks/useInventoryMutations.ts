@@ -34,7 +34,9 @@ import type {
   InventoryCreateRequest,
   InventoryDuplicateRequest,
   InventoryPriceProvider,
+  InventoryTransferRequest,
   InventoryTransferMode,
+  InventoryTransferResponse,
   PatchInventoryItemRequest,
 } from "../types";
 import {
@@ -83,6 +85,18 @@ type UseInventoryMutationsOptions = {
   selectedItemIds: number[];
   selectedInventoryItemCount: number;
   clearSelectedItems: () => void;
+};
+
+type TransferItemsMutationRequest = {
+  mode: InventoryTransferMode;
+  targetInventorySlug: string | null;
+  targetInventoryLabel?: string | null;
+};
+
+type PreparedTransferItemsMutation = {
+  payload: InventoryTransferRequest;
+  sourceInventorySlug: string;
+  targetInventoryLabel?: string | null;
 };
 
 export function useInventoryMutations(options: UseInventoryMutationsOptions) {
@@ -589,6 +603,34 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
+  async function handleCreateTransferTargetInventory(
+    payload: InventoryCreateRequest,
+  ): Promise<InventoryCreateResult> {
+    setCreateInventoryBusy(true);
+    clearNotice();
+
+    try {
+      const response = await createInventory(payload);
+      const refreshed = await options.reloadInventorySummaries(options.selectedInventory);
+
+      if (!refreshed) {
+        showNotice(
+          `Created ${response.display_name}. The collection list could not refresh automatically.`,
+          "error",
+        );
+      }
+      return { ok: true, inventory: response };
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 409) {
+        return { ok: false, reason: "conflict" };
+      }
+      showNotice(toUserMessage(error, "Could not create the destination collection."), "error");
+      return { ok: false, reason: "error" };
+    } finally {
+      setCreateInventoryBusy(false);
+    }
+  }
+
   async function handleDuplicateInventory(
     sourceInventorySlug: string | null,
     sourceInventoryLabel: string | null | undefined,
@@ -888,31 +930,29 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     }
   }
 
-  async function handleTransferItems(request: {
-    mode: InventoryTransferMode;
-    targetInventorySlug: string | null;
-    targetInventoryLabel?: string | null;
-  }) {
+  function prepareTransferItemsMutation(
+    request: TransferItemsMutationRequest,
+  ): PreparedTransferItemsMutation | null {
     const sourceInventorySlug = requireSelectedInventory(
       "Select a collection before copying or moving cards.",
     );
     if (!sourceInventorySlug) {
-      return false;
+      return null;
     }
 
     if (!options.selectedItemIds.length) {
       showNotice("Select at least one entry before copying or moving cards.", "error");
-      return false;
+      return null;
     }
 
     if (!request.targetInventorySlug) {
       showNotice("Choose a destination collection before copying or moving cards.", "error");
-      return false;
+      return null;
     }
 
     if (request.targetInventorySlug === sourceInventorySlug) {
       showNotice("Choose a different destination collection.", "error");
-      return false;
+      return null;
     }
 
     const transferringEntireCollection =
@@ -924,14 +964,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
         `Copy and move currently support up to ${TRANSFER_MUTATION_MAX_ITEMS} selected entries at a time unless you select the entire collection.`,
         "error",
       );
-      return false;
+      return null;
     }
 
-    setTransferBusy(request.mode);
-    clearNotice();
-
-    try {
-      const response = await transferInventoryItems(sourceInventorySlug, {
+    return {
+      sourceInventorySlug,
+      targetInventoryLabel: request.targetInventoryLabel,
+      payload: {
         target_inventory_slug: request.targetInventorySlug,
         mode: request.mode,
         on_conflict: "merge",
@@ -939,33 +978,79 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
         ...(transferringEntireCollection
           ? { all_items: true as const }
           : { item_ids: options.selectedItemIds }),
-      });
+      },
+    };
+  }
+
+  async function submitTransferItemsMutation(
+    request: TransferItemsMutationRequest,
+    submitOptions: { dryRun: boolean },
+  ): Promise<InventoryTransferResponse | null> {
+    const preparedMutation = prepareTransferItemsMutation(request);
+    if (!preparedMutation) {
+      return null;
+    }
+
+    setTransferBusy(request.mode);
+    clearNotice();
+
+    try {
+      const response = await transferInventoryItems(
+        preparedMutation.sourceInventorySlug,
+        submitOptions.dryRun
+          ? {
+              ...preparedMutation.payload,
+              dry_run: true,
+            }
+          : preparedMutation.payload,
+      );
+
+      if (submitOptions.dryRun) {
+        return response;
+      }
 
       const transferredCount = response.requested_count;
       await refreshAfterMutation(
-        sourceInventorySlug,
+        preparedMutation.sourceInventorySlug,
         `${request.mode === "copy" ? "Copied" : "Moved"} ${transferredCount} entr${
           transferredCount === 1 ? "y" : "ies"
         } to ${
-          request.targetInventoryLabel || options.describeInventory(request.targetInventorySlug)
+          preparedMutation.targetInventoryLabel ||
+          options.describeInventory(preparedMutation.payload.target_inventory_slug)
         }.`,
       );
-      options.clearSelectedItems();
-      return true;
+      return response;
     } catch (error) {
       showNotice(
         toUserMessage(
           error,
-          request.mode === "copy"
-            ? "Could not copy the selected entries."
-            : "Could not move the selected entries.",
+          submitOptions.dryRun
+            ? request.mode === "copy"
+              ? "Could not preview copying the selected entries."
+              : "Could not preview moving the selected entries."
+            : request.mode === "copy"
+              ? "Could not copy the selected entries."
+              : "Could not move the selected entries.",
         ),
         "error",
       );
-      return false;
+      return null;
     } finally {
       setTransferBusy(null);
     }
+  }
+
+  async function handlePreviewTransferItems(request: TransferItemsMutationRequest) {
+    return submitTransferItemsMutation(request, { dryRun: true });
+  }
+
+  async function handleTransferItems(request: TransferItemsMutationRequest) {
+    const response = await submitTransferItemsMutation(request, { dryRun: false });
+    if (!response) {
+      return false;
+    }
+    options.clearSelectedItems();
+    return true;
   }
 
   return {
@@ -982,6 +1067,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
+    handleCreateTransferTargetInventory,
     handleDeleteItem,
     handleDuplicateInventory,
     handleExportInventoryCsv,
@@ -989,6 +1075,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     handleImportDecklist,
     handleImportDeckUrl,
     handlePatchItem,
+    handlePreviewTransferItems,
     handleTransferItems,
     notice,
     previewCsvImport,

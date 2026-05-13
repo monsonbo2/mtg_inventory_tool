@@ -15,6 +15,7 @@ import type {
   InventoryCreateResponse,
   InventoryDuplicateResponse,
   InventorySummary,
+  InventoryTransferResponse,
   OwnedInventoryItemsPageParams,
   OwnedInventoryItemsPageResponse,
   OwnedInventoryRow,
@@ -451,6 +452,28 @@ describe("App", () => {
       notes: null,
       acquisition_price: null,
       acquisition_currency: null,
+      ...overrides,
+    };
+  }
+
+  function buildTransferResponse(
+    overrides: Partial<InventoryTransferResponse> = {},
+  ): InventoryTransferResponse {
+    return {
+      source_inventory: "personal",
+      target_inventory: "trade",
+      mode: "copy",
+      dry_run: false,
+      selection_kind: "items",
+      requested_item_ids: [7],
+      requested_count: 1,
+      copied_count: 1,
+      moved_count: 0,
+      merged_count: 0,
+      failed_count: 0,
+      results_returned: 1,
+      results_truncated: false,
+      results: [],
       ...overrides,
     };
   }
@@ -5479,22 +5502,24 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(transferInventoryItems).mockResolvedValue({
-      source_inventory: "personal",
-      target_inventory: "trade",
-      mode: "copy",
-      dry_run: false,
-      selection_kind: "items",
-      requested_item_ids: [7, 8],
-      requested_count: 2,
-      copied_count: 2,
-      moved_count: 0,
-      merged_count: 0,
-      failed_count: 0,
-      results_returned: 2,
-      results_truncated: false,
-      results: [],
-    });
+    vi.mocked(transferInventoryItems)
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          dry_run: true,
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 2,
+          results_returned: 2,
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 2,
+          results_returned: 2,
+        }),
+      );
 
     render(<App />);
 
@@ -5504,10 +5529,27 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Copy to collection" }));
 
     const tray = screen.getByRole("region", { name: "Copy to collection tray" });
-    await user.click(within(tray).getByRole("button", { name: "Copy to collection" }));
+    await user.click(within(tray).getByRole("button", { name: "Preview copy" }));
 
     await waitFor(() => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
+        target_inventory_slug: "trade",
+        mode: "copy",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+        dry_run: true,
+      });
+    });
+    expect(await within(tray).findByText("Preview ready")).toBeInTheDocument();
+    expect(
+      within(tray).getByText("No failures found. Confirm to apply this copy."),
+    ).toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Confirm copy" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenLastCalledWith("personal", {
         target_inventory_slug: "trade",
         mode: "copy",
         item_ids: [7, 8],
@@ -5519,6 +5561,61 @@ describe("App", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Copied 2 entries to Trade Binder.",
     );
+  });
+
+  it("blocks final transfer commits when the dry-run preview has failures", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+      inventories: [
+        buildInventorySummary({
+          item_rows: 1,
+          total_cards: 2,
+        }),
+        buildInventorySummary({
+          slug: "trade",
+          display_name: "Trade Binder",
+          description: "Cards available for swaps",
+          item_rows: 4,
+          total_cards: 6,
+        }),
+      ],
+    });
+    vi.mocked(transferInventoryItems).mockResolvedValue(
+      buildTransferResponse({
+        dry_run: true,
+        requested_count: 1,
+        copied_count: 0,
+        failed_count: 1,
+        results: [
+          {
+            source_item_id: 7,
+            target_item_id: null,
+            status: "would_fail",
+            source_removed: false,
+            message: "Destination row cannot be merged.",
+          },
+        ],
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+    await user.click(screen.getByRole("button", { name: "Copy to collection" }));
+
+    const tray = screen.getByRole("region", { name: "Copy to collection tray" });
+    await user.click(within(tray).getByRole("button", { name: "Preview copy" }));
+
+    expect(await within(tray).findByText("Preview needs attention")).toBeInTheDocument();
+    expect(
+      within(tray).getByText("Entry 7: Destination row cannot be merged."),
+    ).toBeInTheDocument();
+    expect(within(tray).queryByRole("button", { name: "Confirm copy" })).not.toBeInTheDocument();
+    expect(transferInventoryItems).toHaveBeenCalledTimes(1);
   });
 
   it("filters non-transferable collections out of the table copy tray", async () => {
@@ -5601,22 +5698,30 @@ describe("App", () => {
       acquisition_price: null,
       acquisition_currency: null,
     });
-    vi.mocked(transferInventoryItems).mockResolvedValue({
-      source_inventory: "personal",
-      target_inventory: "archive-box",
-      mode: "move",
-      dry_run: false,
-      selection_kind: "items",
-      requested_item_ids: [7, 8],
-      requested_count: 2,
-      copied_count: 0,
-      moved_count: 2,
-      merged_count: 0,
-      failed_count: 0,
-      results_returned: 2,
-      results_truncated: false,
-      results: [],
-    });
+    vi.mocked(transferInventoryItems)
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          target_inventory: "archive-box",
+          mode: "move",
+          dry_run: true,
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 0,
+          moved_count: 2,
+          results_returned: 2,
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          target_inventory: "archive-box",
+          mode: "move",
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 0,
+          moved_count: 2,
+          results_returned: 2,
+        }),
+      );
 
     render(<App />);
 
@@ -5639,7 +5744,7 @@ describe("App", () => {
       within(tray).getByRole("textbox", { name: /Default tags/i }),
       "Archive, Cube",
     );
-    await user.click(within(tray).getByRole("button", { name: "Create and move" }));
+    await user.click(within(tray).getByRole("button", { name: "Create and preview" }));
 
     await waitFor(() => {
       expect(createInventory).toHaveBeenCalledWith({
@@ -5653,6 +5758,20 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
+        target_inventory_slug: "archive-box",
+        mode: "move",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+        dry_run: true,
+      });
+    });
+    expect(await within(tray).findByText("Preview ready")).toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Confirm move" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenLastCalledWith("personal", {
         target_inventory_slug: "archive-box",
         mode: "move",
         item_ids: [7, 8],

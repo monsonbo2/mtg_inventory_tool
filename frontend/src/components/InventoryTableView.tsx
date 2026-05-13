@@ -12,6 +12,7 @@ import type {
   InventoryPriceProvider,
   InventorySummary,
   InventoryTransferMode,
+  InventoryTransferResponse,
   LanguageCode,
   OwnedInventoryRow,
 } from "../types";
@@ -207,7 +208,14 @@ export function InventoryTableView(props: {
   onBulkMutationSubmit: (
     payload: BulkInventoryItemMutationRequest,
   ) => Promise<boolean>;
-  onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
+  onCreateTransferTargetInventory: (
+    payload: InventoryCreateRequest,
+  ) => Promise<InventoryCreateResult>;
+  onPreviewTransferItems: (options: {
+    mode: InventoryTransferMode;
+    targetInventorySlug: string | null;
+    targetInventoryLabel?: string | null;
+  }) => Promise<InventoryTransferResponse | null>;
   onSelectItem: (itemId: number, options?: { additive?: boolean; range?: boolean }) => void;
   onToggleItemSelection: (itemId: number) => void;
   onSelectAllVisible: () => void;
@@ -245,6 +253,12 @@ export function InventoryTableView(props: {
   const [transferCollectionSlugTouched, setTransferCollectionSlugTouched] = useState(false);
   const [showTransferCollectionSlugField, setShowTransferCollectionSlugField] = useState(false);
   const [transferFormError, setTransferFormError] = useState<string | null>(null);
+  const [transferPreview, setTransferPreview] = useState<InventoryTransferResponse | null>(null);
+  const [transferPreviewRequest, setTransferPreviewRequest] = useState<{
+    mode: InventoryTransferMode;
+    targetInventorySlug: string;
+    targetInventoryLabel: string;
+  } | null>(null);
   const [floatingTableHeader, setFloatingTableHeader] =
     useState<FloatingTableHeaderState>(INACTIVE_FLOATING_TABLE_HEADER);
   const headerCheckboxRefs = useRef<Array<HTMLInputElement | null>>([]);
@@ -471,6 +485,7 @@ export function InventoryTableView(props: {
     }
     if ((activeTray === "copy" || activeTray === "move") && !hasSelection) {
       setActiveTray(null);
+      clearTransferPreview();
     }
   }, [activeTray, hasBulkMutationTarget, hasSelection]);
 
@@ -481,6 +496,7 @@ export function InventoryTableView(props: {
       (activeTray === "move" && !props.canMoveFromSelectedInventory)
     ) {
       setActiveTray(null);
+      clearTransferPreview();
     }
   }, [
     activeTray,
@@ -488,6 +504,10 @@ export function InventoryTableView(props: {
     props.canCopyFromSelectedInventory,
     props.canMoveFromSelectedInventory,
   ]);
+
+  useEffect(() => {
+    clearTransferPreview();
+  }, [props.selectedItemIds, props.collectionItemCount, activeTransferMode]);
 
   useEffect(() => {
     setTransferTargetInventorySlug((currentTargetInventorySlug) =>
@@ -559,6 +579,11 @@ export function InventoryTableView(props: {
     setTransferFormError(null);
   }
 
+  function clearTransferPreview() {
+    setTransferPreview(null);
+    setTransferPreviewRequest(null);
+  }
+
   function openTray(nextTray: Exclude<ActiveTableTray, null>) {
     if (
       (nextTray === "bulk" && !hasBulkMutationTarget) ||
@@ -569,6 +594,7 @@ export function InventoryTableView(props: {
     }
 
     setTransferFormError(null);
+    clearTransferPreview();
     setActiveTray((currentTray) => (currentTray === nextTray ? null : nextTray));
     if (nextTray === "copy" && !props.availableCopyTargetInventories.length) {
       setTransferTargetMode("create");
@@ -723,6 +749,7 @@ export function InventoryTableView(props: {
     if (!transferCollectionSlugTouched) {
       setTransferCollectionSlug(normalizeInventorySlugInput(value));
     }
+    clearTransferPreview();
     if (transferFormError) {
       setTransferFormError(null);
     }
@@ -731,6 +758,7 @@ export function InventoryTableView(props: {
   function handleTransferCollectionSlugChange(value: string) {
     setTransferCollectionSlugTouched(true);
     setTransferCollectionSlug(normalizeInventorySlugInput(value));
+    clearTransferPreview();
     if (transferFormError) {
       setTransferFormError(null);
     }
@@ -739,10 +767,38 @@ export function InventoryTableView(props: {
   function handleTransferSubmitModeChange(nextMode: TransferTargetMode) {
     setTransferTargetMode(nextMode);
     setTransferFormError(null);
+    clearTransferPreview();
     if (nextMode === "create") {
       return;
     }
     resetTransferCreateForm();
+  }
+
+  async function previewTransferToTarget(options: {
+    mode: InventoryTransferMode;
+    targetInventorySlug: string;
+    targetInventoryLabel: string;
+  }) {
+    const preview = await props.onPreviewTransferItems({
+      mode: options.mode,
+      targetInventorySlug: options.targetInventorySlug,
+      targetInventoryLabel: options.targetInventoryLabel,
+    });
+
+    if (!preview) {
+      return false;
+    }
+
+    setTransferPreview(preview);
+    setTransferPreviewRequest(options);
+    setTransferFormError(
+      preview.failed_count > 0
+        ? `${preview.failed_count} entr${
+            preview.failed_count === 1 ? "y" : "ies"
+          } cannot be ${options.mode === "copy" ? "copied" : "moved"} yet.`
+        : null,
+    );
+    return true;
   }
 
   async function handleTransferSubmit() {
@@ -761,15 +817,11 @@ export function InventoryTableView(props: {
         return;
       }
 
-      const didTransfer = await props.onTransferItems({
+      await previewTransferToTarget({
         mode: activeTransferMode,
         targetInventorySlug: targetInventory.slug,
         targetInventoryLabel: targetInventory.display_name,
       });
-
-      if (didTransfer) {
-        setActiveTray(null);
-      }
       return;
     }
 
@@ -800,7 +852,7 @@ export function InventoryTableView(props: {
       createPayload.default_tags = nextDefaultTags;
     }
 
-    const createResult = await props.onCreateInventory(createPayload);
+    const createResult = await props.onCreateTransferTargetInventory(createPayload);
     if (!createResult.ok) {
       if (createResult.reason === "conflict") {
         setShowTransferCollectionSlugField(true);
@@ -811,13 +863,28 @@ export function InventoryTableView(props: {
       return;
     }
 
-    const didTransfer = await props.onTransferItems({
+    setTransferTargetInventorySlug(createResult.inventory.slug);
+    await previewTransferToTarget({
       mode: activeTransferMode,
       targetInventorySlug: createResult.inventory.slug,
       targetInventoryLabel: createResult.inventory.display_name,
     });
+  }
 
+  async function handleTransferConfirm() {
+    if (!transferPreview || !transferPreviewRequest) {
+      setTransferFormError("Preview the transfer before confirming.");
+      return;
+    }
+
+    if (transferPreview.failed_count > 0) {
+      setTransferFormError("Resolve preview failures before confirming this transfer.");
+      return;
+    }
+
+    const didTransfer = await props.onTransferItems(transferPreviewRequest);
     if (didTransfer) {
+      clearTransferPreview();
       resetTransferCreateForm();
       setActiveTray(null);
     }
@@ -1037,7 +1104,10 @@ export function InventoryTableView(props: {
           </div>
           <button
             className="secondary-button table-bulk-tray-close"
-            onClick={() => setActiveTray(null)}
+            onClick={() => {
+              clearTransferPreview();
+              setActiveTray(null);
+            }}
             type="button"
           >
             Close
@@ -1287,6 +1357,113 @@ export function InventoryTableView(props: {
 
     const title =
       activeTransferMode === "copy" ? "Copy to collection" : "Move to collection";
+    const previewActionLabel = activeTransferMode === "copy" ? "Preview copy" : "Preview move";
+    const confirmActionLabel = activeTransferMode === "copy" ? "Confirm copy" : "Confirm move";
+    const previewFailedResults =
+      transferPreview?.results.filter((result) => result.status === "would_fail") ?? [];
+    const previewReady = transferPreview !== null && transferPreview.failed_count === 0;
+
+    function renderTransferPreview() {
+      if (!transferPreview || !transferPreviewRequest) {
+        return null;
+      }
+
+      return (
+        <section aria-label="Transfer preview" className="table-transfer-preview">
+          <div className="table-transfer-preview-header">
+            <strong>
+              {transferPreview.failed_count > 0 ? "Preview needs attention" : "Preview ready"}
+            </strong>
+            <span>
+              {transferPreview.requested_count} entr
+              {transferPreview.requested_count === 1 ? "y" : "ies"} checked for{" "}
+              {transferPreviewRequest.targetInventoryLabel}.
+            </span>
+          </div>
+
+          <div className="table-transfer-preview-grid">
+            <div className="summary-chip">
+              <span>{activeTransferMode === "copy" ? "Would copy" : "Would move"}</span>
+              <strong>
+                {activeTransferMode === "copy"
+                  ? transferPreview.copied_count
+                  : transferPreview.moved_count}
+              </strong>
+            </div>
+            <div className="summary-chip">
+              <span>Would merge</span>
+              <strong>{transferPreview.merged_count}</strong>
+            </div>
+            <div className="summary-chip">
+              <span>Would fail</span>
+              <strong>{transferPreview.failed_count}</strong>
+            </div>
+          </div>
+
+          {transferPreview.failed_count > 0 ? (
+            <div className="table-transfer-preview-failures">
+              {previewFailedResults.length ? (
+                previewFailedResults.slice(0, 4).map((result) => (
+                  <p key={result.source_item_id}>
+                    Entry {result.source_item_id}: {result.message || "Transfer would fail."}
+                  </p>
+                ))
+              ) : (
+                <p>
+                  {transferPreview.failed_count} entr
+                  {transferPreview.failed_count === 1 ? "y" : "ies"} would fail. The preview did
+                  not return row-level details.
+                </p>
+              )}
+              {previewFailedResults.length &&
+              transferPreview.failed_count > previewFailedResults.length ? (
+                <p>
+                  {transferPreview.failed_count - previewFailedResults.length} more failure
+                  {transferPreview.failed_count - previewFailedResults.length === 1
+                    ? ""
+                    : "s"}{" "}
+                  not shown.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="field-hint field-hint-success">
+              No failures found. Confirm to apply this {activeTransferMode}.
+            </p>
+          )}
+
+          {transferPreview.results_truncated ? (
+            <p className="field-hint field-hint-info">
+              Preview rows are truncated, but summary counts include the full selection.
+            </p>
+          ) : null}
+
+          <div className="table-bulk-pane-actions">
+            {previewReady ? (
+              <button
+                className="secondary-button"
+                disabled={transferSubmitBusy}
+                onClick={() => void handleTransferConfirm()}
+                type="button"
+              >
+                {transferSubmitBusy ? "Applying..." : confirmActionLabel}
+              </button>
+            ) : null}
+            <button
+              className="secondary-button"
+              disabled={transferSubmitBusy}
+              onClick={() => {
+                clearTransferPreview();
+                setTransferFormError(null);
+              }}
+              type="button"
+            >
+              Change target
+            </button>
+          </div>
+        </section>
+      );
+    }
 
     return (
       <section aria-label={`${title} tray`} className="table-bulk-tray table-transfer-tray">
@@ -1357,8 +1534,9 @@ export function InventoryTableView(props: {
                 <span>Destination collection</span>
                 <select
                   className="text-input"
-                  disabled={transferSubmitBusy}
+                  disabled={transferSubmitBusy || transferPreview !== null}
                   onChange={(event) => {
+                    clearTransferPreview();
                     setTransferTargetInventorySlug(event.target.value || null);
                     if (transferFormError) {
                       setTransferFormError(null);
@@ -1387,20 +1565,20 @@ export function InventoryTableView(props: {
               <p className="field-hint field-hint-error">{transferFormError}</p>
             ) : null}
 
-            <div className="table-bulk-pane-actions">
-              <button
-                className="secondary-button"
-                disabled={!activeTransferTargetInventories.length || transferSubmitBusy}
-                onClick={() => void handleTransferSubmit()}
-                type="button"
-              >
-                {transferSubmitBusy
-                  ? activeTransferMode === "copy"
-                    ? "Copying..."
-                    : "Moving..."
-                  : title}
-              </button>
-            </div>
+            {renderTransferPreview()}
+
+            {!transferPreview ? (
+              <div className="table-bulk-pane-actions">
+                <button
+                  className="secondary-button"
+                  disabled={!activeTransferTargetInventories.length || transferSubmitBusy}
+                  onClick={() => void handleTransferSubmit()}
+                  type="button"
+                >
+                  {transferSubmitBusy ? "Previewing..." : previewActionLabel}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1410,7 +1588,9 @@ export function InventoryTableView(props: {
               <span>Collection name</span>
               <input
                 className="text-input"
-                disabled={props.createInventoryBusy || transferSubmitBusy}
+                disabled={
+                  props.createInventoryBusy || transferSubmitBusy || transferPreview !== null
+                }
                 onChange={(event) => handleTransferCollectionNameChange(event.target.value)}
                 placeholder="e.g. Archive Box"
                 type="text"
@@ -1423,7 +1603,9 @@ export function InventoryTableView(props: {
                 <span>Short name</span>
                 <input
                   className="text-input"
-                  disabled={props.createInventoryBusy || transferSubmitBusy}
+                  disabled={
+                    props.createInventoryBusy || transferSubmitBusy || transferPreview !== null
+                  }
                   onChange={(event) => handleTransferCollectionSlugChange(event.target.value)}
                   placeholder="archive-box"
                   type="text"
@@ -1439,8 +1621,9 @@ export function InventoryTableView(props: {
               <span>Description (optional)</span>
               <textarea
                 className="text-input textarea-input"
-                disabled={props.createInventoryBusy || transferSubmitBusy}
+                disabled={props.createInventoryBusy || transferSubmitBusy || transferPreview !== null}
                 onChange={(event) => {
+                  clearTransferPreview();
                   setTransferCollectionDescription(event.target.value);
                   if (transferFormError) {
                     setTransferFormError(null);
@@ -1456,8 +1639,9 @@ export function InventoryTableView(props: {
               <span>Default location</span>
               <input
                 className="text-input"
-                disabled={props.createInventoryBusy || transferSubmitBusy}
+                disabled={props.createInventoryBusy || transferSubmitBusy || transferPreview !== null}
                 onChange={(event) => {
+                  clearTransferPreview();
                   setTransferCollectionDefaultLocation(event.target.value);
                   if (transferFormError) {
                     setTransferFormError(null);
@@ -1476,8 +1660,9 @@ export function InventoryTableView(props: {
               <span>Default tags</span>
               <input
                 className="text-input"
-                disabled={props.createInventoryBusy || transferSubmitBusy}
+                disabled={props.createInventoryBusy || transferSubmitBusy || transferPreview !== null}
                 onChange={(event) => {
+                  clearTransferPreview();
                   setTransferCollectionDefaultTags(event.target.value);
                   if (transferFormError) {
                     setTransferFormError(null);
@@ -1496,22 +1681,22 @@ export function InventoryTableView(props: {
               <p className="field-hint field-hint-error">{transferFormError}</p>
             ) : null}
 
-            <div className="table-bulk-pane-actions">
-              <button
-                className="secondary-button"
-                disabled={props.createInventoryBusy || transferSubmitBusy}
-                onClick={() => void handleTransferSubmit()}
-                type="button"
-              >
-                {props.createInventoryBusy || transferSubmitBusy
-                  ? activeTransferMode === "copy"
-                    ? "Copying..."
-                    : "Moving..."
-                  : activeTransferMode === "copy"
-                    ? "Create and copy"
-                    : "Create and move"}
-              </button>
-            </div>
+            {renderTransferPreview()}
+
+            {!transferPreview ? (
+              <div className="table-bulk-pane-actions">
+                <button
+                  className="secondary-button"
+                  disabled={props.createInventoryBusy || transferSubmitBusy}
+                  onClick={() => void handleTransferSubmit()}
+                  type="button"
+                >
+                  {props.createInventoryBusy || transferSubmitBusy
+                    ? "Previewing..."
+                    : "Create and preview"}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>

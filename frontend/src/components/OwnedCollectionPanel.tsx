@@ -8,6 +8,7 @@ import type {
   InventoryPriceProvider,
   InventorySummary,
   InventoryTransferMode,
+  InventoryTransferResponse,
   OwnedInventoryRow,
   PatchInventoryItemRequest,
 } from "../types";
@@ -106,6 +107,9 @@ type OwnedCollectionPanelActions = {
   onCreateInventory: (
     payload: InventoryCreateRequest,
   ) => Promise<InventoryCreateResult>;
+  onCreateTransferTargetInventory: (
+    payload: InventoryCreateRequest,
+  ) => Promise<InventoryCreateResult>;
   onFocusImport: () => void;
   onFocusSearch: () => void;
   onBrowsePageChange: (nextPage: number) => void;
@@ -134,6 +138,11 @@ type OwnedCollectionPanelActions = {
     targetInventorySlug: string | null;
     targetInventoryLabel?: string | null;
   }) => Promise<boolean>;
+  onPreviewTransferItems: (options: {
+    mode: InventoryTransferMode;
+    targetInventorySlug: string | null;
+    targetInventoryLabel?: string | null;
+  }) => Promise<InventoryTransferResponse | null>;
   onClearVisibleSelectedItems: () => void;
   onClearSelectedItems: () => void;
   onReloadInventorySummaries: (preferredSlug?: string | null) => Promise<boolean>;
@@ -569,10 +578,11 @@ export function OwnedCollectionPanel(props: {
               onBulkMutationSubmit={props.actions.onBulkMutationSubmit}
               onClearSelection={props.actions.onClearSelectedItems}
               onClearVisibleSelection={props.actions.onClearVisibleSelectedItems}
-              onCreateInventory={props.actions.onCreateInventory}
+              onCreateTransferTargetInventory={props.actions.onCreateTransferTargetInventory}
               onFiltersChange={props.actions.onTableFiltersChange}
               onOpenDetails={props.actions.onOpenItemDetails}
               onPageChange={props.actions.onTablePageChange}
+              onPreviewTransferItems={props.actions.onPreviewTransferItems}
               onSelectItem={props.actions.onSelectTableItem}
               onSelectAllVisible={props.actions.onSelectAllVisibleItems}
               onSortChange={props.actions.onTableSortChange}

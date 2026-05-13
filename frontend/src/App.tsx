@@ -347,10 +347,12 @@ function AuthenticatedApp() {
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
+    handleCreateTransferTargetInventory,
     handleDeleteItem,
     handleDuplicateInventory,
     handleExportInventoryCsv,
     handlePatchItem,
+    handlePreviewTransferItems,
     handleTransferItems,
     notice,
     previewCsvImport,
@@ -540,6 +542,7 @@ function AuthenticatedApp() {
     onPatch: handlePatchItem,
     onPriceProviderChange: handlePriceProviderChange,
     onCreateInventory: handleCreateInventory,
+    onCreateTransferTargetInventory: handleCreateTransferTargetInventory,
     onReloadInventorySummaries: reloadInventorySummaries,
     onSelectTableItem: (
       itemId: number,
@@ -547,6 +550,7 @@ function AuthenticatedApp() {
     ) =>
       handleSelectTableItem(itemId, options, activeTableItems),
     onSelectAllVisibleItems: () => handleSelectAllVisibleItems(activeTableItems),
+    onPreviewTransferItems: handlePreviewTransferItems,
     onTransferItems: handleTransferItems,
     onTableFiltersChange: handleTableFiltersChange,
     onTablePageChange: handleTablePageChange,
