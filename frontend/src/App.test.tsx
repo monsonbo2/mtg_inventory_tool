@@ -20,6 +20,7 @@ import type {
   OwnedInventoryItemsPageResponse,
   OwnedInventoryRow,
 } from "./types";
+import { FRONTEND_VIEW_PREFERENCES_STORAGE_KEY } from "./viewPreferences";
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -4015,6 +4016,42 @@ describe("App", () => {
     expect(listInventoryItems).toHaveBeenCalledTimes(1);
     expect(listInventoryItemsPage).toHaveBeenCalledTimes(1);
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists the selected collection view on the current device", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+
+    const { unmount } = render(<App />);
+
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    await user.click(screen.getByRole("button", { name: "Table" }));
+
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(FRONTEND_VIEW_PREFERENCES_STORAGE_KEY) || "{}",
+      ),
+    ).toEqual({ collectionView: "table" });
+
+    unmount();
+    render(<App />);
+
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(FRONTEND_VIEW_PREFERENCES_STORAGE_KEY) || "{}",
+      ),
+    ).toEqual({ collectionView: "browse" });
   });
 
   it("shows table page errors inside table mode without replacing the collection shell", async () => {
