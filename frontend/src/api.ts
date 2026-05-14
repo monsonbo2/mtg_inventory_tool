@@ -98,6 +98,10 @@ export class ApiClientError extends Error {
   }
 }
 
+export function isAuthenticationRequiredError(error: unknown) {
+  return error instanceof ApiClientError && error.status === 401;
+}
+
 function buildUrl(path: string, query?: Record<string, QueryValue>) {
   const url = new URL(`${apiBaseUrl}${path}`, window.location.origin);
 

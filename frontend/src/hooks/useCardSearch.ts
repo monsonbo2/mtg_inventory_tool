@@ -6,6 +6,7 @@ import type {
 
 import {
   getCardPrintingSummary,
+  isAuthenticationRequiredError,
   listCardPrintings,
   searchCardNames,
 } from "../api";
@@ -32,6 +33,7 @@ const SEARCH_GROUP_PREFETCH_LIMIT =
 type SearchPrintingsMode = "primary" | "all";
 
 type UseCardSearchOptions = {
+  onAuthenticationRequired?: () => void;
   onSearchActivity?: () => void;
 };
 
@@ -117,6 +119,12 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     searchScopeRef.current = searchScope;
   }, [searchScope]);
 
+  function notifyAuthenticationRequired(error: unknown) {
+    if (isAuthenticationRequiredError(error)) {
+      options.onAuthenticationRequired?.();
+    }
+  }
+
   useEffect(() => {
     const trimmed = searchQuery.trim();
     const normalizedQuery = trimmed.toLowerCase();
@@ -179,6 +187,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
           if (requestId !== suggestionLookupRequestIdRef.current) {
             return;
           }
+          notifyAuthenticationRequired(error);
           setSuggestionResults([]);
           setSuggestionError(toUserMessage(error, "Suggestions could not load."));
           setSuggestionStatus("error");
@@ -223,7 +232,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         delete suggestionThumbnailPromisesRef.current[cacheKey];
         return thumbnail;
       })
-      .catch(() => {
+      .catch((error) => {
+        notifyAuthenticationRequired(error);
         delete suggestionThumbnailPromisesRef.current[cacheKey];
         return {
           image_uri_normal: row.image_uri_normal,
@@ -443,6 +453,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       if (requestId !== searchRequestIdRef.current) {
         return;
       }
+      notifyAuthenticationRequired(error);
       if (loadingMore) {
         setSearchLoadMoreError(
           toUserMessage(error, "More matching cards could not load."),
@@ -723,6 +734,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         return nextPrintings;
       })
       .catch((error) => {
+        notifyAuthenticationRequired(error);
         delete printingLookupPromisesRef.current[cacheKey];
         throw error;
       });

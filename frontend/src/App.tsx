@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import { ActivityDrawer } from "./components/ActivityDrawer";
 import { AuditFeed } from "./components/AuditFeed";
@@ -14,6 +20,7 @@ import { useCollectionViewState } from "./hooks/useCollectionViewState";
 import { useInventoryOverview } from "./hooks/useInventoryOverview";
 import { useInventoryTablePage } from "./hooks/useInventoryTablePage";
 import { useInventoryMutations } from "./hooks/useInventoryMutations";
+import { getSignInUrl } from "./authConfig";
 import {
   canCopyFromInventory,
   canExportInventory,
@@ -31,9 +38,15 @@ const STICKY_SEARCH_ROW_TOP_OFFSET = 14;
 
 function getAppShellState(options: {
   accessSummary: AccessSummaryResponse | null;
+  authRequired: boolean;
   inventoryCount: number;
+  inventoryErrorStatus: number | null;
   inventoryStatus: "idle" | "loading" | "ready" | "error";
 }): AppShellState {
+  if (options.authRequired || options.inventoryErrorStatus === 401) {
+    return "signed_out";
+  }
+
   if (options.inventoryCount > 0) {
     return "ready";
   }
@@ -70,6 +83,21 @@ function getShellStatePanelContent(
           eyebrow: "Search",
           title: "Preparing search",
           variant: "loading" as const,
+        },
+      };
+    case "signed_out":
+      return {
+        collection: {
+          body: "Sign in to view your collections, values, tags, and recent activity.",
+          eyebrow: "Collection",
+          title: "Sign in required",
+          variant: "idle" as const,
+        },
+        search: {
+          body: "Card search and inventory tools unlock after sign-in.",
+          eyebrow: "Search",
+          title: "Sign in required",
+          variant: "idle" as const,
         },
       };
     case "bootstrap_available":
@@ -140,13 +168,18 @@ export default function App() {
     useState<string | null>(null);
   const [selectedPriceProvider, setSelectedPriceProvider] =
     useState<InventoryPriceProvider>(DEFAULT_PRICE_PROVIDER);
+  const [authRequired, setAuthRequired] = useState(false);
   const workspaceTopRef = useRef<HTMLDivElement | null>(null);
+  const handleAuthenticationRequired = useCallback(() => {
+    setAuthRequired(true);
+  }, []);
   const {
     accessSummary,
     auditEvents,
     describeInventory,
     inventories,
     inventoryError,
+    inventoryErrorStatus,
     inventoryStatus,
     items,
     loadInventoryOverview,
@@ -159,6 +192,7 @@ export default function App() {
     viewInventorySlug,
     viewStatus,
   } = useInventoryOverview({
+    onAuthenticationRequired: handleAuthenticationRequired,
     priceProvider: selectedPriceProvider,
   });
   const isCollectionSwitchPending =
@@ -210,6 +244,7 @@ export default function App() {
     suggestionResults,
     suggestionStatus,
   } = useCardSearch({
+    onAuthenticationRequired: handleAuthenticationRequired,
     onSearchActivity() {
       clearNotice();
     },
@@ -258,9 +293,11 @@ export default function App() {
     enabled:
       collectionView === "table" &&
       selectedInventory !== null &&
+      !authRequired &&
       !isCollectionSwitchPending,
     filters: tableFilters,
     inventorySlug: selectedInventory,
+    onAuthenticationRequired: handleAuthenticationRequired,
     onPageOutOfRange: handleTablePageChange,
     page: tablePage,
     priceProvider: selectedPriceProvider,
@@ -346,6 +383,7 @@ export default function App() {
     describeInventory,
     loadInventoryOverview,
     markCollectionItemsStale,
+    onAuthenticationRequired: handleAuthenticationRequired,
     priceProvider: selectedPriceProvider,
     refreshInventoryAudit,
     refreshActiveTablePage: tablePageState.refreshTablePage,
@@ -536,7 +574,9 @@ export default function App() {
   const toastNotice = notice?.tone === "success" ? notice : null;
   const appShellState = getAppShellState({
     accessSummary,
+    authRequired,
     inventoryCount: inventories.length,
+    inventoryErrorStatus,
     inventoryStatus,
   });
   const shellStatePanels =
@@ -559,6 +599,20 @@ export default function App() {
   useEffect(() => {
     setCollectionMenuOpen(false);
   }, [appShellState, selectedInventory]);
+
+  useEffect(() => {
+    if (appShellState !== "ready") {
+      setActivityOpen(false);
+    }
+  }, [appShellState]);
+
+  function renderSignInAction() {
+    return (
+      <a className="primary-button" href={getSignInUrl()}>
+        Sign in
+      </a>
+    );
+  }
 
   function handleCreateCollectionRequest() {
     setCollectionMenuOpen(false);
@@ -771,6 +825,9 @@ export default function App() {
               onSelectInventory={setSelectedInventory}
               selectedInventory={selectedInventory}
               selectedInventoryRow={selectedInventoryRow}
+              signInAction={
+                appShellState === "signed_out" ? renderSignInAction() : null
+              }
             />
           </aside>
 
@@ -789,6 +846,7 @@ export default function App() {
               />
             ) : (
               <PanelState
+                actions={appShellState === "signed_out" ? renderSignInAction() : null}
                 body={shellStatePanels!.search.body}
                 eyebrow={shellStatePanels!.search.eyebrow}
                 title={shellStatePanels!.search.title}
@@ -806,6 +864,7 @@ export default function App() {
             />
           ) : (
             <PanelState
+              actions={appShellState === "signed_out" ? renderSignInAction() : null}
               body={shellStatePanels!.collection.body}
               eyebrow={shellStatePanels!.collection.eyebrow}
               title={shellStatePanels!.collection.title}

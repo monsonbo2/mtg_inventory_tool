@@ -82,6 +82,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  window.history.pushState({}, "", "/");
+  window.localStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -364,6 +366,13 @@ describe("App", () => {
       default_inventory_slug: null,
       ...overrides,
     };
+  }
+
+  function buildAuthenticationRequiredError() {
+    return new ApiClientError("Authentication required.", {
+      code: "authentication_required",
+      status: 401,
+    });
   }
 
   function buildDecklistImportResponse(overrides: Record<string, unknown> = {}) {
@@ -1433,25 +1442,43 @@ describe("App", () => {
     );
   });
 
-  it("shows a generic collections-unavailable shell state when collection loading fails with 401", async () => {
-    vi.mocked(getAccessSummary).mockRejectedValue(
-      new ApiClientError("Authentication required.", {
-        code: "authentication_required",
-        status: 401,
-      }),
-    );
+  it("shows a sign-in shell state when collection loading fails with 401", async () => {
+    window.history.pushState({}, "", "/collections?view=table#current");
+    vi.mocked(getAccessSummary).mockRejectedValue(buildAuthenticationRequiredError());
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
 
     render(<App />);
 
-    expect(await screen.findByText("Collections unavailable")).toBeInTheDocument();
-    expect(screen.getByText("Search not ready yet")).toBeInTheDocument();
-    expect(screen.getByText("Collection view not ready yet")).toBeInTheDocument();
+    expect(await screen.findAllByText("Sign in required")).toHaveLength(3);
+    expect(screen.getAllByRole("link", { name: "Sign in" })[0]).toHaveAttribute(
+      "href",
+      "/oauth2/start?rd=%2Fcollections%3Fview%3Dtable%23current",
+    );
     expect(screen.queryByText("Authentication required.")).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Quick Add and Card Search" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create Collection" })).not.toBeInTheDocument();
     expect(listInventories).not.toHaveBeenCalled();
+  });
+
+  it("moves an open app to the sign-in state when the session expires", async () => {
+    const user = userEvent.setup();
+
+    mockBaseSearchApp();
+    vi.mocked(searchCardNames).mockRejectedValue(buildAuthenticationRequiredError());
+
+    render(<App />);
+
+    const input = await screen.findByRole("combobox", { name: "Quick Add and Card Search" });
+    await user.type(input, "Bolt");
+    await user.click(screen.getByRole("button", { name: "Search cards" }));
+
+    expect(await screen.findAllByText("Sign in required")).toHaveLength(3);
+    expect(screen.getAllByRole("link", { name: "Sign in" })[0]).toHaveAttribute(
+      "href",
+      "/oauth2/start?rd=%2F",
+    );
+    expect(screen.queryByRole("combobox", { name: "Quick Add and Card Search" })).not.toBeInTheDocument();
   });
 
   it("shows a generic collections-unavailable shell state when collection loading fails with 403", async () => {

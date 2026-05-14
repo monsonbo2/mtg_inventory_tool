@@ -10,6 +10,7 @@ import {
   importCsv,
   importDecklist,
   importDeckUrl,
+  isAuthenticationRequiredError,
   patchInventoryItem,
   transferInventoryItems,
 } from "../api";
@@ -75,6 +76,7 @@ type UseInventoryMutationsOptions = {
   refreshInventoryAudit: (inventorySlug: string) => Promise<boolean>;
   refreshActiveTablePage?: () => void;
   markCollectionItemsStale?: (inventorySlug: string) => void;
+  onAuthenticationRequired?: () => void;
   reloadInventorySummaries: (preferredSlug?: string | null) => Promise<boolean>;
   resetSearchWorkspace: () => void;
   selectedItemIds: number[];
@@ -135,7 +137,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       });
       showNotice(successMessage, refreshOptions.successTone ?? "success");
       return "applied";
-    } catch {
+    } catch (error) {
+      if (isAuthenticationRequiredError(error)) {
+        options.onAuthenticationRequired?.();
+      }
       showNotice(
         `${successMessage} The latest view could not refresh automatically.`,
         "error",
@@ -183,6 +188,13 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
     setNotice(null);
   }
 
+  function getMutationErrorMessage(error: unknown, fallback: string) {
+    if (isAuthenticationRequiredError(error)) {
+      options.onAuthenticationRequired?.();
+    }
+    return toUserMessage(error, fallback);
+  }
+
   function shouldRefreshActiveTableOnly(inventorySlug: string) {
     return (
       options.activeCollectionView === "table" &&
@@ -219,7 +231,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       options.resetSearchWorkspace();
       return true;
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not add the card."), "error");
+      showNotice(getMutationErrorMessage(error, "Could not add the card."), "error");
       return false;
     } finally {
       setBusyAddCardId(null);
@@ -354,7 +366,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       options.resetSearchWorkspace();
       return true;
     } catch (error) {
-      showNotice(toUserMessage(error, fallbackMessage), "error");
+      showNotice(getMutationErrorMessage(error, fallbackMessage), "error");
       return false;
     }
   }
@@ -387,7 +399,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
         }),
       };
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not preview cards from the CSV file."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not preview cards from the CSV file."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     }
   }
@@ -420,7 +435,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
         }),
       };
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not preview cards from text."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not preview cards from text."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     }
   }
@@ -453,7 +471,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
         }),
       };
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not preview cards from the deck URL."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not preview cards from the deck URL."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     }
   }
@@ -511,7 +532,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       });
       return finalizeCommittedImport(session, response);
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not import cards from the CSV file."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not import cards from the CSV file."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     }
   }
@@ -531,7 +555,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       });
       return finalizeCommittedImport(session, response);
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not import cards from text."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not import cards from text."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     }
   }
@@ -552,7 +579,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       });
       return finalizeCommittedImport(session, response);
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not import cards from the deck URL."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not import cards from the deck URL."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     }
   }
@@ -578,7 +608,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       if (error instanceof ApiClientError && error.status === 409) {
         return { ok: false, reason: "conflict" };
       }
-      showNotice(toUserMessage(error, "Could not create the collection."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not create the collection."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     } finally {
       setCreateInventoryBusy(false);
@@ -673,7 +706,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
         getPatchSuccessMessage(response, options.describeInventory(inventorySlug)),
       );
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not save the change."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not save the change."),
+        "error",
+      );
       return "failed";
     } finally {
       setBusyItem(null);
@@ -701,7 +737,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
         `Removed ${response.card_name || cardName} from ${options.describeInventory(inventorySlug)}.`,
       );
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not remove the card."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not remove the card."),
+        "error",
+      );
       return "failed";
     } finally {
       setBusyItem(null);
@@ -806,7 +845,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       return true;
     } catch (error) {
       showNotice(
-        toUserMessage(error, getBulkMutationFallbackMessage(payload)),
+        getMutationErrorMessage(error, getBulkMutationFallbackMessage(payload)),
         "error",
       );
       return false;
@@ -840,7 +879,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       );
       return true;
     } catch (error) {
-      showNotice(toUserMessage(error, "Could not export CSV."), "error");
+      showNotice(getMutationErrorMessage(error, "Could not export CSV."), "error");
       return false;
     } finally {
       setExportInventoryBusy(false);
@@ -913,7 +952,7 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       return true;
     } catch (error) {
       showNotice(
-        toUserMessage(
+        getMutationErrorMessage(
           error,
           request.mode === "copy"
             ? "Could not copy the selected entries."
