@@ -259,6 +259,10 @@ export function InventoryTableView(props: {
     targetInventorySlug: string;
     targetInventoryLabel: string;
   } | null>(null);
+  const [createdTransferTarget, setCreatedTransferTarget] = useState<{
+    slug: string;
+    label: string;
+  } | null>(null);
   const [floatingTableHeader, setFloatingTableHeader] =
     useState<FloatingTableHeaderState>(INACTIVE_FLOATING_TABLE_HEADER);
   const headerCheckboxRefs = useRef<Array<HTMLInputElement | null>>([]);
@@ -577,6 +581,7 @@ export function InventoryTableView(props: {
     setTransferCollectionSlugTouched(false);
     setShowTransferCollectionSlugField(false);
     setTransferFormError(null);
+    setCreatedTransferTarget(null);
   }
 
   function clearTransferPreview() {
@@ -825,6 +830,15 @@ export function InventoryTableView(props: {
       return;
     }
 
+    if (createdTransferTarget) {
+      await previewTransferToTarget({
+        mode: activeTransferMode,
+        targetInventorySlug: createdTransferTarget.slug,
+        targetInventoryLabel: createdTransferTarget.label,
+      });
+      return;
+    }
+
     const nextDisplayName = transferCollectionName.trim();
     const nextSlug = normalizeInventorySlugInput(transferCollectionSlug);
     const nextDefaultLocation = normalizeOptionalText(transferCollectionDefaultLocation);
@@ -864,6 +878,10 @@ export function InventoryTableView(props: {
     }
 
     setTransferTargetInventorySlug(createResult.inventory.slug);
+    setCreatedTransferTarget({
+      slug: createResult.inventory.slug,
+      label: createResult.inventory.display_name,
+    });
     await previewTransferToTarget({
       mode: activeTransferMode,
       targetInventorySlug: createResult.inventory.slug,
@@ -1362,6 +1380,15 @@ export function InventoryTableView(props: {
     const previewFailedResults =
       transferPreview?.results.filter((result) => result.status === "would_fail") ?? [];
     const previewReady = transferPreview !== null && transferPreview.failed_count === 0;
+    const transferPastTense = activeTransferMode === "copy" ? "copied" : "moved";
+    const createTransferFieldsDisabled =
+      props.createInventoryBusy ||
+      transferSubmitBusy ||
+      transferPreview !== null ||
+      createdTransferTarget !== null;
+    const createTransferActionLabel = createdTransferTarget
+      ? previewActionLabel
+      : "Create collection and preview transfer";
 
     function renderTransferPreview() {
       if (!transferPreview || !transferPreviewRequest) {
@@ -1588,9 +1615,7 @@ export function InventoryTableView(props: {
               <span>Collection name</span>
               <input
                 className="text-input"
-                disabled={
-                  props.createInventoryBusy || transferSubmitBusy || transferPreview !== null
-                }
+                disabled={createTransferFieldsDisabled}
                 onChange={(event) => handleTransferCollectionNameChange(event.target.value)}
                 placeholder="e.g. Archive Box"
                 type="text"
@@ -1603,9 +1628,7 @@ export function InventoryTableView(props: {
                 <span>Short name</span>
                 <input
                   className="text-input"
-                  disabled={
-                    props.createInventoryBusy || transferSubmitBusy || transferPreview !== null
-                  }
+                  disabled={createTransferFieldsDisabled}
                   onChange={(event) => handleTransferCollectionSlugChange(event.target.value)}
                   placeholder="archive-box"
                   type="text"
@@ -1621,7 +1644,7 @@ export function InventoryTableView(props: {
               <span>Description (optional)</span>
               <textarea
                 className="text-input textarea-input"
-                disabled={props.createInventoryBusy || transferSubmitBusy || transferPreview !== null}
+                disabled={createTransferFieldsDisabled}
                 onChange={(event) => {
                   clearTransferPreview();
                   setTransferCollectionDescription(event.target.value);
@@ -1639,7 +1662,7 @@ export function InventoryTableView(props: {
               <span>Default location</span>
               <input
                 className="text-input"
-                disabled={props.createInventoryBusy || transferSubmitBusy || transferPreview !== null}
+                disabled={createTransferFieldsDisabled}
                 onChange={(event) => {
                   clearTransferPreview();
                   setTransferCollectionDefaultLocation(event.target.value);
@@ -1660,7 +1683,7 @@ export function InventoryTableView(props: {
               <span>Default tags</span>
               <input
                 className="text-input"
-                disabled={props.createInventoryBusy || transferSubmitBusy || transferPreview !== null}
+                disabled={createTransferFieldsDisabled}
                 onChange={(event) => {
                   clearTransferPreview();
                   setTransferCollectionDefaultTags(event.target.value);
@@ -1677,6 +1700,12 @@ export function InventoryTableView(props: {
               </span>
             </label>
 
+            <p className="field-hint field-hint-info">
+              {createdTransferTarget
+                ? `${createdTransferTarget.label} has been created. No entries have been ${transferPastTense} yet. Confirm a successful preview to apply this ${activeTransferMode}.`
+                : `Creating a new destination happens before preview validation. No entries will be ${transferPastTense} until you confirm.`}
+            </p>
+
             {transferFormError ? (
               <p className="field-hint field-hint-error">{transferFormError}</p>
             ) : null}
@@ -1692,8 +1721,10 @@ export function InventoryTableView(props: {
                   type="button"
                 >
                   {props.createInventoryBusy || transferSubmitBusy
-                    ? "Previewing..."
-                    : "Create and preview"}
+                    ? props.createInventoryBusy
+                      ? "Creating..."
+                      : "Previewing..."
+                    : createTransferActionLabel}
                 </button>
               </div>
             ) : null}

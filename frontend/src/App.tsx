@@ -31,9 +31,22 @@ import type { AccessSummaryResponse, InventoryPriceProvider } from "./types";
 
 const STICKY_SEARCH_ROW_TOP_OFFSET = 14;
 
-function getPublicShareToken(pathname: string) {
+type PublicShareRoute =
+  | { kind: "none" }
+  | { kind: "valid"; token: string }
+  | { kind: "invalid" };
+
+function getPublicShareRoute(pathname: string): PublicShareRoute {
   const match = pathname.match(/^\/shared\/inventories\/([^/]+)\/?$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) {
+    return { kind: "none" };
+  }
+
+  try {
+    return { kind: "valid", token: decodeURIComponent(match[1]) };
+  } catch {
+    return { kind: "invalid" };
+  }
 }
 
 function getAppShellState(options: {
@@ -128,9 +141,22 @@ function getShellStatePanelContent(
 }
 
 export default function App() {
-  const publicShareToken = getPublicShareToken(window.location.pathname);
-  if (publicShareToken) {
-    return <PublicInventorySharePage shareToken={publicShareToken} />;
+  const publicShareRoute = getPublicShareRoute(window.location.pathname);
+  if (publicShareRoute.kind === "valid") {
+    return <PublicInventorySharePage shareToken={publicShareRoute.token} />;
+  }
+
+  if (publicShareRoute.kind === "invalid") {
+    return (
+      <main className="app-shell public-share-shell">
+        <PanelState
+          body="This public inventory link is malformed. Check the link and try again."
+          eyebrow="Public Collection"
+          title="Shared inventory unavailable"
+          variant="error"
+        />
+      </main>
+    );
   }
 
   return <AuthenticatedApp />;

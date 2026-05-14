@@ -106,4 +106,20 @@ describe("public share route", () => {
     expect(getAccessSummary).not.toHaveBeenCalled();
     expect(listInventories).not.toHaveBeenCalled();
   });
+
+  it("shows an unavailable state for malformed public share paths", () => {
+    window.history.pushState({}, "", "/shared/inventories/%E0%A4%A");
+
+    render(<App />);
+
+    expect(screen.getByText("Shared inventory unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This public inventory link is malformed. Check the link and try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(getPublicInventoryShare).not.toHaveBeenCalled();
+    expect(getAccessSummary).not.toHaveBeenCalled();
+    expect(listInventories).not.toHaveBeenCalled();
+  });
 });

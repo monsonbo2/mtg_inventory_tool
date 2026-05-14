@@ -5821,7 +5821,16 @@ describe("App", () => {
       within(tray).getByRole("textbox", { name: /Default tags/i }),
       "Archive, Cube",
     );
-    await user.click(within(tray).getByRole("button", { name: "Create and preview" }));
+    expect(
+      within(tray).getByText(
+        "Creating a new destination happens before preview validation. No entries will be moved until you confirm.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(
+      within(tray).getByRole("button", {
+        name: "Create collection and preview transfer",
+      }),
+    );
 
     await waitFor(() => {
       expect(createInventory).toHaveBeenCalledWith({
@@ -5844,6 +5853,11 @@ describe("App", () => {
       });
     });
     expect(await within(tray).findByText("Preview ready")).toBeInTheDocument();
+    expect(
+      within(tray).getByText(
+        "Archive Box has been created. No entries have been moved yet. Confirm a successful preview to apply this move.",
+      ),
+    ).toBeInTheDocument();
 
     await user.click(within(tray).getByRole("button", { name: "Confirm move" }));
 
