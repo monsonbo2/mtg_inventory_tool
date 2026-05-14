@@ -13,11 +13,14 @@ import type {
   CatalogPrintingSummaryResponse,
   InventoryAuditEvent,
   InventoryCreateResponse,
+  InventoryDuplicateResponse,
   InventorySummary,
+  InventoryTransferResponse,
   OwnedInventoryItemsPageParams,
   OwnedInventoryItemsPageResponse,
   OwnedInventoryRow,
 } from "./types";
+import { FRONTEND_VIEW_PREFERENCES_STORAGE_KEY } from "./viewPreferences";
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -37,6 +40,7 @@ vi.mock("./api", async () => {
     createInventory: vi.fn(),
     patchInventoryItem: vi.fn(),
     deleteInventoryItem: vi.fn(),
+    duplicateInventory: vi.fn(),
     exportInventoryCsv: vi.fn(),
     importCsv: vi.fn(),
     importDeckUrl: vi.fn(),
@@ -55,6 +59,7 @@ import {
   bulkMutateInventoryItems,
   createInventory,
   deleteInventoryItem,
+  duplicateInventory,
   exportInventoryCsv,
   getAccessSummary,
   importCsv,
@@ -452,6 +457,62 @@ describe("App", () => {
     };
   }
 
+  function buildTransferResponse(
+    overrides: Partial<InventoryTransferResponse> = {},
+  ): InventoryTransferResponse {
+    return {
+      source_inventory: "personal",
+      target_inventory: "trade",
+      mode: "copy",
+      dry_run: false,
+      selection_kind: "items",
+      requested_item_ids: [7],
+      requested_count: 1,
+      copied_count: 1,
+      moved_count: 0,
+      merged_count: 0,
+      failed_count: 0,
+      results_returned: 1,
+      results_truncated: false,
+      results: [],
+      ...overrides,
+    };
+  }
+
+  function buildInventoryDuplicateResponse(
+    overrides: Partial<InventoryDuplicateResponse> = {},
+  ): InventoryDuplicateResponse {
+    const inventory =
+      overrides.inventory ??
+      buildInventoryCreateResponse({
+        display_name: "Personal Collection Copy",
+        inventory_id: 2,
+        slug: "personal-collection-copy",
+      });
+
+    return {
+      inventory,
+      source_inventory: "personal",
+      transfer: {
+        copied_count: 1,
+        dry_run: false,
+        failed_count: 0,
+        merged_count: 0,
+        mode: "copy",
+        moved_count: 0,
+        requested_count: 1,
+        requested_item_ids: null,
+        results: [],
+        results_returned: 0,
+        results_truncated: false,
+        selection_kind: "all_items",
+        source_inventory: "personal",
+        target_inventory: inventory.slug,
+      },
+      ...overrides,
+    };
+  }
+
   function mockCollectionViewApp(options?: {
     items?: OwnedInventoryRow[];
     auditEvents?: InventoryAuditEvent[];
@@ -477,6 +538,9 @@ describe("App", () => {
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse(),
+    );
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
@@ -527,6 +591,9 @@ describe("App", () => {
     vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
     vi.mocked(listCardPrintings).mockResolvedValue([]);
     vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse(),
+    );
     vi.mocked(importCsv).mockResolvedValue(buildCsvImportResponse());
     vi.mocked(importDeckUrl).mockResolvedValue(buildDeckUrlImportResponse());
     vi.mocked(importDecklist).mockResolvedValue(buildDecklistImportResponse());
@@ -824,6 +891,7 @@ describe("App", () => {
         "This collection is read-only. You can browse cards and copy selected table entries, but edits and row removal are disabled.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Duplicate" })).toBeDisabled();
 
     const boltRow = await findBrowseRow();
     const boltRowScope = within(boltRow);
@@ -900,6 +968,219 @@ describe("App", () => {
       "CSV export is unavailable.",
     );
     expect(downloadApiTextResponse).not.toHaveBeenCalled();
+  });
+
+  it("duplicates the selected collection and selects the duplicate", async () => {
+    const user = userEvent.setup();
+    const sourceInventory = buildInventorySummary({
+      description: null,
+      item_rows: 1,
+      total_cards: 2,
+    });
+    const duplicatedInventory = buildInventorySummary({
+      description: null,
+      display_name: "Personal Collection Copy",
+      item_rows: 1,
+      slug: "personal-collection-copy",
+      total_cards: 2,
+    });
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([sourceInventory])
+      .mockResolvedValue([sourceInventory, duplicatedInventory]);
+    vi.mocked(listInventoryItems).mockImplementation(async (inventorySlug) => [
+      buildOwnedRow({
+        item_id: inventorySlug === "personal-collection-copy" ? 17 : 7,
+      }),
+    ]);
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse([buildOwnedRow()], params, inventorySlug),
+    );
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse({
+        inventory: buildInventoryCreateResponse({
+          description: null,
+          display_name: "Personal Collection Copy",
+          inventory_id: 2,
+          slug: "personal-collection-copy",
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Duplicate collection",
+    });
+    expect(
+      within(dialog).getByRole("textbox", { name: "Collection name" }),
+    ).toHaveValue("Personal Collection Copy");
+    expect(
+      within(dialog).queryByRole("textbox", { name: /Short name/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    await waitFor(() => {
+      expect(duplicateInventory).toHaveBeenCalledWith("personal", {
+        target_description: null,
+        target_display_name: "Personal Collection Copy",
+        target_slug: "personal-collection-copy",
+      });
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Duplicated Personal Collection as Personal Collection Copy.",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Duplicate collection" }),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listInventoryItems).toHaveBeenCalledWith("personal-collection-copy");
+      expect(listInventoryAudit).toHaveBeenCalledWith("personal-collection-copy");
+    });
+  });
+
+  it("sends an empty duplicate description when the source description is cleared", async () => {
+    const user = userEvent.setup();
+    const sourceInventory = buildInventorySummary({
+      description: "Main demo inventory",
+      item_rows: 1,
+      total_cards: 2,
+    });
+
+    mockCollectionViewApp({
+      inventories: [sourceInventory],
+      items: [buildOwnedRow()],
+    });
+    vi.mocked(duplicateInventory).mockResolvedValue(
+      buildInventoryDuplicateResponse({
+        inventory: buildInventoryCreateResponse({
+          description: "",
+          display_name: "Personal Collection Copy",
+          inventory_id: 2,
+          slug: "personal-collection-copy",
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Duplicate collection",
+    });
+    const descriptionField = within(dialog).getByRole("textbox", {
+      name: "Description (optional)",
+    });
+
+    expect(descriptionField).toHaveValue("Main demo inventory");
+    await user.clear(descriptionField);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    await waitFor(() => {
+      expect(duplicateInventory).toHaveBeenCalledWith("personal", {
+        target_description: "",
+        target_display_name: "Personal Collection Copy",
+        target_slug: "personal-collection-copy",
+      });
+    });
+  });
+
+  it("keeps duplicate dialogs open after slug conflicts so the short name can be edited", async () => {
+    const user = userEvent.setup();
+    const sourceInventory = buildInventorySummary({
+      item_rows: 1,
+      total_cards: 2,
+    });
+    const duplicatedInventory = buildInventorySummary({
+      display_name: "Personal Collection Copy",
+      item_rows: 1,
+      slug: "personal-collection-copy-2",
+      total_cards: 2,
+    });
+
+    vi.mocked(listInventories)
+      .mockResolvedValueOnce([sourceInventory])
+      .mockResolvedValue([sourceInventory, duplicatedInventory]);
+    vi.mocked(listInventoryItems).mockResolvedValue([buildOwnedRow()]);
+    vi.mocked(listInventoryItemsPage).mockImplementation(async (inventorySlug, params = {}) =>
+      buildInventoryItemsPageResponse([buildOwnedRow()], params, inventorySlug),
+    );
+    vi.mocked(listInventoryAudit).mockResolvedValue([]);
+    vi.mocked(searchCardNames).mockResolvedValue(buildNameSearchResult());
+    vi.mocked(listCardPrintings).mockResolvedValue([]);
+    vi.mocked(getCardPrintingSummary).mockResolvedValue(buildPrintingSummary());
+    vi.mocked(duplicateInventory)
+      .mockRejectedValueOnce(
+        new ApiClientError("Inventory 'personal-collection-copy' already exists.", {
+          code: "conflict",
+          status: 409,
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildInventoryDuplicateResponse({
+          inventory: buildInventoryCreateResponse({
+            description: "Main demo inventory",
+            display_name: "Personal Collection Copy",
+            inventory_id: 3,
+            slug: "personal-collection-copy-2",
+          }),
+        }),
+      );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Duplicate collection",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    const shortNameField = await within(dialog).findByRole("textbox", {
+      name: /Short name/i,
+    });
+    expect(shortNameField).toHaveValue("personal-collection-copy");
+    expect(
+      within(dialog).getByText(
+        "That collection name needs a different short name. Edit it below and try again.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.clear(shortNameField);
+    await user.type(shortNameField, "personal collection copy 2");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duplicate collection" }),
+    );
+
+    await waitFor(() => {
+      expect(duplicateInventory).toHaveBeenLastCalledWith("personal", {
+        target_description: null,
+        target_display_name: "Personal Collection Copy",
+        target_slug: "personal-collection-copy-2",
+      });
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Duplicated Personal Collection as Personal Collection Copy.",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Duplicate collection" }),
+    ).not.toBeInTheDocument();
   });
 
   it("uses the selected price provider for Browse, Table, and CSV export", async () => {
@@ -3737,6 +4018,42 @@ describe("App", () => {
     expect(listInventoryAudit).toHaveBeenCalledTimes(1);
   });
 
+  it("persists the selected collection view on the current device", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp();
+
+    const { unmount } = render(<App />);
+
+    await screen.findByRole("heading", { name: "Lightning Bolt" });
+    await user.click(screen.getByRole("button", { name: "Table" }));
+
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(FRONTEND_VIEW_PREFERENCES_STORAGE_KEY) || "{}",
+      ),
+    ).toEqual({ collectionView: "table" });
+
+    unmount();
+    render(<App />);
+
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    expect(await screen.findByRole("heading", { name: "Lightning Bolt" })).toBeInTheDocument();
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(FRONTEND_VIEW_PREFERENCES_STORAGE_KEY) || "{}",
+      ),
+    ).toEqual({ collectionView: "browse" });
+  });
+
   it("shows table page errors inside table mode without replacing the collection shell", async () => {
     const user = userEvent.setup();
 
@@ -5192,6 +5509,34 @@ describe("App", () => {
     expect(
       within(destinationSelect).queryByRole("option", { name: "Archive Box" }),
     ).not.toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Preview copy" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
+        target_inventory_slug: "trade",
+        mode: "copy",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+        dry_run: true,
+      });
+    });
+    expect(await within(tray).findByText("Preview ready")).toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Confirm copy" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenLastCalledWith("personal", {
+        target_inventory_slug: "trade",
+        mode: "copy",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+      });
+    });
+    expect(patchInventoryItem).not.toHaveBeenCalled();
+    expect(bulkMutateInventoryItems).not.toHaveBeenCalled();
   });
 
   it("selects visible table rows without exposing whole-collection selection", async () => {
@@ -5271,22 +5616,24 @@ describe("App", () => {
         }),
       ],
     });
-    vi.mocked(transferInventoryItems).mockResolvedValue({
-      source_inventory: "personal",
-      target_inventory: "trade",
-      mode: "copy",
-      dry_run: false,
-      selection_kind: "items",
-      requested_item_ids: [7, 8],
-      requested_count: 2,
-      copied_count: 2,
-      moved_count: 0,
-      merged_count: 0,
-      failed_count: 0,
-      results_returned: 2,
-      results_truncated: false,
-      results: [],
-    });
+    vi.mocked(transferInventoryItems)
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          dry_run: true,
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 2,
+          results_returned: 2,
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 2,
+          results_returned: 2,
+        }),
+      );
 
     render(<App />);
 
@@ -5296,10 +5643,27 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Copy to collection" }));
 
     const tray = screen.getByRole("region", { name: "Copy to collection tray" });
-    await user.click(within(tray).getByRole("button", { name: "Copy to collection" }));
+    await user.click(within(tray).getByRole("button", { name: "Preview copy" }));
 
     await waitFor(() => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
+        target_inventory_slug: "trade",
+        mode: "copy",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+        dry_run: true,
+      });
+    });
+    expect(await within(tray).findByText("Preview ready")).toBeInTheDocument();
+    expect(
+      within(tray).getByText("No failures found. Confirm to apply this copy."),
+    ).toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Confirm copy" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenLastCalledWith("personal", {
         target_inventory_slug: "trade",
         mode: "copy",
         item_ids: [7, 8],
@@ -5311,6 +5675,61 @@ describe("App", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Copied 2 entries to Trade Binder.",
     );
+  });
+
+  it("blocks final transfer commits when the dry-run preview has failures", async () => {
+    const user = userEvent.setup();
+
+    mockCollectionViewApp({
+      items: [buildOwnedRow()],
+      inventories: [
+        buildInventorySummary({
+          item_rows: 1,
+          total_cards: 2,
+        }),
+        buildInventorySummary({
+          slug: "trade",
+          display_name: "Trade Binder",
+          description: "Cards available for swaps",
+          item_rows: 4,
+          total_cards: 6,
+        }),
+      ],
+    });
+    vi.mocked(transferInventoryItems).mockResolvedValue(
+      buildTransferResponse({
+        dry_run: true,
+        requested_count: 1,
+        copied_count: 0,
+        failed_count: 1,
+        results: [
+          {
+            source_item_id: 7,
+            target_item_id: null,
+            status: "would_fail",
+            source_removed: false,
+            message: "Destination row cannot be merged.",
+          },
+        ],
+      }),
+    );
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Table" }));
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Select all visible" }));
+    await user.click(screen.getByRole("button", { name: "Copy to collection" }));
+
+    const tray = screen.getByRole("region", { name: "Copy to collection tray" });
+    await user.click(within(tray).getByRole("button", { name: "Preview copy" }));
+
+    expect(await within(tray).findByText("Preview needs attention")).toBeInTheDocument();
+    expect(
+      within(tray).getByText("Entry 7: Destination row cannot be merged."),
+    ).toBeInTheDocument();
+    expect(within(tray).queryByRole("button", { name: "Confirm copy" })).not.toBeInTheDocument();
+    expect(transferInventoryItems).toHaveBeenCalledTimes(1);
   });
 
   it("filters non-transferable collections out of the table copy tray", async () => {
@@ -5393,22 +5812,30 @@ describe("App", () => {
       acquisition_price: null,
       acquisition_currency: null,
     });
-    vi.mocked(transferInventoryItems).mockResolvedValue({
-      source_inventory: "personal",
-      target_inventory: "archive-box",
-      mode: "move",
-      dry_run: false,
-      selection_kind: "items",
-      requested_item_ids: [7, 8],
-      requested_count: 2,
-      copied_count: 0,
-      moved_count: 2,
-      merged_count: 0,
-      failed_count: 0,
-      results_returned: 2,
-      results_truncated: false,
-      results: [],
-    });
+    vi.mocked(transferInventoryItems)
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          target_inventory: "archive-box",
+          mode: "move",
+          dry_run: true,
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 0,
+          moved_count: 2,
+          results_returned: 2,
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildTransferResponse({
+          target_inventory: "archive-box",
+          mode: "move",
+          requested_item_ids: [7, 8],
+          requested_count: 2,
+          copied_count: 0,
+          moved_count: 2,
+          results_returned: 2,
+        }),
+      );
 
     render(<App />);
 
@@ -5431,7 +5858,16 @@ describe("App", () => {
       within(tray).getByRole("textbox", { name: /Default tags/i }),
       "Archive, Cube",
     );
-    await user.click(within(tray).getByRole("button", { name: "Create and move" }));
+    expect(
+      within(tray).getByText(
+        "Creating a new destination happens before preview validation. No entries will be moved until you confirm.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(
+      within(tray).getByRole("button", {
+        name: "Create collection and preview transfer",
+      }),
+    );
 
     await waitFor(() => {
       expect(createInventory).toHaveBeenCalledWith({
@@ -5445,6 +5881,25 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(transferInventoryItems).toHaveBeenCalledWith("personal", {
+        target_inventory_slug: "archive-box",
+        mode: "move",
+        item_ids: [7, 8],
+        on_conflict: "merge",
+        keep_acquisition: "source",
+        dry_run: true,
+      });
+    });
+    expect(await within(tray).findByText("Preview ready")).toBeInTheDocument();
+    expect(
+      within(tray).getByText(
+        "Archive Box has been created. No entries have been moved yet. Confirm a successful preview to apply this move.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(within(tray).getByRole("button", { name: "Confirm move" }));
+
+    await waitFor(() => {
+      expect(transferInventoryItems).toHaveBeenLastCalledWith("personal", {
         target_inventory_slug: "archive-box",
         mode: "move",
         item_ids: [7, 8],

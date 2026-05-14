@@ -7,6 +7,7 @@ import type {
   DecklistImportResponse,
   InventoryAuditEvent,
   InventoryCreateResponse,
+  InventoryDuplicateResponse,
   InventorySummary,
   OwnedInventoryRow,
 } from "./types";
@@ -47,6 +48,16 @@ export type InventoryCreateResult =
   | {
       ok: true;
       inventory: InventoryCreateResponse;
+    }
+  | {
+      ok: false;
+      reason: "conflict" | "error";
+    };
+
+export type InventoryDuplicateResult =
+  | {
+      ok: true;
+      response: InventoryDuplicateResponse;
     }
   | {
       ok: false;

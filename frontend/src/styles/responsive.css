@@ -109,9 +109,11 @@
   }
 
   .search-form,
+  .public-share-header,
   .item-meta-grid,
   .editor-grid,
   .inventory-summary-bar,
+  .public-share-summary,
   .mini-grid,
   .search-result-quick-add-grid,
   .search-result-details-grid,
@@ -124,6 +126,10 @@
   }
 
   .card-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .public-share-row {
     grid-template-columns: 1fr;
   }
 
@@ -283,10 +289,18 @@
   .compact-row-footer,
   .compact-row-titlebar,
   .activity-drawer-header,
+  .access-member-row,
+  .access-grant-grid,
   .collection-header-controls,
   .result-card-header,
   .table-query-panel-header {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .access-member-row,
+  .access-grant-grid {
+    grid-template-columns: 1fr;
     align-items: stretch;
   }
 

@@ -5,6 +5,7 @@ import { AuditFeed } from "./components/AuditFeed";
 import { InventorySidebar } from "./components/InventorySidebar";
 import { OwnedCollectionPanel } from "./components/OwnedCollectionPanel";
 import { PanelState } from "./components/ui/PanelState";
+import { PublicInventorySharePage } from "./components/PublicInventorySharePage";
 import { SearchPanel } from "./components/SearchPanel";
 import { StickyWorkspaceControls } from "./components/StickyWorkspaceControls";
 import { NoticeBanner } from "./components/ui/NoticeBanner";
@@ -17,6 +18,7 @@ import { useInventoryMutations } from "./hooks/useInventoryMutations";
 import {
   canCopyFromInventory,
   canExportInventory,
+  canManageShareInventory,
   canMoveFromInventory,
   getAvailableTransferTargetInventories,
   getTransferTargetInventories,
@@ -28,6 +30,24 @@ import type { AppShellState } from "./uiTypes";
 import type { AccessSummaryResponse, InventoryPriceProvider } from "./types";
 
 const STICKY_SEARCH_ROW_TOP_OFFSET = 14;
+
+type PublicShareRoute =
+  | { kind: "none" }
+  | { kind: "valid"; token: string }
+  | { kind: "invalid" };
+
+function getPublicShareRoute(pathname: string): PublicShareRoute {
+  const match = pathname.match(/^\/shared\/inventories\/([^/]+)\/?$/);
+  if (!match) {
+    return { kind: "none" };
+  }
+
+  try {
+    return { kind: "valid", token: decodeURIComponent(match[1]) };
+  } catch {
+    return { kind: "invalid" };
+  }
+}
 
 function getAppShellState(options: {
   accessSummary: AccessSummaryResponse | null;
@@ -121,6 +141,28 @@ function getShellStatePanelContent(
 }
 
 export default function App() {
+  const publicShareRoute = getPublicShareRoute(window.location.pathname);
+  if (publicShareRoute.kind === "valid") {
+    return <PublicInventorySharePage shareToken={publicShareRoute.token} />;
+  }
+
+  if (publicShareRoute.kind === "invalid") {
+    return (
+      <main className="app-shell public-share-shell">
+        <PanelState
+          body="This public inventory link is malformed. Check the link and try again."
+          eyebrow="Public Collection"
+          title="Shared inventory unavailable"
+          variant="error"
+        />
+      </main>
+    );
+  }
+
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
   const [createCollectionRequestToken, setCreateCollectionRequestToken] =
@@ -326,13 +368,17 @@ export default function App() {
     commitDecklistImport,
     clearNotice,
     createInventoryBusy,
+    duplicateInventoryBusy,
     exportInventoryBusy,
     handleAddCard,
     handleBulkMutation,
     handleCreateInventory,
+    handleCreateTransferTargetInventory,
     handleDeleteItem,
+    handleDuplicateInventory,
     handleExportInventoryCsv,
     handlePatchItem,
+    handlePreviewTransferItems,
     handleTransferItems,
     notice,
     previewCsvImport,
@@ -464,6 +510,8 @@ export default function App() {
     priceProvider: selectedPriceProvider,
     selectedInventoryRow,
     canExportSelectedInventory: canExportInventory(selectedInventoryRow),
+    canManageShareSelectedInventory: canManageShareInventory(selectedInventoryRow),
+    duplicateInventoryBusy,
     exportInventoryBusy,
     selectedInventoryCanWrite,
     table: {
@@ -502,6 +550,7 @@ export default function App() {
     onCloseItemDetails: handleCloseItemDetails,
     onCollectionSearchQueryChange: handleCollectionSearchQueryChange,
     onDelete: handleDeleteItem,
+    onDuplicateInventory: handleDuplicateInventory,
     onFocusImport: () =>
       setSearchFocusRequest((current) => ({
         target: "import",
@@ -519,12 +568,15 @@ export default function App() {
     onPatch: handlePatchItem,
     onPriceProviderChange: handlePriceProviderChange,
     onCreateInventory: handleCreateInventory,
+    onCreateTransferTargetInventory: handleCreateTransferTargetInventory,
+    onReloadInventorySummaries: reloadInventorySummaries,
     onSelectTableItem: (
       itemId: number,
       options?: { additive?: boolean; range?: boolean },
     ) =>
       handleSelectTableItem(itemId, options, activeTableItems),
     onSelectAllVisibleItems: () => handleSelectAllVisibleItems(activeTableItems),
+    onPreviewTransferItems: handlePreviewTransferItems,
     onTransferItems: handleTransferItems,
     onTableFiltersChange: handleTableFiltersChange,
     onTablePageChange: handleTablePageChange,

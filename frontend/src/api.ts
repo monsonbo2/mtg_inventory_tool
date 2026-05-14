@@ -24,6 +24,12 @@ import type {
   InventoryExportCsvParams,
   InventoryItemPatchResponse,
   InventoryItemMutationResponse,
+  InventoryMembership,
+  InventoryMembershipGrantRequest,
+  InventoryMembershipRemovalResponse,
+  InventoryMembershipUpdateRequest,
+  InventoryShareLinkStatusResponse,
+  InventoryShareLinkTokenResponse,
   InventorySummary,
   SetInventoryItemPrintingRequest,
   SetPrintingResponse,
@@ -34,6 +40,7 @@ import type {
   OwnedInventoryItemsPageParams,
   OwnedInventoryItemsPageResponse,
   PatchInventoryItemRequest,
+  PublicInventoryShareResponse,
   SearchCardNamesParams,
   SearchCardsParams,
 } from "./types";
@@ -334,6 +341,90 @@ export async function createInventory(payload: InventoryCreateRequest) {
     method: "POST",
     body: payload,
   });
+}
+
+export async function listInventoryMembers(inventorySlug: string) {
+  return requestJson<InventoryMembership[]>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/members`,
+  );
+}
+
+export async function grantInventoryMember(
+  inventorySlug: string,
+  payload: InventoryMembershipGrantRequest,
+) {
+  return requestJson<InventoryMembership>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/members`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+export async function updateInventoryMember(
+  inventorySlug: string,
+  actorId: string,
+  payload: InventoryMembershipUpdateRequest,
+) {
+  return requestJson<InventoryMembership>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/members/${encodeURIComponent(actorId)}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function removeInventoryMember(
+  inventorySlug: string,
+  actorId: string,
+) {
+  return requestJson<InventoryMembershipRemovalResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/members/${encodeURIComponent(actorId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function getInventoryShareLinkStatus(inventorySlug: string) {
+  return requestJson<InventoryShareLinkStatusResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/share-link`,
+  );
+}
+
+export async function createInventoryShareLink(inventorySlug: string) {
+  return requestJson<InventoryShareLinkTokenResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/share-link`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function rotateInventoryShareLink(inventorySlug: string) {
+  return requestJson<InventoryShareLinkTokenResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/share-link/rotate`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function revokeInventoryShareLink(inventorySlug: string) {
+  return requestJson<InventoryShareLinkStatusResponse>(
+    `/inventories/${encodeURIComponent(inventorySlug)}/share-link`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function getPublicInventoryShare(shareToken: string) {
+  return requestJson<PublicInventoryShareResponse>(
+    `/shared/inventories/${encodeURIComponent(shareToken)}`,
+  );
 }
 
 export async function bootstrapDefaultInventory() {

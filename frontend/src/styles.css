@@ -16,6 +16,7 @@
 @import "./styles/collection-panel.css";
 @import "./styles/inventory-table.css";
 @import "./styles/overlays.css";
+@import "./styles/public-share.css";
 @import "./styles/empty-states.css";
 
 /* Global breakpoint overrides stay last. Feature-local media rules stay with their owner. */

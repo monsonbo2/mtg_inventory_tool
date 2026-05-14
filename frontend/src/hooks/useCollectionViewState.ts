@@ -8,6 +8,11 @@ import {
   type InventoryTableSortState,
 } from "../tableViewHelpers";
 import type { OwnedInventoryRow } from "../types";
+import {
+  loadCollectionViewPreference,
+  saveCollectionViewPreference,
+  type CollectionViewPreference,
+} from "../viewPreferences";
 
 const BROWSE_VISIBLE_LIMIT_OPTIONS = [25, 50, 100] as const;
 const TABLE_VISIBLE_LIMIT_OPTIONS = [50, 100, 200] as const;
@@ -21,7 +26,9 @@ export function useCollectionViewState(options: {
   selectedInventory: string | null;
 }) {
   const [selectionAnchorItemId, setSelectionAnchorItemId] = useState<number | null>(null);
-  const [collectionView, setCollectionView] = useState<"browse" | "table">("browse");
+  const [collectionView, setCollectionView] = useState<CollectionViewPreference>(
+    loadCollectionViewPreference,
+  );
   const [detailModalItemId, setDetailModalItemId] = useState<number | null>(null);
   const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
@@ -66,10 +73,11 @@ export function useCollectionViewState(options: {
     );
   }, [options.items]);
 
-  function handleCollectionViewChange(nextView: "browse" | "table") {
+  function handleCollectionViewChange(nextView: CollectionViewPreference) {
     setDetailModalItemId(null);
     setFocusedItemId(null);
     setCollectionView(nextView);
+    saveCollectionViewPreference(nextView);
   }
 
   function handleOpenItemDetails(itemId: number) {
