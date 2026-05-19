@@ -174,6 +174,8 @@ mtg-web-api --db "var/db/mtg_mvp.db" --runtime-mode shared_service
 
 If you need to override startup migration behavior explicitly, use
 `--auto-migrate` or `--no-auto-migrate`, or set `MTG_API_AUTO_MIGRATE`.
+The API also warms the grouped catalog name-search path at startup by default;
+set `MTG_API_CATALOG_WARMUP=false` to disable that startup warmup.
 
 API import routes follow that startup schema posture. `POST /imports/csv`,
 `POST /imports/decklist`, and `POST /imports/deck-url` require a current
@@ -187,6 +189,8 @@ start the API with auto-migrate enabled.
 - `--forwarded-allow-ips`
 - `MTG_API_SNAPSHOT_SIGNING_SECRET` as a required shared-service environment
   variable for signed deck URL snapshot tokens
+- `MTG_API_CATALOG_WARMUP=false` to skip the default startup catalog
+  name-search warmup
 
 The current recommended deployment runbook lives in
 [`docs/shared_service_deploy.md`](docs/shared_service_deploy.md).
