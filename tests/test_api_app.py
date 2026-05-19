@@ -15,6 +15,7 @@ from mtg_source_stack.api.app import build_arg_parser, main, settings_from_cli_a
 from tests.optional_dependencies import (
     WEB_TEST_SKIP_REASON,
     web_test_dependencies_available,
+    web_or_localhost_skip_reason,
 )
 
 
@@ -74,7 +75,10 @@ def _live_test_server(app):
 
 @unittest.skipUnless(
     WEB_TESTING_AVAILABLE and LOCALHOST_SERVER_TESTING_AVAILABLE,
-    f"{WEB_TEST_SKIP_REASON} Localhost socket access is also required.",
+    web_or_localhost_skip_reason(
+        web_available=WEB_TESTING_AVAILABLE,
+        localhost_available=LOCALHOST_SERVER_TESTING_AVAILABLE,
+    ),
 )
 class ApiAppTest(unittest.TestCase):
     @contextmanager

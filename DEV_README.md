@@ -321,6 +321,14 @@ Python command note:
   `./scripts/test_backend_web.sh`.
 - Both backend wrappers force this checkout's `src/` tree onto `PYTHONPATH` so
   multi-checkout editable installs do not leak into test runs.
+- Backend wrappers prefer `PYTHON_BIN`, then the repo-local `.venv/bin/python`,
+  then `python3`. This keeps repo-local helper commands aligned with the
+  documented `.venv` workflow while still allowing explicit interpreter
+  overrides.
+- Live API and proxy tests bind local `127.0.0.1` sockets. In sandboxed agent
+  runs, those tests may skip if socket binding is blocked. The wrappers print a
+  warning in that case; rerun the wrapper with elevated permissions to exercise
+  the live localhost coverage.
 
 Backend base:
 

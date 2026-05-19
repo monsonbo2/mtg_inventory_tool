@@ -26,6 +26,7 @@ from mtg_source_stack.inventory.service import (
 from tests.optional_dependencies import (
     WEB_TEST_SKIP_REASON,
     web_test_dependencies_available,
+    web_or_localhost_skip_reason,
 )
 
 
@@ -987,7 +988,10 @@ class WebApiImportHelperTest(unittest.TestCase):
 
 @unittest.skipUnless(
     WEB_TESTING_AVAILABLE and LOCALHOST_SERVER_TESTING_AVAILABLE,
-    f"{WEB_TEST_SKIP_REASON} Localhost socket access is also required for live API shell tests.",
+    web_or_localhost_skip_reason(
+        web_available=WEB_TESTING_AVAILABLE,
+        localhost_available=LOCALHOST_SERVER_TESTING_AVAILABLE,
+    ),
 )
 class WebApiTest(unittest.TestCase):
     @contextmanager
@@ -5255,6 +5259,22 @@ class WebApiTest(unittest.TestCase):
                     },
                 )
                 self.assertEqual(201, added.status_code)
+                added_split_row = client.post(
+                    "/inventories/personal/items",
+                    headers=owner_headers,
+                    json={
+                        "scryfall_id": "api-card-1",
+                        "quantity": 3,
+                        "condition_code": "NM",
+                        "finish": "normal",
+                        "location": "Private Binder Overflow",
+                        "acquisition_price": "2.50",
+                        "acquisition_currency": "USD",
+                        "notes": "second private owner note",
+                        "tags": ["overflow", "private"],
+                    },
+                )
+                self.assertEqual(201, added_split_row.status_code)
 
                 viewer_create = client.post("/inventories/personal/share-link", headers=viewer_headers)
                 self.assertEqual(403, viewer_create.status_code)
@@ -5317,14 +5337,14 @@ class WebApiTest(unittest.TestCase):
                         "display_name": "Personal Collection",
                         "description": "Cards I want to share",
                         "item_rows": 1,
-                        "total_cards": 2,
+                        "total_cards": 5,
                     },
                     public_payload["inventory"],
                 )
                 self.assertEqual(1, len(public_payload["items"]))
                 public_item = public_payload["items"][0]
                 self.assertEqual("API Test Card", public_item["name"])
-                self.assertEqual(2, public_item["quantity"])
+                self.assertEqual(5, public_item["quantity"])
                 self.assertEqual("normal", public_item["finish"])
                 self.assertNotIn("notes", public_item)
                 self.assertNotIn("acquisition_price", public_item)

@@ -16,6 +16,7 @@ export type AsyncStatus = "idle" | "loading" | "ready" | "error";
 export type AppShellState =
   | "loading"
   | "ready"
+  | "signed_out"
   | "bootstrap_available"
   | "access_needed"
   | "error";

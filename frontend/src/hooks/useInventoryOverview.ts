@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ApiClientError,
   getAccessSummary,
+  isAuthenticationRequiredError,
   listInventories,
   listInventoryAudit,
   listInventoryItems,
@@ -28,6 +29,7 @@ type LoadInventoryOverviewOptions = {
 };
 
 export function useInventoryOverview(hookOptions: {
+  onAuthenticationRequired?: () => void;
   priceProvider: InventoryPriceProvider;
 }) {
   const [inventories, setInventories] = useState<InventorySummary[]>([]);
@@ -48,6 +50,12 @@ export function useInventoryOverview(hookOptions: {
   useEffect(() => {
     selectedInventoryRef.current = selectedInventory;
   }, [selectedInventory]);
+
+  function notifyAuthenticationRequired(error: unknown) {
+    if (isAuthenticationRequiredError(error)) {
+      hookOptions.onAuthenticationRequired?.();
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +100,7 @@ export function useInventoryOverview(hookOptions: {
         if (cancelled) {
           return;
         }
+        notifyAuthenticationRequired(error);
         setInventoryError(toUserMessage(error, "Could not load collections."));
         setInventoryErrorStatus(
           error instanceof ApiClientError ? error.status : null,
@@ -168,6 +177,7 @@ export function useInventoryOverview(hookOptions: {
 
       return true;
     } catch (error) {
+      notifyAuthenticationRequired(error);
       setInventoryError(toUserMessage(error, "Could not refresh collection totals."));
       setInventoryErrorStatus(error instanceof ApiClientError ? error.status : null);
       setInventoryStatus("error");
@@ -223,6 +233,7 @@ export function useInventoryOverview(hookOptions: {
         return "skipped";
       }
 
+      notifyAuthenticationRequired(error);
       setViewError(
         toUserMessage(error, `Could not load collection data for '${inventorySlug}'.`),
       );
@@ -247,7 +258,8 @@ export function useInventoryOverview(hookOptions: {
 
       setAuditEvents(nextAuditEvents);
       return true;
-    } catch {
+    } catch (error) {
+      notifyAuthenticationRequired(error);
       return false;
     }
   }
