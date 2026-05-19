@@ -37,6 +37,7 @@ class ApiSettings:
     host: str
     port: int
     csv_import_max_bytes: int = 25 * 1024 * 1024
+    catalog_warmup_enabled: bool = True
     snapshot_signing_secret: str | None = None
     trust_actor_headers: bool = False
     authenticated_actor_header: str = DEFAULT_AUTHENTICATED_ACTOR_HEADER
@@ -147,6 +148,7 @@ def settings_from_env() -> ApiSettings:
         host=os.getenv("MTG_API_HOST", "127.0.0.1"),
         port=int(os.getenv("MTG_API_PORT", "8000")),
         csv_import_max_bytes=int(os.getenv("MTG_API_CSV_IMPORT_MAX_BYTES", str(25 * 1024 * 1024))),
+        catalog_warmup_enabled=_env_bool("MTG_API_CATALOG_WARMUP", True),
         snapshot_signing_secret=os.getenv("MTG_API_SNAPSHOT_SIGNING_SECRET"),
         trust_actor_headers=_env_bool("MTG_API_TRUST_ACTOR_HEADERS", False),
         authenticated_actor_header=(

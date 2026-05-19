@@ -27,6 +27,7 @@ class ApiDependenciesTest(unittest.TestCase):
 
         self.assertEqual("local_demo", settings.runtime_mode)
         self.assertTrue(settings.auto_migrate)
+        self.assertTrue(settings.catalog_warmup_enabled)
         self.assertFalse(settings.trust_actor_headers)
         self.assertEqual(DEFAULT_LOCAL_DEMO_SNAPSHOT_SIGNING_SECRET, settings.snapshot_signing_secret)
 
@@ -59,6 +60,12 @@ class ApiDependenciesTest(unittest.TestCase):
                 with patch.dict(os.environ, env, clear=True):
                     settings = settings_from_env()
                 self.assertEqual(expected, settings.auto_migrate)
+
+    def test_settings_from_env_reads_catalog_warmup_override(self) -> None:
+        with patch.dict(os.environ, {"MTG_API_CATALOG_WARMUP": "false"}, clear=True):
+            settings = settings_from_env()
+
+        self.assertFalse(settings.catalog_warmup_enabled)
 
     def test_settings_from_env_rejects_invalid_runtime_mode(self) -> None:
         with patch.dict(os.environ, {"MTG_API_RUNTIME_MODE": "not-a-mode"}, clear=True):
