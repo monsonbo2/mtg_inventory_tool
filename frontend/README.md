@@ -43,9 +43,18 @@ The current scaffold expects:
 
 - browser-facing API base URL: `/api`
 - proxy target: `http://127.0.0.1:8000`
+- sign-in URL: `/oauth2/start?rd={returnTo}`
+- sign-out URL: `/oauth2/sign_out?rd={returnTo}`
 
 The proxy rewrites `/api/*` to `/*` because the current backend serves
 root-mounted routes such as `/inventories` and `/cards/search`.
+
+The shared-service frontend does not own OAuth tokens or identity headers.
+Those remain the responsibility of the same-origin proxy and identity provider.
+When an API request returns `401`, the app shows a signed-out shell with a
+sign-in action. The optional `{returnTo}` placeholder in
+`VITE_AUTH_SIGN_IN_URL` and `VITE_AUTH_SIGN_OUT_URL` is replaced with the
+current browser path, query, and hash.
 
 ## Quick Start
 

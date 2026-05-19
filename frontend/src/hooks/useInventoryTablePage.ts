@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { listInventoryItemsPage } from "../api";
+import { isAuthenticationRequiredError, listInventoryItemsPage } from "../api";
 import type {
   OwnedInventoryItemsPageParams,
   OwnedInventoryItemsPageResponse,
@@ -49,6 +49,7 @@ export function useInventoryTablePage(options: {
   enabled: boolean;
   filters: InventoryTableFilters;
   inventorySlug: string | null;
+  onAuthenticationRequired?: () => void;
   onPageOutOfRange?: (nextPage: number) => void;
   page: number;
   priceProvider: InventoryPriceProvider;
@@ -139,6 +140,9 @@ export function useInventoryTablePage(options: {
         if (requestId !== requestIdRef.current) {
           return;
         }
+        if (isAuthenticationRequiredError(loadError)) {
+          options.onAuthenticationRequired?.();
+        }
         setError(toUserMessage(loadError, "Could not load table rows."));
         setStatus("error");
       }
@@ -148,6 +152,7 @@ export function useInventoryTablePage(options: {
   }, [
     options.enabled,
     options.inventorySlug,
+    options.onAuthenticationRequired,
     options.page,
     options.visibleLimit,
     params,

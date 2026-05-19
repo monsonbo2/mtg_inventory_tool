@@ -1,4 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 import type { InventoryCreateRequest, InventorySummary } from "../types";
@@ -102,6 +109,7 @@ export function InventorySidebar(props: {
   onCollectionMenuOpenChange: (open: boolean) => void;
   onCreateInventory: (payload: InventoryCreateRequest) => Promise<InventoryCreateResult>;
   onSelectInventory: (inventorySlug: string) => void;
+  signInAction?: ReactNode;
 }) {
   const [createFormOpen, setCreateFormOpen] = useState(false);
   const inventorySwitcherId = useId();
@@ -506,6 +514,14 @@ export function InventorySidebar(props: {
             eyebrow="Collections"
             title="Collections unavailable"
             variant="error"
+          />
+        ) : props.appShellState === "signed_out" ? (
+          <PanelState
+            actions={props.signInAction}
+            body="Sign in to choose a collection and continue managing your cards."
+            compact
+            eyebrow="Collections"
+            title="Sign in required"
           />
         ) : currentInventory ? (
           <div className="inventory-sidebar-ready-shell">

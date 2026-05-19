@@ -1,4 +1,4 @@
-import { ApiClientError } from "./api";
+import { ApiClientError, isAuthenticationRequiredError } from "./api";
 import type {
   BulkInventoryItemOperation,
   ConditionCode,
@@ -191,6 +191,9 @@ export function formatTimestamp(value: string) {
 }
 
 export function toUserMessage(error: unknown, fallback: string) {
+  if (isAuthenticationRequiredError(error)) {
+    return "Your session expired. Sign in again.";
+  }
   if (error instanceof ApiClientError) {
     return error.message;
   }
