@@ -657,7 +657,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       if (error instanceof ApiClientError && error.status === 409) {
         return { ok: false, reason: "conflict" };
       }
-      showNotice(toUserMessage(error, "Could not create the destination collection."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not create the destination collection."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     } finally {
       setCreateInventoryBusy(false);
@@ -694,7 +697,10 @@ export function useInventoryMutations(options: UseInventoryMutationsOptions) {
       if (error instanceof ApiClientError && error.status === 409) {
         return { ok: false, reason: "conflict" };
       }
-      showNotice(toUserMessage(error, "Could not duplicate the collection."), "error");
+      showNotice(
+        getMutationErrorMessage(error, "Could not duplicate the collection."),
+        "error",
+      );
       return { ok: false, reason: "error" };
     } finally {
       setDuplicateInventoryBusy(false);

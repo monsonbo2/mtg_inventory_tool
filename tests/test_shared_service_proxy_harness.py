@@ -15,6 +15,7 @@ import unittest
 from urllib.request import Request, urlopen
 
 from tests.common import REPO_ROOT
+from tests.optional_dependencies import LOCALHOST_SOCKET_SKIP_REASON
 
 
 HARNESS_PATH = REPO_ROOT / "scripts" / "shared_service_proxy_harness.py"
@@ -134,7 +135,7 @@ class SharedServiceProxyHarnessTest(unittest.TestCase):
 
     @unittest.skipUnless(
         LOCALHOST_SERVER_TESTING_AVAILABLE,
-        "localhost socket access is unavailable; live proxy harness test is skipped.",
+        LOCALHOST_SOCKET_SKIP_REASON,
     )
     def test_proxy_rewrites_api_requests_and_neutralizes_spoofed_admin_headers(self) -> None:
         backend_server = ThreadingHTTPServer(("127.0.0.1", 0), RecordingBackendHandler)
@@ -170,7 +171,7 @@ class SharedServiceProxyHarnessTest(unittest.TestCase):
 
     @unittest.skipUnless(
         LOCALHOST_SERVER_TESTING_AVAILABLE,
-        "localhost socket access is unavailable; live proxy harness test is skipped.",
+        LOCALHOST_SOCKET_SKIP_REASON,
     )
     def test_proxy_returns_400_for_negative_content_length(self) -> None:
         backend_server = ThreadingHTTPServer(("127.0.0.1", 0), RecordingBackendHandler)
@@ -202,7 +203,7 @@ class SharedServiceProxyHarnessTest(unittest.TestCase):
 
     @unittest.skipUnless(
         LOCALHOST_SERVER_TESTING_AVAILABLE,
-        "localhost socket access is unavailable; live proxy harness test is skipped.",
+        LOCALHOST_SOCKET_SKIP_REASON,
     )
     def test_proxy_without_identity_strips_client_supplied_auth_headers(self) -> None:
         backend_server = ThreadingHTTPServer(("127.0.0.1", 0), RecordingBackendHandler)
@@ -235,7 +236,7 @@ class SharedServiceProxyHarnessTest(unittest.TestCase):
 
     @unittest.skipUnless(
         LOCALHOST_SERVER_TESTING_AVAILABLE,
-        "localhost socket access is unavailable; live proxy harness test is skipped.",
+        LOCALHOST_SOCKET_SKIP_REASON,
     )
     def test_proxy_serves_frontend_index_and_spa_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

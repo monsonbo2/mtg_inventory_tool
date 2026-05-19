@@ -2487,11 +2487,13 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 inventory_slug="personal",
                 scryfall_id="share-card-1",
                 quantity=2,
+                condition_code="NM",
                 finish="normal",
+                language_code="en",
                 location="Private Binder A",
                 acquisition_price="1.25",
                 acquisition_currency="USD",
-                notes="private note a",
+                notes="first private note",
                 tags_json='["private-a"]',
             )
             self._insert_inventory_item(
@@ -2499,11 +2501,13 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 inventory_slug="personal",
                 scryfall_id="share-card-1",
                 quantity=3,
+                condition_code="NM",
                 finish="normal",
+                language_code="en",
                 location="Private Binder B",
                 acquisition_price="2.50",
                 acquisition_currency="USD",
-                notes="private note b",
+                notes="second private note",
                 tags_json='["private-b"]',
             )
             self._insert_inventory_item(
@@ -2511,7 +2515,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 inventory_slug="personal",
                 scryfall_id="share-card-1",
                 quantity=1,
+                condition_code="NM",
                 finish="foil",
+                language_code="en",
                 location="Private Binder C",
                 acquisition_price="4.00",
                 acquisition_currency="USD",
@@ -2542,8 +2548,28 @@ class InventoryServiceTest(RepoSmokeTestCase):
 
             items_by_finish = {item.finish: serialize_response(item) for item in public_share.items}
             self.assertEqual({"normal", "foil"}, set(items_by_finish))
-            self.assertEqual(5, items_by_finish["normal"]["quantity"])
+            self.assertEqual(
+                {
+                    "scryfall_id": "share-card-1",
+                    "oracle_id": "share-oracle-1",
+                    "name": "Shared Test Card",
+                    "set_code": "tst",
+                    "set_name": "Test Set",
+                    "rarity": None,
+                    "collector_number": "1",
+                    "image_uri_small": "https://example.test/cards/share-card-1-small.jpg",
+                    "image_uri_normal": "https://example.test/cards/share-card-1-normal.jpg",
+                    "quantity": 5,
+                    "condition_code": "NM",
+                    "finish": "normal",
+                    "allowed_finishes": ["normal", "foil"],
+                    "language_code": "en",
+                },
+                items_by_finish["normal"],
+            )
             self.assertEqual(1, items_by_finish["foil"]["quantity"])
+            self.assertEqual("NM", items_by_finish["foil"]["condition_code"])
+            self.assertEqual("en", items_by_finish["foil"]["language_code"])
             for public_item in items_by_finish.values():
                 for private_key in (
                     "item_id",
