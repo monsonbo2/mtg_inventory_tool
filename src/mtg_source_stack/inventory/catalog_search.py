@@ -376,8 +376,8 @@ def search_card_names(
                             mtg_cards.scryfall_id
                     ) AS row_number
                 FROM mtg_cards
-                INNER JOIN limited_groups ON limited_groups.oracle_id = mtg_cards.oracle_id
-                WHERE {scope_filter_sql}
+                WHERE mtg_cards.oracle_id IN (SELECT oracle_id FROM limited_groups)
+                  AND {scope_filter_sql}
             )
             SELECT
                 representative_rows.oracle_id,
