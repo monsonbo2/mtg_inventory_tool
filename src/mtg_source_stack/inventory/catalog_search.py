@@ -36,6 +36,8 @@ from .response_models import (
 
 _LANGUAGE_ORDER = {code: index for index, code in enumerate(CANONICAL_LANGUAGE_CODES)}
 _GROUPED_NAME_SUBSTRING_FALLBACK_MIN_QUERY_LENGTH = 5
+CATALOG_NAME_SEARCH_WARMUP_QUERY = "lightning"
+CATALOG_NAME_SEARCH_WARMUP_LIMIT = 18
 
 
 def _catalog_search_row_kwargs_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -376,8 +378,8 @@ def search_card_names(
                             mtg_cards.scryfall_id
                     ) AS row_number
                 FROM mtg_cards
-                INNER JOIN limited_groups ON limited_groups.oracle_id = mtg_cards.oracle_id
-                WHERE {scope_filter_sql}
+                WHERE mtg_cards.oracle_id IN (SELECT oracle_id FROM limited_groups)
+                  AND {scope_filter_sql}
             )
             SELECT
                 representative_rows.oracle_id,
@@ -449,4 +451,12 @@ def search_card_names(
         items=items,
         total_count=total_count,
         has_more=total_count > len(items),
+    )
+
+
+def warm_catalog_name_search(db_path: str | Path) -> CatalogNameSearchResult:
+    return search_card_names(
+        db_path,
+        query=CATALOG_NAME_SEARCH_WARMUP_QUERY,
+        limit=CATALOG_NAME_SEARCH_WARMUP_LIMIT,
     )

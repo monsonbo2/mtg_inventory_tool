@@ -16,6 +16,7 @@ import argparse
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from ..db.connection import describe_sqlite_runtime_posture
 from ..db.migrator import migrate_database
 from ..db.schema import require_current_schema
 from ..errors import MtgStackError
+from ..inventory.catalog_search import warm_catalog_name_search
 from .dependencies import (
     DEFAULT_RUNTIME_MODE,
     ApiSettings,
@@ -218,6 +220,27 @@ async def lifespan(app):
         sqlite_posture["busy_timeout_ms"],
         sqlite_posture["foreign_keys"],
     )
+    if settings.catalog_warmup_enabled:
+        start = perf_counter()
+        try:
+            warmup_result = warm_catalog_name_search(settings.db_path)
+        except Exception:
+            logger.warning(
+                "Catalog name search warmup failed db_path=%s",
+                settings.db_path,
+                exc_info=True,
+            )
+        else:
+            elapsed_ms = (perf_counter() - start) * 1000
+            logger.info(
+                "Catalog name search warmup completed db_path=%s duration_ms=%.1f items=%s total_count=%s",
+                settings.db_path,
+                elapsed_ms,
+                len(warmup_result.items),
+                warmup_result.total_count,
+            )
+    else:
+        logger.info("Catalog name search warmup disabled db_path=%s", settings.db_path)
     yield
 
 
@@ -323,6 +346,7 @@ def settings_from_cli_args(args: argparse.Namespace) -> ApiSettings:
         ),
         host=args.host,
         port=int(args.port),
+        catalog_warmup_enabled=defaults.catalog_warmup_enabled,
         snapshot_signing_secret=snapshot_signing_secret_from_env(),
         trust_actor_headers=defaults.trust_actor_headers,
         authenticated_actor_header=defaults.authenticated_actor_header,

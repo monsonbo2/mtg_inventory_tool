@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 import socket
 import tempfile
@@ -9,9 +10,11 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from mtg_source_stack.api.app import build_arg_parser, main, settings_from_cli_args
+from mtg_source_stack.api.app import build_arg_parser, lifespan, main, settings_from_cli_args
+from mtg_source_stack.api.dependencies import ApiSettings
 from tests.optional_dependencies import (
     WEB_TEST_SKIP_REASON,
     web_test_dependencies_available,
@@ -27,7 +30,90 @@ if WEB_TESTING_AVAILABLE:
     import uvicorn
 
     from mtg_source_stack.api.app import create_app
-    from mtg_source_stack.api.dependencies import ApiSettings
+
+
+class ApiAppLifespanTest(unittest.TestCase):
+    def _app_for_settings(self, settings: ApiSettings) -> SimpleNamespace:
+        return SimpleNamespace(state=SimpleNamespace(settings=settings))
+
+    def _run_lifespan(self, app) -> None:
+        async def run_lifespan(app) -> None:
+            async with lifespan(app):
+                pass
+
+        asyncio.run(run_lifespan(app))
+
+    def test_lifespan_runs_catalog_warmup_when_enabled(self) -> None:
+        from mtg_source_stack.db.schema import initialize_database
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            app = self._app_for_settings(
+                ApiSettings(
+                    db_path=db_path,
+                    runtime_mode="local_demo",
+                    auto_migrate=False,
+                    host="127.0.0.1",
+                    port=8000,
+                )
+            )
+
+            with patch("mtg_source_stack.api.app.warm_catalog_name_search") as mock_warmup:
+                mock_warmup.return_value = SimpleNamespace(items=[object()], total_count=1)
+                self._run_lifespan(app)
+
+        mock_warmup.assert_called_once_with(db_path)
+
+    def test_lifespan_skips_catalog_warmup_when_disabled(self) -> None:
+        from mtg_source_stack.db.schema import initialize_database
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            app = self._app_for_settings(
+                ApiSettings(
+                    db_path=db_path,
+                    runtime_mode="local_demo",
+                    auto_migrate=False,
+                    host="127.0.0.1",
+                    port=8000,
+                    catalog_warmup_enabled=False,
+                )
+            )
+
+            with patch("mtg_source_stack.api.app.warm_catalog_name_search") as mock_warmup:
+                self._run_lifespan(app)
+
+        mock_warmup.assert_not_called()
+
+    def test_lifespan_logs_and_continues_when_catalog_warmup_fails(self) -> None:
+        from mtg_source_stack.db.schema import initialize_database
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "api.db"
+            initialize_database(db_path)
+            app = self._app_for_settings(
+                ApiSettings(
+                    db_path=db_path,
+                    runtime_mode="local_demo",
+                    auto_migrate=False,
+                    host="127.0.0.1",
+                    port=8000,
+                )
+            )
+
+            with (
+                patch("mtg_source_stack.api.app.warm_catalog_name_search", side_effect=RuntimeError("warmup failed")),
+                patch("mtg_source_stack.api.app.logger") as mock_logger,
+            ):
+                self._run_lifespan(app)
+
+        mock_logger.warning.assert_any_call(
+            "Catalog name search warmup failed db_path=%s",
+            db_path,
+            exc_info=True,
+        )
 
 
 def _localhost_server_testing_available() -> bool:
