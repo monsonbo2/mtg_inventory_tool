@@ -12,7 +12,8 @@
     ],
     "tcgplayer_product_id": null,
     "image_uri_small": "https://example.test/cards/lightning-bolt-en-small.jpg",
-    "image_uri_normal": "https://example.test/cards/lightning-bolt-en-normal.jpg"
+    "image_uri_normal": "https://example.test/cards/lightning-bolt-en-normal.jpg",
+    "image_uri_art_crop": "https://example.test/cards/lightning-bolt-en-art-crop.jpg"
   },
   {
     "scryfall_id": "demo-lightning-bolt-ja",
@@ -28,6 +29,7 @@
     ],
     "tcgplayer_product_id": null,
     "image_uri_small": "https://example.test/cards/lightning-bolt-ja-small.jpg",
-    "image_uri_normal": "https://example.test/cards/lightning-bolt-ja-normal.jpg"
+    "image_uri_normal": "https://example.test/cards/lightning-bolt-ja-normal.jpg",
+    "image_uri_art_crop": "https://example.test/cards/lightning-bolt-ja-art-crop.jpg"
   }
 ]

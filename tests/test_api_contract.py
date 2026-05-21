@@ -223,6 +223,7 @@ class ApiContractTest(RepoSmokeTestCase):
                 "collector_number": "161",
                 "image_uri_small": "https://example.test/cards/card-1-small.jpg",
                 "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
+                "image_uri_art_crop": "https://example.test/cards/card-1-art-crop.jpg",
                 "quantity": 4,
                 "condition_code": "NM",
                 "finish": "normal",
@@ -262,6 +263,7 @@ class ApiContractTest(RepoSmokeTestCase):
             "tcgplayer_product_id": None,
             "image_uri_small": "https://example.test/cards/card-1-small.jpg",
             "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
+            "image_uri_art_crop": "https://example.test/cards/card-1-art-crop.jpg",
         }
         printing_lookup_payload = {
             **catalog_payload,
@@ -282,6 +284,7 @@ class ApiContractTest(RepoSmokeTestCase):
             "available_languages": ["en", "ja", "de"],
             "image_uri_small": "https://example.test/cards/card-1-small.jpg",
             "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
+            "image_uri_art_crop": "https://example.test/cards/card-1-art-crop.jpg",
         }
         bootstrap_payload = {
             "created": True,
@@ -374,6 +377,7 @@ class ApiContractTest(RepoSmokeTestCase):
                     "collector_number": "161",
                     "image_uri_small": "https://example.test/cards/card-1-small.jpg",
                     "image_uri_normal": "https://example.test/cards/card-1-normal.jpg",
+                    "image_uri_art_crop": "https://example.test/cards/card-1-art-crop.jpg",
                     "quantity": 4,
                     "condition_code": "NM",
                     "finish": "normal",
@@ -539,6 +543,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("oracle-lightning-bolt", owned.oracle_id)
         self.assertEqual("3.00", owned.unit_price)
         self.assertEqual("https://example.test/cards/card-1-small.jpg", owned.image_uri_small)
+        self.assertEqual("https://example.test/cards/card-1-art-crop.jpg", owned.image_uri_art_crop)
         self.assertEqual(["normal", "foil"], owned.allowed_finishes)
         self.assertEqual("explicit", owned.printing_selection_mode)
         self.assertIsNone(owned.price_date)
@@ -548,6 +553,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual("Lightning Bolt", owned_page.items[0].name)
         self.assertEqual(["normal", "foil"], catalog.finishes)
         self.assertEqual("https://example.test/cards/card-1-normal.jpg", catalog.image_uri_normal)
+        self.assertEqual("https://example.test/cards/card-1-art-crop.jpg", catalog.image_uri_art_crop)
         self.assertTrue(printing_lookup.is_default_add_choice)
         self.assertEqual("oracle-lightning-bolt", printing_summary.oracle_id)
         self.assertIsNotNone(printing_summary.default_printing)
@@ -555,6 +561,7 @@ class ApiContractTest(RepoSmokeTestCase):
         self.assertEqual(2, printing_summary.printings_count)
         self.assertTrue(printing_summary.has_more_printings)
         self.assertEqual(["en", "ja", "de"], catalog_name.available_languages)
+        self.assertEqual("https://example.test/cards/card-1-art-crop.jpg", catalog_name.image_uri_art_crop)
         self.assertEqual(1, catalog_name_result.total_count)
         self.assertFalse(catalog_name_result.has_more)
         self.assertEqual("Binder A", inventory_create.default_location)

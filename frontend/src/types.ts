@@ -177,6 +177,7 @@ export interface PublicInventoryItem {
   collector_number: string;
   image_uri_small: string | null;
   image_uri_normal: string | null;
+  image_uri_art_crop: string | null;
   quantity: number;
   condition_code: ConditionCode;
   finish: FinishValue;
@@ -201,6 +202,7 @@ export interface CatalogSearchRow {
   tcgplayer_product_id: string | null;
   image_uri_small: string | null;
   image_uri_normal: string | null;
+  image_uri_art_crop: string | null;
 }
 
 export interface CatalogPrintingLookupRow extends CatalogSearchRow {
@@ -223,6 +225,7 @@ export interface CatalogNameSearchRow {
   available_languages: LanguageCode[];
   image_uri_small: string | null;
   image_uri_normal: string | null;
+  image_uri_art_crop: string | null;
 }
 
 export interface CatalogNameSearchResult {
@@ -242,6 +245,7 @@ export interface OwnedInventoryRow {
   collector_number: string;
   image_uri_small: string | null;
   image_uri_normal: string | null;
+  image_uri_art_crop: string | null;
   quantity: number;
   condition_code: ConditionCode;
   finish: FinishValue;
@@ -575,6 +579,7 @@ export interface ImportResolutionOptionResponse {
   lang: LanguageCode;
   image_uri_small: string | null;
   image_uri_normal: string | null;
+  image_uri_art_crop: string | null;
 }
 
 export interface CsvImportResolutionRequest {

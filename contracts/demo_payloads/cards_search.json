@@ -13,6 +13,7 @@
     ],
     "tcgplayer_product_id": null,
     "image_uri_small": "https://cards.scryfall.io/small/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645",
-    "image_uri_normal": "https://cards.scryfall.io/normal/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645"
+    "image_uri_normal": "https://cards.scryfall.io/normal/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645",
+    "image_uri_art_crop": "https://cards.scryfall.io/art_crop/front/d/5/d573ef03-4730-45aa-93dd-e45ac1dbaf4a.jpg?1559591645"
   }
 ]

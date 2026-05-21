@@ -339,11 +339,12 @@ def parse_json_object(value: str | None) -> dict[str, Any]:
     return {}
 
 
-def extract_image_uri_fields(value: str | None) -> tuple[str | None, str | None]:
+def extract_image_uri_fields(value: str | None) -> tuple[str | None, str | None, str | None]:
     image_uris = parse_json_object(value)
     small = text_or_none(image_uris.get("small"))
     normal = text_or_none(image_uris.get("normal"))
-    return small, normal
+    art_crop = text_or_none(image_uris.get("art_crop"))
+    return small, normal, art_crop
 
 
 def normalize_tag(value: str | None) -> str | None:

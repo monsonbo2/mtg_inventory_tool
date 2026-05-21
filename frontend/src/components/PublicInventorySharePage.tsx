@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getPublicInventoryShare } from "../api";
+import { getCroppedCardThumbnailUrls } from "../cardImageHelpers";
 import type { PublicInventoryShareResponse } from "../types";
 import { formatFinishLabel, formatLanguageCode } from "../uiHelpers";
 import { CardThumbnail } from "./ui/CardThumbnail";
@@ -133,8 +134,7 @@ export function PublicInventorySharePage(props: { shareToken: string }) {
                 key={`${item.scryfall_id}:${item.condition_code}:${item.finish}:${item.language_code}`}
               >
                 <CardThumbnail
-                  imageUrl={item.image_uri_small}
-                  imageUrlLarge={item.image_uri_normal}
+                  {...getCroppedCardThumbnailUrls(item)}
                   name={item.name}
                   variant="owned"
                 />

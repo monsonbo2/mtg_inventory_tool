@@ -1,5 +1,6 @@
 import type { CSSProperties, RefObject } from "react";
 
+import { getCroppedCardThumbnailUrls } from "../cardImageHelpers";
 import {
   summarizeSearchGroup,
   type SearchCardGroup,
@@ -140,8 +141,7 @@ export function SearchWorkspace(props: {
                     type="button"
                   >
                     <CardThumbnail
-                      imageUrl={group.image_uri_small}
-                      imageUrlLarge={group.image_uri_normal}
+                      {...getCroppedCardThumbnailUrls(group)}
                       name={group.name}
                       variant="search"
                     />

@@ -42,6 +42,7 @@ export type InventoryImportResolutionOptionView = {
   languageCode: string;
   imageUriSmall: string | null;
   imageUriNormal: string | null;
+  imageUriArtCrop: string | null;
   detail: string;
 };
 
@@ -154,6 +155,7 @@ function normalizeIssueOptions(
     languageCode: option.lang,
     imageUriNormal: option.image_uri_normal,
     imageUriSmall: option.image_uri_small,
+    imageUriArtCrop: option.image_uri_art_crop,
     detail: formatOptionDetail(option),
   }));
 }

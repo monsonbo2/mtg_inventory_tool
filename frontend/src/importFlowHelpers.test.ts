@@ -124,6 +124,7 @@ describe("importFlowHelpers", () => {
                 lang: "en",
                 image_uri_small: null,
                 image_uri_normal: null,
+                image_uri_art_crop: "https://example.test/cards/counterspell-art-crop.jpg",
               },
             ],
           },
@@ -152,6 +153,9 @@ describe("importFlowHelpers", () => {
 
     expect(progress.blockedCount).toBe(0);
     expect(progress.requiredCount).toBe(1);
+    expect(progress.issues[0].options[0].imageUriArtCrop).toBe(
+      "https://example.test/cards/counterspell-art-crop.jpg",
+    );
     expect(resolutionPayload).toEqual({
       mode: "deck_url",
       resolutions: [

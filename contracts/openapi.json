@@ -912,6 +912,17 @@
             "title": "Available Languages",
             "type": "array"
           },
+          "image_uri_art_crop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Art Crop"
+          },
           "image_uri_normal": {
             "anyOf": [
               {
@@ -953,7 +964,8 @@
           "printings_count",
           "available_languages",
           "image_uri_small",
-          "image_uri_normal"
+          "image_uri_normal",
+          "image_uri_art_crop"
         ],
         "title": "CatalogNameSearchRowResponse",
         "type": "object"
@@ -977,6 +989,17 @@
             },
             "title": "Finishes",
             "type": "array"
+          },
+          "image_uri_art_crop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Art Crop"
           },
           "image_uri_normal": {
             "anyOf": [
@@ -1061,6 +1084,7 @@
           "tcgplayer_product_id",
           "image_uri_small",
           "image_uri_normal",
+          "image_uri_art_crop",
           "is_default_add_choice"
         ],
         "title": "CatalogPrintingLookupRowResponse",
@@ -1137,6 +1161,17 @@
             },
             "title": "Finishes",
             "type": "array"
+          },
+          "image_uri_art_crop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Art Crop"
           },
           "image_uri_normal": {
             "anyOf": [
@@ -1215,7 +1250,8 @@
           "finishes",
           "tcgplayer_product_id",
           "image_uri_small",
-          "image_uri_normal"
+          "image_uri_normal",
+          "image_uri_art_crop"
         ],
         "title": "CatalogSearchRowResponse",
         "type": "object"
@@ -2637,6 +2673,17 @@
             "title": "Finish",
             "type": "string"
           },
+          "image_uri_art_crop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Art Crop"
+          },
           "image_uri_normal": {
             "anyOf": [
               {
@@ -2690,7 +2737,8 @@
           "collector_number",
           "lang",
           "image_uri_small",
-          "image_uri_normal"
+          "image_uri_normal",
+          "image_uri_art_crop"
         ],
         "title": "ImportResolutionOptionResponse",
         "type": "object"
@@ -3786,6 +3834,17 @@
             "title": "Finish",
             "type": "string"
           },
+          "image_uri_art_crop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Art Crop"
+          },
           "image_uri_normal": {
             "anyOf": [
               {
@@ -3924,6 +3983,7 @@
           "collector_number",
           "image_uri_small",
           "image_uri_normal",
+          "image_uri_art_crop",
           "quantity",
           "condition_code",
           "finish",
@@ -4127,6 +4187,17 @@
             "title": "Finish",
             "type": "string"
           },
+          "image_uri_art_crop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Uri Art Crop"
+          },
           "image_uri_normal": {
             "anyOf": [
               {
@@ -4200,6 +4271,7 @@
           "collector_number",
           "image_uri_small",
           "image_uri_normal",
+          "image_uri_art_crop",
           "quantity",
           "condition_code",
           "finish",

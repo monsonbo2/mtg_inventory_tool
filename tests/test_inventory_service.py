@@ -12,7 +12,8 @@ from unittest.mock import patch
 from mtg_source_stack.db.connection import connect
 from mtg_source_stack.db.schema import initialize_database
 from mtg_source_stack.errors import ConflictError, NotFoundError, ValidationError
-from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER
+from mtg_source_stack.inventory.import_resolution import build_resolution_options_for_catalog_row
+from mtg_source_stack.inventory.normalize import MERGED_ACQUISITION_NOTE_MARKER, extract_image_uri_fields
 from mtg_source_stack.inventory.response_models import (
     AddCardResult,
     BulkInventoryItemMutationResult,
@@ -79,6 +80,40 @@ TEST_SHARE_TOKEN_SECRET = "test-share-token-secret"
 
 
 class InventoryServiceTest(RepoSmokeTestCase):
+    def test_extract_image_uri_fields_includes_art_crop_and_allows_absence(self) -> None:
+        self.assertEqual(
+            (
+                "https://example.test/cards/card-small.jpg",
+                "https://example.test/cards/card-normal.jpg",
+                "https://example.test/cards/card-art-crop.jpg",
+            ),
+            extract_image_uri_fields(
+                """
+                {
+                  "small": "https://example.test/cards/card-small.jpg",
+                  "normal": "https://example.test/cards/card-normal.jpg",
+                  "art_crop": "https://example.test/cards/card-art-crop.jpg"
+                }
+                """
+            ),
+        )
+        self.assertEqual(
+            (
+                "https://example.test/cards/card-small.jpg",
+                "https://example.test/cards/card-normal.jpg",
+                None,
+            ),
+            extract_image_uri_fields(
+                """
+                {
+                  "small": "https://example.test/cards/card-small.jpg",
+                  "normal": "https://example.test/cards/card-normal.jpg"
+                }
+                """
+            ),
+        )
+        self.assertEqual((None, None, None), extract_image_uri_fields(None))
+
     def _insert_test_card(
         self,
         db_path: Path,
@@ -136,7 +171,9 @@ class InventoryServiceTest(RepoSmokeTestCase):
                 f'{scryfall_id}'
                 '-small.jpg","normal":"https://example.test/cards/'
                 f'{scryfall_id}'
-                '-normal.jpg"}'
+                '-normal.jpg","art_crop":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-art-crop.jpg"}'
             )
 
         with connect(db_path) as connection:
@@ -853,7 +890,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         '9',
                         'en',
                         '["nonfoil","foil"]',
-                        '{"small":"https://example.test/cards/search-card-1-small.jpg","normal":"https://example.test/cards/search-card-1-normal.jpg"}'
+                        '{"small":"https://example.test/cards/search-card-1-small.jpg","normal":"https://example.test/cards/search-card-1-normal.jpg","art_crop":"https://example.test/cards/search-card-1-art-crop.jpg"}'
                     )
                     """
                 )
@@ -868,10 +905,46 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(["normal", "foil"], rows[0].finishes)
             self.assertEqual("https://example.test/cards/search-card-1-small.jpg", rows[0].image_uri_small)
             self.assertEqual("https://example.test/cards/search-card-1-normal.jpg", rows[0].image_uri_normal)
+            self.assertEqual("https://example.test/cards/search-card-1-art-crop.jpg", rows[0].image_uri_art_crop)
             self.assertEqual(["normal", "foil"], serialize_response(rows)[0]["finishes"])
             self.assertEqual(
                 "https://example.test/cards/search-card-1-small.jpg",
                 serialize_response(rows)[0]["image_uri_small"],
+            )
+            self.assertEqual(
+                "https://example.test/cards/search-card-1-art-crop.jpg",
+                serialize_response(rows)[0]["image_uri_art_crop"],
+            )
+
+    def test_import_resolution_options_include_art_crop_image_uri(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "collection.db"
+            initialize_database(db_path)
+
+            self._insert_catalog_card(
+                db_path,
+                scryfall_id="resolution-card-1",
+                oracle_id="resolution-oracle-1",
+                name="Resolution Test Card",
+            )
+
+            with connect(db_path) as connection:
+                row = connection.execute(
+                    """
+                    SELECT *
+                    FROM mtg_cards
+                    WHERE scryfall_id = ?
+                    """,
+                    ("resolution-card-1",),
+                ).fetchone()
+
+            options, requires_choice = build_resolution_options_for_catalog_row(row)
+
+            self.assertFalse(requires_choice)
+            self.assertEqual(1, len(options))
+            self.assertEqual(
+                "https://example.test/cards/resolution-card-1-art-crop.jpg",
+                options[0].image_uri_art_crop,
             )
 
     def test_add_card_can_resolve_oracle_id_and_inherit_printing_language(self) -> None:
@@ -1363,7 +1436,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                             "15",
                             "en",
                             "2024-01-01",
-                            '{"small":"https://example.test/cards/grouped-search-en-small.jpg","normal":"https://example.test/cards/grouped-search-en-normal.jpg"}',
+                            '{"small":"https://example.test/cards/grouped-search-en-small.jpg","normal":"https://example.test/cards/grouped-search-en-normal.jpg","art_crop":"https://example.test/cards/grouped-search-en-art-crop.jpg"}',
                         ),
                         (
                             "grouped-search-ja",
@@ -1407,6 +1480,10 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual(
                 "https://example.test/cards/grouped-search-en-normal.jpg",
                 result.items[0].image_uri_normal,
+            )
+            self.assertEqual(
+                "https://example.test/cards/grouped-search-en-art-crop.jpg",
+                result.items[0].image_uri_art_crop,
             )
 
     def test_search_card_names_filters_group_counts_languages_and_representative_rows(self) -> None:
@@ -2396,6 +2473,10 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("Shared Test Card", public_item["name"])
             self.assertEqual(3, public_item["quantity"])
             self.assertEqual(["normal", "foil"], public_item["allowed_finishes"])
+            self.assertEqual(
+                "https://example.test/cards/share-card-1-art-crop.jpg",
+                public_item["image_uri_art_crop"],
+            )
             for private_key in (
                 "item_id",
                 "location",
@@ -2559,6 +2640,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                     "collector_number": "1",
                     "image_uri_small": "https://example.test/cards/share-card-1-small.jpg",
                     "image_uri_normal": "https://example.test/cards/share-card-1-normal.jpg",
+                    "image_uri_art_crop": "https://example.test/cards/share-card-1-art-crop.jpg",
                     "quantity": 5,
                     "condition_code": "NM",
                     "finish": "normal",
@@ -6390,7 +6472,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
                         'Test Set',
                         '1',
                         '["normal","foil"]',
-                        '{"small":"https://example.test/cards/price-card-1-small.jpg","normal":"https://example.test/cards/price-card-1-normal.jpg"}'
+                        '{"small":"https://example.test/cards/price-card-1-small.jpg","normal":"https://example.test/cards/price-card-1-normal.jpg","art_crop":"https://example.test/cards/price-card-1-art-crop.jpg"}'
                     )
                     """
                 )
@@ -6471,6 +6553,7 @@ class InventoryServiceTest(RepoSmokeTestCase):
             self.assertEqual("USD", owned_rows[0].currency)
             self.assertEqual("https://example.test/cards/price-card-1-small.jpg", owned_rows[0].image_uri_small)
             self.assertEqual("https://example.test/cards/price-card-1-normal.jpg", owned_rows[0].image_uri_normal)
+            self.assertEqual("https://example.test/cards/price-card-1-art-crop.jpg", owned_rows[0].image_uri_art_crop)
             self.assertEqual(["normal", "foil"], owned_rows[0].allowed_finishes)
             self.assertEqual(Decimal("2.5"), owned_rows[0].unit_price)
             self.assertEqual(Decimal("5.0"), owned_rows[0].est_value)

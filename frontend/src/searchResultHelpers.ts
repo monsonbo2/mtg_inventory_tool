@@ -7,6 +7,7 @@ export type SearchCardGroup = {
   name: string;
   image_uri_small: string | null;
   image_uri_normal: string | null;
+  image_uri_art_crop: string | null;
   printingsCount: number;
   availableLanguages: string[];
 };
@@ -18,6 +19,7 @@ export function createSearchCardGroups(rows: CatalogNameSearchRow[]) {
     name: row.name,
     image_uri_small: row.image_uri_small,
     image_uri_normal: row.image_uri_normal,
+    image_uri_art_crop: row.image_uri_art_crop,
     printingsCount: row.printings_count,
     availableLanguages: row.available_languages,
   }));

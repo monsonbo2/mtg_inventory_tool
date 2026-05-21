@@ -111,7 +111,7 @@ def _owned_inventory_page_order_by_clause(*, sort_key: str, sort_direction: str)
 def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
     unit_price = coerce_decimal(row.get("unit_price"))
     quantity = int(row["quantity"])
-    image_uri_small, image_uri_normal = extract_image_uri_fields(row.get("image_uris_json"))
+    image_uri_small, image_uri_normal, image_uri_art_crop = extract_image_uri_fields(row.get("image_uris_json"))
     return OwnedInventoryRow(
         item_id=int(row["item_id"]),
         scryfall_id=row["scryfall_id"],
@@ -123,6 +123,7 @@ def build_owned_inventory_row(row: dict[str, Any]) -> OwnedInventoryRow:
         collector_number=row["collector_number"],
         image_uri_small=image_uri_small,
         image_uri_normal=image_uri_normal,
+        image_uri_art_crop=image_uri_art_crop,
         quantity=quantity,
         condition_code=row["condition_code"],
         finish=row["finish"],

@@ -58,6 +58,7 @@ function getPrintingLookupCacheKey(
 }
 
 type SuggestionThumbnail = {
+  image_uri_art_crop: string | null;
   image_uri_normal: string | null;
   image_uri_small: string | null;
 };
@@ -223,6 +224,8 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
     )
       .then((summary) => {
         const thumbnail = {
+          image_uri_art_crop:
+            summary.default_printing?.image_uri_art_crop ?? row.image_uri_art_crop,
           image_uri_normal:
             summary.default_printing?.image_uri_normal ?? row.image_uri_normal,
           image_uri_small:
@@ -236,6 +239,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         notifyAuthenticationRequired(error);
         delete suggestionThumbnailPromisesRef.current[cacheKey];
         return {
+          image_uri_art_crop: row.image_uri_art_crop,
           image_uri_normal: row.image_uri_normal,
           image_uri_small: row.image_uri_small,
         };
@@ -261,6 +265,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
       rows.map(async (row) => {
         const thumbnail = await loadSuggestionThumbnail(row, options.scope);
         if (
+          thumbnail.image_uri_art_crop === row.image_uri_art_crop &&
           thumbnail.image_uri_small === row.image_uri_small &&
           thumbnail.image_uri_normal === row.image_uri_normal
         ) {
@@ -268,6 +273,7 @@ export function useCardSearch(options: UseCardSearchOptions = {}) {
         }
         return {
           ...row,
+          image_uri_art_crop: thumbnail.image_uri_art_crop,
           image_uri_normal: thumbnail.image_uri_normal,
           image_uri_small: thumbnail.image_uri_small,
         };

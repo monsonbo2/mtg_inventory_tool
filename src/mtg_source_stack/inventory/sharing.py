@@ -447,7 +447,7 @@ def revoke_inventory_share_link(
 
 
 def _public_item_from_row(row: sqlite3.Row) -> PublicInventoryItem:
-    image_uri_small, image_uri_normal = extract_image_uri_fields(row["image_uris_json"])
+    image_uri_small, image_uri_normal, image_uri_art_crop = extract_image_uri_fields(row["image_uris_json"])
     return PublicInventoryItem(
         scryfall_id=row["scryfall_id"],
         oracle_id=row["oracle_id"],
@@ -458,6 +458,7 @@ def _public_item_from_row(row: sqlite3.Row) -> PublicInventoryItem:
         collector_number=row["collector_number"],
         image_uri_small=image_uri_small,
         image_uri_normal=image_uri_normal,
+        image_uri_art_crop=image_uri_art_crop,
         quantity=int(row["quantity"]),
         condition_code=row["condition_code"],
         finish=row["finish"],
