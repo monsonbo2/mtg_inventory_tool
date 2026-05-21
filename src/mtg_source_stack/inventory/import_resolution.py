@@ -20,6 +20,7 @@ class ImportResolutionOption:
     lang: str
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +120,7 @@ def build_resolution_options_for_catalog_row(
     prefer_default_finish: bool = True,
 ) -> tuple[list[ImportResolutionOption], bool]:
     image_uris_json = row["image_uris_json"] if "image_uris_json" in row.keys() else None
-    image_uri_small, image_uri_normal = extract_image_uri_fields(image_uris_json)
+    image_uri_small, image_uri_normal, image_uri_art_crop = extract_image_uri_fields(image_uris_json)
     finishes = normalized_catalog_finish_list(row["finishes_json"])
     if not finishes:
         finishes = ["normal"]
@@ -154,6 +155,7 @@ def build_resolution_options_for_catalog_row(
         "lang": text_or_none(row["lang"]) or "",
         "image_uri_small": image_uri_small,
         "image_uri_normal": image_uri_normal,
+        "image_uri_art_crop": image_uri_art_crop,
     }
     return (
         [

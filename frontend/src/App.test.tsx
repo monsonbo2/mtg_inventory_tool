@@ -105,6 +105,7 @@ describe("App", () => {
       collector_number: "161",
       image_uri_small: null,
       image_uri_normal: null,
+      image_uri_art_crop: null,
       quantity: 2,
       condition_code: "NM",
       finish: "normal",
@@ -139,6 +140,7 @@ describe("App", () => {
       tcgplayer_product_id: "1001",
       image_uri_small: null,
       image_uri_normal: null,
+      image_uri_art_crop: null,
       is_default_add_choice: false,
       ...overrides,
     };
@@ -175,6 +177,7 @@ describe("App", () => {
       available_languages: ["en"],
       image_uri_small: null,
       image_uri_normal: null,
+      image_uri_art_crop: null,
       ...overrides,
     };
   }
@@ -1352,6 +1355,7 @@ describe("App", () => {
                   lang: "en",
                   image_uri_small: null,
                   image_uri_normal: null,
+                  image_uri_art_crop: null,
                 },
                 {
                   scryfall_id: "counterspell-7ed-foil",
@@ -1363,6 +1367,7 @@ describe("App", () => {
                   lang: "en",
                   image_uri_small: null,
                   image_uri_normal: null,
+                  image_uri_art_crop: null,
                 },
               ],
             },
@@ -1902,6 +1907,7 @@ describe("App", () => {
       collector_number: "161",
       image_uri_small: null,
       image_uri_normal: null,
+      image_uri_art_crop: null,
       quantity: 2,
       condition_code: "NM",
       finish: "normal",
@@ -2209,6 +2215,7 @@ describe("App", () => {
       printings_count: 1,
       image_uri_small: "https://example.test/cards/forest-suggestion-small.jpg",
       image_uri_normal: "https://example.test/cards/forest-suggestion-normal.jpg",
+      image_uri_art_crop: "https://example.test/cards/forest-suggestion-art-crop.jpg",
     });
     const forceOfWill = buildNameSearchRow({
       oracle_id: "force-oracle",
@@ -2217,6 +2224,7 @@ describe("App", () => {
       available_languages: ["en", "de"],
       image_uri_small: "https://example.test/cards/force-suggestion-small.jpg",
       image_uri_normal: "https://example.test/cards/force-suggestion-normal.jpg",
+      image_uri_art_crop: "https://example.test/cards/force-suggestion-art-crop.jpg",
     });
 
     mockBaseSearchApp();
@@ -2234,6 +2242,7 @@ describe("App", () => {
             name: "Forest",
             image_uri_small: "https://example.test/cards/forest-default-small.jpg",
             image_uri_normal: "https://example.test/cards/forest-default-normal.jpg",
+            image_uri_art_crop: "https://example.test/cards/forest-default-art-crop.jpg",
             is_default_add_choice: true,
           }),
         ], { oracle_id: oracleId });
@@ -2246,6 +2255,7 @@ describe("App", () => {
             name: "Force of Will",
             image_uri_small: "https://example.test/cards/force-default-small.jpg",
             image_uri_normal: "https://example.test/cards/force-default-normal.jpg",
+            image_uri_art_crop: "https://example.test/cards/force-default-art-crop.jpg",
             is_default_add_choice: true,
           }),
         ], { oracle_id: oracleId });
@@ -2266,7 +2276,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(within(forceOption).getByAltText("Force of Will card art")).toHaveAttribute(
         "src",
-        "https://example.test/cards/force-default-small.jpg",
+        "https://example.test/cards/force-default-art-crop.jpg",
       );
     });
 

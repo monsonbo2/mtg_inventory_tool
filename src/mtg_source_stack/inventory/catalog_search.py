@@ -42,7 +42,7 @@ CATALOG_NAME_SEARCH_WARMUP_LIMIT = 18
 
 def _catalog_search_row_kwargs_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     item = dict(payload)
-    image_uri_small, image_uri_normal = extract_image_uri_fields(item.pop("image_uris_json", None))
+    image_uri_small, image_uri_normal, image_uri_art_crop = extract_image_uri_fields(item.pop("image_uris_json", None))
     return {
         "scryfall_id": item["scryfall_id"],
         "name": item["name"],
@@ -55,6 +55,7 @@ def _catalog_search_row_kwargs_from_payload(payload: Mapping[str, Any]) -> dict[
         "tcgplayer_product_id": item["tcgplayer_product_id"],
         "image_uri_small": image_uri_small,
         "image_uri_normal": image_uri_normal,
+        "image_uri_art_crop": image_uri_art_crop,
     }
 
 
@@ -435,7 +436,7 @@ def search_card_names(
 
     items: list[CatalogNameSearchRow] = []
     for row in rows:
-        image_uri_small, image_uri_normal = extract_image_uri_fields(row["image_uris_json"])
+        image_uri_small, image_uri_normal, image_uri_art_crop = extract_image_uri_fields(row["image_uris_json"])
         items.append(
             CatalogNameSearchRow(
                 oracle_id=row["oracle_id"],
@@ -444,6 +445,7 @@ def search_card_names(
                 available_languages=_sorted_available_languages(languages_by_oracle.get(row["oracle_id"], [])),
                 image_uri_small=image_uri_small,
                 image_uri_normal=image_uri_normal,
+                image_uri_art_crop=image_uri_art_crop,
             )
         )
     total_count = int(rows[0]["total_count"])

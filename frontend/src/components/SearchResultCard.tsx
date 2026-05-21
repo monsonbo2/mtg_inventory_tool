@@ -6,6 +6,7 @@ import type {
   CatalogPrintingLookupRow,
   FinishValue,
 } from "../types";
+import { getCroppedCardThumbnailUrls } from "../cardImageHelpers";
 import type { SearchCardGroup } from "../searchResultHelpers";
 import type { AsyncStatus, NoticeTone, SearchAddAvailability } from "../uiTypes";
 import {
@@ -280,6 +281,12 @@ export function SearchResultCard(props: {
           ? "Printing required"
           : "Printings";
   const headerPrintingDetail = effectivePrintingDetail ?? printingsAvailableLabel;
+  const thumbnailImageUrls = getCroppedCardThumbnailUrls({
+    image_uri_art_crop:
+      effectivePrinting?.image_uri_art_crop ?? props.group.image_uri_art_crop,
+    image_uri_normal: effectivePrinting?.image_uri_normal ?? props.group.image_uri_normal,
+    image_uri_small: effectivePrinting?.image_uri_small ?? props.group.image_uri_small,
+  });
   const addStatusTone =
     !canAdd || !quantityIsValid || printingStatus === "error"
       ? "error"
@@ -446,8 +453,7 @@ export function SearchResultCard(props: {
       <form className="add-card-form" onSubmit={handleSubmit}>
         <div className="card-hero">
           <CardThumbnail
-            imageUrl={effectivePrinting?.image_uri_small || props.group.image_uri_small}
-            imageUrlLarge={effectivePrinting?.image_uri_normal || props.group.image_uri_normal}
+            {...thumbnailImageUrls}
             name={props.group.name}
             variant="search"
           />

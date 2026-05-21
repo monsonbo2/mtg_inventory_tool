@@ -8,6 +8,7 @@ import type {
   PatchInventoryItemRequest,
 } from "../types";
 import type { ItemMutationAction, MutationOutcome } from "../uiTypes";
+import { getCroppedCardThumbnailUrls } from "../cardImageHelpers";
 import {
   decimalToNumber,
   equalStringArrays,
@@ -333,8 +334,7 @@ function CompactInventoryRow(props: {
         <div className="compact-row-left">
           <CardThumbnail
             imageSizes="(min-width: 1180px) 200px, 56px"
-            imageUrl={props.item.image_uri_small}
-            imageUrlLarge={props.item.image_uri_normal}
+            {...getCroppedCardThumbnailUrls(props.item)}
             name={props.item.name}
             variant="owned"
           />

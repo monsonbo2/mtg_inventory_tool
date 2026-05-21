@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 
+type ImageCandidate = {
+  includeInSrcSet: boolean;
+  url: string;
+  width: number;
+};
+
 export function CardThumbnail(props: {
+  fallbackImageUrl?: string | null;
   imageSizes?: string;
   imageUrl: string | null;
   imageUrlLarge: string | null;
@@ -11,23 +18,28 @@ export function CardThumbnail(props: {
 
   useEffect(() => {
     setFailedImageUrls([]);
-  }, [props.imageUrl, props.imageUrlLarge]);
+  }, [props.fallbackImageUrl, props.imageUrl, props.imageUrlLarge]);
 
   const imageCandidates = [
-    { url: props.imageUrl, width: 146 },
-    { url: props.imageUrlLarge, width: 488 },
-  ].filter((image): image is { url: string; width: number } => {
-    if (!image.url) {
-      return false;
-    }
-    return !failedImageUrls.includes(image.url);
-  });
-  const activeImageUrl =
-    imageCandidates.find((image) => !failedImageUrls.includes(image.url))?.url || null;
+    { includeInSrcSet: true, url: props.imageUrl, width: 146 },
+    { includeInSrcSet: true, url: props.imageUrlLarge, width: 488 },
+    { includeInSrcSet: false, url: props.fallbackImageUrl ?? null, width: 488 },
+  ]
+    .filter((image): image is ImageCandidate => {
+      if (!image.url) {
+        return false;
+      }
+      return !failedImageUrls.includes(image.url);
+    })
+    .filter((image, index, images) => {
+      return images.findIndex((candidate) => candidate.url === image.url) === index;
+    });
+  const activeImageUrl = imageCandidates[0]?.url || null;
   const hasImage = Boolean(activeImageUrl);
+  const srcSetCandidates = imageCandidates.filter((image) => image.includeInSrcSet);
   const srcSet =
-    props.imageSizes && imageCandidates.length > 1
-      ? imageCandidates.map((image) => `${image.url} ${image.width}w`).join(", ")
+    props.imageSizes && srcSetCandidates.length > 1
+      ? srcSetCandidates.map((image) => `${image.url} ${image.width}w`).join(", ")
       : undefined;
   const className = `card-thumb card-thumb-${props.variant}`;
   const fallbackInitials =

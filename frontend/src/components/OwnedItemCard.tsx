@@ -12,6 +12,7 @@ import type {
   MutationOutcome,
   NoticeTone,
 } from "../uiTypes";
+import { getCroppedCardThumbnailUrls } from "../cardImageHelpers";
 import {
   decimalToNumber,
   equalStringArrays,
@@ -207,8 +208,7 @@ export function OwnedItemCard(props: {
     >
       <div className="card-hero">
         <CardThumbnail
-          imageUrl={props.item.image_uri_small}
-          imageUrlLarge={props.item.image_uri_normal}
+          {...getCroppedCardThumbnailUrls(props.item)}
           name={props.item.name}
           variant="owned"
         />

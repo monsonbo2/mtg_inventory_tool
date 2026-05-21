@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { getCroppedCardThumbnailUrls } from "../cardImageHelpers";
 import { CardThumbnail } from "./ui/CardThumbnail";
 import type { CatalogNameSearchRow } from "../types";
 import type { AsyncStatus } from "../uiTypes";
@@ -210,8 +211,7 @@ export function SearchAutocomplete(props: {
               type="button"
             >
               <CardThumbnail
-                imageUrl={result.image_uri_small}
-                imageUrlLarge={result.image_uri_normal}
+                {...getCroppedCardThumbnailUrls(result)}
                 name={result.name}
                 variant="search"
               />

@@ -37,6 +37,7 @@ function buildPublicInventoryShare(
         collector_number: "161",
         condition_code: "NM",
         finish: "normal",
+        image_uri_art_crop: "https://example.test/cards/bolt-art-crop.jpg",
         image_uri_normal: null,
         image_uri_small: null,
         language_code: "en",
@@ -85,6 +86,10 @@ describe("public share route", () => {
     expect(screen.getByText("NM")).toBeInTheDocument();
     expect(screen.getByText("Normal")).toBeInTheDocument();
     expect(screen.getByText("EN")).toBeInTheDocument();
+    expect(screen.getByAltText("Lightning Bolt card art")).toHaveAttribute(
+      "src",
+      "https://example.test/cards/bolt-art-crop.jpg",
+    );
     expect(getPublicInventoryShare).toHaveBeenCalledWith("v1.1.public.sig");
     expect(getAccessSummary).not.toHaveBeenCalled();
     expect(listInventories).not.toHaveBeenCalled();

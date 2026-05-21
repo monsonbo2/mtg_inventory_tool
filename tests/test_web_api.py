@@ -199,6 +199,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 [{"type": "string"}, {"type": "null"}],
                 components[card_schema_name]["properties"]["image_uri_normal"]["anyOf"],
             )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                components[card_schema_name]["properties"]["image_uri_art_crop"]["anyOf"],
+            )
             search_parameters = {
                 parameter["name"]: parameter
                 for parameter in spec["paths"]["/cards/search"]["get"]["parameters"]
@@ -239,6 +243,10 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 "string",
                 components[card_name_schema_name]["properties"]["available_languages"]["items"]["type"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                components[card_name_schema_name]["properties"]["image_uri_art_crop"]["anyOf"],
             )
             self.assertEqual(
                 "integer",
@@ -326,6 +334,10 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 [{"type": "string"}, {"type": "null"}],
                 owned_properties["image_uri_normal"]["anyOf"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                owned_properties["image_uri_art_crop"]["anyOf"],
             )
             self.assertEqual(
                 ["normal", "foil", "etched"],
@@ -538,6 +550,10 @@ class WebApiSchemaTest(unittest.TestCase):
                 components[public_share_schema_name]["properties"]["items"]["items"]["$ref"]
             )
             public_item_properties = components[public_item_schema_name]["properties"]
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                public_item_properties["image_uri_art_crop"]["anyOf"],
+            )
             self.assertNotIn("notes", public_item_properties)
             self.assertNotIn("acquisition_price", public_item_properties)
             self.assertNotIn("location", public_item_properties)
@@ -603,6 +619,10 @@ class WebApiSchemaTest(unittest.TestCase):
             self.assertEqual(
                 "boolean",
                 components["CsvImportResolutionIssueResponse"]["properties"]["blocking"]["type"],
+            )
+            self.assertEqual(
+                [{"type": "string"}, {"type": "null"}],
+                components["ImportResolutionOptionResponse"]["properties"]["image_uri_art_crop"]["anyOf"],
             )
             decklist_request_schema = spec["paths"]["/imports/decklist"]["post"]["requestBody"]["content"][
                 "application/json"
@@ -1048,7 +1068,7 @@ class WebApiTest(unittest.TestCase):
                     'Test Set',
                     '10',
                     ?,
-                    '{"small":"https://example.test/cards/api-card-1-small.jpg","normal":"https://example.test/cards/api-card-1-normal.jpg"}'
+                    '{"small":"https://example.test/cards/api-card-1-small.jpg","normal":"https://example.test/cards/api-card-1-normal.jpg","art_crop":"https://example.test/cards/api-card-1-art-crop.jpg"}'
                 )
                 """,
                 ("api-card-1", "api-oracle-1", "API Test Card", finishes_json),
@@ -1082,7 +1102,9 @@ class WebApiTest(unittest.TestCase):
                 f'{scryfall_id}'
                 '-small.jpg","normal":"https://example.test/cards/'
                 f'{scryfall_id}'
-                '-normal.jpg"}'
+                '-normal.jpg","art_crop":"https://example.test/cards/'
+                f'{scryfall_id}'
+                '-art-crop.jpg"}'
             )
 
         with connect(db_path) as connection:
@@ -1156,7 +1178,7 @@ class WebApiTest(unittest.TestCase):
                         "14",
                         "en",
                         "2024-02-09",
-                        '{"small":"https://example.test/cards/api-printing-en-new-small.jpg","normal":"https://example.test/cards/api-printing-en-new-normal.jpg"}',
+                        '{"small":"https://example.test/cards/api-printing-en-new-small.jpg","normal":"https://example.test/cards/api-printing-en-new-normal.jpg","art_crop":"https://example.test/cards/api-printing-en-new-art-crop.jpg"}',
                     ),
                     (
                         "api-printing-ja",
@@ -1316,6 +1338,10 @@ class WebApiTest(unittest.TestCase):
                     "https://example.test/cards/api-card-1-normal.jpg",
                     search.json()[0]["image_uri_normal"],
                 )
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-art-crop.jpg",
+                    search.json()[0]["image_uri_art_crop"],
+                )
 
                 added = client.post(
                     "/inventories/personal/items",
@@ -1351,6 +1377,10 @@ class WebApiTest(unittest.TestCase):
                     "https://example.test/cards/api-card-1-normal.jpg",
                     listed.json()[0]["image_uri_normal"],
                 )
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-art-crop.jpg",
+                    listed.json()[0]["image_uri_art_crop"],
+                )
 
                 paged = client.get(
                     "/inventories/personal/items/page",
@@ -1362,6 +1392,10 @@ class WebApiTest(unittest.TestCase):
                 self.assertFalse(paged.json()["has_more"])
                 self.assertEqual("name", paged.json()["sort_key"])
                 self.assertEqual("api-oracle-1", paged.json()["items"][0]["oracle_id"])
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-art-crop.jpg",
+                    paged.json()["items"][0]["image_uri_art_crop"],
+                )
 
                 patched = client.patch(
                     f"/inventories/personal/items/{added_payload['item_id']}",
@@ -2838,6 +2872,10 @@ class WebApiTest(unittest.TestCase):
                     "https://example.test/cards/api-printing-en-new-small.jpg",
                     name_search.json()["items"][0]["image_uri_small"],
                 )
+                self.assertEqual(
+                    "https://example.test/cards/api-printing-en-new-art-crop.jpg",
+                    name_search.json()["items"][0]["image_uri_art_crop"],
+                )
 
                 default_printings = client.get("/cards/oracle/api-oracle-lookup/printings")
                 self.assertEqual(200, default_printings.status_code)
@@ -2846,6 +2884,10 @@ class WebApiTest(unittest.TestCase):
                     [row["scryfall_id"] for row in default_printings.json()],
                 )
                 self.assertEqual([True, False], [row["is_default_add_choice"] for row in default_printings.json()])
+                self.assertEqual(
+                    "https://example.test/cards/api-printing-en-new-art-crop.jpg",
+                    default_printings.json()[0]["image_uri_art_crop"],
+                )
 
                 all_printings = client.get(
                     "/cards/oracle/api-oracle-lookup/printings",
@@ -5346,6 +5388,10 @@ class WebApiTest(unittest.TestCase):
                 self.assertEqual("API Test Card", public_item["name"])
                 self.assertEqual(5, public_item["quantity"])
                 self.assertEqual("normal", public_item["finish"])
+                self.assertEqual(
+                    "https://example.test/cards/api-card-1-art-crop.jpg",
+                    public_item["image_uri_art_crop"],
+                )
                 self.assertNotIn("notes", public_item)
                 self.assertNotIn("acquisition_price", public_item)
                 self.assertNotIn("acquisition_currency", public_item)

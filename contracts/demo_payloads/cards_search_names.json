@@ -8,6 +8,7 @@
       "ja"
     ],
     "image_uri_small": "https://example.test/cards/lightning-bolt-en-small.jpg",
-    "image_uri_normal": "https://example.test/cards/lightning-bolt-en-normal.jpg"
+    "image_uri_normal": "https://example.test/cards/lightning-bolt-en-normal.jpg",
+    "image_uri_art_crop": "https://example.test/cards/lightning-bolt-en-art-crop.jpg"
   }
 ]

@@ -77,6 +77,7 @@ class CatalogSearchRow(ResponseModel):
     tcgplayer_product_id: str | None
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +103,7 @@ class CatalogNameSearchRow(ResponseModel):
     available_languages: list[str]
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +253,7 @@ class OwnedInventoryRow(ResponseModel):
     collector_number: str
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
     quantity: int
     condition_code: str
     finish: str
@@ -299,6 +302,7 @@ class PublicInventoryItem(ResponseModel):
     collector_number: str
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
     quantity: int
     condition_code: str
     finish: str

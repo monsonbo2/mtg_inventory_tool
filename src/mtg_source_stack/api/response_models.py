@@ -210,6 +210,7 @@ class CatalogSearchRowResponse(ApiBaseModel):
     tcgplayer_product_id: str | None
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
 
 
 class CatalogPrintingLookupRowResponse(CatalogSearchRowResponse):
@@ -232,6 +233,7 @@ class CatalogNameSearchRowResponse(ApiBaseModel):
     available_languages: list[str] = Field(description=AVAILABLE_LANGUAGES_RESPONSE_DESCRIPTION)
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
 
 
 class CatalogNameSearchResponse(ApiBaseModel):
@@ -251,6 +253,7 @@ class OwnedInventoryRowResponse(ApiBaseModel):
     collector_number: str
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
     quantity: int
     condition_code: str = Field(description=CONDITION_CODE_RESPONSE_DESCRIPTION)
     finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
@@ -311,6 +314,7 @@ class PublicInventoryItemResponse(ApiBaseModel):
     collector_number: str
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
     quantity: int
     condition_code: str = Field(description=CONDITION_CODE_RESPONSE_DESCRIPTION)
     finish: Literal["normal", "foil", "etched"] = Field(description=FINISH_RESPONSE_DESCRIPTION)
@@ -414,6 +418,7 @@ class ImportResolutionOptionResponse(ApiBaseModel):
     lang: str = Field(description=SEARCH_LANG_RESPONSE_DESCRIPTION)
     image_uri_small: str | None
     image_uri_normal: str | None
+    image_uri_art_crop: str | None
 
 
 class DecklistImportResolutionIssueResponse(ApiBaseModel):

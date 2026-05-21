@@ -15,6 +15,7 @@ const item: OwnedInventoryRow = {
   collector_number: "161",
   image_uri_small: null,
   image_uri_normal: null,
+  image_uri_art_crop: null,
   quantity: 2,
   condition_code: "NM",
   finish: "normal",
@@ -62,5 +63,18 @@ describe("OwnedItemCard", () => {
     const finishSelect = screen.getByRole("combobox");
     expect(finishSelect).toBeEnabled();
     expect(screen.getByText("Available: Normal, Foil.")).toBeInTheDocument();
+  });
+
+  it("uses art crop when rendering the owned item thumbnail", () => {
+    renderCard({
+      image_uri_art_crop: "https://example.test/cards/bolt-art-crop.jpg",
+      image_uri_normal: "https://example.test/cards/bolt-normal.jpg",
+      image_uri_small: "https://example.test/cards/bolt-small.jpg",
+    });
+
+    expect(screen.getByAltText("Lightning Bolt card art")).toHaveAttribute(
+      "src",
+      "https://example.test/cards/bolt-art-crop.jpg",
+    );
   });
 });
